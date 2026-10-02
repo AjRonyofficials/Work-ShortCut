@@ -92,11 +92,12 @@ class SuperProxyVpnService : VpnService() {
 
             val builder = Builder()
                 .setSession("SuperProxy: $profileName")
-                .setMtu(1500)
-                .addAddress("10.10.10.10", 32)
-                .addDnsServer("8.8.8.8") // Intercepted locally by mapdns on tun0
+                .setMtu(1400) // Standard safe MTU prevents mobile carrier packet fragmentation
+                .addAddress("10.10.10.10", 24)
+                .addDnsServer("8.8.8.8") // Intercepted locally in-memory by mapdns on tun0
                 .addRoute("240.0.0.0", 4) // Synthetic mapped DNS network
                 .addRoute("0.0.0.0", 0)   // Route entire device IPv4 traffic into tun0
+                .allowBypass()            // Allows critical OS network probing so Android never reports Offline
 
             // Unmetered on Android 10+ so OS and apps don't restrict background sync
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
@@ -168,15 +169,13 @@ class SuperProxyVpnService : VpnService() {
             val sb = java.lang.StringBuilder()
             sb.append("tunnel:\n")
             sb.append("  name: tun0\n")
-            sb.append("  mtu: 1500\n")
+            sb.append("  mtu: 1400\n")
             sb.append("  ipv4: 10.10.10.10\n")
+            sb.append("  icmp: true\n")
             sb.append("\n")
             sb.append("socks5:\n")
             sb.append("  port: ").append(finalPort).append("\n")
             sb.append("  address: '").append(finalServerIp).append("'\n")
-            if (!isHttp) {
-                sb.append("  udp: 'tcp'\n")
-            }
             if (finalUser.isNotBlank() && finalPass.isNotBlank()) {
                 val safeUser = finalUser.replace("'", "''")
                 val safePass = finalPass.replace("'", "''")
@@ -195,9 +194,9 @@ class SuperProxyVpnService : VpnService() {
             sb.append("  task-stack-size: 20480\n")
             sb.append("  connect-timeout: 10000\n")
             sb.append("  tcp-read-write-timeout: 300000\n")
-            sb.append("  udp-read-write-timeout: 60000\n")
 
             FileOutputStream(configFile).use { it.write(sb.toString().toByteArray()) }
+            configFile.setReadable(true, false)
 
             // 4. Launch native tun2socks engine in background IO
             serviceScope.launch {
