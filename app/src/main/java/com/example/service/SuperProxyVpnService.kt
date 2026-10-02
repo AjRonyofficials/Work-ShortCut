@@ -93,8 +93,8 @@ class SuperProxyVpnService : VpnService() {
             val builder = Builder()
                 .setSession("SuperProxy: $profileName")
                 .setMtu(1500)
-                .addAddress("10.0.0.2", 24)
-                .addDnsServer("10.0.0.2") // Handled locally in-memory by mapdns on tun0
+                .addAddress("10.10.10.10", 32)
+                .addDnsServer("8.8.8.8") // Intercepted locally by mapdns on tun0
                 .addRoute("240.0.0.0", 4) // Synthetic mapped DNS network
                 .addRoute("0.0.0.0", 0)   // Route entire device IPv4 traffic into tun0
 
@@ -169,7 +169,7 @@ class SuperProxyVpnService : VpnService() {
             sb.append("tunnel:\n")
             sb.append("  name: tun0\n")
             sb.append("  mtu: 1500\n")
-            sb.append("  ipv4: 10.0.0.2\n")
+            sb.append("  ipv4: 10.10.10.10\n")
             sb.append("\n")
             sb.append("socks5:\n")
             sb.append("  port: ").append(finalPort).append("\n")
@@ -185,7 +185,7 @@ class SuperProxyVpnService : VpnService() {
             }
             sb.append("\n")
             sb.append("mapdns:\n")
-            sb.append("  address: 10.0.0.2\n")
+            sb.append("  address: 8.8.8.8\n")
             sb.append("  port: 53\n")
             sb.append("  network: 240.0.0.0\n")
             sb.append("  netmask: 240.0.0.0\n")
@@ -196,7 +196,6 @@ class SuperProxyVpnService : VpnService() {
             sb.append("  connect-timeout: 10000\n")
             sb.append("  tcp-read-write-timeout: 300000\n")
             sb.append("  udp-read-write-timeout: 60000\n")
-            sb.append("  limit-nofile: 65535\n")
 
             FileOutputStream(configFile).use { it.write(sb.toString().toByteArray()) }
 
