@@ -104,7 +104,10 @@ class AutoCleanAccessibilityService : AccessibilityService() {
             batchCurrentIndex = 0
             isBatchActive = true
 
-            processNextBatchApp(context)
+            // Brief 150ms buffer so UI click ripple finishes cleanly
+            Handler(Looper.getMainLooper()).postDelayed({
+                processNextBatchApp(context)
+            }, 150L)
         }
 
         fun stopBatchClean() {
@@ -225,7 +228,7 @@ class AutoCleanAccessibilityService : AccessibilityService() {
             try {
                 val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
                     data = Uri.fromParts("package", packageName, null)
-                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_CLEAR_TASK)
                 }
                 context.startActivity(intent)
             } catch (e: Exception) {
@@ -292,7 +295,7 @@ class AutoCleanAccessibilityService : AccessibilityService() {
                     performGlobalAction(GLOBAL_ACTION_HOME)
                     mainHandler.postDelayed({
                         processNextBatchApp(applicationContext)
-                    }, 350L)
+                    }, 900L)
                     return
                 } else if (isBatchActive) {
                     isBatchActive = false
@@ -950,10 +953,10 @@ class AutoCleanAccessibilityService : AccessibilityService() {
 
                 if (isBatchActive && batchQueue.isNotEmpty()) {
                     Toast.makeText(applicationContext, "✓ $completedAppName ক্লিয়ার হয়েছে! (${batchCurrentIndex}/${batchTotalCount}) পরবর্তী অ্যাপ চালু হচ্ছে...", Toast.LENGTH_SHORT).show()
-                    // Allow 300ms for Home launcher to stabilize before launching next app settings
+                    // Allow 900ms (almost 1 second) delay for Home launcher and app closure to fully stabilize before launching next app
                     mainHandler.postDelayed({
                         processNextBatchApp(applicationContext)
-                    }, 300L)
+                    }, 900L)
                 } else if (isBatchActive) {
                     isBatchActive = false
                     val total = batchCurrentIndex
