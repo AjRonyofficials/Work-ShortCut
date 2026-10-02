@@ -380,25 +380,6 @@ fun FloatingOverlayWindowContent(
                         testTag = "tab_pw_copy"
                     )
 
-                    // 6. NAMES TAB (One-tap generate & copy name directly to clipboard)
-                    val countryOpt = NameGenerator.getCountryOption(state.selectedCountry)
-                    val gradNames = Brush.verticalGradient(
-                        listOf(Color(0xFF0288D1), Color(0xFF01579B), Color(0xFF002F6C))
-                    )
-                    GlossyTactileButton(
-                        title = "${countryOpt.flag} Names ${state.selectedCountry}",
-                        icon = Icons.Default.Person,
-                        brush = gradNames,
-                        shape = tabShape,
-                        fontSize = 11.sp,
-                        horizontalPadding = 6.dp,
-                        onClick = {
-                            OverlayStateManager.generateAndCopyName(context)
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                        testTag = "tab_names"
-                    )
-
                     // 5. CUSTOM USER APPS (Via, Dual, FB, Multiple Space)
                     if (state.customAppShortcuts.isNotEmpty()) {
                         if (state.customAppShortcuts.size > 1) {
