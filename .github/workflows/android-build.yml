@@ -16,6 +16,9 @@ jobs:
   build:
     name: Build & Export APK
     runs-on: ubuntu-latest
+    env:
+      JAVA_TOOL_OPTIONS: "-Djava.awt.headless=true -Dfile.encoding=UTF-8"
+      GRADLE_OPTS: "-Djava.awt.headless=true"
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
@@ -90,12 +93,13 @@ jobs:
 
       - name: Build Debug APK
         run: |
+          export JAVA_TOOL_OPTIONS="-Djava.awt.headless=true -Dfile.encoding=UTF-8"
           if [ -f "./gradlew" ] && [ -f "gradle/wrapper/gradle-wrapper.jar" ]; then
             echo "Building with ./gradlew (Gradle 9.3.1)..."
-            ./gradlew assembleDebug --no-daemon --stacktrace || gradle assembleDebug --no-daemon --stacktrace
+            ./gradlew assembleDebug --no-daemon -Djava.awt.headless=true || gradle assembleDebug --no-daemon -Djava.awt.headless=true
           else
             echo "Building directly with gradle CLI (Gradle 9.3.1)..."
-            gradle assembleDebug --no-daemon --stacktrace
+            gradle assembleDebug --no-daemon -Djava.awt.headless=true
           fi
 
       - name: Verify Generated APK
