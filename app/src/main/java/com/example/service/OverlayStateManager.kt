@@ -37,11 +37,6 @@ enum class AppThemeMode(val title: String) {
     AMOLED("AMOLED Pitch Black")
 }
 
-enum class ClearDataMode(val title: String, val subtitle: String) {
-    SINGLE("Single App", "Clean 1 app instantly on demand"),
-    BATCH("Batch Queue", "Sequential multi-app auto clean")
-}
-
 data class ExcelDraftRow(
     val values: Map<String, String> = mapOf("A" to "", "B" to "", "C" to "", "D" to "", "E" to "", "F" to ""),
     val duplicateColumn: String? = null,
@@ -102,16 +97,6 @@ data class OverlayUiState(
     val lastGeneratedName: String = "",
     val selectedClearDataApps: List<com.example.util.AppInfoItem> = emptyList(),
     val isClearDataOverlayExpanded: Boolean = false,
-    val cleanSectionMode: ClearDataMode = ClearDataMode.BATCH,
-    val appSectionMode: ClearDataMode = ClearDataMode.SINGLE,
-    val clearDataMode: ClearDataMode = ClearDataMode.BATCH,
-    val selectedAppSectionPackages: Set<String> = emptySet(),
-    val isBatchRunning: Boolean = false,
-    val batchRunningSection: String = "",
-    val batchCurrentAppIndex: Int = 0,
-    val batchTotalApps: Int = 0,
-    val batchCurrentAppName: String = "",
-    val batchCompletedApps: List<String> = emptyList(),
     val backgroundDataCaching: Boolean = true,
     val isDockedLeft: Boolean = true,
     val isEdgeBarMinimized: Boolean = false,
@@ -244,14 +229,6 @@ object OverlayStateManager {
             val rowF = p.getInt("sheet_row_F", 1)
             val colRowMap = mapOf("A" to rowA, "B" to rowB, "C" to rowC, "D" to rowD, "E" to rowE, "F" to rowF)
 
-            val clearModeStr = p.getString("clear_data_mode", ClearDataMode.BATCH.name) ?: ClearDataMode.BATCH.name
-            val loadedClearMode = try { ClearDataMode.valueOf(clearModeStr) } catch (_: Exception) { ClearDataMode.BATCH }
-            val cleanModeStr = p.getString("clean_section_mode", loadedClearMode.name) ?: loadedClearMode.name
-            val loadedCleanMode = try { ClearDataMode.valueOf(cleanModeStr) } catch (_: Exception) { loadedClearMode }
-            val appModeStr = p.getString("app_section_mode", ClearDataMode.SINGLE.name) ?: ClearDataMode.SINGLE.name
-            val loadedAppMode = try { ClearDataMode.valueOf(appModeStr) } catch (_: Exception) { ClearDataMode.SINGLE }
-            val savedAppSectionBatchPkgs = p.getStringSet("app_section_batch_pkgs", emptySet()) ?: emptySet()
-
             _uiState.update {
                 it.copy(
                     selectedCountry = country,
@@ -269,10 +246,6 @@ object OverlayStateManager {
                     savedPasswordText = savedPwText,
                     draftRow = initialDraft,
                     selectedClearDataApps = loadedApps,
-                    cleanSectionMode = loadedCleanMode,
-                    appSectionMode = loadedAppMode,
-                    clearDataMode = loadedCleanMode,
-                    selectedAppSectionPackages = savedAppSectionBatchPkgs,
                     backgroundDataCaching = bgDataCaching,
                     customAppShortcuts = loadedShortcuts,
                     proxyState = it.proxyState.copy(
@@ -429,163 +402,6 @@ object OverlayStateManager {
             appName = item.appName,
             isLiteStorageMode = item.isLiteStorageApp
         )
-    }
-
-    fun setClearDataMode(mode: ClearDataMode) {
-        setCleanSectionMode(mode)
-    }
-
-    fun setCleanSectionMode(mode: ClearDataMode) {
-        _uiState.update { it.copy(cleanSectionMode = mode, clearDataMode = mode) }
-        prefs?.edit()?.putString("clean_section_mode", mode.name)?.apply()
-    }
-
-    fun setAppSectionMode(mode: ClearDataMode) {
-        _uiState.update { it.copy(appSectionMode = mode) }
-        prefs?.edit()?.putString("app_section_mode", mode.name)?.apply()
-    }
-
-    fun isAppSectionShortcutSelectedForBatch(packageName: String): Boolean {
-        val selected = _uiState.value.selectedAppSectionPackages
-        return if (selected.isEmpty()) true else selected.contains(packageName)
-    }
-
-    fun toggleAppSectionBatchSelection(packageName: String) {
-        val allShortcuts = _uiState.value.customAppShortcuts
-        val allPkgs = allShortcuts.map { it.packageName }.toSet()
-        val current = _uiState.value.selectedAppSectionPackages.toMutableSet()
-        if (current.isEmpty()) {
-            current.addAll(allPkgs)
-            current.remove(packageName)
-        } else {
-            if (current.contains(packageName)) {
-                current.remove(packageName)
-            } else {
-                current.add(packageName)
-            }
-        }
-        _uiState.update { it.copy(selectedAppSectionPackages = current) }
-        prefs?.edit()?.putStringSet("app_section_batch_pkgs", current)?.apply()
-    }
-
-    fun selectAllAppSectionBatch(selectAll: Boolean) {
-        val newSet = if (selectAll) {
-            _uiState.value.customAppShortcuts.map { it.packageName }.toSet()
-        } else {
-            emptySet()
-        }
-        _uiState.update { it.copy(selectedAppSectionPackages = newSet) }
-        prefs?.edit()?.putStringSet("app_section_batch_pkgs", newSet)?.apply()
-    }
-
-    fun startCleanSectionBatch(context: Context) {
-        val apps = _uiState.value.selectedClearDataApps
-        if (apps.isEmpty()) {
-            Toast.makeText(context, "Clean সেকশনে কোনো অ্যাপ সিলেক্ট করা নেই", Toast.LENGTH_SHORT).show()
-            return
-        }
-        VibrationHelper.vibrateTactileClick(context)
-        _uiState.update {
-            it.copy(
-                isBatchRunning = true,
-                batchRunningSection = "CLEAN",
-                batchCurrentAppIndex = 0,
-                batchTotalApps = apps.size,
-                batchCurrentAppName = apps.first().appName,
-                batchCompletedApps = emptyList()
-            )
-        }
-        com.example.util.AppManagerHelper.startBatchClearData(context, apps)
-    }
-
-    fun startAppSectionBatch(context: Context) {
-        val allShortcuts = _uiState.value.customAppShortcuts
-        if (allShortcuts.isEmpty()) {
-            Toast.makeText(context, "Apps সেকশনে কোনো শর্টকাট অ্যাপ নেই", Toast.LENGTH_SHORT).show()
-            return
-        }
-        val selectedPkgs = _uiState.value.selectedAppSectionPackages
-        val targetShortcuts = if (selectedPkgs.isEmpty()) {
-            allShortcuts
-        } else {
-            allShortcuts.filter { selectedPkgs.contains(it.packageName) }
-        }
-        if (targetShortcuts.isEmpty()) {
-            Toast.makeText(context, "Apps সেকশনে ব্যাচের জন্য কোনো অ্যাপ সিলেক্ট করা নেই", Toast.LENGTH_SHORT).show()
-            return
-        }
-        val targetApps = targetShortcuts.map { s ->
-            val isLite = com.example.util.AppManagerHelper.isFacebookLite(s.packageName, s.appName)
-            com.example.util.AppInfoItem(
-                appName = s.appName,
-                packageName = s.packageName,
-                isSelected = true,
-                isLiteStorageApp = isLite
-            )
-        }
-        VibrationHelper.vibrateTactileClick(context)
-        _uiState.update {
-            it.copy(
-                isBatchRunning = true,
-                batchRunningSection = "APPS",
-                batchCurrentAppIndex = 0,
-                batchTotalApps = targetApps.size,
-                batchCurrentAppName = targetApps.first().appName,
-                batchCompletedApps = emptyList()
-            )
-        }
-        com.example.util.AppManagerHelper.startBatchClearData(context, targetApps)
-    }
-
-    fun startBatchClear(context: Context) {
-        startCleanSectionBatch(context)
-    }
-
-    fun stopBatchClear(context: Context) {
-        VibrationHelper.vibrateTactileClick(context)
-        com.example.util.AppManagerHelper.stopBatchClearData()
-        _uiState.update {
-            it.copy(
-                isBatchRunning = false,
-                batchRunningSection = "",
-                batchCurrentAppIndex = 0,
-                batchCurrentAppName = ""
-            )
-        }
-        Toast.makeText(context, "ব্যাচ ক্লিয়ারিং বাতিল করা হয়েছে", Toast.LENGTH_SHORT).show()
-    }
-
-    fun onBatchProgressUpdate(currentIndex: Int, total: Int, currentAppName: String) {
-        _uiState.update {
-            it.copy(
-                isBatchRunning = true,
-                batchCurrentAppIndex = currentIndex,
-                batchTotalApps = total,
-                batchCurrentAppName = currentAppName,
-                batchCompletedApps = it.batchCompletedApps + currentAppName
-            )
-        }
-    }
-
-    fun onBatchFinished(context: Context, totalCleared: Int) {
-        _uiState.update {
-            it.copy(
-                isBatchRunning = false,
-                batchCurrentAppIndex = totalCleared,
-                batchCurrentAppName = ""
-            )
-        }
-    }
-
-    fun selectAllAppsForClear(apps: List<com.example.util.AppInfoItem>) {
-        _uiState.update { it.copy(selectedClearDataApps = apps) }
-        val serialized = apps.joinToString(";;") { "${it.appName}::${it.packageName}::${it.isLiteStorageApp}" }
-        prefs?.edit()?.putString("clear_data_apps_list", serialized)?.apply()
-    }
-
-    fun clearAllSelectedApps() {
-        _uiState.update { it.copy(selectedClearDataApps = emptyList()) }
-        prefs?.edit()?.remove("clear_data_apps_list")?.apply()
     }
 
     fun executeSelfClearData(context: Context) {

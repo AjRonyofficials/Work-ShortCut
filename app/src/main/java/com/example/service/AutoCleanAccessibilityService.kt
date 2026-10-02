@@ -66,87 +66,7 @@ class AutoCleanAccessibilityService : AccessibilityService() {
         private var clickedClearCache: Boolean = false
         private var clickedClearData: Boolean = false
 
-        private val batchQueue = ArrayDeque<com.example.util.AppInfoItem>()
-        var isBatchActive: Boolean = false
-            private set
-        var batchTotalCount: Int = 0
-            private set
-        var batchCurrentIndex: Int = 0
-            private set
-
         fun isServiceRunning(): Boolean = instance != null
-
-        fun startBatchClean(
-            context: Context,
-            apps: List<com.example.util.AppInfoItem>
-        ) {
-            if (apps.isEmpty()) return
-
-            if (instance == null) {
-                Toast.makeText(
-                    context,
-                    "ব্যাচ ক্লিয়ারিং এর জন্য Accessibility সার্ভিস চালু করুন!",
-                    Toast.LENGTH_LONG
-                ).show()
-
-                try {
-                    val accIntent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS).apply {
-                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                    }
-                    context.startActivity(accIntent)
-                } catch (_: Exception) {}
-                return
-            }
-
-            batchQueue.clear()
-            batchQueue.addAll(apps)
-            batchTotalCount = apps.size
-            batchCurrentIndex = 0
-            isBatchActive = true
-
-            // Brief 150ms buffer so UI click ripple finishes cleanly
-            Handler(Looper.getMainLooper()).postDelayed({
-                processNextBatchApp(context)
-            }, 150L)
-        }
-
-        fun stopBatchClean() {
-            batchQueue.clear()
-            isBatchActive = false
-            isAutomating = false
-            targetPackage = null
-            step = 0
-            liteStep = LITE_STEP_IDLE
-        }
-
-        private fun processNextBatchApp(context: Context) {
-            if (batchQueue.isEmpty()) {
-                isBatchActive = false
-                val total = batchCurrentIndex
-                OverlayStateManager.onBatchFinished(context, total)
-                Toast.makeText(
-                    context,
-                    "🎉 ব্যাচ ক্লিয়ারিং সফলভাবে সম্পন্ন হয়েছে ($total টি অ্যাপ)!",
-                    Toast.LENGTH_LONG
-                ).show()
-                return
-            }
-
-            val nextApp = batchQueue.removeFirst()
-            batchCurrentIndex++
-            OverlayStateManager.onBatchProgressUpdate(
-                currentIndex = batchCurrentIndex,
-                total = batchTotalCount,
-                currentAppName = nextApp.appName
-            )
-
-            startAutoClean(
-                context = context,
-                packageName = nextApp.packageName,
-                appName = nextApp.appName,
-                isLiteMode = nextApp.isLiteStorageApp
-            )
-        }
 
         fun startAutoClean(
             context: Context,
@@ -228,7 +148,7 @@ class AutoCleanAccessibilityService : AccessibilityService() {
             try {
                 val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
                     data = Uri.fromParts("package", packageName, null)
-                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_CLEAR_TASK)
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
                 }
                 context.startActivity(intent)
             } catch (e: Exception) {
@@ -286,21 +206,6 @@ class AutoCleanAccessibilityService : AccessibilityService() {
 
             // 10-second safety timeout prevents any hanging
             if (now - lastActionTime > 10000) {
-                if (isBatchActive && batchQueue.isNotEmpty()) {
-                    Toast.makeText(applicationContext, "⚠️ $targetAppName টাইমআউট! পরবর্তী অ্যাপে যাওয়া হচ্ছে...", Toast.LENGTH_SHORT).show()
-                    isAutomating = false
-                    targetPackage = null
-                    step = 0
-                    liteStep = LITE_STEP_IDLE
-                    performGlobalAction(GLOBAL_ACTION_HOME)
-                    mainHandler.postDelayed({
-                        processNextBatchApp(applicationContext)
-                    }, 900L)
-                    return
-                } else if (isBatchActive) {
-                    isBatchActive = false
-                    OverlayStateManager.onBatchFinished(applicationContext, batchCurrentIndex)
-                }
                 isAutomating = false
                 targetPackage = null
                 return
@@ -929,11 +834,9 @@ class AutoCleanAccessibilityService : AccessibilityService() {
     /**
      * Ultra-fast close sequence:
      * Navigates back, returns to home, kills background process, finishes in ~80ms.
-     * Automatically transitions to next app if batch clearing mode is active.
      */
     private fun autoCloseCleanedSequence() {
         val pkgToKill = targetPackage
-        val completedAppName = targetAppName
         mainHandler.postDelayed({
             performGlobalAction(GLOBAL_ACTION_BACK)
             mainHandler.postDelayed({
@@ -945,26 +848,12 @@ class AutoCleanAccessibilityService : AccessibilityService() {
                         Runtime.getRuntime().exec(arrayOf("am", "force-stop", pkg))
                     } catch (_: Exception) {}
                 }
+                Toast.makeText(applicationContext, "✓ $targetAppName ডেটা সফলভাবে ক্লিয়ার হয়েছে!", Toast.LENGTH_SHORT).show()
                 isAutomating = false
                 targetPackage = null
                 step = 0
                 liteStep = LITE_STEP_IDLE
                 isTargetLiteMode = false
-
-                if (isBatchActive && batchQueue.isNotEmpty()) {
-                    Toast.makeText(applicationContext, "✓ $completedAppName ক্লিয়ার হয়েছে! (${batchCurrentIndex}/${batchTotalCount}) পরবর্তী অ্যাপ চালু হচ্ছে...", Toast.LENGTH_SHORT).show()
-                    // Allow 900ms (almost 1 second) delay for Home launcher and app closure to fully stabilize before launching next app
-                    mainHandler.postDelayed({
-                        processNextBatchApp(applicationContext)
-                    }, 900L)
-                } else if (isBatchActive) {
-                    isBatchActive = false
-                    val total = batchCurrentIndex
-                    OverlayStateManager.onBatchFinished(applicationContext, total)
-                    Toast.makeText(applicationContext, "🎉 ব্যাচ ক্লিয়ারিং সম্পন্ন! সর্বমোট $total টি অ্যাপের ডেটা পরিষ্কার হয়েছে।", Toast.LENGTH_LONG).show()
-                } else {
-                    Toast.makeText(applicationContext, "✓ $completedAppName ডেটা সফলভাবে ক্লিয়ার হয়েছে!", Toast.LENGTH_SHORT).show()
-                }
             }, 70)
         }, 70)
     }
