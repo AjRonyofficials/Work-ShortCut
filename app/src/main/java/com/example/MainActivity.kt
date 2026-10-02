@@ -19,12 +19,34 @@ import com.example.ui.theme.WorkShortcutTheme
 
 class MainActivity : ComponentActivity() {
 
+    private val vpnPermissionLauncher = registerForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode == RESULT_OK) {
+            OverlayStateManager.startProxyConnection(this)
+        } else {
+            android.widget.Toast.makeText(this, "ভিপিএন পারমিশন ছাড়া প্রক্সি ট্র্যাফিক রুট করা সম্ভব নয়!", android.widget.Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun checkVpnPermissionRequest(intent: android.content.Intent?) {
+        if (intent?.getBooleanExtra("REQUEST_VPN_PERMISSION", false) == true) {
+            val vpnIntent = android.net.VpnService.prepare(this)
+            if (vpnIntent != null) {
+                vpnPermissionLauncher.launch(vpnIntent)
+            } else {
+                OverlayStateManager.startProxyConnection(this)
+            }
+        }
+    }
+
     override fun onNewIntent(intent: android.content.Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
         if (intent.getBooleanExtra("NAVIGATE_TO_SHEET", false)) {
             OverlayStateManager.requestTab("EXCEL")
         }
+        checkVpnPermissionRequest(intent)
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -43,6 +65,7 @@ class MainActivity : ComponentActivity() {
         if (intent?.getBooleanExtra("NAVIGATE_TO_SHEET", false) == true) {
             OverlayStateManager.requestTab("EXCEL")
         }
+        checkVpnPermissionRequest(intent)
 
         setContent {
             val state by OverlayStateManager.uiState.collectAsStateWithLifecycle()

@@ -986,6 +986,19 @@ object OverlayStateManager {
             return
         }
 
+        context?.let { ctx ->
+            val vpnIntent = android.net.VpnService.prepare(ctx)
+            if (vpnIntent != null) {
+                val intent = Intent(ctx, com.example.MainActivity::class.java).apply {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                    putExtra("REQUEST_VPN_PERMISSION", true)
+                }
+                ctx.startActivity(intent)
+                Toast.makeText(ctx, "প্রক্সি চালু করতে ভিপিএন পারমিশন এলাউ (OK) করুন", Toast.LENGTH_LONG).show()
+                return
+            }
+        }
+
         // Show connecting / handshake validation status in UI
         _uiState.update {
             it.copy(
@@ -1307,12 +1320,19 @@ object OverlayStateManager {
                         host = p.host,
                         port = p.port,
                         protocol = p.protocol,
+                        username = p.username,
+                        password = p.password,
                         pingOptimized = _uiState.value.pingOptimization
                     )
                     if (test.isSuccess) {
                         _uiState.update {
                             it.copy(
                                 proxyState = it.proxyState.copy(
+                                    ipAddress = test.resolvedIp ?: it.proxyState.ipAddress,
+                                    countryCode = test.countryCode ?: it.proxyState.countryCode,
+                                    countryName = test.countryName ?: it.proxyState.countryName,
+                                    city = test.city ?: it.proxyState.city,
+                                    isp = test.isp ?: it.proxyState.isp,
                                     pingMs = test.latencyMs,
                                     statusText = "Connected (${test.latencyMs}ms)"
                                 )

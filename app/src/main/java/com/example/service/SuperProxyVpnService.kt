@@ -94,9 +94,7 @@ class SuperProxyVpnService : VpnService() {
                 .setSession("SuperProxy: $profileName")
                 .setMtu(1500)
                 .addAddress("10.0.0.2", 24)
-                .addDnsServer("10.0.0.2") // Primary DNS handled locally by mapdns on tun0
-                .addDnsServer("1.1.1.1")   // Backup DNS
-                .addDnsServer("8.8.8.8")
+                .addDnsServer("10.0.0.2") // Handled locally by mapdns on tun0
                 .addRoute("240.0.0.0", 4) // Synthetic mapped DNS network
                 .addRoute("0.0.0.0", 0)   // Route entire device IPv4 traffic into tun0
 
@@ -117,53 +115,74 @@ class SuperProxyVpnService : VpnService() {
                 } catch (_: Exception) {}
             }
 
-            // 2. HTTP proxy direct hook on Android 10+ (API 29+)
-            if (protocol.equals("HTTP", ignoreCase = true) && Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                try {
-                    builder.setHttpProxy(android.net.ProxyInfo.buildDirectProxy(resolvedServerIp, port))
-                } catch (_: Exception) {}
-            }
-
             vpnInterface = builder.establish()
             val pfd = vpnInterface ?: throw IllegalStateException("TUN descriptor invalid")
             val tunFd = pfd.fd
 
-            // 3. Generate YAML configuration required by hev-socks5-tunnel
+            // 2. Protocol & Authentication Handling:
+            val isHttp = protocol.equals("HTTP", ignoreCase = true) || protocol.equals("HTTPS", ignoreCase = true)
+            val finalServerIp: String
+            val finalPort: Int
+            val finalUser: String
+            val finalPass: String
+
+            if (isHttp) {
+                // Launch local SOCKS5-to-HTTP bridge with real-time Proxy-Authorization Basic header
+                val bridgePort = LocalSocks5ToHttpBridge.start(
+                    httpHost = resolvedServerIp,
+                    httpPort = port,
+                    username = user,
+                    password = pass
+                )
+                if (bridgePort <= 0) {
+                    throw IllegalStateException("Failed to bind LocalSocks5ToHttpBridge on 127.0.0.1")
+                }
+                finalServerIp = "127.0.0.1"
+                finalPort = bridgePort
+                finalUser = ""
+                finalPass = ""
+            } else {
+                LocalSocks5ToHttpBridge.stop()
+                finalServerIp = resolvedServerIp
+                finalPort = port
+                finalUser = user
+                finalPass = pass
+            }
+
+            // 3. Generate clean, properly-indented YAML configuration for hev-socks5-tunnel
             val configFile = File(cacheDir, "hev-socks5.conf")
-            val authSection = if (user.isNotBlank() && pass.isNotBlank()) {
-                val safeUser = user.replace("'", "''")
-                val safePass = pass.replace("'", "''")
-                "  username: '$safeUser'\n  password: '$safePass'"
-            } else ""
+            val sb = java.lang.StringBuilder()
+            sb.append("tunnel:\n")
+            sb.append("  name: tun0\n")
+            sb.append("  mtu: 1500\n")
+            sb.append("  ipv4: 10.0.0.2\n")
+            sb.append("\n")
+            sb.append("socks5:\n")
+            sb.append("  port: ").append(finalPort).append("\n")
+            sb.append("  address: '").append(finalServerIp).append("'\n")
+            sb.append("  udp: 'tcp'\n")
+            if (finalUser.isNotBlank() && finalPass.isNotBlank()) {
+                val safeUser = finalUser.replace("'", "''")
+                val safePass = finalPass.replace("'", "''")
+                sb.append("  username: '").append(safeUser).append("'\n")
+                sb.append("  password: '").append(safePass).append("'\n")
+            }
+            sb.append("\n")
+            sb.append("mapdns:\n")
+            sb.append("  address: 10.0.0.2\n")
+            sb.append("  port: 53\n")
+            sb.append("  network: 240.0.0.0\n")
+            sb.append("  netmask: 240.0.0.0\n")
+            sb.append("  cache-size: 2048\n")
+            sb.append("\n")
+            sb.append("misc:\n")
+            sb.append("  task-stack-size: 20480\n")
+            sb.append("  connect-timeout: 10000\n")
+            sb.append("  tcp-read-write-timeout: 60000\n")
+            sb.append("  udp-read-write-timeout: 30000\n")
+            sb.append("  limit-nofile: 65535\n")
 
-            val configContent = """
-                tunnel:
-                  name: tun0
-                  mtu: 1500
-                  ipv4: 10.0.0.2
-
-                socks5:
-                  port: $port
-                  address: '$resolvedServerIp'
-                  udp: 'tcp'
-                $authSection
-
-                mapdns:
-                  address: 10.0.0.2
-                  port: 53
-                  network: 240.0.0.0
-                  netmask: 240.0.0.0
-                  cache-size: 2048
-
-                misc:
-                  task-stack-size: 20480
-                  connect-timeout: 10000
-                  tcp-read-write-timeout: 60000
-                  udp-read-write-timeout: 30000
-                  limit-nofile: 65535
-            """.trimIndent()
-
-            FileOutputStream(configFile).use { it.write(configContent.toByteArray()) }
+            FileOutputStream(configFile).use { it.write(sb.toString().toByteArray()) }
 
             // 4. Launch native tun2socks engine in background IO
             serviceScope.launch {
@@ -243,6 +262,8 @@ class SuperProxyVpnService : VpnService() {
     private fun stopVpn() {
         if (!isRunning && vpnInterface == null) return
         isRunning = false
+
+        LocalSocks5ToHttpBridge.stop()
 
         try {
             TProxyService.TProxyStopService()
