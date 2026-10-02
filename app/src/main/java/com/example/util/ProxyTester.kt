@@ -22,6 +22,7 @@ object ProxyTester {
         val isSuccess: Boolean,
         val latencyMs: Long,
         val resolvedIp: String? = null,
+        val ipVersion: String = "IPv4",
         val countryCode: String? = null,
         val countryName: String? = null,
         val city: String? = null,
@@ -30,7 +31,8 @@ object ProxyTester {
         val errorMessage: String? = null
     )
 
-    private val IP_REGEX = Pattern.compile("\\b(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\\b")
+    private val IPV4_REGEX = Pattern.compile("\\b(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\\b")
+    private val IPV6_REGEX = Pattern.compile("(?i)\\b(?:[a-f0-9]{1,4}:){7}[a-f0-9]{1,4}\\b|\\b(?:[a-f0-9]{1,4}:){1,7}:\\b|\\b:(?::[a-f0-9]{1,4}){1,7}\\b")
 
     // Sequential fallback endpoints required by specification
     private val IP_CHECK_ENDPOINTS = listOf(
@@ -128,13 +130,22 @@ object ProxyTester {
                     val body = reader.readText().trim()
                     reader.close()
 
-                    val matcher = IP_REGEX.matcher(body)
-                    if (matcher.find()) {
-                        resolvedIp = matcher.group(0)
+                    var detectedIpVersion = "IPv4"
+                    val v4 = IPV4_REGEX.matcher(body)
+                    val v6 = IPV6_REGEX.matcher(body)
+                    if (v4.find()) {
+                        resolvedIp = v4.group(0)
+                        detectedIpVersion = "IPv4"
                         conn.disconnect()
                         break
-                    } else if (body.isNotBlank() && !body.contains("<") && body.length < 60) {
+                    } else if (v6.find()) {
+                        resolvedIp = v6.group(0)
+                        detectedIpVersion = "IPv6"
+                        conn.disconnect()
+                        break
+                    } else if (body.isNotBlank() && !body.contains("<") && body.length < 65) {
                         resolvedIp = body
+                        detectedIpVersion = if (body.contains(":")) "IPv6" else "IPv4"
                         conn.disconnect()
                         break
                     }
@@ -212,11 +223,13 @@ object ProxyTester {
 
         val totalLatency = System.currentTimeMillis() - startTime
         val finalLatency = if (totalLatency > 0) totalLatency else socketLatency
+        val detectedVersion = if (resolvedIp?.contains(":") == true) "IPv6" else "IPv4"
 
         PingResult(
             isSuccess = true,
             latencyMs = finalLatency,
             resolvedIp = resolvedIp,
+            ipVersion = detectedVersion,
             countryCode = countryCode,
             countryName = countryName,
             city = city,

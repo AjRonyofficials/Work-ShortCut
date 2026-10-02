@@ -61,6 +61,7 @@ data class ProxyConnectionState(
     val username: String = "",
     val password: String = "",
     val ipAddress: String = "104.244.72.115",
+    val ipVersion: String = "IPv4",
     val countryCode: String = "US",
     val countryName: String = "United States",
     val city: String = "",
@@ -1036,12 +1037,13 @@ object OverlayStateManager {
                                 isTesting = false,
                                 connectedDurationSeconds = 0,
                                 ipAddress = effectiveIp,
+                                ipVersion = result.ipVersion,
                                 countryCode = country,
                                 countryName = countryName,
                                 city = city,
                                 isp = isp,
                                 pingMs = latency,
-                                statusText = "Connected to $effectiveIp • ${latency}ms"
+                                statusText = "Connected to $effectiveIp [${result.ipVersion}] • ${latency}ms"
                             )
                         )
                     }
@@ -1135,11 +1137,12 @@ object OverlayStateManager {
                         it.copy(
                             proxyState = it.proxyState.copy(
                                 ipAddress = effectiveIp,
+                                ipVersion = result.ipVersion,
                                 countryCode = country,
                                 countryName = countryName,
                                 city = city,
                                 pingMs = latency,
-                                statusText = "Rotated: $effectiveIp • ${latency}ms"
+                                statusText = "Rotated: $effectiveIp [${result.ipVersion}] • ${latency}ms"
                             )
                         )
                     }
@@ -1389,6 +1392,7 @@ object OverlayStateManager {
                             it.copy(
                                 proxyState = it.proxyState.copy(
                                     ipAddress = test.resolvedIp ?: it.proxyState.ipAddress,
+                                    ipVersion = test.ipVersion,
                                     countryCode = test.countryCode ?: it.proxyState.countryCode,
                                     countryName = test.countryName ?: it.proxyState.countryName,
                                     city = test.city ?: it.proxyState.city,

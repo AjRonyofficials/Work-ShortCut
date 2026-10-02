@@ -159,8 +159,9 @@ object LocalSocks5ToHttpBridge {
                 "Proxy-Authorization: Basic $token\r\n"
             } else ""
 
-            val connectMsg = "CONNECT $targetHost:$targetPort HTTP/1.1\r\n" +
-                    "Host: $targetHost:$targetPort\r\n" +
+            val formattedHost = if (targetHost.contains(":") && !targetHost.startsWith("[")) "[$targetHost]" else targetHost
+            val connectMsg = "CONNECT $formattedHost:$targetPort HTTP/1.1\r\n" +
+                    "Host: $formattedHost:$targetPort\r\n" +
                     authHeader +
                     "Proxy-Connection: Keep-Alive\r\n" +
                     "User-Agent: Mozilla/5.0 (Android)\r\n\r\n"

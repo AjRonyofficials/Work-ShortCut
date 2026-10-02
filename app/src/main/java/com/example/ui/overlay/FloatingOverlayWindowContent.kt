@@ -628,7 +628,7 @@ fun ProxyInfoStatusPill(state: OverlayUiState) {
             )
             Spacer(modifier = Modifier.width(5.dp))
             Text(
-                text = "$countryStr • $ipStr • $timeStr",
+                text = "$countryStr • ${proxy.ipVersion} • $ipStr • $timeStr",
                 color = Color.White,
                 fontWeight = FontWeight.Bold,
                 fontSize = 10.sp,

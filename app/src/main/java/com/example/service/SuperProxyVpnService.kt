@@ -98,10 +98,11 @@ class SuperProxyVpnService : VpnService() {
                 .addRoute("240.0.0.0", 4) // Synthetic mapped DNS network
                 .addRoute("0.0.0.0", 0)   // Route entire device IPv4 traffic into tun0
 
-            // IPv6 Leak Protection: Traps IPv6 traffic inside tunnel to prevent mobile network bypass
+            // Full Dual-Stack IPv4 & IPv6 Support:
             try {
-                builder.addAddress("fc00::2", 128)
-                builder.addRoute("::", 0)
+                builder.addAddress("fc00::2", 64)
+                builder.addDnsServer("fc00::2") // Dual-stack IPv6 DNS
+                builder.addRoute("::", 0)       // Capture 100% of device IPv6 traffic
             } catch (_: Exception) {}
 
             // Unmetered on Android 10+ so OS and apps don't restrict background sync
