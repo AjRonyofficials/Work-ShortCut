@@ -1,8 +1,12 @@
 package com.example.ui.screens
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
@@ -179,7 +183,7 @@ fun MainScreen(
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     Text(
-                        text = "ভদ্র মানুষের জন্য বিনীত অনুরোধ আপনার পিতৃ পরিচয় ঠিক থাকলে অ্যাপ এর নাম টা নিজের নামে চেইঞ্জ করে চালিয়ে দিয়েন না। কাউকে পারমিশন দেওয়া হবে না চাইলেও কারণ অ্যাপ ফ্রি কোনো টেলিগ্রাম চ্যানেল বা কিছুর রিকোয়ারমেন্ট নেই বা প্রমোশন নাই তাই এমনিতেই নিজের চ্যানেলে শেয়ার করতে পারেন ধন্যবাদ।",
+                        text = "ভদ্র মানুষের জন্য বিনীত অনুরোধ ( এবং অভদ্রের জন্য যদি) আপনার পিতৃ পরিচয় ঠিক থাকলে অ্যাপ এর নাম টা নিজের নামে চেইঞ্জ করে চালিয়ে দিয়েন না। কাউকে পারমিশন দেওয়া হবে না চাইলেও কারণ অ্যাপ ফ্রি কোনো টেলিগ্রাম চ্যানেল বা কিছুর রিকোয়ারমেন্ট নেই বা প্রমোশন নাই তাই এমনিতেই নিজের চ্যানেলে শেয়ার করতে পারেন ধন্যবাদ।",
                         fontSize = 14.sp,
                         lineHeight = 21.sp,
                         fontWeight = FontWeight.Medium,
@@ -377,28 +381,66 @@ fun MainScreen(
             }
         }
 
-        // Subtle Tiny Animated Developer Credit at Bottom of App (Font size 3-7sp)
+        // Subtle Tiny Animated Developer Credit at Bottom of App (Matched to App UI)
         androidx.compose.animation.AnimatedVisibility(
             visible = showBottomDeveloperCredit,
-            enter = androidx.compose.animation.fadeIn() + androidx.compose.animation.slideInVertically { it / 2 },
-            exit = androidx.compose.animation.fadeOut() + androidx.compose.animation.slideOutVertically { it / 2 },
+            enter = androidx.compose.animation.fadeIn(animationSpec = androidx.compose.animation.core.tween(350)) +
+                    androidx.compose.animation.slideInVertically(
+                        animationSpec = androidx.compose.animation.core.spring(dampingRatio = 0.7f, stiffness = 380f)
+                    ) { it } +
+                    androidx.compose.animation.expandVertically(
+                        animationSpec = androidx.compose.animation.core.spring(dampingRatio = 0.7f)
+                    ),
+            exit = androidx.compose.animation.fadeOut(animationSpec = androidx.compose.animation.core.tween(400)) +
+                    androidx.compose.animation.slideOutVertically(animationSpec = androidx.compose.animation.core.tween(400)) { it } +
+                    androidx.compose.animation.shrinkVertically(animationSpec = androidx.compose.animation.core.tween(400)),
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .padding(bottom = 76.dp)
         ) {
             Surface(
-                shape = RoundedCornerShape(12.dp),
-                color = Color.Black.copy(alpha = 0.75f),
-                border = androidx.compose.foundation.BorderStroke(0.6.dp, Color.White.copy(alpha = 0.2f))
+                shape = RoundedCornerShape(16.dp),
+                color = Color(0xFF0B1220).copy(alpha = 0.92f),
+                border = androidx.compose.foundation.BorderStroke(
+                    1.dp,
+                    androidx.compose.ui.graphics.Brush.horizontalGradient(
+                        listOf(Color(0xFF00C6FF), Color(0xFF0072FF), Color(0xFFAB47BC))
+                    )
+                ),
+                shadowElevation = 6.dp
             ) {
-                Text(
-                    text = "Developed By Ismail Islam Rony",
-                    fontSize = 6.sp,
-                    color = Color.White.copy(alpha = 0.85f),
-                    fontWeight = FontWeight.Medium,
-                    letterSpacing = 0.4.sp,
-                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
-                )
+                Row(
+                    modifier = Modifier.padding(horizontal = 9.dp, vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(5.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(12.dp)
+                            .clip(CircleShape)
+                            .background(
+                                androidx.compose.ui.graphics.Brush.linearGradient(
+                                    listOf(Color(0xFF00C6FF), Color(0xFF0072FF))
+                                )
+                            ),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Person,
+                            contentDescription = null,
+                            tint = Color.White,
+                            modifier = Modifier.size(8.dp)
+                        )
+                    }
+
+                    Text(
+                        text = "Developed By Ismail Islam Rony",
+                        fontSize = 7.sp,
+                        color = Color.White,
+                        fontWeight = FontWeight.SemiBold,
+                        letterSpacing = 0.4.sp
+                    )
+                }
             }
         }
     }
