@@ -407,7 +407,7 @@ fun FloatingOverlayWindowContent(
                                 brush = customBrush,
                                 shape = tabShape,
                                 onClick = {
-                                    if (state.clearDataMode == com.example.service.ClearDataMode.SINGLE) {
+                                    if (state.appSectionMode == com.example.service.ClearDataMode.SINGLE) {
                                         val isLite = com.example.util.AppManagerHelper.isFacebookLite(shortcut.packageName, shortcut.appName)
                                         OverlayStateManager.executeClearDataForApp(
                                             context,
@@ -949,9 +949,28 @@ fun AppShortcutsGridBox(
                         fontWeight = FontWeight.Bold,
                         color = Color(0xFF80DEEA)
                     )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    val isAppSingle = state.appSectionMode == com.example.service.ClearDataMode.SINGLE
+                    Surface(
+                        onClick = {
+                            OverlayStateManager.setAppSectionMode(
+                                if (isAppSingle) com.example.service.ClearDataMode.BATCH else com.example.service.ClearDataMode.SINGLE
+                            )
+                        },
+                        shape = RoundedCornerShape(3.dp),
+                        color = if (isAppSingle) Color(0xFF00E5FF).copy(alpha = 0.25f) else Color(0xFF0288D1).copy(alpha = 0.45f)
+                    ) {
+                        Text(
+                            text = if (isAppSingle) "Clean" else "Open",
+                            fontSize = 7.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White,
+                            modifier = Modifier.padding(horizontal = 3.dp, vertical = 1.dp)
+                        )
+                    }
                 }
 
-                if (state.isBatchRunning) {
+                if (state.isBatchRunning && state.batchRunningSection == "APPS") {
                     Surface(
                         onClick = { OverlayStateManager.stopBatchClear(context) },
                         shape = RoundedCornerShape(4.dp),
@@ -968,17 +987,7 @@ fun AppShortcutsGridBox(
                 } else if (shortcuts.isNotEmpty()) {
                     Surface(
                         onClick = {
-                            val targetApps = shortcuts.map { s ->
-                                val isLite = com.example.util.AppManagerHelper.isFacebookLite(s.packageName, s.appName)
-                                com.example.util.AppInfoItem(
-                                    appName = s.appName,
-                                    packageName = s.packageName,
-                                    isSelected = true,
-                                    isLiteStorageApp = isLite
-                                )
-                            }
-                            OverlayStateManager.selectAllAppsForClear(targetApps)
-                            OverlayStateManager.startBatchClear(context)
+                            OverlayStateManager.startAppSectionBatch(context)
                         },
                         shape = RoundedCornerShape(4.dp),
                         color = Color(0xFF0288D1)
@@ -1004,7 +1013,7 @@ fun AppShortcutsGridBox(
                         shortcut = pair[0],
                         modifier = Modifier.weight(1f),
                         onClick = {
-                            if (state.clearDataMode == com.example.service.ClearDataMode.SINGLE) {
+                            if (state.appSectionMode == com.example.service.ClearDataMode.SINGLE) {
                                 val isLite = com.example.util.AppManagerHelper.isFacebookLite(pair[0].packageName, pair[0].appName)
                                 OverlayStateManager.executeClearDataForApp(
                                     context,
@@ -1021,7 +1030,7 @@ fun AppShortcutsGridBox(
                             shortcut = pair[1],
                             modifier = Modifier.weight(1f),
                             onClick = {
-                                if (state.clearDataMode == com.example.service.ClearDataMode.SINGLE) {
+                                if (state.appSectionMode == com.example.service.ClearDataMode.SINGLE) {
                                     val isLite = com.example.util.AppManagerHelper.isFacebookLite(pair[1].packageName, pair[1].appName)
                                     OverlayStateManager.executeClearDataForApp(
                                         context,
@@ -1103,9 +1112,28 @@ fun ClearDataGridBox(
                         fontWeight = FontWeight.Bold,
                         color = Color(0xFFFF8A80)
                     )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    val isCleanSingle = state.cleanSectionMode == com.example.service.ClearDataMode.SINGLE
+                    Surface(
+                        onClick = {
+                            OverlayStateManager.setCleanSectionMode(
+                                if (isCleanSingle) com.example.service.ClearDataMode.BATCH else com.example.service.ClearDataMode.SINGLE
+                            )
+                        },
+                        shape = RoundedCornerShape(3.dp),
+                        color = if (isCleanSingle) Color(0xFFFF5252).copy(alpha = 0.25f) else Color(0xFFC2185B).copy(alpha = 0.45f)
+                    ) {
+                        Text(
+                            text = if (isCleanSingle) "Single" else "Batch",
+                            fontSize = 7.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White,
+                            modifier = Modifier.padding(horizontal = 3.dp, vertical = 1.dp)
+                        )
+                    }
                 }
 
-                if (state.isBatchRunning) {
+                if (state.isBatchRunning && state.batchRunningSection == "CLEAN") {
                     Surface(
                         onClick = { OverlayStateManager.stopBatchClear(context) },
                         shape = RoundedCornerShape(4.dp),
@@ -1121,7 +1149,7 @@ fun ClearDataGridBox(
                     }
                 } else if (apps.isNotEmpty()) {
                     Surface(
-                        onClick = { OverlayStateManager.startBatchClear(context) },
+                        onClick = { OverlayStateManager.startCleanSectionBatch(context) },
                         shape = RoundedCornerShape(4.dp),
                         color = Color(0xFFC2185B)
                     ) {

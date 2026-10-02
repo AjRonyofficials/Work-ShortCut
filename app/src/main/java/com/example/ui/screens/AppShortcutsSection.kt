@@ -35,6 +35,8 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -176,8 +178,14 @@ fun AppShortcutsSection(
             }
         }
 
-        // App Clean Mode Quick Controls (Single & Batch Mode)
+        // App Clean Mode Quick Controls (Independent for Apps Section)
         item {
+            val totalShortcuts = state.customAppShortcuts.size
+            val selectedCount = state.customAppShortcuts.count {
+                OverlayStateManager.isAppSectionShortcutSelectedForBatch(it.packageName)
+            }
+            val isAppsBatchRunning = state.isBatchRunning && state.batchRunningSection == "APPS"
+
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(14.dp),
@@ -199,7 +207,7 @@ fun AppShortcutsSection(
                             )
                             Spacer(modifier = Modifier.width(6.dp))
                             Text(
-                                text = "App Clean Controls",
+                                text = "Apps Clean Mode (Independent)",
                                 fontSize = 12.sp,
                                 fontWeight = FontWeight.Bold
                             )
@@ -212,9 +220,9 @@ fun AppShortcutsSection(
                                 .padding(2.dp),
                             horizontalArrangement = Arrangement.spacedBy(2.dp)
                         ) {
-                            val isSingle = state.clearDataMode == com.example.service.ClearDataMode.SINGLE
+                            val isSingle = state.appSectionMode == com.example.service.ClearDataMode.SINGLE
                             Surface(
-                                onClick = { OverlayStateManager.setClearDataMode(com.example.service.ClearDataMode.SINGLE) },
+                                onClick = { OverlayStateManager.setAppSectionMode(com.example.service.ClearDataMode.SINGLE) },
                                 shape = RoundedCornerShape(6.dp),
                                 color = if (isSingle) MaterialTheme.colorScheme.primary else Color.Transparent
                             ) {
@@ -227,9 +235,9 @@ fun AppShortcutsSection(
                                 )
                             }
 
-                            val isBatch = state.clearDataMode == com.example.service.ClearDataMode.BATCH
+                            val isBatch = state.appSectionMode == com.example.service.ClearDataMode.BATCH
                             Surface(
-                                onClick = { OverlayStateManager.setClearDataMode(com.example.service.ClearDataMode.BATCH) },
+                                onClick = { OverlayStateManager.setAppSectionMode(com.example.service.ClearDataMode.BATCH) },
                                 shape = RoundedCornerShape(6.dp),
                                 color = if (isBatch) com.example.ui.theme.BrandRose else Color.Transparent
                             ) {
@@ -246,41 +254,64 @@ fun AppShortcutsSection(
 
                     Spacer(modifier = Modifier.height(8.dp))
 
-                    if (state.clearDataMode == com.example.service.ClearDataMode.BATCH) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Text(
-                                text = "Batch Queue: ${state.selectedClearDataApps.size} apps queued",
-                                fontSize = 11.sp,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
+                    if (state.appSectionMode == com.example.service.ClearDataMode.BATCH) {
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text(
+                                    text = "Batch Queue: $selectedCount of $totalShortcuts apps selected",
+                                    fontSize = 11.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
 
-                            if (state.isBatchRunning) {
+                                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                    OutlinedButton(
+                                        onClick = { OverlayStateManager.selectAllAppSectionBatch(true) },
+                                        shape = RoundedCornerShape(6.dp),
+                                        modifier = Modifier.height(26.dp)
+                                    ) {
+                                        Text("All", fontSize = 9.sp)
+                                    }
+                                    OutlinedButton(
+                                        onClick = { OverlayStateManager.selectAllAppSectionBatch(false) },
+                                        shape = RoundedCornerShape(6.dp),
+                                        modifier = Modifier.height(26.dp)
+                                    ) {
+                                        Text("None", fontSize = 9.sp)
+                                    }
+                                }
+                            }
+
+                            if (isAppsBatchRunning) {
                                 Button(
                                     onClick = { OverlayStateManager.stopBatchClear(context) },
                                     shape = RoundedCornerShape(8.dp),
                                     colors = ButtonDefaults.buttonColors(containerColor = AlertRed),
-                                    modifier = Modifier.height(28.dp)
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(36.dp)
                                 ) {
-                                    Text("Stop (${state.batchCurrentAppIndex}/${state.batchTotalApps})", fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                    Text("■ Stop Apps Batch (${state.batchCurrentAppIndex}/${state.batchTotalApps})", fontSize = 11.sp, fontWeight = FontWeight.Bold)
                                 }
                             } else {
                                 Button(
-                                    onClick = { OverlayStateManager.startBatchClear(context) },
+                                    onClick = { OverlayStateManager.startAppSectionBatch(context) },
                                     shape = RoundedCornerShape(8.dp),
                                     colors = ButtonDefaults.buttonColors(containerColor = com.example.ui.theme.BrandRose),
-                                    modifier = Modifier.height(28.dp)
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(36.dp)
                                 ) {
-                                    Text("▶ Start Batch (${state.selectedClearDataApps.size})", fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                    Text("▶ Start Apps Batch ($selectedCount Apps)", fontSize = 11.sp, fontWeight = FontWeight.Bold)
                                 }
                             }
                         }
                     } else {
                         Text(
-                            text = "Single Mode: Tap any app card to clean individually.",
+                            text = "Single Mode: Tap any app card to clean individually or use the 🧹 button.",
                             fontSize = 11.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -336,12 +367,14 @@ fun AppShortcutsSection(
                     BrandBlue
                 }
 
+                val isSelectedForAppsBatch = OverlayStateManager.isAppSectionShortcutSelectedForBatch(shortcut.packageName)
+
                 Card(
                     modifier = Modifier
                         .fillMaxWidth()
                         .combinedClickable(
                             onClick = {
-                                if (state.clearDataMode == com.example.service.ClearDataMode.SINGLE) {
+                                if (state.appSectionMode == com.example.service.ClearDataMode.SINGLE) {
                                     val isLite = com.example.util.AppManagerHelper.isFacebookLite(shortcut.packageName, shortcut.appName)
                                     val appItem = com.example.util.AppInfoItem(
                                         appName = shortcut.appName,
@@ -372,6 +405,18 @@ fun AppShortcutsSection(
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
                         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                            // Checkbox for Apps Batch Selection when in Batch Mode
+                            if (state.appSectionMode == com.example.service.ClearDataMode.BATCH) {
+                                Checkbox(
+                                    checked = isSelectedForAppsBatch,
+                                    onCheckedChange = {
+                                        OverlayStateManager.toggleAppSectionBatchSelection(shortcut.packageName)
+                                    },
+                                    colors = CheckboxDefaults.colors(checkedColor = com.example.ui.theme.BrandRose),
+                                    modifier = Modifier.padding(end = 4.dp)
+                                )
+                            }
+
                             Surface(
                                 shape = RoundedCornerShape(8.dp),
                                 color = cardColor,
@@ -396,12 +441,19 @@ fun AppShortcutsSection(
                                     fontSize = 14.sp
                                 )
                                 Text(
-                                    text = if (state.clearDataMode == com.example.service.ClearDataMode.SINGLE)
+                                    text = if (state.appSectionMode == com.example.service.ClearDataMode.SINGLE)
                                         "Single Mode: Tap to Clean Data 🧹"
+                                    else if (isSelectedForAppsBatch)
+                                        "Queued in Apps Batch • Hold: Auto Close"
                                     else
                                         "Tap: Open • Hold: Auto Close",
                                     fontSize = 11.sp,
-                                    color = if (state.clearDataMode == com.example.service.ClearDataMode.SINGLE) com.example.ui.theme.BrandRose else BrandGreen,
+                                    color = if (state.appSectionMode == com.example.service.ClearDataMode.SINGLE)
+                                        com.example.ui.theme.BrandRose
+                                    else if (isSelectedForAppsBatch)
+                                        BrandGreen
+                                    else
+                                        MaterialTheme.colorScheme.onSurfaceVariant,
                                     fontWeight = FontWeight.SemiBold
                                 )
                             }

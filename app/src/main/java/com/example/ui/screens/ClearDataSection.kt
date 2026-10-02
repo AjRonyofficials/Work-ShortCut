@@ -192,10 +192,10 @@ fun ClearDataSection(
                         horizontalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
                         // Single Mode Option
-                        val isSingle = state.clearDataMode == ClearDataMode.SINGLE
+                        val isSingle = state.cleanSectionMode == ClearDataMode.SINGLE
                         Surface(
                             onClick = {
-                                OverlayStateManager.setClearDataMode(ClearDataMode.SINGLE)
+                                OverlayStateManager.setCleanSectionMode(ClearDataMode.SINGLE)
                             },
                             shape = RoundedCornerShape(8.dp),
                             color = if (isSingle) MaterialTheme.colorScheme.primary else Color.Transparent,
@@ -223,10 +223,10 @@ fun ClearDataSection(
                         }
 
                         // Batch Mode Option
-                        val isBatch = state.clearDataMode == ClearDataMode.BATCH
+                        val isBatch = state.cleanSectionMode == ClearDataMode.BATCH
                         Surface(
                             onClick = {
-                                OverlayStateManager.setClearDataMode(ClearDataMode.BATCH)
+                                OverlayStateManager.setCleanSectionMode(ClearDataMode.BATCH)
                             },
                             shape = RoundedCornerShape(8.dp),
                             color = if (isBatch) BrandRose else Color.Transparent,
@@ -256,7 +256,7 @@ fun ClearDataSection(
 
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
-                        text = if (state.clearDataMode == ClearDataMode.SINGLE)
+                        text = if (state.cleanSectionMode == ClearDataMode.SINGLE)
                             "⚡ Single Mode: নিচের তালিকা থেকে যেকোনো অ্যাপের 'Clear Data' বাটনে চাপ দিয়ে তাৎক্ষণিক ১টি অ্যাপ পরিষ্কার করুন।"
                         else
                             "🚀 Batch Mode: একাধিক অ্যাপ নির্বাচন করুন এবং একসাথে সবগুলোর জন্য স্বয়ংক্রিয় ধারাবাহিক (Sequential) ক্লিয়ার ডেটা চালান।",
@@ -269,7 +269,7 @@ fun ClearDataSection(
         }
 
         // Active Batch Running Card
-        if (state.clearDataMode == ClearDataMode.BATCH && state.isBatchRunning) {
+        if (state.cleanSectionMode == ClearDataMode.BATCH && state.isBatchRunning && state.batchRunningSection == "CLEAN") {
             item {
                 Card(
                     modifier = Modifier.fillMaxWidth(),
@@ -348,7 +348,7 @@ fun ClearDataSection(
         }
 
         // Batch Action Launcher (When in Batch Mode and not currently running)
-        if (state.clearDataMode == ClearDataMode.BATCH && !state.isBatchRunning) {
+        if (state.cleanSectionMode == ClearDataMode.BATCH && (!state.isBatchRunning || state.batchRunningSection != "CLEAN")) {
             item {
                 Card(
                     modifier = Modifier.fillMaxWidth(),
@@ -406,7 +406,7 @@ fun ClearDataSection(
 
                         Button(
                             onClick = {
-                                OverlayStateManager.startBatchClear(context)
+                                OverlayStateManager.startCleanSectionBatch(context)
                             },
                             shape = RoundedCornerShape(10.dp),
                             colors = ButtonDefaults.buttonColors(containerColor = BrandRose),
