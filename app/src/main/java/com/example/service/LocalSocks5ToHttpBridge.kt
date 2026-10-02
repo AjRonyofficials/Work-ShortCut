@@ -209,7 +209,7 @@ object LocalSocks5ToHttpBridge {
         val in2 = s2.getInputStream()
         val out2 = s2.getOutputStream()
 
-        val latch = java.util.concurrent.CountDownLatch(2)
+        val latch = java.util.concurrent.CountDownLatch(1)
 
         Thread {
             try {
@@ -220,7 +220,7 @@ object LocalSocks5ToHttpBridge {
                     out2.flush()
                 }
             } catch (_: Exception) {}
-            try { s2.shutdownOutput() } catch (_: Exception) {}
+            try { s2.close() } catch (_: Exception) {}
             latch.countDown()
         }.apply { isDaemon = true; start() }
 
@@ -233,11 +233,11 @@ object LocalSocks5ToHttpBridge {
                     out1.flush()
                 }
             } catch (_: Exception) {}
-            try { s1.shutdownOutput() } catch (_: Exception) {}
+            try { s1.close() } catch (_: Exception) {}
             latch.countDown()
         }.apply { isDaemon = true; start() }
 
-        try { latch.await(180, java.util.concurrent.TimeUnit.SECONDS) } catch (_: Exception) {}
+        try { latch.await() } catch (_: Exception) {}
     }
 
     private fun readFully(input: InputStream, buffer: ByteArray) {

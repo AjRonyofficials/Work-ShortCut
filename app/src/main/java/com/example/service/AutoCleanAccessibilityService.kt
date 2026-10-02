@@ -833,52 +833,50 @@ class AutoCleanAccessibilityService : AccessibilityService() {
 
     /**
      * Ultra-fast close sequence:
-     * Navigates back, returns to home, kills background process, finishes in ~80ms.
+     * Navigates double-back + home, kills background process, finishes in ~20ms.
      */
     private fun autoCloseCleanedSequence() {
         val pkgToKill = targetPackage
+        performGlobalAction(GLOBAL_ACTION_BACK)
         mainHandler.postDelayed({
             performGlobalAction(GLOBAL_ACTION_BACK)
-            mainHandler.postDelayed({
-                performGlobalAction(GLOBAL_ACTION_HOME)
-                pkgToKill?.let { pkg ->
-                    try {
-                        val am = getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager
-                        am?.killBackgroundProcesses(pkg)
-                        Runtime.getRuntime().exec(arrayOf("am", "force-stop", pkg))
-                    } catch (_: Exception) {}
-                }
-                Toast.makeText(applicationContext, "✓ $targetAppName ডেটা সফলভাবে ক্লিয়ার হয়েছে!", Toast.LENGTH_SHORT).show()
-                isAutomating = false
-                targetPackage = null
-                step = 0
-                liteStep = LITE_STEP_IDLE
-                isTargetLiteMode = false
-            }, 70)
-        }, 70)
+            performGlobalAction(GLOBAL_ACTION_HOME)
+            pkgToKill?.let { pkg ->
+                try {
+                    val am = getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager
+                    am?.killBackgroundProcesses(pkg)
+                    Runtime.getRuntime().exec(arrayOf("am", "force-stop", pkg))
+                } catch (_: Exception) {}
+            }
+            Toast.makeText(applicationContext, "✓ $targetAppName ডেটা ক্লিয়ার ও অ্যাপ বন্ধ হয়েছে!", Toast.LENGTH_SHORT).show()
+            isAutomating = false
+            targetPackage = null
+            step = 0
+            liteStep = LITE_STEP_IDLE
+            isTargetLiteMode = false
+        }, 20)
     }
 
     private fun finishAndCloseSettings(message: String) {
         val pkgToKill = targetPackage
+        performGlobalAction(GLOBAL_ACTION_BACK)
         mainHandler.postDelayed({
             performGlobalAction(GLOBAL_ACTION_BACK)
-            mainHandler.postDelayed({
-                performGlobalAction(GLOBAL_ACTION_HOME)
-                pkgToKill?.let { pkg ->
-                    try {
-                        val am = getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager
-                        am?.killBackgroundProcesses(pkg)
-                        Runtime.getRuntime().exec(arrayOf("am", "force-stop", pkg))
-                    } catch (_: Exception) {}
-                }
-                Toast.makeText(applicationContext, message, Toast.LENGTH_SHORT).show()
-                isAutomating = false
-                targetPackage = null
-                step = 0
-                liteStep = LITE_STEP_IDLE
-                isTargetLiteMode = false
-            }, 60)
-        }, 60)
+            performGlobalAction(GLOBAL_ACTION_HOME)
+            pkgToKill?.let { pkg ->
+                try {
+                    val am = getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager
+                    am?.killBackgroundProcesses(pkg)
+                    Runtime.getRuntime().exec(arrayOf("am", "force-stop", pkg))
+                } catch (_: Exception) {}
+            }
+            Toast.makeText(applicationContext, message, Toast.LENGTH_SHORT).show()
+            isAutomating = false
+            targetPackage = null
+            step = 0
+            liteStep = LITE_STEP_IDLE
+            isTargetLiteMode = false
+        }, 20)
     }
 
     private fun findNodeByKeywords(

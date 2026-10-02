@@ -94,16 +94,9 @@ class SuperProxyVpnService : VpnService() {
                 .setSession("SuperProxy: $profileName")
                 .setMtu(1500)
                 .addAddress("10.0.0.2", 24)
-                .addDnsServer("10.0.0.2") // Handled locally by mapdns on tun0
+                .addDnsServer("10.0.0.2") // Handled locally in-memory by mapdns on tun0
                 .addRoute("240.0.0.0", 4) // Synthetic mapped DNS network
                 .addRoute("0.0.0.0", 0)   // Route entire device IPv4 traffic into tun0
-
-            // Full Dual-Stack IPv4 & IPv6 Support:
-            try {
-                builder.addAddress("fc00::2", 64)
-                builder.addDnsServer("fc00::2") // Dual-stack IPv6 DNS
-                builder.addRoute("::", 0)       // Capture 100% of device IPv6 traffic
-            } catch (_: Exception) {}
 
             // Unmetered on Android 10+ so OS and apps don't restrict background sync
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
@@ -177,12 +170,13 @@ class SuperProxyVpnService : VpnService() {
             sb.append("  name: tun0\n")
             sb.append("  mtu: 1500\n")
             sb.append("  ipv4: 10.0.0.2\n")
-            sb.append("  ipv6: fc00::2\n")
             sb.append("\n")
             sb.append("socks5:\n")
             sb.append("  port: ").append(finalPort).append("\n")
             sb.append("  address: '").append(finalServerIp).append("'\n")
-            sb.append("  udp: 'tcp'\n")
+            if (!isHttp) {
+                sb.append("  udp: 'tcp'\n")
+            }
             if (finalUser.isNotBlank() && finalPass.isNotBlank()) {
                 val safeUser = finalUser.replace("'", "''")
                 val safePass = finalPass.replace("'", "''")
@@ -195,10 +189,10 @@ class SuperProxyVpnService : VpnService() {
             sb.append("  port: 53\n")
             sb.append("  network: 240.0.0.0\n")
             sb.append("  netmask: 240.0.0.0\n")
-            sb.append("  cache-size: 4096\n")
+            sb.append("  cache-size: 8192\n")
             sb.append("\n")
             sb.append("misc:\n")
-            sb.append("  task-stack-size: 40960\n")
+            sb.append("  task-stack-size: 20480\n")
             sb.append("  connect-timeout: 10000\n")
             sb.append("  tcp-read-write-timeout: 300000\n")
             sb.append("  udp-read-write-timeout: 60000\n")
