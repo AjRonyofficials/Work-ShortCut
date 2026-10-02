@@ -3,6 +3,8 @@ package com.example.ui.screens
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -119,17 +121,14 @@ fun MainScreen(
 ) {
     var selectedTab by remember { mutableStateOf(AppNavTab.NAMES) }
     val context = LocalContext.current
-    var showDeveloperIntroDialog by remember { mutableStateOf(true) }
-    var showDeveloperNoticeDialog by remember { mutableStateOf(false) }
+    var showBottomDeveloperCredit by remember { mutableStateOf(true) }
+    var showDeveloperNoticeDialog by remember { mutableStateOf(true) }
     var noticeOkCountdown by remember { mutableStateOf(3) }
 
-    // Auto-dismiss Intro Dialog after 3 seconds and trigger main Notice Dialog
-    androidx.compose.runtime.LaunchedEffect(showDeveloperIntroDialog) {
-        if (showDeveloperIntroDialog) {
-            kotlinx.coroutines.delay(3000L)
-            showDeveloperIntroDialog = false
-            showDeveloperNoticeDialog = true
-        }
+    // Auto-dismiss bottom subtle developer watermark after 3 seconds
+    androidx.compose.runtime.LaunchedEffect(Unit) {
+        kotlinx.coroutines.delay(3000L)
+        showBottomDeveloperCredit = false
     }
 
     // 3-second countdown before OK button becomes clickable in Notice Dialog
@@ -143,83 +142,7 @@ fun MainScreen(
         }
     }
 
-    // 1. Initial 3-Second Developer Intro Popup
-    if (showDeveloperIntroDialog) {
-        AlertDialog(
-            onDismissRequest = {
-                showDeveloperIntroDialog = false
-                showDeveloperNoticeDialog = true
-            },
-            icon = {
-                Box(
-                    modifier = Modifier
-                        .size(54.dp)
-                        .clip(CircleShape)
-                        .background(
-                            androidx.compose.ui.graphics.Brush.linearGradient(
-                                listOf(Color(0xFF00C6FF), Color(0xFF0072FF))
-                            )
-                        ),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Person,
-                        contentDescription = "Developer",
-                        tint = Color.White,
-                        modifier = Modifier.size(32.dp)
-                    )
-                }
-            },
-            title = {
-                Text(
-                    text = "Work ShortCut",
-                    fontWeight = FontWeight.ExtraBold,
-                    fontSize = 20.sp,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-            },
-            text = {
-                Column(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Surface(
-                        shape = RoundedCornerShape(12.dp),
-                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f),
-                        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.4f))
-                    ) {
-                        Text(
-                            text = "Developed By Ismail Islam Rony",
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 15.sp,
-                            color = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp)
-                        )
-                    }
-                    Text(
-                        text = "স্বাগতম! ৩ সেকেন্ডে নোটিশ চালু হচ্ছে...",
-                        fontSize = 12.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        showDeveloperIntroDialog = false
-                        showDeveloperNoticeDialog = true
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
-                    shape = RoundedCornerShape(10.dp)
-                ) {
-                    Text("Continue", fontWeight = FontWeight.Bold)
-                }
-            }
-        )
-    }
-
-    // 2. Main Notice Dialog with Revised Text
+    // Main Notice Dialog with Revised Text
     if (showDeveloperNoticeDialog) {
         val isOkActive = noticeOkCountdown == 0
         AlertDialog(
@@ -256,14 +179,14 @@ fun MainScreen(
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     Text(
-                        text = "ভদ্র মানুষের জন্য বিনীত অনুরোধ আর অভদ্রের জন্য পিতৃ পরিচয় হীন আপনার পিতৃ পরিচয় ঠিক থাকলে অ্যাপ এর নাম টা নিজের নামে চেইঞ্জ করে চালিয়ে দিয়েন না। কাউকে পারমিশন দেওয়া হবে না চাইলেও কারণ অ্যাপ ফ্রি কোনো টেলিগ্রাম চ্যানেল বা কিছুর রিকোয়ারমেন্ট নেই বা প্রমোশন নাই তাই এমনিতেই নিজের চ্যানেলে শেয়ার করতে পারেন ধন্যবাদ।",
+                        text = "ভদ্র মানুষের জন্য বিনীত অনুরোধ আপনার পিতৃ পরিচয় ঠিক থাকলে অ্যাপ এর নাম টা নিজের নামে চেইঞ্জ করে চালিয়ে দিয়েন না। কাউকে পারমিশন দেওয়া হবে না চাইলেও কারণ অ্যাপ ফ্রি কোনো টেলিগ্রাম চ্যানেল বা কিছুর রিকোয়ারমেন্ট নেই বা প্রমোশন নাই তাই এমনিতেই নিজের চ্যানেলে শেয়ার করতে পারেন ধন্যবাদ।",
                         fontSize = 14.sp,
                         lineHeight = 21.sp,
                         fontWeight = FontWeight.Medium,
                         color = MaterialTheme.colorScheme.onSurface
                     )
                     Text(
-                        text = "কোন পরিবর্তন করলে ডেভলপারের সাথে যোগাযোগ করেন। কোনো সমস্যা বা আপডেটের জন্য 'Contact Developer' বাটনে ক্লিক করে সরাসরি যোগাযোগ করতে পারেন।",
+                        text = "কোনো পরিবর্তন চাইলে ডেভলপারের সাথে যোগাযোগ করেন। কোনো সমস্যা বা আপডেটের জন্য 'Contact Developer' বাটনে ক্লিক করে সরাসরি যোগাযোগ করতে পারেন।",
                         fontSize = 13.sp,
                         lineHeight = 19.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -451,6 +374,31 @@ fun MainScreen(
                     AppNavTab.CLEAR_DATA -> ClearDataSection(state = state)
                     AppNavTab.SETTINGS -> SettingsSection(state = state)
                 }
+            }
+        }
+
+        // Subtle Tiny Animated Developer Credit at Bottom of App (Font size 3-7sp)
+        androidx.compose.animation.AnimatedVisibility(
+            visible = showBottomDeveloperCredit,
+            enter = androidx.compose.animation.fadeIn() + androidx.compose.animation.slideInVertically { it / 2 },
+            exit = androidx.compose.animation.fadeOut() + androidx.compose.animation.slideOutVertically { it / 2 },
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(bottom = 76.dp)
+        ) {
+            Surface(
+                shape = RoundedCornerShape(12.dp),
+                color = Color.Black.copy(alpha = 0.75f),
+                border = androidx.compose.foundation.BorderStroke(0.6.dp, Color.White.copy(alpha = 0.2f))
+            ) {
+                Text(
+                    text = "Developed By Ismail Islam Rony",
+                    fontSize = 6.sp,
+                    color = Color.White.copy(alpha = 0.85f),
+                    fontWeight = FontWeight.Medium,
+                    letterSpacing = 0.4.sp,
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                )
             }
         }
     }
