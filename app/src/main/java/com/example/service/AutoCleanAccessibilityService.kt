@@ -62,6 +62,7 @@ class AutoCleanAccessibilityService : AccessibilityService() {
 
         private var step: Int = 0
         private var lastActionTime: Long = 0L
+        private var accountsMarkedTime: Long = 0L
         private var clickedClearCache: Boolean = false
         private var clickedClearData: Boolean = false
 
@@ -80,6 +81,7 @@ class AutoCleanAccessibilityService : AccessibilityService() {
             isTargetLiteMode = isLiteMode || com.example.util.AppManagerHelper.isFacebookLite(packageName, appName)
             step = 0
             liteStep = LITE_STEP_IDLE
+            accountsMarkedTime = 0L
             clickedClearCache = false
             clickedClearData = false
             lastActionTime = System.currentTimeMillis()
@@ -537,10 +539,11 @@ class AutoCleanAccessibilityService : AccessibilityService() {
 
     /**
      * Dedicated High-Speed Facebook Lite Handler:
-     * 1. Checks "Accounts and settings" checkbox immediately.
-     * 2. Taps "OK" on confirmation popup immediately without delay.
+     * 1. Checks "Accounts and settings" checkbox.
+     * 2. Exactly 1-second delay (1000ms) before clicking "OK" on confirmation popup,
+     *    ensuring the checkbox mark is fully registered by OS and dialog is stable.
      * 3. Taps "CLEAR" button without missing.
-     * 4. Confirms final popup and closes settings in milliseconds!
+     * 4. Confirms final popup and closes settings and app smoothly in milliseconds!
      */
     private fun handleLiteStorageScreenFlow(rootNode: AccessibilityNodeInfo) {
         val now = System.currentTimeMillis()
@@ -549,6 +552,15 @@ class AutoCleanAccessibilityService : AccessibilityService() {
         // 1. Positive dialog button check (OK / Confirm)
         val okDialogBtn = findLiteOkDialogButton(rootNode)
         if (okDialogBtn != null && okDialogBtn.isEnabled) {
+            // If waiting for the accounts popup, enforce the requested 1-second delay
+            if (liteStep == LITE_STEP_WAIT_ACCOUNTS_POPUP) {
+                val elapsedSinceMark = now - accountsMarkedTime
+                if (elapsedSinceMark < 1000L) {
+                    // Do not click yet, allow full 1-second stabilization
+                    return
+                }
+            }
+
             clickNode(okDialogBtn)
             lastActionTime = now
 
@@ -562,7 +574,7 @@ class AutoCleanAccessibilityService : AccessibilityService() {
                     rootInActiveWindow?.let { refreshedRoot ->
                         clickClearButtonAndFinish(refreshedRoot)
                     }
-                }, 90)
+                }, 100)
             }
             return
         }
@@ -572,10 +584,11 @@ class AutoCleanAccessibilityService : AccessibilityService() {
         if (accountsRow != null && !accountsRow.isChecked && liteStep < LITE_STEP_CLICK_CLEAR) {
             ensureClearAllChecked(rootNode)
             liteStep = LITE_STEP_WAIT_ACCOUNTS_POPUP
+            accountsMarkedTime = now
             lastActionTime = now
             clickNode(accountsRow.clickableTarget)
 
-            // Look for popup immediately (80ms)
+            // Exactly 1 second (1000ms) delay so user & OS see the mark cleanly before clicking OK popup
             mainHandler.postDelayed({
                 rootInActiveWindow?.let { refreshedRoot ->
                     val popupOk = findLiteOkDialogButton(refreshedRoot)
@@ -588,12 +601,12 @@ class AutoCleanAccessibilityService : AccessibilityService() {
                             rootInActiveWindow?.let { rootAfterOk ->
                                 clickClearButtonAndFinish(rootAfterOk)
                             }
-                        }, 90)
+                        }, 100)
                     } else {
                         clickClearButtonAndFinish(refreshedRoot)
                     }
                 }
-            }, 80)
+            }, 1000L)
             return
         }
 
