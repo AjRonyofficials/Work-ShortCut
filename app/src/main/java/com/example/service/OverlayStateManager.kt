@@ -96,6 +96,10 @@ data class OverlayUiState(
     val autoReconnect: Boolean = true,
     val vibrationEnabled: Boolean = true,
     val lastGeneratedName: String = "",
+    val isRandomPasswordMode: Boolean = false,
+    val randomPwLength: Int = 12,
+    val randomPwIncludeSymbols: Boolean = true,
+    val currentRandomPassword: String = "",
     val selectedClearDataApps: List<com.example.util.AppInfoItem> = emptyList(),
     val isClearDataOverlayExpanded: Boolean = false,
     val backgroundDataCaching: Boolean = true,
@@ -200,6 +204,10 @@ object OverlayStateManager {
             val profileName = p.getString("proxy_profile_name", "Primary Proxy") ?: "Primary Proxy"
             val proxyPassword = p.getString("proxy_password", "") ?: ""
             val proxyAllowedApps = p.getStringSet("proxy_allowed_apps", emptySet())?.toList() ?: emptyList()
+            val isRandomPwMode = p.getBoolean("is_random_pw_mode", false)
+            val randomPwLen = p.getInt("random_pw_length", 12)
+            val randomPwSymbols = p.getBoolean("random_pw_symbols", true)
+            val initialRandomPw = generateStrongPassword(randomPwLen, randomPwSymbols)
 
             val savedShortcutsString = p.getString("custom_app_shortcuts", null)
             val loadedShortcuts = if (savedShortcutsString != null) {
@@ -245,6 +253,10 @@ object OverlayStateManager {
                     vibrationEnabled = vibEnabled,
                     twoFactorKey = saved2faKey,
                     savedPasswordText = savedPwText,
+                    isRandomPasswordMode = isRandomPwMode,
+                    randomPwLength = randomPwLen,
+                    randomPwIncludeSymbols = randomPwSymbols,
+                    currentRandomPassword = initialRandomPw,
                     draftRow = initialDraft,
                     selectedClearDataApps = loadedApps,
                     backgroundDataCaching = bgDataCaching,
@@ -268,6 +280,72 @@ object OverlayStateManager {
         com.example.worker.AutomatedCacheCleanerWorker.schedule(context)
     }
 
+    fun generateStrongPassword(length: Int, includeSymbols: Boolean): String {
+        val uppercase = "ABCDEFGHJKLMNPQRSTUVWXYZ"
+        val lowercase = "abcdefghijkmnopqrstuvwxyz"
+        val numbers = "23456789"
+        val symbols = "!@#$%&*?"
+
+        val safeLength = length.coerceIn(8, 16)
+        val charPool = if (includeSymbols) uppercase + lowercase + numbers + symbols else uppercase + lowercase + numbers
+
+        val sb = java.lang.StringBuilder()
+        // Guarantee at least one of each class
+        sb.append(uppercase[kotlin.random.Random.nextInt(uppercase.length)])
+        sb.append(lowercase[kotlin.random.Random.nextInt(lowercase.length)])
+        sb.append(numbers[kotlin.random.Random.nextInt(numbers.length)])
+        if (includeSymbols) {
+            sb.append(symbols[kotlin.random.Random.nextInt(symbols.length)])
+        }
+
+        while (sb.length < safeLength) {
+            sb.append(charPool[kotlin.random.Random.nextInt(charPool.length)])
+        }
+
+        // Shuffle characters
+        val list = sb.toString().toList().shuffled()
+        return list.joinToString("")
+    }
+
+    fun setRandomPasswordMode(enabled: Boolean) {
+        _uiState.update { it.copy(isRandomPasswordMode = enabled) }
+        prefs?.edit()?.putBoolean("is_random_pw_mode", enabled)?.apply()
+    }
+
+    fun setRandomPasswordLength(length: Int) {
+        val safeLen = length.coerceIn(8, 16)
+        val newPw = generateStrongPassword(safeLen, _uiState.value.randomPwIncludeSymbols)
+        _uiState.update { it.copy(randomPwLength = safeLen, currentRandomPassword = newPw) }
+        prefs?.edit()?.putInt("random_pw_length", safeLen)?.apply()
+    }
+
+    fun setRandomPasswordSymbols(include: Boolean) {
+        val newPw = generateStrongPassword(_uiState.value.randomPwLength, include)
+        _uiState.update { it.copy(randomPwIncludeSymbols = include, currentRandomPassword = newPw) }
+        prefs?.edit()?.putBoolean("random_pw_symbols", include)?.apply()
+    }
+
+    fun regenerateRandomPassword(): String {
+        val pw = generateStrongPassword(_uiState.value.randomPwLength, _uiState.value.randomPwIncludeSymbols)
+        _uiState.update { it.copy(currentRandomPassword = pw) }
+        return pw
+    }
+
+    fun copyRandomPasswordToClipboard(context: Context): String {
+        val state = _uiState.value
+        val pwToCopy = if (state.currentRandomPassword.isNotBlank()) state.currentRandomPassword
+        else generateStrongPassword(state.randomPwLength, state.randomPwIncludeSymbols)
+
+        com.example.util.ClipboardHelper.copyToClipboard(context, pwToCopy, "Random Password")
+        VibrationHelper.vibrateSuccess(context)
+        Toast.makeText(context, "✓ Copied ($pwToCopy) & New PW Generated!", Toast.LENGTH_SHORT).show()
+
+        // Generate immediate next password ready for next tap!
+        val nextPw = generateStrongPassword(state.randomPwLength, state.randomPwIncludeSymbols)
+        _uiState.update { it.copy(currentRandomPassword = nextPw) }
+        return pwToCopy
+    }
+
     fun setSavedPasswordText(context: Context, newPassword: String) {
         val clean = newPassword.trim()
         _uiState.update { it.copy(savedPasswordText = clean) }
@@ -277,6 +355,11 @@ object OverlayStateManager {
     }
 
     fun copySavedPasswordToClipboard(context: Context, customText: String? = null) {
+        if (_uiState.value.isRandomPasswordMode && customText == null) {
+            copyRandomPasswordToClipboard(context)
+            return
+        }
+
         val textToCopy = customText ?: _uiState.value.savedPasswordText
         if (textToCopy.isNotEmpty()) {
             com.example.util.ClipboardHelper.copyToClipboard(context, textToCopy, "Saved Password")

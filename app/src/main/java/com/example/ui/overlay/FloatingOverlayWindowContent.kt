@@ -38,6 +38,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import com.example.util.NameGenerator
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
@@ -364,8 +365,9 @@ fun FloatingOverlayWindowContent(
                     val gradPwCopy = Brush.verticalGradient(
                         listOf(Color(0xFFAB47BC), Color(0xFF7B1FA2), Color(0xFF4A148C))
                     )
+                    val pwTitle = if (state.isRandomPasswordMode) "PW (Random)" else "PW Copy"
                     GlossyTactileButton(
-                        title = "PW Copy",
+                        title = pwTitle,
                         icon = Icons.Default.Key,
                         brush = gradPwCopy,
                         shape = tabShape,
@@ -376,6 +378,25 @@ fun FloatingOverlayWindowContent(
                         },
                         modifier = Modifier.fillMaxWidth(),
                         testTag = "tab_pw_copy"
+                    )
+
+                    // 6. NAMES TAB (One-tap generate & copy name directly to clipboard)
+                    val countryOpt = NameGenerator.getCountryOption(state.selectedCountry)
+                    val gradNames = Brush.verticalGradient(
+                        listOf(Color(0xFF0288D1), Color(0xFF01579B), Color(0xFF002F6C))
+                    )
+                    GlossyTactileButton(
+                        title = "${countryOpt.flag} Names ${state.selectedCountry}",
+                        icon = Icons.Default.Person,
+                        brush = gradNames,
+                        shape = tabShape,
+                        fontSize = 11.sp,
+                        horizontalPadding = 6.dp,
+                        onClick = {
+                            OverlayStateManager.generateAndCopyName(context)
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        testTag = "tab_names"
                     )
 
                     // 5. CUSTOM USER APPS (Via, Dual, FB, Multiple Space)

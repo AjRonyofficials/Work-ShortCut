@@ -508,12 +508,27 @@ object NameGenerator {
         val firstName = pool[Random.nextInt(pool.size)]
         val lastName = data.lastNames[Random.nextInt(data.lastNames.size)]
 
-        val prefix = if (prefixes.isNotEmpty() && Random.nextInt(100) < 45) {
+        val prefix = if (prefixes.isNotEmpty() && Random.nextInt(100) < 40) {
             val p = prefixes[Random.nextInt(prefixes.size)].trim()
-            if (p.isNotEmpty()) " " else ""
+            if (p.isNotEmpty()) "$p " else ""
         } else ""
 
-        return " ".trim()
+        val fullName = "$prefix$firstName $lastName".trim()
+        return fullName
+    }
+
+    fun generateNameList(countryCode: String, gender: Gender, count: Int = 12): List<String> {
+        val list = mutableListOf<String>()
+        val maxAttempts = count * 3
+        var attempts = 0
+        while (list.size < count && attempts < maxAttempts) {
+            attempts++
+            val name = generateName(countryCode, gender)
+            if (name.isNotBlank() && !list.contains(name)) {
+                list.add(name)
+            }
+        }
+        return list
     }
 
     fun countryCodeToEmojiFlag(countryCode: String): String {

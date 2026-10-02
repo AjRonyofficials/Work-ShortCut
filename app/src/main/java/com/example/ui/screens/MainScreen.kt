@@ -54,6 +54,7 @@ import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
@@ -118,11 +119,113 @@ fun MainScreen(
 ) {
     var selectedTab by remember { mutableStateOf(AppNavTab.NAMES) }
     val context = LocalContext.current
-    var showDeveloperNoticeDialog by remember { mutableStateOf(true) }
+    var showDeveloperIntroDialog by remember { mutableStateOf(true) }
+    var showDeveloperNoticeDialog by remember { mutableStateOf(false) }
+    var noticeOkCountdown by remember { mutableStateOf(3) }
 
-    if (showDeveloperNoticeDialog) {
+    // Auto-dismiss Intro Dialog after 3 seconds and trigger main Notice Dialog
+    androidx.compose.runtime.LaunchedEffect(showDeveloperIntroDialog) {
+        if (showDeveloperIntroDialog) {
+            kotlinx.coroutines.delay(3000L)
+            showDeveloperIntroDialog = false
+            showDeveloperNoticeDialog = true
+        }
+    }
+
+    // 3-second countdown before OK button becomes clickable in Notice Dialog
+    androidx.compose.runtime.LaunchedEffect(showDeveloperNoticeDialog) {
+        if (showDeveloperNoticeDialog) {
+            noticeOkCountdown = 3
+            while (noticeOkCountdown > 0) {
+                kotlinx.coroutines.delay(1000L)
+                noticeOkCountdown--
+            }
+        }
+    }
+
+    // 1. Initial 3-Second Developer Intro Popup
+    if (showDeveloperIntroDialog) {
         AlertDialog(
-            onDismissRequest = { showDeveloperNoticeDialog = false },
+            onDismissRequest = {
+                showDeveloperIntroDialog = false
+                showDeveloperNoticeDialog = true
+            },
+            icon = {
+                Box(
+                    modifier = Modifier
+                        .size(54.dp)
+                        .clip(CircleShape)
+                        .background(
+                            androidx.compose.ui.graphics.Brush.linearGradient(
+                                listOf(Color(0xFF00C6FF), Color(0xFF0072FF))
+                            )
+                        ),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Person,
+                        contentDescription = "Developer",
+                        tint = Color.White,
+                        modifier = Modifier.size(32.dp)
+                    )
+                }
+            },
+            title = {
+                Text(
+                    text = "Work ShortCut",
+                    fontWeight = FontWeight.ExtraBold,
+                    fontSize = 20.sp,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+            },
+            text = {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.4f))
+                    ) {
+                        Text(
+                            text = "Developed By Ismail Islam Rony",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 15.sp,
+                            color = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp)
+                        )
+                    }
+                    Text(
+                        text = "স্বাগতম! ৩ সেকেন্ডে নোটিশ চালু হচ্ছে...",
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showDeveloperIntroDialog = false
+                        showDeveloperNoticeDialog = true
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
+                    shape = RoundedCornerShape(10.dp)
+                ) {
+                    Text("Continue", fontWeight = FontWeight.Bold)
+                }
+            }
+        )
+    }
+
+    // 2. Main Notice Dialog with Revised Text
+    if (showDeveloperNoticeDialog) {
+        val isOkActive = noticeOkCountdown == 0
+        AlertDialog(
+            onDismissRequest = {
+                if (isOkActive) showDeveloperNoticeDialog = false
+            },
             icon = {
                 Box(
                     modifier = Modifier
@@ -153,14 +256,14 @@ fun MainScreen(
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     Text(
-                        text = "আপনার পিতৃ পরিচয় ঠিক থাকলে অ্যাপ এর নাম টা নিজের নামে চেইঞ্জ করে চালিয়ে দিয়েন না, আগে পারমিশন নিয়েন।",
+                        text = "ভদ্র মানুষের জন্য বিনীত অনুরোধ আর অভদ্রের জন্য পিতৃ পরিচয় হীন আপনার পিতৃ পরিচয় ঠিক থাকলে অ্যাপ এর নাম টা নিজের নামে চেইঞ্জ করে চালিয়ে দিয়েন না। কাউকে পারমিশন দেওয়া হবে না চাইলেও কারণ অ্যাপ ফ্রি কোনো টেলিগ্রাম চ্যানেল বা কিছুর রিকোয়ারমেন্ট নেই বা প্রমোশন নাই তাই এমনিতেই নিজের চ্যানেলে শেয়ার করতে পারেন ধন্যবাদ।",
                         fontSize = 14.sp,
-                        lineHeight = 20.sp,
+                        lineHeight = 21.sp,
                         fontWeight = FontWeight.Medium,
                         color = MaterialTheme.colorScheme.onSurface
                     )
                     Text(
-                        text = "আর কোনো আপডেট চাইলে বা সমস্যা হলে 'Contact Developer' এ চাপ দিলে সরাসরি টেলিগ্রামে যোগাযোগ করতে পারবেন।",
+                        text = "কোন পরিবর্তন করলে ডেভলপারের সাথে যোগাযোগ করেন। কোনো সমস্যা বা আপডেটের জন্য 'Contact Developer' বাটনে ক্লিক করে সরাসরি যোগাযোগ করতে পারেন।",
                         fontSize = 13.sp,
                         lineHeight = 19.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -169,11 +272,19 @@ fun MainScreen(
             },
             confirmButton = {
                 Button(
-                    onClick = { showDeveloperNoticeDialog = false },
-                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
+                    onClick = {
+                        if (isOkActive) showDeveloperNoticeDialog = false
+                    },
+                    enabled = isOkActive,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = if (isOkActive) MaterialTheme.colorScheme.primary else Color.Gray
+                    ),
                     shape = RoundedCornerShape(10.dp)
                 ) {
-                    Text("OK / ঠিক আছে", fontWeight = FontWeight.Bold)
+                    Text(
+                        text = if (isOkActive) "OK / ঠিক আছে" else "অপেক্ষা করুন (${noticeOkCountdown}s)",
+                        fontWeight = FontWeight.Bold
+                    )
                 }
             },
             dismissButton = {

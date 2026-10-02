@@ -613,6 +613,15 @@ fun NameGeneratorSection(
         if (state.lastGeneratedName.isNotEmpty()) {
             Spacer(modifier = Modifier.height(14.dp))
             Surface(
+                onClick = {
+                    com.example.util.ClipboardHelper.copyToClipboard(
+                        context,
+                        state.lastGeneratedName,
+                        "Name",
+                        "Copied: ${state.lastGeneratedName}"
+                    )
+                    com.example.util.VibrationHelper.vibrateSuccess(context)
+                },
                 shape = RoundedCornerShape(12.dp),
                 color = MaterialTheme.colorScheme.surfaceVariant,
                 border = androidx.compose.foundation.BorderStroke(1.dp, BrandGreen.copy(alpha = 0.5f)),
@@ -623,9 +632,9 @@ fun NameGeneratorSection(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    Column {
+                    Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            text = "Last Generated & Copied:",
+                            text = "Last Generated & Copied (Tap to Copy again):",
                             style = MaterialTheme.typography.labelSmall,
                             color = BrandGreen,
                             fontWeight = FontWeight.Bold
@@ -644,12 +653,78 @@ fun NameGeneratorSection(
                             "Name",
                             "Copied: ${state.lastGeneratedName}"
                         )
+                        com.example.util.VibrationHelper.vibrateSuccess(context)
                     }) {
                         Icon(
                             imageVector = Icons.Default.ContentCopy,
                             contentDescription = "Copy Again",
                             tint = BrandBlue
                         )
+                    }
+                }
+            }
+        }
+
+        // Quick Instant Name Recommendations for this country
+        val quickSampleNames = remember(state.selectedCountry, state.selectedGender) {
+            NameGenerator.generateNameList(state.selectedCountry, state.selectedGender, 8)
+        }
+
+        if (quickSampleNames.isNotEmpty()) {
+            Spacer(modifier = Modifier.height(20.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "Quick Tap-to-Copy Names (${state.selectedCountry}):",
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.Bold
+                )
+                Text(
+                    text = "Tap to Copy",
+                    fontSize = 11.sp,
+                    color = BrandGreen,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+            Spacer(modifier = Modifier.height(8.dp))
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                quickSampleNames.forEach { name ->
+                    Surface(
+                        onClick = {
+                            com.example.util.ClipboardHelper.copyToClipboard(
+                                context,
+                                name,
+                                "Name",
+                                "✓ Copied to clipboard: $name"
+                            )
+                            com.example.util.VibrationHelper.vibrateSuccess(context)
+                        },
+                        shape = RoundedCornerShape(10.dp),
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                        border = androidx.compose.foundation.BorderStroke(0.8.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text(
+                                text = name,
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Icon(
+                                imageVector = Icons.Default.ContentCopy,
+                                contentDescription = "Copy",
+                                tint = BrandBlue,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
                     }
                 }
             }
@@ -674,6 +749,7 @@ fun NameGeneratorSection(
                                 "Name",
                                 "Copied: $name"
                             )
+                            com.example.util.VibrationHelper.vibrateSuccess(context)
                         },
                         shape = RoundedCornerShape(8.dp),
                         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
