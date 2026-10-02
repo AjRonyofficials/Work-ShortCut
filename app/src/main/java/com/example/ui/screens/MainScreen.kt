@@ -70,6 +70,7 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -125,14 +126,30 @@ fun MainScreen(
 ) {
     var selectedTab by remember { mutableStateOf(AppNavTab.NAMES) }
     val context = LocalContext.current
-    var showBottomDeveloperCredit by remember { mutableStateOf(true) }
-    var showDeveloperNoticeDialog by remember { mutableStateOf(true) }
+    var showBottomDeveloperCredit by remember { mutableStateOf(false) }
+    var showDeveloperNoticeDialog by remember { mutableStateOf(false) }
     var noticeOkCountdown by remember { mutableStateOf(3) }
+    var hasRunStartupFlow by rememberSaveable { mutableStateOf(false) }
 
-    // Auto-dismiss bottom subtle developer watermark after 3 seconds
+    // Sequential startup flow:
+    // Only runs on fresh app launch when overlay is NOT active
     androidx.compose.runtime.LaunchedEffect(Unit) {
-        kotlinx.coroutines.delay(3000L)
-        showBottomDeveloperCredit = false
+        if (!hasRunStartupFlow) {
+            hasRunStartupFlow = true
+            // If overlay is off and entering app fresh, trigger startup flow
+            if (!state.isOverlayActive) {
+                // 1. First show animated bottom developer credit for 3 seconds
+                showBottomDeveloperCredit = true
+                kotlinx.coroutines.delay(3000L)
+                showBottomDeveloperCredit = false
+
+                // Small delay for smooth exit animation before dialog opens
+                kotlinx.coroutines.delay(300L)
+
+                // 2. Then show the main notice popup
+                showDeveloperNoticeDialog = true
+            }
+        }
     }
 
     // 3-second countdown before OK button becomes clickable in Notice Dialog
@@ -183,7 +200,7 @@ fun MainScreen(
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     Text(
-                        text = "ভদ্র মানুষের জন্য বিনীত অনুরোধ ( এবং অভদ্রের জন্য যদি) আপনার পিতৃ পরিচয় ঠিক থাকলে অ্যাপ এর নাম টা নিজের নামে চেইঞ্জ করে চালিয়ে দিয়েন না। কাউকে পারমিশন দেওয়া হবে না চাইলেও কারণ অ্যাপ ফ্রি কোনো টেলিগ্রাম চ্যানেল বা কিছুর রিকোয়ারমেন্ট নেই বা প্রমোশন নাই তাই এমনিতেই নিজের চ্যানেলে শেয়ার করতে পারেন ধন্যবাদ।",
+                        text = "ভদ্র মানুষের জন্য বিনীত অনুরোধ এবং অভদ্রের জন্য যদি আপনার পিতৃ পরিচয় ঠিক থাকলে অ্যাপ এর নাম টা নিজের নামে চেইঞ্জ করে চালিয়ে দিয়েন না। কাউকে পারমিশন দেওয়া হবে না চাইলেও কারণ অ্যাপ ফ্রি কোনো টেলিগ্রাম চ্যানেল বা কিছুর রিকোয়ারমেন্ট নেই বা প্রমোশন নাই তাই এমনিতেই নিজের চ্যানেলে শেয়ার করতে পারেন ধন্যবাদ।",
                         fontSize = 14.sp,
                         lineHeight = 21.sp,
                         fontWeight = FontWeight.Medium,
