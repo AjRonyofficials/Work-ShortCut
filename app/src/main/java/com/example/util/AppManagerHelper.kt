@@ -90,6 +90,22 @@ object AppManagerHelper {
     }
 
     /**
+     * Sequentially clears data and cache for multiple selected applications
+     * Works smoothly on all Android 10-16+ devices (Samsung, Xiaomi, Vivo, Oppo, Realme, Pixel)
+     */
+    fun startBatchClearData(
+        context: Context,
+        apps: List<AppInfoItem>
+    ) {
+        if (apps.isEmpty()) return
+        com.example.service.AutoCleanAccessibilityService.startBatchClean(context, apps)
+    }
+
+    fun stopBatchClearData() {
+        com.example.service.AutoCleanAccessibilityService.stopBatchClean()
+    }
+
+    /**
      * Clears local application cache files in the background
      */
     fun clearSelfCache(context: Context): Boolean {

@@ -25,6 +25,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Apps
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.CleaningServices
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Info
@@ -170,6 +171,119 @@ fun AppShortcutsSection(
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
+                    }
+                }
+            }
+        }
+
+        // App Clean Mode Quick Controls (Single & Batch Mode)
+        item {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(14.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
+            ) {
+                Column(modifier = Modifier.padding(12.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Default.CleaningServices,
+                                contentDescription = null,
+                                tint = com.example.ui.theme.BrandRose,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "App Clean Controls",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+
+                        // Mode Selector Pills
+                        Row(
+                            modifier = Modifier
+                                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f), RoundedCornerShape(8.dp))
+                                .padding(2.dp),
+                            horizontalArrangement = Arrangement.spacedBy(2.dp)
+                        ) {
+                            val isSingle = state.clearDataMode == com.example.service.ClearDataMode.SINGLE
+                            Surface(
+                                onClick = { OverlayStateManager.setClearDataMode(com.example.service.ClearDataMode.SINGLE) },
+                                shape = RoundedCornerShape(6.dp),
+                                color = if (isSingle) MaterialTheme.colorScheme.primary else Color.Transparent
+                            ) {
+                                Text(
+                                    text = "Single",
+                                    fontSize = 11.sp,
+                                    fontWeight = if (isSingle) FontWeight.Bold else FontWeight.Medium,
+                                    color = if (isSingle) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                )
+                            }
+
+                            val isBatch = state.clearDataMode == com.example.service.ClearDataMode.BATCH
+                            Surface(
+                                onClick = { OverlayStateManager.setClearDataMode(com.example.service.ClearDataMode.BATCH) },
+                                shape = RoundedCornerShape(6.dp),
+                                color = if (isBatch) com.example.ui.theme.BrandRose else Color.Transparent
+                            ) {
+                                Text(
+                                    text = "Batch",
+                                    fontSize = 11.sp,
+                                    fontWeight = if (isBatch) FontWeight.Bold else FontWeight.Medium,
+                                    color = if (isBatch) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                )
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    if (state.clearDataMode == com.example.service.ClearDataMode.BATCH) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text(
+                                text = "Batch Queue: ${state.selectedClearDataApps.size} apps queued",
+                                fontSize = 11.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+
+                            if (state.isBatchRunning) {
+                                Button(
+                                    onClick = { OverlayStateManager.stopBatchClear(context) },
+                                    shape = RoundedCornerShape(8.dp),
+                                    colors = ButtonDefaults.buttonColors(containerColor = AlertRed),
+                                    modifier = Modifier.height(28.dp)
+                                ) {
+                                    Text("Stop (${state.batchCurrentAppIndex}/${state.batchTotalApps})", fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                }
+                            } else {
+                                Button(
+                                    onClick = { OverlayStateManager.startBatchClear(context) },
+                                    shape = RoundedCornerShape(8.dp),
+                                    colors = ButtonDefaults.buttonColors(containerColor = com.example.ui.theme.BrandRose),
+                                    modifier = Modifier.height(28.dp)
+                                ) {
+                                    Text("▶ Start Batch (${state.selectedClearDataApps.size})", fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                }
+                            }
+                        }
+                    } else {
+                        Text(
+                            text = "Single Mode: Tap any app card to clean individually.",
+                            fontSize = 11.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     }
                 }
             }

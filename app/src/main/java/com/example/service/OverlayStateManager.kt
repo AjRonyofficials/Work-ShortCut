@@ -37,6 +37,11 @@ enum class AppThemeMode(val title: String) {
     AMOLED("AMOLED Pitch Black")
 }
 
+enum class ClearDataMode(val title: String, val subtitle: String) {
+    SINGLE("Single App", "Clean 1 app instantly on demand"),
+    BATCH("Batch Queue", "Sequential multi-app auto clean")
+}
+
 data class ExcelDraftRow(
     val values: Map<String, String> = mapOf("A" to "", "B" to "", "C" to "", "D" to "", "E" to "", "F" to ""),
     val duplicateColumn: String? = null,
@@ -97,6 +102,12 @@ data class OverlayUiState(
     val lastGeneratedName: String = "",
     val selectedClearDataApps: List<com.example.util.AppInfoItem> = emptyList(),
     val isClearDataOverlayExpanded: Boolean = false,
+    val clearDataMode: ClearDataMode = ClearDataMode.BATCH,
+    val isBatchRunning: Boolean = false,
+    val batchCurrentAppIndex: Int = 0,
+    val batchTotalApps: Int = 0,
+    val batchCurrentAppName: String = "",
+    val batchCompletedApps: List<String> = emptyList(),
     val backgroundDataCaching: Boolean = true,
     val isDockedLeft: Boolean = true,
     val isEdgeBarMinimized: Boolean = false,
@@ -229,6 +240,9 @@ object OverlayStateManager {
             val rowF = p.getInt("sheet_row_F", 1)
             val colRowMap = mapOf("A" to rowA, "B" to rowB, "C" to rowC, "D" to rowD, "E" to rowE, "F" to rowF)
 
+            val clearModeStr = p.getString("clear_data_mode", ClearDataMode.BATCH.name) ?: ClearDataMode.BATCH.name
+            val loadedClearMode = try { ClearDataMode.valueOf(clearModeStr) } catch (_: Exception) { ClearDataMode.BATCH }
+
             _uiState.update {
                 it.copy(
                     selectedCountry = country,
@@ -246,6 +260,7 @@ object OverlayStateManager {
                     savedPasswordText = savedPwText,
                     draftRow = initialDraft,
                     selectedClearDataApps = loadedApps,
+                    clearDataMode = loadedClearMode,
                     backgroundDataCaching = bgDataCaching,
                     customAppShortcuts = loadedShortcuts,
                     proxyState = it.proxyState.copy(
@@ -402,6 +417,76 @@ object OverlayStateManager {
             appName = item.appName,
             isLiteStorageMode = item.isLiteStorageApp
         )
+    }
+
+    fun setClearDataMode(mode: ClearDataMode) {
+        _uiState.update { it.copy(clearDataMode = mode) }
+        prefs?.edit()?.putString("clear_data_mode", mode.name)?.apply()
+    }
+
+    fun startBatchClear(context: Context) {
+        val apps = _uiState.value.selectedClearDataApps
+        if (apps.isEmpty()) {
+            Toast.makeText(context, "অনুগ্রহ করে অন্তত একটি অ্যাপ নির্বাচন করুন", Toast.LENGTH_SHORT).show()
+            return
+        }
+        VibrationHelper.vibrateTactileClick(context)
+        _uiState.update {
+            it.copy(
+                isBatchRunning = true,
+                batchCurrentAppIndex = 0,
+                batchTotalApps = apps.size,
+                batchCurrentAppName = apps.first().appName,
+                batchCompletedApps = emptyList()
+            )
+        }
+        com.example.util.AppManagerHelper.startBatchClearData(context, apps)
+    }
+
+    fun stopBatchClear(context: Context) {
+        VibrationHelper.vibrateTactileClick(context)
+        com.example.util.AppManagerHelper.stopBatchClearData()
+        _uiState.update {
+            it.copy(
+                isBatchRunning = false,
+                batchCurrentAppIndex = 0,
+                batchCurrentAppName = ""
+            )
+        }
+        Toast.makeText(context, "ব্যাচ ক্লিয়ারিং বাতিল করা হয়েছে", Toast.LENGTH_SHORT).show()
+    }
+
+    fun onBatchProgressUpdate(currentIndex: Int, total: Int, currentAppName: String) {
+        _uiState.update {
+            it.copy(
+                isBatchRunning = true,
+                batchCurrentAppIndex = currentIndex,
+                batchTotalApps = total,
+                batchCurrentAppName = currentAppName,
+                batchCompletedApps = it.batchCompletedApps + currentAppName
+            )
+        }
+    }
+
+    fun onBatchFinished(context: Context, totalCleared: Int) {
+        _uiState.update {
+            it.copy(
+                isBatchRunning = false,
+                batchCurrentAppIndex = totalCleared,
+                batchCurrentAppName = ""
+            )
+        }
+    }
+
+    fun selectAllAppsForClear(apps: List<com.example.util.AppInfoItem>) {
+        _uiState.update { it.copy(selectedClearDataApps = apps) }
+        val serialized = apps.joinToString(";;") { "${it.appName}::${it.packageName}::${it.isLiteStorageApp}" }
+        prefs?.edit()?.putString("clear_data_apps_list", serialized)?.apply()
+    }
+
+    fun clearAllSelectedApps() {
+        _uiState.update { it.copy(selectedClearDataApps = emptyList()) }
+        prefs?.edit()?.remove("clear_data_apps_list")?.apply()
     }
 
     fun executeSelfClearData(context: Context) {

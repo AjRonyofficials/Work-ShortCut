@@ -424,6 +424,7 @@ fun FloatingOverlayWindowContent(
                                 apps = state.selectedClearDataApps,
                                 brush = gradClean,
                                 context = context,
+                                state = state,
                                 modifier = Modifier.fillMaxWidth()
                             )
                         } else {
@@ -975,6 +976,7 @@ fun ClearDataGridBox(
     apps: List<com.example.util.AppInfoItem>,
     brush: Brush,
     context: android.content.Context,
+    state: OverlayUiState,
     modifier: Modifier = Modifier
 ) {
     Box(
@@ -1003,7 +1005,7 @@ fun ClearDataGridBox(
             verticalArrangement = Arrangement.spacedBy(3.dp),
             modifier = Modifier.fillMaxWidth()
         ) {
-            // Micro Header Label with Count
+            // Micro Header Label with Count & Quick Batch Trigger
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -1011,19 +1013,52 @@ fun ClearDataGridBox(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(
-                    text = "🧹 CLEAN",
-                    fontSize = 8.5.sp,
-                    fontWeight = FontWeight.Black,
-                    color = Color(0xFFFF5252),
-                    letterSpacing = 0.5.sp
-                )
-                Text(
-                    text = "${apps.size}",
-                    fontSize = 8.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = Color(0xFFFF8A80)
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = "🧹 CLEAN",
+                        fontSize = 8.5.sp,
+                        fontWeight = FontWeight.Black,
+                        color = Color(0xFFFF5252),
+                        letterSpacing = 0.5.sp
+                    )
+                    Spacer(modifier = Modifier.width(3.dp))
+                    Text(
+                        text = "${apps.size}",
+                        fontSize = 8.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFFFF8A80)
+                    )
+                }
+
+                if (state.isBatchRunning) {
+                    Surface(
+                        onClick = { OverlayStateManager.stopBatchClear(context) },
+                        shape = RoundedCornerShape(4.dp),
+                        color = Color(0xFFD32F2F)
+                    ) {
+                        Text(
+                            text = "■ STOP (${state.batchCurrentAppIndex}/${state.batchTotalApps})",
+                            fontSize = 7.sp,
+                            fontWeight = FontWeight.Black,
+                            color = Color.White,
+                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                        )
+                    }
+                } else if (apps.isNotEmpty()) {
+                    Surface(
+                        onClick = { OverlayStateManager.startBatchClear(context) },
+                        shape = RoundedCornerShape(4.dp),
+                        color = Color(0xFFC2185B)
+                    ) {
+                        Text(
+                            text = "▶ BATCH",
+                            fontSize = 7.5.sp,
+                            fontWeight = FontWeight.Black,
+                            color = Color.White,
+                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                        )
+                    }
+                }
             }
 
             // 2-Column Grid in Serial Order
