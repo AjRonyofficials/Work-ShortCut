@@ -340,7 +340,20 @@ fun AppShortcutsSection(
                     modifier = Modifier
                         .fillMaxWidth()
                         .combinedClickable(
-                            onClick = { OverlayStateManager.launchAppShortcut(context, shortcut) },
+                            onClick = {
+                                if (state.clearDataMode == com.example.service.ClearDataMode.SINGLE) {
+                                    val isLite = com.example.util.AppManagerHelper.isFacebookLite(shortcut.packageName, shortcut.appName)
+                                    val appItem = com.example.util.AppInfoItem(
+                                        appName = shortcut.appName,
+                                        packageName = shortcut.packageName,
+                                        isSelected = true,
+                                        isLiteStorageApp = isLite
+                                    )
+                                    OverlayStateManager.executeClearDataForApp(context, appItem)
+                                } else {
+                                    OverlayStateManager.launchAppShortcut(context, shortcut)
+                                }
+                            },
                             onLongClick = {
                                 com.example.util.VibrationHelper.vibrateSuccess(context)
                                 Toast.makeText(context, "⚡ ${shortcut.appName} ফোর্স স্টপ ও ক্লোজ করা হচ্ছে...", Toast.LENGTH_SHORT).show()
@@ -383,9 +396,12 @@ fun AppShortcutsSection(
                                     fontSize = 14.sp
                                 )
                                 Text(
-                                    text = "Tap: Open • Hold: Auto Close",
+                                    text = if (state.clearDataMode == com.example.service.ClearDataMode.SINGLE)
+                                        "Single Mode: Tap to Clean Data 🧹"
+                                    else
+                                        "Tap: Open • Hold: Auto Close",
                                     fontSize = 11.sp,
-                                    color = BrandGreen,
+                                    color = if (state.clearDataMode == com.example.service.ClearDataMode.SINGLE) com.example.ui.theme.BrandRose else BrandGreen,
                                     fontWeight = FontWeight.SemiBold
                                 )
                             }
@@ -398,6 +414,23 @@ fun AppShortcutsSection(
                                 modifier = Modifier.size(36.dp)
                             ) {
                                 Icon(Icons.Default.Launch, contentDescription = "Open App", tint = BrandGreen, modifier = Modifier.size(18.dp))
+                            }
+
+                            // Clean App Data
+                            IconButton(
+                                onClick = {
+                                    val isLite = com.example.util.AppManagerHelper.isFacebookLite(shortcut.packageName, shortcut.appName)
+                                    val appItem = com.example.util.AppInfoItem(
+                                        appName = shortcut.appName,
+                                        packageName = shortcut.packageName,
+                                        isSelected = true,
+                                        isLiteStorageApp = isLite
+                                    )
+                                    OverlayStateManager.executeClearDataForApp(context, appItem)
+                                },
+                                modifier = Modifier.size(36.dp)
+                            ) {
+                                Icon(Icons.Default.CleaningServices, contentDescription = "Clear Data", tint = com.example.ui.theme.BrandRose, modifier = Modifier.size(18.dp))
                             }
 
                             // Test Close

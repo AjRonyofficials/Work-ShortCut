@@ -384,6 +384,7 @@ fun FloatingOverlayWindowContent(
                             AppShortcutsGridBox(
                                 shortcuts = state.customAppShortcuts,
                                 context = context,
+                                state = state,
                                 modifier = Modifier.fillMaxWidth()
                             )
                         } else {
@@ -406,7 +407,15 @@ fun FloatingOverlayWindowContent(
                                 brush = customBrush,
                                 shape = tabShape,
                                 onClick = {
-                                    OverlayStateManager.launchAppShortcut(context, shortcut)
+                                    if (state.clearDataMode == com.example.service.ClearDataMode.SINGLE) {
+                                        val isLite = com.example.util.AppManagerHelper.isFacebookLite(shortcut.packageName, shortcut.appName)
+                                        OverlayStateManager.executeClearDataForApp(
+                                            context,
+                                            com.example.util.AppInfoItem(shortcut.appName, shortcut.packageName, true, isLite)
+                                        )
+                                    } else {
+                                        OverlayStateManager.launchAppShortcut(context, shortcut)
+                                    }
                                 },
                                 onLongClick = {
                                     OverlayStateManager.closeAppShortcut(context, shortcut)
@@ -888,6 +897,7 @@ fun UtilityCircularButton(
 fun AppShortcutsGridBox(
     shortcuts: List<com.example.service.CustomAppShortcut>,
     context: android.content.Context,
+    state: OverlayUiState,
     modifier: Modifier = Modifier
 ) {
     Box(
@@ -916,7 +926,7 @@ fun AppShortcutsGridBox(
             verticalArrangement = Arrangement.spacedBy(3.dp),
             modifier = Modifier.fillMaxWidth()
         ) {
-            // Micro Header Label with Count
+            // Micro Header Label with Count & Quick Batch Trigger
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -924,19 +934,64 @@ fun AppShortcutsGridBox(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(
-                    text = "🚀 APPS",
-                    fontSize = 8.5.sp,
-                    fontWeight = FontWeight.Black,
-                    color = Color(0xFF00E5FF),
-                    letterSpacing = 0.5.sp
-                )
-                Text(
-                    text = "${shortcuts.size}",
-                    fontSize = 8.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = Color(0xFF80DEEA)
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = "🚀 APPS",
+                        fontSize = 8.5.sp,
+                        fontWeight = FontWeight.Black,
+                        color = Color(0xFF00E5FF),
+                        letterSpacing = 0.5.sp
+                    )
+                    Spacer(modifier = Modifier.width(3.dp))
+                    Text(
+                        text = "${shortcuts.size}",
+                        fontSize = 8.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFF80DEEA)
+                    )
+                }
+
+                if (state.isBatchRunning) {
+                    Surface(
+                        onClick = { OverlayStateManager.stopBatchClear(context) },
+                        shape = RoundedCornerShape(4.dp),
+                        color = Color(0xFFD32F2F)
+                    ) {
+                        Text(
+                            text = "■ STOP (${state.batchCurrentAppIndex}/${state.batchTotalApps})",
+                            fontSize = 7.sp,
+                            fontWeight = FontWeight.Black,
+                            color = Color.White,
+                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                        )
+                    }
+                } else if (shortcuts.isNotEmpty()) {
+                    Surface(
+                        onClick = {
+                            val targetApps = shortcuts.map { s ->
+                                val isLite = com.example.util.AppManagerHelper.isFacebookLite(s.packageName, s.appName)
+                                com.example.util.AppInfoItem(
+                                    appName = s.appName,
+                                    packageName = s.packageName,
+                                    isSelected = true,
+                                    isLiteStorageApp = isLite
+                                )
+                            }
+                            OverlayStateManager.selectAllAppsForClear(targetApps)
+                            OverlayStateManager.startBatchClear(context)
+                        },
+                        shape = RoundedCornerShape(4.dp),
+                        color = Color(0xFF0288D1)
+                    ) {
+                        Text(
+                            text = "▶ BATCH",
+                            fontSize = 7.5.sp,
+                            fontWeight = FontWeight.Black,
+                            color = Color.White,
+                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                        )
+                    }
+                }
             }
 
             // 2-Column Grid in Serial Order
@@ -948,14 +1003,34 @@ fun AppShortcutsGridBox(
                     CompactAppGridButton(
                         shortcut = pair[0],
                         modifier = Modifier.weight(1f),
-                        onClick = { OverlayStateManager.launchAppShortcut(context, pair[0]) },
+                        onClick = {
+                            if (state.clearDataMode == com.example.service.ClearDataMode.SINGLE) {
+                                val isLite = com.example.util.AppManagerHelper.isFacebookLite(pair[0].packageName, pair[0].appName)
+                                OverlayStateManager.executeClearDataForApp(
+                                    context,
+                                    com.example.util.AppInfoItem(pair[0].appName, pair[0].packageName, true, isLite)
+                                )
+                            } else {
+                                OverlayStateManager.launchAppShortcut(context, pair[0])
+                            }
+                        },
                         onLongClick = { OverlayStateManager.closeAppShortcut(context, pair[0]) }
                     )
                     if (pair.size > 1) {
                         CompactAppGridButton(
                             shortcut = pair[1],
                             modifier = Modifier.weight(1f),
-                            onClick = { OverlayStateManager.launchAppShortcut(context, pair[1]) },
+                            onClick = {
+                                if (state.clearDataMode == com.example.service.ClearDataMode.SINGLE) {
+                                    val isLite = com.example.util.AppManagerHelper.isFacebookLite(pair[1].packageName, pair[1].appName)
+                                    OverlayStateManager.executeClearDataForApp(
+                                        context,
+                                        com.example.util.AppInfoItem(pair[1].appName, pair[1].packageName, true, isLite)
+                                    )
+                                } else {
+                                    OverlayStateManager.launchAppShortcut(context, pair[1])
+                                }
+                            },
                             onLongClick = { OverlayStateManager.closeAppShortcut(context, pair[1]) }
                         )
                     } else {
