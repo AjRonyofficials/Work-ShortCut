@@ -394,6 +394,8 @@ object OverlayStateManager {
     }
 
     fun executeClearDataForApp(context: Context, item: com.example.util.AppInfoItem) {
+        VibrationHelper.vibrateTactileClick(context)
+        Toast.makeText(context, "🧹 ${item.appName} Clear Data & Cache শুরু হচ্ছে...", Toast.LENGTH_SHORT).show()
         com.example.util.AppManagerHelper.openAppDetailsForClearData(
             context = context,
             packageName = item.packageName,

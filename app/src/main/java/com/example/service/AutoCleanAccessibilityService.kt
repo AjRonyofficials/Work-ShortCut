@@ -19,11 +19,12 @@ import android.widget.Toast
  * Compatible with Android 10 through Android 16+ (Oldest to Latest)
  * Full Support for Samsung One UI, Xiaomi / HyperOS, Vivo, Oppo, Realme, Pixel, Motorola, etc.
  *
- * Fixes "Not working" bug:
- * 1. Preserves XML capabilities in onServiceConnected() (never overwrites with empty info).
- * 2. Throttles events with 70ms debounce to prevent high CPU / overheating / battery drain.
- * 3. Caps node traversal to 80 nodes max (taking < 1ms per event, zero lag).
- * 4. High-speed Facebook Lite & Facebook Official (Katana) clear data with instant auto-close.
+ * Fixes:
+ * 1. Accurately opens "Storage & cache" / "Storage" row (STRICTLY excludes Notifications/Permissions).
+ * 2. Facebook Lite: Auto-marks "Accounts and settings", clicks "OK" popup, clicks "CLEAR", confirms and fast closes.
+ * 3. Facebook Official & Other apps: Clears BOTH Cache & Data sequentially, confirms dialog, fast closes.
+ * 4. Preserves XML capabilities in onServiceConnected() (never overwrites with empty info).
+ * 5. Low CPU / zero battery drain / zero overheating with event debouncing and capped BFS traversal.
  */
 class AutoCleanAccessibilityService : AccessibilityService() {
 
@@ -76,7 +77,7 @@ class AutoCleanAccessibilityService : AccessibilityService() {
             targetAppName = appName
             currentMode = MODE_AUTO_CLEAN
             isAutomating = true
-            isTargetLiteMode = isLiteMode
+            isTargetLiteMode = isLiteMode || com.example.util.AppManagerHelper.isFacebookLite(packageName, appName)
             step = 0
             liteStep = LITE_STEP_IDLE
             clickedClearCache = false
@@ -201,8 +202,8 @@ class AutoCleanAccessibilityService : AccessibilityService() {
             if (now - lastEventProcessedTime < 70) return
             lastEventProcessedTime = now
 
-            // 8-second safety timeout prevents any hanging
-            if (now - lastActionTime > 8000) {
+            // 10-second safety timeout prevents any hanging
+            if (now - lastActionTime > 10000) {
                 isAutomating = false
                 targetPackage = null
                 return
@@ -307,24 +308,102 @@ class AutoCleanAccessibilityService : AccessibilityService() {
     }
 
     /**
-     * Universal High-Speed Auto Clean Step for Samsung One UI, Xiaomi HyperOS/MIUI, Vivo, Oppo, Pixel, etc.
-     * Also fully optimized for Facebook Official (com.facebook.katana)
+     * Accurately finds the "Storage & cache" / "Storage" row in Android Settings App Info.
+     * Guaranteed to NEVER match Notifications, Permissions, Battery, or Mobile data!
+     */
+    private fun findStorageRowNode(root: AccessibilityNodeInfo): AccessibilityNodeInfo? {
+        val queue = ArrayDeque<AccessibilityNodeInfo>()
+        queue.add(root)
+        var count = 0
+
+        while (queue.isNotEmpty() && count < 100) {
+            val node = queue.removeFirst()
+            count++
+
+            val text = (node.text?.toString() ?: "").trim()
+            val desc = (node.contentDescription?.toString() ?: "").trim()
+            val combined = (text + " " + desc).lowercase()
+            val viewId = node.viewIdResourceName?.lowercase() ?: ""
+
+            // Strict exclusion of non-storage rows in App Info
+            val isExcluded = combined.contains("notification") || combined.contains("বিজ্ঞপ্তি") ||
+                    combined.contains("permission") || combined.contains("অনুমতি") ||
+                    combined.contains("mobile data") || combined.contains("battery") ||
+                    combined.contains("ব্যাটারি") || combined.contains("open by default") ||
+                    combined.contains("screen time") || combined.contains("unused apps") ||
+                    combined.contains("allow notification")
+
+            if (!isExcluded) {
+                // Priority 1: Specific OEM resource IDs for storage
+                if (viewId.contains("storage_settings") || viewId.contains("storage_use") || viewId.contains("storage_row")) {
+                    return node
+                }
+
+                // Priority 2: Text matching for Storage & Cache across Samsung, Xiaomi, Vivo, Oppo, Pixel
+                val isStorageMatch = combined.contains("storage & cache") ||
+                        combined.contains("storage and cache") ||
+                        combined.contains("storage usage") ||
+                        combined.contains("internal storage") ||
+                        combined.contains("স্টোরেজ ও ক্যাশ") ||
+                        combined.contains("স্টোরেজ") ||
+                        combined.contains("মেমরি") ||
+                        (text.equals("storage", ignoreCase = true) && !combined.contains("manage"))
+
+                if (isStorageMatch) {
+                    return node
+                }
+            }
+
+            for (i in 0 until node.childCount) {
+                node.getChild(i)?.let { queue.add(it) }
+            }
+        }
+        return null
+    }
+
+    private fun findClearDataOrCacheButton(root: AccessibilityNodeInfo): AccessibilityNodeInfo? {
+        return findNodeByKeywords(
+            root,
+            listOf("clear cache", "clear data", "clear storage", "manage space", "manage storage", "সব ডেটা মুছুন"),
+            resourceIds = listOf(
+                "com.samsung.android.settings:id/clear_data_button",
+                "com.android.settings:id/clear_data_button",
+                "com.samsung.android.settings:id/clear_cache_button",
+                "com.android.settings:id/clear_cache_button",
+                "com.miui.securitycenter:id/clear_all_data"
+            )
+        )
+    }
+
+    /**
+     * Universal High-Speed Auto Clean Step:
+     * 1. Opens Storage & cache (never clicks Notifications).
+     * 2. Clears Cache first.
+     * 3. Clears Data / Manage Space.
+     * 4. Confirms dialog.
+     * 5. Fast auto-closes settings and app!
      */
     private fun handleAutoCleanStep(rootNode: AccessibilityNodeInfo) {
         val now = System.currentTimeMillis()
-        if (now - lastActionTime < 90) return
+        if (now - lastActionTime < 70) return
 
-        // Step 0: In App Info Screen -> Find "Storage", "Storage usage", "Internal storage"
+        // If Facebook Lite storage screen appeared during navigation, jump directly into Lite flow!
+        if (isLiteStorageScreen(rootNode)) {
+            handleLiteStorageScreenFlow(rootNode)
+            return
+        }
+
+        // Check if we are already in the Storage screen
+        val inStorageScreen = findClearDataOrCacheButton(rootNode) != null
+
+        // Step 0: In App Info Screen -> Find "Storage", "Storage usage", "Storage & cache"
         // Or direct Xiaomi bottom-bar "Clear data"
-        if (step == 0) {
+        if (step == 0 && !inStorageScreen) {
             // Xiaomi / HyperOS direct bottom-bar button check
             val miuiClearBtn = findNodeByKeywords(
                 rootNode,
                 listOf("clear data", "ডেটা মুছুন"),
-                resourceIds = listOf(
-                    "com.miui.securitycenter:id/clear_data",
-                    "com.android.settings:id/clear_data"
-                )
+                resourceIds = listOf("com.miui.securitycenter:id/clear_data")
             )
             if (miuiClearBtn != null && miuiClearBtn.isEnabled) {
                 val clicked = clickNode(miuiClearBtn)
@@ -336,26 +415,7 @@ class AutoCleanAccessibilityService : AccessibilityService() {
             }
 
             // Samsung One UI, Pixel, Xiaomi, Vivo, Oppo, Realme, Transsion
-            val storageNode = findNodeByKeywords(
-                rootNode,
-                listOf(
-                    "storage & cache",
-                    "storage and cache",
-                    "storage usage",
-                    "internal storage",
-                    "storage",
-                    "স্টোরেজ ও ক্যাশ",
-                    "স্টোরেজ",
-                    "মেমরি"
-                ),
-                resourceIds = listOf(
-                    "com.android.settings:id/storage_settings",
-                    "com.samsung.android.settings:id/storage_settings",
-                    "com.android.settings:id/storage_use",
-                    "android:id/title"
-                )
-            )
-
+            val storageNode = findStorageRowNode(rootNode)
             if (storageNode != null) {
                 val clicked = clickNode(storageNode)
                 if (clicked) {
@@ -364,6 +424,7 @@ class AutoCleanAccessibilityService : AccessibilityService() {
                     return
                 }
             } else {
+                // If storage row is below the fold, scroll down to reveal it
                 try {
                     rootNode.performAction(AccessibilityNodeInfo.ACTION_SCROLL_FORWARD)
                 } catch (_: Exception) {}
@@ -371,7 +432,7 @@ class AutoCleanAccessibilityService : AccessibilityService() {
         }
 
         // Step 1: In Storage screen -> Execute BOTH Clear Cache and Clear Data sequentially!
-        if (step in 1..2) {
+        if (step in 1..2 || inStorageScreen) {
             // First: Click "Clear cache" if available and not yet clicked
             if (!clickedClearCache) {
                 val clearCacheNode = findNodeByKeywords(
@@ -380,8 +441,7 @@ class AutoCleanAccessibilityService : AccessibilityService() {
                     resourceIds = listOf(
                         "com.samsung.android.settings:id/clear_cache_button",
                         "com.android.settings:id/clear_cache_button",
-                        "com.samsung.android.settings:id/button2",
-                        "com.android.settings:id/button2"
+                        "com.samsung.android.settings:id/button2"
                     )
                 )
                 if (clearCacheNode != null && clearCacheNode.isEnabled) {
@@ -391,7 +451,7 @@ class AutoCleanAccessibilityService : AccessibilityService() {
                 }
             }
 
-            // Next: Click "Clear data" / "Clear all data" / "Clear storage"
+            // Next: Click "Clear data" / "Clear all data" / "Clear storage" / "Manage space"
             // Priority A: Xiaomi / HyperOS BottomSheet "Clear all data"
             val clearAllDataNode = findNodeByKeywords(
                 rootNode,
@@ -412,7 +472,7 @@ class AutoCleanAccessibilityService : AccessibilityService() {
                 return
             }
 
-            // Priority B: Samsung One UI, Pixel, Facebook Main / Katana "Clear Data" / "Clear Storage"
+            // Priority B: Samsung One UI, Pixel, Facebook Main / Katana / FB Lite "Clear Data" / "Clear Storage" / "Manage space"
             val clearDataNode = findNodeByKeywords(
                 rootNode,
                 listOf(
@@ -430,9 +490,7 @@ class AutoCleanAccessibilityService : AccessibilityService() {
                     "com.samsung.android.settings:id/clear_data_button",
                     "com.android.settings:id/clear_data_button",
                     "com.samsung.android.settings:id/button1",
-                    "com.android.settings:id/clear_data_btn",
-                    "com.android.settings:id/button1",
-                    "android:id/button1"
+                    "com.android.settings:id/clear_data_btn"
                 )
             )
 
@@ -441,10 +499,19 @@ class AutoCleanAccessibilityService : AccessibilityService() {
                 clickedClearData = true
                 step = 3
                 lastActionTime = now
+
+                // Check if FB Lite internal screen opened immediately after clicking Manage space / Clear data
+                mainHandler.postDelayed({
+                    rootInActiveWindow?.let { refreshed ->
+                        if (isLiteStorageScreen(refreshed)) {
+                            handleLiteStorageScreenFlow(refreshed)
+                        }
+                    }
+                }, 80)
                 return
             }
 
-            if (clickedClearCache && now - lastActionTime > 200) {
+            if (clickedClearCache && now - lastActionTime > 180) {
                 step = 3
                 lastActionTime = now
             }
@@ -460,7 +527,7 @@ class AutoCleanAccessibilityService : AccessibilityService() {
                 autoCloseCleanedSequence()
                 return
             } else {
-                if (now - lastActionTime > 250) {
+                if (now - lastActionTime > 220) {
                     step = 4
                     autoCloseCleanedSequence()
                 }
@@ -477,7 +544,7 @@ class AutoCleanAccessibilityService : AccessibilityService() {
      */
     private fun handleLiteStorageScreenFlow(rootNode: AccessibilityNodeInfo) {
         val now = System.currentTimeMillis()
-        if (now - lastActionTime < 80) return
+        if (now - lastActionTime < 70) return
 
         // 1. Positive dialog button check (OK / Confirm)
         val okDialogBtn = findLiteOkDialogButton(rootNode)
@@ -495,7 +562,7 @@ class AutoCleanAccessibilityService : AccessibilityService() {
                     rootInActiveWindow?.let { refreshedRoot ->
                         clickClearButtonAndFinish(refreshedRoot)
                     }
-                }, 100)
+                }, 90)
             }
             return
         }
@@ -521,7 +588,7 @@ class AutoCleanAccessibilityService : AccessibilityService() {
                             rootInActiveWindow?.let { rootAfterOk ->
                                 clickClearButtonAndFinish(rootAfterOk)
                             }
-                        }, 100)
+                        }, 90)
                     } else {
                         clickClearButtonAndFinish(refreshedRoot)
                     }
@@ -551,13 +618,13 @@ class AutoCleanAccessibilityService : AccessibilityService() {
                     }
                 }
                 autoCloseCleanedSequence()
-            }, 180)
+            }, 160)
         } else {
             val finalOk = findLiteOkDialogButton(rootNode)
             if (finalOk != null && finalOk.isEnabled) {
                 clickNode(finalOk)
                 autoCloseCleanedSequence()
-            } else if (now - lastActionTime > 350) {
+            } else if (now - lastActionTime > 300) {
                 autoCloseCleanedSequence()
             }
         }
@@ -753,7 +820,7 @@ class AutoCleanAccessibilityService : AccessibilityService() {
 
     /**
      * Ultra-fast close sequence:
-     * Navigates back, returns to home, kills background process, finishes in ~100ms.
+     * Navigates back, returns to home, kills background process, finishes in ~80ms.
      */
     private fun autoCloseCleanedSequence() {
         val pkgToKill = targetPackage
@@ -774,8 +841,8 @@ class AutoCleanAccessibilityService : AccessibilityService() {
                 step = 0
                 liteStep = LITE_STEP_IDLE
                 isTargetLiteMode = false
-            }, 80)
-        }, 90)
+            }, 70)
+        }, 70)
     }
 
     private fun finishAndCloseSettings(message: String) {
@@ -797,8 +864,8 @@ class AutoCleanAccessibilityService : AccessibilityService() {
                 step = 0
                 liteStep = LITE_STEP_IDLE
                 isTargetLiteMode = false
-            }, 70)
-        }, 70)
+            }, 60)
+        }, 60)
     }
 
     private fun findNodeByKeywords(
@@ -816,7 +883,8 @@ class AutoCleanAccessibilityService : AccessibilityService() {
 
             val viewId = node.viewIdResourceName?.lowercase() ?: ""
             for (rid in resourceIds) {
-                if (viewId.contains(rid.lowercase())) {
+                // NEVER match on generic android:id/title or empty
+                if (rid != "android:id/title" && viewId.isNotEmpty() && viewId.contains(rid.lowercase())) {
                     return node
                 }
             }
