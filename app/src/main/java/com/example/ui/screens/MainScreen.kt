@@ -1,0 +1,346 @@
+package com.example.ui.screens
+
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Apps
+import androidx.compose.material.icons.filled.Bolt
+import androidx.compose.material.icons.filled.CleaningServices
+import androidx.compose.material.icons.filled.Key
+import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Security
+import androidx.compose.material.icons.filled.Send
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.TableChart
+import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material.icons.outlined.Apps
+import androidx.compose.material.icons.outlined.CleaningServices
+import androidx.compose.material.icons.outlined.Key
+import androidx.compose.material.icons.outlined.Lock
+import androidx.compose.material.icons.outlined.Person
+import androidx.compose.material.icons.outlined.Security
+import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material.icons.outlined.TableChart
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Badge
+import androidx.compose.material3.BadgedBox
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.NavigationBarItemDefaults
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import android.content.Intent
+import android.net.Uri
+import android.widget.Toast
+import com.example.data.local.WorkShortcutRepository
+import com.example.data.local.model.ExcelRowEntity
+import com.example.data.local.model.ProxyProfileEntity
+import com.example.data.local.model.TwoFactorKeyEntity
+import com.example.service.OverlayStateManager
+import com.example.service.OverlayUiState
+import com.example.ui.overlay.FloatingOverlayWindowContent
+import com.example.ui.theme.AlertRed
+import com.example.ui.theme.BrandGreen
+import com.example.ui.theme.BrandSky
+import kotlin.math.roundToInt
+
+enum class AppNavTab(
+    val title: String,
+    val selectedIcon: ImageVector,
+    val unselectedIcon: ImageVector
+) {
+    SHORTCUTS("Apps", Icons.Filled.Apps, Icons.Outlined.Apps),
+    PROXY("Proxy", Icons.Filled.Security, Icons.Outlined.Security),
+    TWO_FACTOR("2FA", Icons.Filled.Lock, Icons.Outlined.Lock),
+    PW_COPY("PW Copy", Icons.Filled.Key, Icons.Outlined.Key),
+    EXCEL("Excel", Icons.Filled.TableChart, Icons.Outlined.TableChart),
+    NAMES("Names", Icons.Filled.Person, Icons.Outlined.Person),
+    CLEAR_DATA("Clean", Icons.Filled.CleaningServices, Icons.Outlined.CleaningServices),
+    SETTINGS("Settings", Icons.Filled.Settings, Icons.Outlined.Settings)
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun MainScreen(
+    state: OverlayUiState,
+    savedExcelRows: List<ExcelRowEntity>,
+    savedProxies: List<ProxyProfileEntity>,
+    savedTwoFactorKeys: List<TwoFactorKeyEntity>,
+    repository: WorkShortcutRepository?,
+    modifier: Modifier = Modifier
+) {
+    var selectedTab by remember { mutableStateOf(AppNavTab.NAMES) }
+    val context = LocalContext.current
+    var showDeveloperNoticeDialog by remember { mutableStateOf(true) }
+
+    if (showDeveloperNoticeDialog) {
+        AlertDialog(
+            onDismissRequest = { showDeveloperNoticeDialog = false },
+            icon = {
+                Box(
+                    modifier = Modifier
+                        .size(48.dp)
+                        .clip(CircleShape)
+                        .background(AlertRed.copy(alpha = 0.15f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Warning,
+                        contentDescription = null,
+                        tint = AlertRed,
+                        modifier = Modifier.size(28.dp)
+                    )
+                }
+            },
+            title = {
+                Text(
+                    text = "⚠️ গুরুত্বপূর্ণ নোটিশ",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 18.sp,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+            },
+            text = {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Text(
+                        text = "আপনার পিতৃ পরিচয় ঠিক থাকলে অ্যাপ এর নাম টা নিজের নামে চেইঞ্জ করে চালিয়ে দিয়েন না, আগে পারমিশন নিয়েন।",
+                        fontSize = 14.sp,
+                        lineHeight = 20.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Text(
+                        text = "আর কোনো আপডেট চাইলে বা সমস্যা হলে 'Contact Developer' এ চাপ দিলে সরাসরি টেলিগ্রামে যোগাযোগ করতে পারবেন।",
+                        fontSize = 13.sp,
+                        lineHeight = 19.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = { showDeveloperNoticeDialog = false },
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
+                    shape = RoundedCornerShape(10.dp)
+                ) {
+                    Text("OK / ঠিক আছে", fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                OutlinedButton(
+                    onClick = {
+                        try {
+                            val telegramIntent = Intent(Intent.ACTION_VIEW, Uri.parse("https://t.me/ismailislamrony1")).apply {
+                                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            }
+                            context.startActivity(telegramIntent)
+                        } catch (_: Exception) {
+                            Toast.makeText(context, "Telegram: @ismailislamrony1", Toast.LENGTH_LONG).show()
+                        }
+                    },
+                    shape = RoundedCornerShape(10.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Send,
+                        contentDescription = null,
+                        modifier = Modifier.size(16.dp),
+                        tint = BrandSky
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Contact Developer", color = BrandSky, fontWeight = FontWeight.Bold)
+                }
+            },
+            containerColor = MaterialTheme.colorScheme.surface,
+            shape = RoundedCornerShape(20.dp)
+        )
+    }
+
+    androidx.compose.runtime.LaunchedEffect(Unit) {
+        OverlayStateManager.requestedAppTab.collect { tabName ->
+            when (tabName) {
+                "PROXY" -> selectedTab = AppNavTab.PROXY
+                "NAMES" -> selectedTab = AppNavTab.NAMES
+                "EXCEL" -> selectedTab = AppNavTab.EXCEL
+                "TWO_FACTOR" -> selectedTab = AppNavTab.TWO_FACTOR
+                "APPS" -> selectedTab = AppNavTab.SHORTCUTS
+                "CLEAR_DATA" -> selectedTab = AppNavTab.CLEAR_DATA
+            }
+        }
+    }
+
+    Box(modifier = modifier.fillMaxSize()) {
+        Scaffold(
+            topBar = {
+                TopAppBar(
+                    title = {
+                        Text(
+                            text = "Work ShortCut",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 20.sp
+                        )
+                    },
+                    actions = {
+                        // Quick Toggle for Floating Bubble Overlay
+                        IconButton(
+                            onClick = {
+                                OverlayStateManager.toggleOverlayExpanded()
+                            },
+                            modifier = Modifier.testTag("appbar_bubble_toggle")
+                        ) {
+                            BadgedBox(
+                                badge = {
+                                    if (state.proxyState.isConnected) {
+                                        Badge(containerColor = BrandGreen)
+                                    } else if (state.draftRow.duplicateColumn != null) {
+                                        Badge(containerColor = AlertRed)
+                                    }
+                                }
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Bolt,
+                                    contentDescription = "Floating Bubble",
+                                    tint = BrandSky
+                                )
+                            }
+                        }
+                    },
+                    colors = TopAppBarDefaults.topAppBarColors(
+                        containerColor = MaterialTheme.colorScheme.surface,
+                        titleContentColor = MaterialTheme.colorScheme.onSurface
+                    )
+                )
+            },
+            bottomBar = {
+                NavigationBar(
+                    containerColor = MaterialTheme.colorScheme.surface,
+                    tonalElevation = 8.dp,
+                    windowInsets = WindowInsets(0.dp, 0.dp, 0.dp, 0.dp)
+                ) {
+                    AppNavTab.entries.forEach { tab ->
+                        val isSelected = selectedTab == tab
+                        val badgeCount = when (tab) {
+                            AppNavTab.EXCEL -> if (state.draftRow.duplicateColumn != null) "!" else null
+                            AppNavTab.PROXY -> if (state.proxyState.isConnected) "ON" else null
+                            else -> null
+                        }
+
+                        NavigationBarItem(
+                            selected = isSelected,
+                            onClick = { selectedTab = tab },
+                            icon = {
+                                if (badgeCount != null) {
+                                    BadgedBox(
+                                        badge = {
+                                            Badge(
+                                                containerColor = if (badgeCount == "!") AlertRed else BrandGreen
+                                            ) {
+                                                Text(badgeCount, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                                            }
+                                        }
+                                    ) {
+                                        Icon(
+                                            imageVector = if (isSelected) tab.selectedIcon else tab.unselectedIcon,
+                                            contentDescription = tab.title
+                                        )
+                                    }
+                                } else {
+                                    Icon(
+                                        imageVector = if (isSelected) tab.selectedIcon else tab.unselectedIcon,
+                                        contentDescription = tab.title
+                                    )
+                                }
+                            },
+                            label = { Text(tab.title, fontSize = 11.sp, fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal) },
+                            colors = NavigationBarItemDefaults.colors(
+                                indicatorColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.2f),
+                                selectedIconColor = MaterialTheme.colorScheme.primary,
+                                selectedTextColor = MaterialTheme.colorScheme.primary
+                            ),
+                            modifier = Modifier.testTag("nav_tab_${tab.name}")
+                        )
+                    }
+                }
+            }
+        ) { paddingValues ->
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(paddingValues)
+                    .imePadding()
+            ) {
+                when (selectedTab) {
+                    AppNavTab.SHORTCUTS -> AppShortcutsSection(state = state)
+                    AppNavTab.NAMES -> NameGeneratorSection(state = state)
+                    AppNavTab.EXCEL -> ExcelCollectorSection(
+                        state = state,
+                        savedRows = savedExcelRows,
+                        repository = repository
+                    )
+                    AppNavTab.TWO_FACTOR -> TwoFactorSection(
+                        state = state,
+                        savedKeys = savedTwoFactorKeys,
+                        repository = repository
+                    )
+                    AppNavTab.PW_COPY -> PwCopySection(state = state)
+                    AppNavTab.PROXY -> ProxySection(
+                        state = state,
+                        savedProxies = savedProxies,
+                        repository = repository
+                    )
+                    AppNavTab.CLEAR_DATA -> ClearDataSection(state = state)
+                    AppNavTab.SETTINGS -> SettingsSection(state = state)
+                }
+            }
+        }
+    }
+}
