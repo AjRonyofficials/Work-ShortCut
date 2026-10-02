@@ -595,6 +595,7 @@ fun GlossyTactileButton(
 fun ProxyInfoStatusPill(state: OverlayUiState) {
     val proxy = state.proxyState
     if (!proxy.isConnected) return
+    val context = androidx.compose.ui.platform.LocalContext.current
 
     val countryOpt = com.example.util.NameGenerator.getCountryOption(proxy.countryCode)
     val countryStr = "${countryOpt.flag} ${countryOpt.code}"
@@ -609,7 +610,11 @@ fun ProxyInfoStatusPill(state: OverlayUiState) {
             1.dp,
             Color(0xFF00E676)
         ),
-        modifier = Modifier.testTag("overlay_proxy_status_pill")
+        modifier = Modifier
+            .testTag("overlay_proxy_status_pill")
+            .clickable {
+                OverlayStateManager.refreshRotatingIp(context)
+            }
     ) {
         Row(
             modifier = Modifier.padding(horizontal = 9.dp, vertical = 3.dp),

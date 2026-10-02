@@ -98,6 +98,19 @@ class SuperProxyVpnService : VpnService() {
                 .addRoute("240.0.0.0", 4) // Synthetic mapped DNS network
                 .addRoute("0.0.0.0", 0)   // Route entire device IPv4 traffic into tun0
 
+            // IPv6 Leak Protection: Traps IPv6 traffic inside tunnel to prevent mobile network bypass
+            try {
+                builder.addAddress("fc00::2", 128)
+                builder.addRoute("::", 0)
+            } catch (_: Exception) {}
+
+            // Unmetered on Android 10+ so OS and apps don't restrict background sync
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                try {
+                    builder.setMetered(false)
+                } catch (_: Exception) {}
+            }
+
             // 1. App Routing & Loop Prevention:
             // Never route our own app package into the VPN to prevent infinite loop
             if (allowedApps.isNotEmpty()) {
@@ -118,6 +131,13 @@ class SuperProxyVpnService : VpnService() {
             vpnInterface = builder.establish()
             val pfd = vpnInterface ?: throw IllegalStateException("TUN descriptor invalid")
             val tunFd = pfd.fd
+
+            // Enable seamless Wi-Fi <-> Cellular roaming
+            try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP_MR1) {
+                    setUnderlyingNetworks(null)
+                }
+            } catch (_: Exception) {}
 
             // 2. Protocol & Authentication Handling:
             val isHttp = protocol.equals("HTTP", ignoreCase = true) || protocol.equals("HTTPS", ignoreCase = true)
@@ -156,6 +176,7 @@ class SuperProxyVpnService : VpnService() {
             sb.append("  name: tun0\n")
             sb.append("  mtu: 1500\n")
             sb.append("  ipv4: 10.0.0.2\n")
+            sb.append("  ipv6: fc00::2\n")
             sb.append("\n")
             sb.append("socks5:\n")
             sb.append("  port: ").append(finalPort).append("\n")
@@ -173,13 +194,13 @@ class SuperProxyVpnService : VpnService() {
             sb.append("  port: 53\n")
             sb.append("  network: 240.0.0.0\n")
             sb.append("  netmask: 240.0.0.0\n")
-            sb.append("  cache-size: 2048\n")
+            sb.append("  cache-size: 4096\n")
             sb.append("\n")
             sb.append("misc:\n")
-            sb.append("  task-stack-size: 20480\n")
+            sb.append("  task-stack-size: 40960\n")
             sb.append("  connect-timeout: 10000\n")
-            sb.append("  tcp-read-write-timeout: 60000\n")
-            sb.append("  udp-read-write-timeout: 30000\n")
+            sb.append("  tcp-read-write-timeout: 300000\n")
+            sb.append("  udp-read-write-timeout: 60000\n")
             sb.append("  limit-nofile: 65535\n")
 
             FileOutputStream(configFile).use { it.write(sb.toString().toByteArray()) }

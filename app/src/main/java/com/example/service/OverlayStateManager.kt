@@ -1098,6 +1098,66 @@ object OverlayStateManager {
     }
 
     /**
+     * Instantly queries and updates the latest egress IP and country
+     * especially useful for Residential / Rotating proxies.
+     */
+    fun refreshRotatingIp(context: Context? = null) {
+        val proxy = _uiState.value.proxyState
+        if (!proxy.isConnected) return
+
+        _uiState.update {
+            it.copy(
+                proxyState = it.proxyState.copy(
+                    statusText = "Checking IP..."
+                )
+            )
+        }
+
+        scope.launch(Dispatchers.IO) {
+            val result = ProxyTester.testProxy(
+                host = proxy.host,
+                port = proxy.port,
+                protocol = proxy.protocol,
+                username = proxy.username,
+                password = proxy.password,
+                timeoutMs = 6000,
+                pingOptimized = true
+            )
+            kotlinx.coroutines.withContext(Dispatchers.Main) {
+                if (result.isSuccess) {
+                    val effectiveIp = result.resolvedIp ?: proxy.host
+                    val country = result.countryCode ?: proxy.countryCode
+                    val countryName = result.countryName ?: proxy.countryName
+                    val city = result.city ?: proxy.city
+                    val latency = if (result.latencyMs > 0) result.latencyMs else proxy.pingMs
+
+                    _uiState.update {
+                        it.copy(
+                            proxyState = it.proxyState.copy(
+                                ipAddress = effectiveIp,
+                                countryCode = country,
+                                countryName = countryName,
+                                city = city,
+                                pingMs = latency,
+                                statusText = "Rotated: $effectiveIp • ${latency}ms"
+                            )
+                        )
+                    }
+                    context?.let { ctx ->
+                        VibrationHelper.vibrateTactileClick(ctx)
+                        val loc = if (city.isNotEmpty()) "$city, $country" else country
+                        Toast.makeText(ctx, "🔄 Rotated IP: $effectiveIp ($loc)", Toast.LENGTH_SHORT).show()
+                    }
+                } else {
+                    context?.let { ctx ->
+                        Toast.makeText(ctx, "IP চেক ব্যর্থ হয়েছে", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            }
+        }
+    }
+
+    /**
      * 1-Click / Auto Proxy Formatter & Importer:
      * Parses standard raw strings (host:port:user:pass, socks5://..., etc.)
      * and saves into the SQLite/Room database.
