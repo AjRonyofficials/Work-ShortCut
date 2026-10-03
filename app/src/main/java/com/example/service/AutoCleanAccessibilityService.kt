@@ -590,9 +590,13 @@ class AutoCleanAccessibilityService : AccessibilityService() {
                 return
             }
 
-            if (clickedClearCache && now - lastActionTime > 180) {
-                step = 3
-                lastActionTime = now
+            // If Clear Data has not been clicked yet, keep waiting and searching for Clear Data button.
+            // NEVER prematurely close after 180ms!
+            if (!clickedClearData && clickedClearCache && now - lastActionTime > 3500) {
+                // Only if after 3.5 seconds on the storage screen there is genuinely no Clear Data button, close:
+                step = 4
+                autoCloseCleanedSequence()
+                return
             }
         }
 
@@ -603,10 +607,13 @@ class AutoCleanAccessibilityService : AccessibilityService() {
                 clickNode(confirmNode)
                 step = 4
                 lastActionTime = now
-                autoCloseCleanedSequence()
+                mainHandler.postDelayed({
+                    autoCloseCleanedSequence()
+                }, 120)
                 return
             } else {
-                if (now - lastActionTime > 220) {
+                // Wait up to 1200ms for confirmation dialog to animate and render
+                if (now - lastActionTime > 1200) {
                     step = 4
                     autoCloseCleanedSequence()
                 }
