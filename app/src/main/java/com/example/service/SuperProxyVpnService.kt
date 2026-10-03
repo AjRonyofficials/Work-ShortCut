@@ -95,9 +95,17 @@ class SuperProxyVpnService : VpnService() {
                 .setMtu(1400) // Standard safe MTU prevents mobile carrier packet fragmentation
                 .addAddress("10.10.10.10", 24)
                 .addDnsServer("8.8.8.8") // Intercepted locally in-memory by mapdns on tun0
+                .addDnsServer("1.1.1.1")
                 .addRoute("240.0.0.0", 4) // Synthetic mapped DNS network
                 .addRoute("0.0.0.0", 0)   // Route entire device IPv4 traffic into tun0
-                .allowBypass()            // Allows critical OS network probing so Android never reports Offline
+
+            // Anti-Leak: Route IPv6 into TUN interface to prevent physical carrier IPv6 from bypassing proxy
+            try {
+                builder.addAddress("fd00:1::1", 128)
+                builder.addRoute("::", 0)
+            } catch (_: Exception) {}
+
+            builder.allowBypass()            // Allows critical OS network probing so Android never reports Offline
 
             // Unmetered on Android 10+ so OS and apps don't restrict background sync
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
