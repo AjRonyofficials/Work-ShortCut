@@ -805,49 +805,43 @@ class AutoCleanAccessibilityService : AccessibilityService() {
             // Universal multilingual matching for FB Lite Accounts and Settings row
             val isAccountsMatch = lower.contains("accounts and setting") ||
                     lower.contains("accounts & setting") ||
+                    lower.contains("cuentas y configuración") || // Spanish (Screenshot 3)
+                    lower.contains("cuentas y configuracion") ||
+                    lower.contains("cuentas") ||
                     lower.contains("অ্যাকাউন্ট এবং সেটিংস") ||
                     lower.contains("অ্যাকাউন্ট ও সেটিংস") ||
                     lower.contains("একাউন্ট") ||
                     lower.contains("खाते और सेटिंग") || // Hindi
-                    lower.contains("cuentas y configuración") || // Spanish
-                    lower.contains("cuentas") || // Spanish
                     lower.contains("comptes et paramètres") || // French
-                    lower.contains("comptes") || // French
+                    lower.contains("comptes") ||
                     lower.contains("konten und einstellungen") || // German
-                    lower.contains("konten") || // German
+                    lower.contains("konten") ||
                     lower.contains("аккаунты и настройки") || // Russian
-                    lower.contains("учетные записи") || // Russian
-                    // Arabic RTL (from screenshot: الحسابات والإعدادات & غير موصى به)
-                    norm.contains("الحسابات والاعدادات") ||
+                    lower.contains("учетные записи") ||
+                    norm.contains("الحسابات والاعدادات") || // Arabic
                     norm.contains("الحسابات والاعتدادات") ||
                     norm.contains("الحسابات") ||
                     norm.contains("غير موصى به") ||
                     norm.contains("غير موصى") ||
-                    norm.contains("غير موصي") ||
+                    lower.contains("not recommended") ||
+                    lower.contains("no recomendado") || // Spanish subtitle (Screenshot 3)
+                    lower.contains("अनुशंसित नहीं") ||
+                    lower.contains("não recomendado") ||
+                    lower.contains("non recommandé") ||
+                    lower.contains("не рекомендуется") ||
                     lower.contains("contas e configurações") || // Portuguese
                     lower.contains("hesaplar ve ayarlar") || // Turkish
                     lower.contains("akun dan pengaturan") || // Indonesian
                     lower.contains("账户和设置") || // Chinese
                     lower.contains("アカウントと設定") || // Japanese
                     lower.contains("tài khoản và cài đặt") || // Vietnamese
-                    lower.contains("tài khoản") || // Vietnamese
+                    lower.contains("tài khoản") ||
                     lower.contains("계정 및 설정") || lower.contains("계정") || // Korean
                     lower.contains("บัญชีและการตั้งค่า") || lower.contains("บัญชี") || // Thai
                     lower.contains("အကောင့်") || // Burmese
-                    lower.contains("کھاتے اور ترتیبات") || lower.contains("اکاؤنٹس") || // Urdu
+                    lower.contains("کھاتے اور ترتیبات") || lower.contains("اکاؤنটস") || // Urdu
                     lower.contains("account e impostazioni") || // Italian
-                    lower.contains("konta i ustawienia") || // Polish
-                    lower.contains("חשבונות והגדרות") || lower.contains("חשבונות") || // Hebrew
-                    lower.contains("கணக்குகள்") || // Tamil
-                    lower.contains("ఖాతాలు") || // Telugu
-                    lower.contains("खाती आणि सेटिंग्ज") || // Marathi
-                    lower.contains("ખાતા અને સેટિંગ્સ") || // Gujarati
-                    lower.contains("ਖਾਤੇ ਅਤੇ ਸੈਟਿੰਗਾਂ") || // Punjabi
-                    lower.contains("not recommended") ||
-                    lower.contains("अनुशंसित नहीं") ||
-                    lower.contains("não recomendado") ||
-                    lower.contains("non recommandé") ||
-                    lower.contains("не рекомендуется")
+                    lower.contains("konta i ustawienia") // Polish
 
             if (isAccountsMatch) {
                 var checkableNode: AccessibilityNodeInfo? = null
@@ -1014,12 +1008,17 @@ class AutoCleanAccessibilityService : AccessibilityService() {
                         lower == "साफ करा" || lower == "બરાબર" || lower == "સાફ કરો" || lower == "ਠੀਕ ਹੈ" || lower == "ಸರಿ" || lower == "ശരി" ||
                         // Hebrew & Swahili
                         lower == "אישור" || lower == "sawa" || lower == "futa" ||
-                        lowerDesc == "ok" || lowerDesc == "confirm"
+                        lowerDesc == "ok" || lowerDesc == "confirm" || lowerDesc == "aceptar"
 
                 if (isPositiveWord) {
                     candidates.add(node)
                 } else if (viewId.endsWith(":id/button1") || viewId.endsWith(":id/confirm") || viewId.endsWith(":id/ok")) {
                     candidates.add(node)
+                }
+
+                val cls = node.className?.toString() ?: ""
+                if (node.isClickable && (cls.contains("Button") || cls.contains("TextView")) && text.isNotBlank()) {
+                    nonCancelButtons.add(node)
                 }
             }
 
@@ -1028,12 +1027,26 @@ class AutoCleanAccessibilityService : AccessibilityService() {
             }
         }
 
-        // Return candidate with highest priority - NEVER fall back to arbitrary buttons
-        return candidates.firstOrNull {
+        // Return candidate with highest priority
+        val priorityMatch = candidates.firstOrNull {
             val t = (it.text?.toString() ?: "").trim()
             val n = normalizeText(t)
-            t.equals("ok", ignoreCase = true) || n == "موافق" || t == "ঠিক আছে" || t == "ठीक है" || t.equals("tamam", ignoreCase = true)
+            t.equals("ok", ignoreCase = true) || t.equals("aceptar", ignoreCase = true) ||
+                    n == "موافق" || t == "ঠিক আছে" || t == "ठीक है" || t.equals("tamam", ignoreCase = true)
         } ?: candidates.firstOrNull()
+
+        if (priorityMatch != null) return priorityMatch
+
+        // Geometric Right-Side Dialog Button Fallback (as user noted: OK option is always on the right side)
+        if (nonCancelButtons.isNotEmpty()) {
+            val rect = android.graphics.Rect()
+            return nonCancelButtons.maxByOrNull {
+                it.getBoundsInScreen(rect)
+                rect.left
+            }
+        }
+
+        return null
     }
 
     private fun findOkOrDeleteConfirmButton(root: AccessibilityNodeInfo): AccessibilityNodeInfo? {
@@ -1108,6 +1121,8 @@ class AutoCleanAccessibilityService : AccessibilityService() {
 
             val isExactClear = text.equals("CLEAR", ignoreCase = true) ||
                     text.equals("Clear", ignoreCase = true) ||
+                    text.equals("BORRAR", ignoreCase = true) ||
+                    text.equals("Borrar", ignoreCase = true) ||
                     text.equals("মুছুন") ||
                     text.equals("মুছে ফেলুন") ||
                     norm == "مسح" || // Arabic
@@ -1115,6 +1130,7 @@ class AutoCleanAccessibilityService : AccessibilityService() {
                     lower == "साफ़ करें" ||
                     lower == "صاف کریں" ||
                     lower == "limpiar" ||
+                    lower == "borrar" ||
                     lower == "effacer" ||
                     lower == "löschen" ||
                     lower == "очистить" ||
@@ -1143,13 +1159,18 @@ class AutoCleanAccessibilityService : AccessibilityService() {
                     lower == "മായ്ക്കുക" ||
                     lower == "נקה" ||
                     lower == "futa" ||
-                    desc.equals("CLEAR", ignoreCase = true)
+                    desc.equals("CLEAR", ignoreCase = true) ||
+                    desc.equals("BORRAR", ignoreCase = true)
 
             val isNotOtherClear = !text.contains("All", ignoreCase = true) &&
+                    !text.contains("Todo", ignoreCase = true) && // Exclude "Borrar todo"
                     !text.contains("Phone", ignoreCase = true) &&
+                    !text.contains("Teléfono", ignoreCase = true) &&
                     !text.contains("Cache", ignoreCase = true) &&
+                    !text.contains("Caché", ignoreCase = true) &&
                     !text.contains("Storage", ignoreCase = true) &&
                     !text.contains("Accounts", ignoreCase = true) &&
+                    !text.contains("Cuentas", ignoreCase = true) &&
                     !norm.contains("الكل") && // exclude "مسح الكل" (Clear all checkbox)
                     !norm.contains("هاتفك") && // exclude header "مسح وحدة التخزين على هاتفك"
                     !norm.contains("الموقت") && // exclude cache
