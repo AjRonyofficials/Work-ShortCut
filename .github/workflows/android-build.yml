@@ -96,10 +96,10 @@ jobs:
           export JAVA_TOOL_OPTIONS="-Djava.awt.headless=true -Dfile.encoding=UTF-8 -Dsun.awt.noerasebackground=true"
           if [ -f "./gradlew" ] && [ -f "gradle/wrapper/gradle-wrapper.jar" ]; then
             echo "Building with ./gradlew (Gradle 9.3.1)..."
-            ./gradlew assembleDebug --no-daemon -Djava.awt.headless=true -Dksp.incremental=false -Dksp.useKSP2=true || gradle assembleDebug --no-daemon -Djava.awt.headless=true -Dksp.incremental=false -Dksp.useKSP2=true
+            ./gradlew assembleDebug --no-daemon --no-configuration-cache -Djava.awt.headless=true -Dksp.incremental=false || gradle assembleDebug --no-daemon --no-configuration-cache -Djava.awt.headless=true -Dksp.incremental=false
           else
             echo "Building directly with gradle CLI (Gradle 9.3.1)..."
-            gradle assembleDebug --no-daemon -Djava.awt.headless=true -Dksp.incremental=false -Dksp.useKSP2=true
+            gradle assembleDebug --no-daemon --no-configuration-cache -Djava.awt.headless=true -Dksp.incremental=false
           fi
 
       - name: Verify Generated APK
