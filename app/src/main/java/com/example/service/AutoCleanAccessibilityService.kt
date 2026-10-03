@@ -441,7 +441,7 @@ class AutoCleanAccessibilityService : AccessibilityService() {
                 "clear cache", "clear data", "clear storage", "manage space", "manage storage",
                 "ক্যাশ মুছুন", "ক্যাশে মুছুন", "সব ডেটা মুছুন", "ডেটা মুছুন", "স্টোরেজ মুছুন",
                 "कैश साफ़ करें", "डेटा साफ़ करें", "स्टोरेज साफ़ करें",
-                "limpiar caché", "borrar datos", "borrar almacenamiento",
+                "limpiar caché", "borrar datos", "borrar caché", "borrar almacenamiento",
                 "vider le cache", "effacer les données",
                 "cache leeren", "daten löschen",
                 "очистить кэш", "очистить хранилище", "стереть данные",
