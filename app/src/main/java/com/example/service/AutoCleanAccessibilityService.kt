@@ -624,10 +624,10 @@ class AutoCleanAccessibilityService : AccessibilityService() {
                 clickNode(confirmNode)
                 step = 4
                 lastActionTime = now
-                // Allow ~500ms for deletion to complete cleanly before closing
+                // Ultra-fast smooth close (~100ms) right after confirmation click
                 mainHandler.postDelayed({
                     autoCloseCleanedSequence()
-                }, 500)
+                }, 100)
                 return
             } else {
                 // Wait up to 1500ms for confirmation dialog to animate and render
@@ -645,7 +645,7 @@ class AutoCleanAccessibilityService : AccessibilityService() {
      * 1. Checks "Accounts and settings" checkbox.
      * 2. Exactly 1-second delay (1000ms) before clicking "OK" on confirmation popup.
      * 3. Taps blue "CLEAR" button without missing.
-     * 4. Confirms final popup and closes settings smoothly!
+     * 4. Confirms final popup and closes settings ultra-fast and smoothly!
      */
     private fun handleLiteStorageScreenFlow(rootNode: AccessibilityNodeInfo) {
         val now = System.currentTimeMillis()
@@ -658,9 +658,10 @@ class AutoCleanAccessibilityService : AccessibilityService() {
                 clickNode(finalOk)
                 liteStep = LITE_STEP_DONE
                 lastActionTime = now
+                // Ultra-fast smooth close (~100ms) right after final confirmation click
                 mainHandler.postDelayed({
                     autoCloseCleanedSequence()
-                }, 500)
+                }, 100)
                 return
             } else if (now - lastActionTime > 1200) {
                 // If no final confirmation dialog appeared after 1.2s, storage is cleared -> close
