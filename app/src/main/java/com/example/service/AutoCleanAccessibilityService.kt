@@ -211,18 +211,22 @@ class AutoCleanAccessibilityService : AccessibilityService() {
                 return
             }
 
-            val pkg = (event?.packageName?.toString() ?: "").lowercase()
-            val isTargetPkg = currentTarget.isNotEmpty() && pkg.contains(currentTarget.lowercase())
+            val eventPkg = (event?.packageName?.toString() ?: "").lowercase()
+            val rootNode = rootInActiveWindow ?: return
+            val windowPkg = (rootNode.packageName?.toString() ?: "").lowercase()
+            val pkg = if (eventPkg.isNotEmpty()) eventPkg else windowPkg
+
+            val isTargetPkg = currentTarget.isNotEmpty() && (pkg.contains(currentTarget.lowercase()) || windowPkg.contains(currentTarget.lowercase()))
             val isKnownTarget = pkg.contains("lite") || pkg.contains("facebook") || pkg.contains("katana") ||
                     pkg.contains("settings") || pkg.contains("samsung") || pkg.contains("miui") ||
                     pkg.contains("securitycenter") || pkg.contains("packageinstaller") ||
-                    pkg.contains("systemui") || pkg.isEmpty()
+                    pkg.contains("systemui") || pkg.isEmpty() ||
+                    windowPkg.contains("lite") || windowPkg.contains("facebook") || windowPkg.contains("settings")
 
             if (!isTargetPkg && !isKnownTarget && !isTargetLiteMode) {
                 return
             }
 
-            val rootNode = rootInActiveWindow ?: return
             val isLiteScreen = isLiteStorageScreen(rootNode)
 
             // 1. If Facebook Lite storage screen or its popup is active, handle custom Lite flow
@@ -242,11 +246,27 @@ class AutoCleanAccessibilityService : AccessibilityService() {
         }
     }
 
+    private fun normalizeText(str: String): String {
+        return str.lowercase()
+            .replace("أ", "ا")
+            .replace("إ", "ا")
+            .replace("آ", "ا")
+            .replace("ة", "ه")
+            .replace("ى", "ي")
+            .replace("ی", "ي")
+            .trim()
+    }
+
     private fun isLiteStorageScreen(rootNode: AccessibilityNodeInfo): Boolean {
         if (liteStep in LITE_STEP_SELECTING_ACCOUNTS..LITE_STEP_FINAL_CONFIRM) {
             return true
         }
+        val currentPkg = (rootNode.packageName?.toString() ?: "").lowercase()
+        val isLiteApp = isTargetLiteMode || currentPkg.contains("lite") || currentPkg.contains("facebook")
+
+        // 1. Multilingual keywords across Arabic, English, Bengali, Hindi, Spanish, French, German, Russian, etc.
         val keywords = listOf(
+            // English
             "facebook lite storage",
             "clear storage on your phone",
             "accounts and settings",
@@ -256,9 +276,66 @@ class AutoCleanAccessibilityService : AccessibilityService() {
             "other cache",
             "remove unnecessary app files to save space",
             "not recommended",
-            "অ্যাকাউন্ট এবং সেটিংস"
+            // Arabic (RTL) - EXACT MATCH FOR USER'S SCREENSHOT
+            "مسح وحدة التخزين على هاتفك",
+            "مسح وحدة التخزين",
+            "الحسابات والإعدادات",
+            "الحسابات والاعتدادات",
+            "ذاكرة التخزين المؤقت",
+            "ذاكرة التخزين المؤقت للصور",
+            "ذاكرة التخزين المؤقت لمقاطع الفيديو",
+            "ذاكرة تخزين مؤقت أخرى",
+            "غير موصى به",
+            "غير موصى",
+            "مسح الكل",
+            // Bengali
+            "অ্যাকাউন্ট এবং সেটিংস",
+            "আপনার ফোনে স্থান খালি করুন",
+            "ফটো ক্যাশে",
+            "ভিডিও ক্যাশে",
+            "সুপারিশ করা হচ্ছে না",
+            // Hindi
+            "अपने फोन पर स्टोरेज साफ़ करें",
+            "खाते और सेटिंग",
+            "अनुशंसित नहीं",
+            // Spanish, French, Russian
+            "liberar espacio en el teléfono",
+            "cuentas y configuración",
+            "no recomendado",
+            "libérer de l’espace sur votre téléphone",
+            "comptes et paramètres",
+            "non recommandé",
+            "очистка памяти на телефоне",
+            "аккаунты и настройки",
+            "не рекомендуется"
         )
-        return findNodeByKeywords(rootNode, keywords) != null
+        if (findNodeByKeywords(rootNode, keywords) != null) {
+            return true
+        }
+
+        // 2. Structural & Layout Agnostic Detection (independent of language, LTR or RTL):
+        // In Facebook Lite, this storage screen ALWAYS has checkable checkboxes (Clear All, Photo, Video, Other, Accounts)
+        if (isLiteApp) {
+            var checkableCount = 0
+            val queue = ArrayDeque<AccessibilityNodeInfo>()
+            queue.add(rootNode)
+            var scanned = 0
+            while (queue.isNotEmpty() && scanned < 80) {
+                val n = queue.removeFirst()
+                scanned++
+                if (n.isCheckable) {
+                    checkableCount++
+                }
+                for (i in 0 until n.childCount) {
+                    n.getChild(i)?.let { queue.add(it) }
+                }
+            }
+            if (checkableCount >= 2) {
+                return true
+            }
+        }
+
+        return false
     }
 
     private fun handleForceCloseStep(rootNode: AccessibilityNodeInfo) {
@@ -356,7 +433,11 @@ class AutoCleanAccessibilityService : AccessibilityService() {
                         combined.contains("speicher") || // German
                         combined.contains("хранилище") || // Russian
                         combined.contains("память") || // Russian
-                        combined.contains("التخزين") || // Arabic
+                        combined.contains("التخزين") || // Arabic (Storage)
+                        combined.contains("مساحة التخزين") || // Arabic (Storage space)
+                        combined.contains("وحدة التخزين") || // Arabic (Storage unit)
+                        combined.contains("سعة التخزين") || // Arabic
+                        combined.contains("الذاكرة والتخزين") || // Arabic
                         combined.contains("armazenamento") || // Portuguese
                         combined.contains("depolama") || // Turkish
                         combined.contains("penyimpanan") || // Indonesian
@@ -388,7 +469,9 @@ class AutoCleanAccessibilityService : AccessibilityService() {
                 "vider le cache", "effacer les données",
                 "cache leeren", "daten löschen",
                 "очистить кэш", "очистить хранилище", "стереть данные",
-                "مسح ذاكرة التخزين المؤقت", "مسح البيانات",
+                // Arabic (RTL support - Clear Cache & Clear Data in all variations)
+                "مسح ذاكرة التخزين المؤقت", "مسح التخزين المؤقت", "ذاكرة التخزين المؤقت",
+                "مسح البيانات", "مسح مساحة التخزين", "مسح وحدة التخزين", "مسح التخزين", "إدارة المساحة", "حذف البيانات", "مسح جميع البيانات",
                 "limpar cache", "limpar dados",
                 "önbelleği temizle", "verileri temizle",
                 "hapus cache", "hapus data",
@@ -473,7 +556,8 @@ class AutoCleanAccessibilityService : AccessibilityService() {
                     listOf(
                         "clear cache", "ক্যাশ মুছুন", "ক্যাশে মুছুন", "ক্লিয়ার ক্যাশ", "ক্লিন ক্যাশ",
                         "कैश साफ़ करें", "कैशे साफ़ करें", "limpiar caché", "borrar caché",
-                        "vider le cache", "cache leeren", "очистить кэш", "مسح ذاكرة التخزين المؤقت",
+                        "vider le cache", "cache leeren", "очистить кэш",
+                        "مسح ذاكرة التخزين المؤقت", "مسح التخزين المؤقت", "ذاكرة التخزين المؤقت", "مسح الذاكرة المؤقتة",
                         "limpar cache", "önbelleği temizle", "hapus cache", "清除缓存", "キャッシュを消去", "xóa bộ nhớ đệm"
                     ),
                     resourceIds = listOf(
@@ -497,7 +581,8 @@ class AutoCleanAccessibilityService : AccessibilityService() {
                 rootNode,
                 listOf(
                     "clear all data", "সব ডেটা মুছুন", "সব ডাটা মুছুন", "सभी डेटा साफ़ करें",
-                    "borrar todos los datos", "effacer toutes les données", "все данные"
+                    "borrar todos los datos", "effacer toutes les données", "все данные",
+                    "مسح جميع البيانات", "مسح كل البيانات"
                 ),
                 resourceIds = listOf(
                     "com.miui.securitycenter:id/clear_all_data"
@@ -512,6 +597,7 @@ class AutoCleanAccessibilityService : AccessibilityService() {
             }
 
             // Priority B: Samsung One UI, Pixel, Facebook Main / Katana / FB Lite "Clear Data" / "Clear Storage" / "Manage space"
+            // Handles both LTR and RTL (left-right swapped / dan-dik bam-dik) by relying on Resource IDs and Multilingual Keywords
             val clearDataNode = findNodeByKeywords(
                 rootNode,
                 listOf(
@@ -521,7 +607,9 @@ class AutoCleanAccessibilityService : AccessibilityService() {
                     "borrar datos", "borrar almacenamiento", "administrar espacio",
                     "effacer les données", "supprimer les données", "gérer l'espace",
                     "daten löschen", "speicherplatz verwalten", "очистить хранилище", "стереть данные",
-                    "مسح البيانات", "إدارة المساحة", "limpar dados", "limpar armazenamento", "gerenciar espaço",
+                    // Arabic RTL (Swapped positions / dan-bam)
+                    "مسح مساحة التخزين", "مسح وحدة التخزين", "مسح البيانات", "مسح التخزين", "إدارة المساحة", "حذف البيانات", "مسح جميع البيانات",
+                    "limpar dados", "limpar armazenamento", "gerenciar espaço",
                     "verileri temizle", "hapus data", "kelola ruang", "清除数据", "管理空间",
                     "データを消去", "容量を管理", "xóa dữ liệu", "quản lý dung lượng"
                 ),
@@ -700,6 +788,7 @@ class AutoCleanAccessibilityService : AccessibilityService() {
             count++
             val text = (node.text?.toString() ?: "") + " " + (node.contentDescription?.toString() ?: "")
             val lower = text.lowercase()
+            val norm = normalizeText(text)
 
             if (node.isCheckable) {
                 allCheckableNodes.add(node)
@@ -720,7 +809,13 @@ class AutoCleanAccessibilityService : AccessibilityService() {
                     lower.contains("konten") || // German
                     lower.contains("аккаунты и настройки") || // Russian
                     lower.contains("учетные записи") || // Russian
-                    lower.contains("الحسابات والإعدادات") || // Arabic
+                    // Arabic RTL (from screenshot: الحسابات والإعدادات & غير موصى به)
+                    norm.contains("الحسابات والاعدادات") ||
+                    norm.contains("الحسابات والاعتدادات") ||
+                    norm.contains("الحسابات") ||
+                    norm.contains("غير موصى به") ||
+                    norm.contains("غير موصى") ||
+                    norm.contains("غير موصي") ||
                     lower.contains("contas e configurações") || // Portuguese
                     lower.contains("hesaplar ve ayarlar") || // Turkish
                     lower.contains("akun dan pengaturan") || // Indonesian
@@ -774,23 +869,21 @@ class AutoCleanAccessibilityService : AccessibilityService() {
             }
         }
 
-        // Structural Fallback for any unknown language in FB Lite:
-        // FB Lite has 3 checkboxes on this screen, the 3rd one is ALWAYS "Accounts and settings"
-        if (allCheckableNodes.size >= 3) {
-            val thirdCheckbox = allCheckableNodes[2]
+        // Structural Fallback for ANY unknown language or RTL layout in FB Lite:
+        // In FB Lite storage screen:
+        // Cache checkboxes (Clear All, Photo, Video, Other) are pre-checked by FB Lite.
+        // "Accounts and settings" is ALWAYS the ONLY UNCHECKED checkbox, or the LAST checkbox!
+        val uncheckedCheckbox = allCheckableNodes.firstOrNull { !it.isChecked }
+        val targetCheckbox = uncheckedCheckbox ?: allCheckableNodes.lastOrNull()
+
+        if (targetCheckbox != null) {
+            val parent = targetCheckbox.parent
+            val targetClickable = if (targetCheckbox.isClickable) targetCheckbox else (parent ?: targetCheckbox)
             return AccountsRowInfo(
-                textNode = thirdCheckbox,
-                checkboxNode = thirdCheckbox,
-                clickableTarget = thirdCheckbox,
-                isChecked = thirdCheckbox.isChecked
-            )
-        } else if (allCheckableNodes.isNotEmpty()) {
-            val lastCheckbox = allCheckableNodes.last()
-            return AccountsRowInfo(
-                textNode = lastCheckbox,
-                checkboxNode = lastCheckbox,
-                clickableTarget = lastCheckbox,
-                isChecked = lastCheckbox.isChecked
+                textNode = targetCheckbox,
+                checkboxNode = targetCheckbox,
+                clickableTarget = targetClickable,
+                isChecked = targetCheckbox.isChecked
             )
         }
 
@@ -806,8 +899,9 @@ class AutoCleanAccessibilityService : AccessibilityService() {
             val node = queue.removeFirst()
             count++
             val text = (node.text?.toString() ?: "").lowercase()
+            val norm = normalizeText(text)
 
-            if (text.contains("clear all") || text.contains("সব মুছুন")) {
+            if (text.contains("clear all") || text.contains("সব মুছুন") || norm.contains("مسح الكل")) {
                 val parent = node.parent
                 if (parent != null) {
                     for (i in 0 until parent.childCount) {
@@ -831,24 +925,48 @@ class AutoCleanAccessibilityService : AccessibilityService() {
         queue.add(root)
         var count = 0
         val candidates = mutableListOf<AccessibilityNodeInfo>()
+        val nonCancelButtons = mutableListOf<AccessibilityNodeInfo>()
 
-        while (queue.isNotEmpty() && count < 70) {
+        while (queue.isNotEmpty() && count < 80) {
             val node = queue.removeFirst()
             count++
             val text = (node.text?.toString() ?: "").trim()
             val desc = (node.contentDescription?.toString() ?: "").trim()
             val lower = text.lowercase()
             val lowerDesc = desc.lowercase()
+            val norm = normalizeText(text)
             val viewId = node.viewIdResourceName?.lowercase() ?: ""
 
-            val isCancel = lower == "cancel" || lower == "বাতিল" || lower == "না" || lower == "no"
+            val isCancel = lower == "cancel" || lower == "বাতিল" || lower == "না" || lower == "no" ||
+                    lower == "إلغاء" || norm == "الغاء" || lower == "annuler" || lower == "abbrechen" ||
+                    lower == "отмена" || lower == "iptal" || lower == "batal" || lower == "cancelar" ||
+                    lower == "huỷ" || lower == "取消" || lower == "キャンセル"
+
             if (!isCancel && node.isEnabled) {
-                if (lower == "ok" || lower == "okay" || lower == "confirm" ||
-                    lower == "ঠিক আছে" || lower == "yes" || lower == "হ্যাঁ" ||
-                    lowerDesc == "ok" || lowerDesc == "confirm") {
+                // Multilingual Positive Confirm words
+                val isPositiveWord = lower == "ok" || lower == "okay" || lower == "confirm" ||
+                        lower == "yes" || lower == "clear" || lower == "delete" ||
+                        // Arabic
+                        norm == "موافق" || lower == "مسح" || lower == "حذف" || lower == "نعم" || norm == "تاكيد" || norm == "متابعه" ||
+                        // Bengali
+                        lower == "ঠিক আছে" || lower == "হ্যাঁ" || lower == "মুছুন" || lower == "নিশ্চিত করুন" ||
+                        // Hindi
+                        lower == "ঠিক है" || lower == "हाँ" || lower == "साफ़ करें" || lower == "हटाएं" ||
+                        // Spanish, French, Russian, etc.
+                        lower == "aceptar" || lower == "sí" || lower == "oui" || lower == "ок" || lower == "да" ||
+                        lower == "tamam" || lower == "evet" || lower == "oke" || lower == "ya" ||
+                        lower == "确定" || lower == "はい" ||
+                        lowerDesc == "ok" || lowerDesc == "confirm"
+
+                if (isPositiveWord) {
                     candidates.add(node)
                 } else if (viewId.endsWith(":id/button1") || viewId.endsWith(":id/confirm") || viewId.endsWith(":id/ok")) {
                     candidates.add(node)
+                }
+
+                val className = node.className?.toString() ?: ""
+                if (node.isClickable && (className.contains("Button") || className.contains("TextView"))) {
+                    nonCancelButtons.add(node)
                 }
             }
 
@@ -857,8 +975,12 @@ class AutoCleanAccessibilityService : AccessibilityService() {
             }
         }
 
-        return candidates.firstOrNull { (it.text?.toString() ?: "").trim().equals("ok", ignoreCase = true) }
-            ?: candidates.firstOrNull()
+        // Return candidate with highest priority
+        return candidates.firstOrNull {
+            val t = (it.text?.toString() ?: "").trim()
+            val n = normalizeText(t)
+            t.equals("ok", ignoreCase = true) || n == "موافق" || t == "ঠিক আছে"
+        } ?: candidates.firstOrNull() ?: nonCancelButtons.lastOrNull()
     }
 
     private fun findOkOrDeleteConfirmButton(root: AccessibilityNodeInfo): AccessibilityNodeInfo? {
@@ -870,13 +992,14 @@ class AutoCleanAccessibilityService : AccessibilityService() {
             val node = queue.removeFirst()
             count++
             val text = (node.text?.toString() ?: "").trim().lowercase()
+            val norm = normalizeText(text)
             val viewId = node.viewIdResourceName?.lowercase() ?: ""
 
             val isCancel = text == "cancel" || text == "বাতিল" || text == "না" || text == "no" ||
-                    text == "annuler" || text == "abbrechen" || text == "отмена" || text == "إلغاء" ||
-                    text == "iptal" || text == "batal" || text == "取消" || text == "キャンセル"
+                    text == "annuler" || text == "abbrechen" || text == "отмена" || text == "إلغاء" || norm == "الغاء" ||
+                    text == "iptal" || text == "batal" || text == "取消" || text == "キャンセル" || text == "cancelar"
             if (!isCancel && node.isEnabled) {
-                // Priority: Standard Android Dialog Positive Button (universal across all languages)
+                // Priority: Standard Android Dialog Positive Button (universal across all languages and RTL)
                 if (viewId.endsWith(":id/button1") || viewId.contains("confirm") || viewId.contains("button_ok")) {
                     return node
                 }
@@ -884,12 +1007,13 @@ class AutoCleanAccessibilityService : AccessibilityService() {
                 val isConfirmText = text == "delete" || text == "মুছুন" || text == "ok" || text == "clear" ||
                         text == "confirm" || text == "ঠিক আছে" || text == "হ্যাঁ" ||
                         text == "clear all data" || text == "সব ডেটা মুছুন" ||
-                        text == "हटाएं" || text == "ठीक है" || text == "हाँ" || text == "साफ़ करें" || // Hindi
+                        text == "हटाएं" || text == "ঠিক है" || text == "हाँ" || text == "साफ़ करें" || // Hindi
                         text == "eliminar" || text == "aceptar" || text == "borrar" || text == "sí" || // Spanish
                         text == "supprimer" || text == "effacer" || text == "oui" || // French
                         text == "löschen" || text == "ja" || // German
                         text == "удалить" || text == "ок" || text == "да" || text == "очистить" || // Russian
-                        text == "حذف" || text == "موافق" || text == "نعم" || // Arabic
+                        // Arabic
+                        text == "حذف" || norm == "موافق" || text == "نعم" || text == "مسح" || norm == "تاكيد" ||
                         text == "excluir" || text == "apagar" || text == "sim" || // Portuguese
                         text == "sil" || text == "tamam" || text == "evet" || // Turkish
                         text == "hapus" || text == "oke" || text == "ya" || // Indonesian
@@ -913,23 +1037,26 @@ class AutoCleanAccessibilityService : AccessibilityService() {
         val queue = ArrayDeque<AccessibilityNodeInfo>()
         queue.add(root)
         var count = 0
+        var fallbackButton: AccessibilityNodeInfo? = null
 
-        while (queue.isNotEmpty() && count < 80) {
+        while (queue.isNotEmpty() && count < 90) {
             val node = queue.removeFirst()
             count++
             val text = (node.text?.toString() ?: "").trim()
             val desc = (node.contentDescription?.toString() ?: "").trim()
             val lower = text.lowercase()
+            val norm = normalizeText(text)
 
             val isExactClear = text.equals("CLEAR", ignoreCase = true) ||
                     text.equals("Clear", ignoreCase = true) ||
                     text.equals("মুছুন") ||
+                    norm == "مسح" || // Arabic (EXACT MATCH FOR USER'S SCREENSHOT BLUE BUTTON!)
+                    lower == "حذف" ||
                     lower == "साफ़ करें" ||
                     lower == "limpiar" ||
                     lower == "effacer" ||
                     lower == "löschen" ||
                     lower == "очистить" ||
-                    lower == "مسح" ||
                     lower == "limpar" ||
                     lower == "temizle" ||
                     lower == "hapus" ||
@@ -942,17 +1069,31 @@ class AutoCleanAccessibilityService : AccessibilityService() {
                     !text.contains("Phone", ignoreCase = true) &&
                     !text.contains("Cache", ignoreCase = true) &&
                     !text.contains("Storage", ignoreCase = true) &&
-                    !text.contains("Accounts", ignoreCase = true)
+                    !text.contains("Accounts", ignoreCase = true) &&
+                    !norm.contains("الكل") && // exclude "مسح الكل" (Clear all checkbox)
+                    !norm.contains("هاتفك") && // exclude header "مسح وحدة التخزين على هاتفك"
+                    !norm.contains("الموقت") && // exclude cache
+                    !norm.contains("المؤقت")
 
             if (isExactClear && isNotOtherClear && node.isEnabled) {
                 return node
+            }
+
+            // Fallback button detector on Facebook Lite screen:
+            // The blue action button at the bottom has className "android.widget.Button", is not checkable
+            val className = node.className?.toString() ?: ""
+            if (className.contains("Button") && !node.isCheckable && node.isEnabled) {
+                val isCancel = lower == "cancel" || lower == "إلغاء" || norm == "الغاء" || lower == "বাতিল"
+                if (!isCancel && isNotOtherClear) {
+                    fallbackButton = node
+                }
             }
 
             for (i in 0 until node.childCount) {
                 node.getChild(i)?.let { queue.add(it) }
             }
         }
-        return null
+        return fallbackButton
     }
 
     /**
