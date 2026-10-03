@@ -922,33 +922,54 @@ class AutoCleanAccessibilityService : AccessibilityService() {
             val isCancel = lower == "cancel" || lower == "বাতিল" || lower == "না" || lower == "no" ||
                     lower == "إلغاء" || norm == "الغاء" || lower == "annuler" || lower == "abbrechen" ||
                     lower == "отмена" || lower == "iptal" || lower == "batal" || lower == "cancelar" ||
-                    lower == "huỷ" || lower == "取消" || lower == "キャンセル"
+                    lower == "huỷ" || lower == "hủy" || lower == "取消" || lower == "キャンセル" || lower == "취소" ||
+                    lower == "रद्द करें" || lower == "منسوخ" || lower == "انصراف" || lower == "annulla" ||
+                    lower == "anuluj" || lower == "скасувати" || lower == "ยกเลิก" || lower == "পယ်ဖျက်ပါ" ||
+                    lower == "kanselahin" || lower == "రద్దు" || lower == "ரத்து" || lower == "ರದ್ದು" ||
+                    lower == "റദ്ദാക്കുക" || lower == "ביטול" || lower == "ghairi" || lower == "annuleren"
 
             if (!isCancel && node.isEnabled) {
-                // Multilingual Positive Confirm words
+                // Multilingual Positive Confirm words for Facebook, FB Lite, Messenger (35+ languages)
                 val isPositiveWord = lower == "ok" || lower == "okay" || lower == "confirm" ||
                         lower == "yes" || lower == "clear" || lower == "delete" ||
+                        // Bengali
+                        lower == "ঠিক আছে" || lower == "হ্যাঁ" || lower == "মুছুন" || lower == "নিশ্চিত করুন" || lower == "মুছে ফেলুন" ||
                         // Arabic
                         norm == "موافق" || lower == "مسح" || lower == "حذف" || lower == "نعم" || norm == "تاكيد" || norm == "متابعه" ||
-                        // Bengali
-                        lower == "ঠিক আছে" || lower == "হ্যাঁ" || lower == "মুছুন" || lower == "নিশ্চিত করুন" ||
-                        // Hindi
-                        lower == "ঠিক है" || lower == "हाँ" || lower == "साफ़ करें" || lower == "हटाएं" ||
-                        // Spanish, French, Russian, etc.
-                        lower == "aceptar" || lower == "sí" || lower == "oui" || lower == "ок" || lower == "да" ||
-                        lower == "tamam" || lower == "evet" || lower == "oke" || lower == "ya" ||
-                        lower == "确定" || lower == "はい" ||
+                        // Hindi & Urdu
+                        lower == "ठीक है" || lower == "हाँ" || lower == "साफ़ करें" || lower == "हटाएं" || lower == "पुष्टि करें" ||
+                        lower == "ٹھیک ہے" || lower == "صاف کریں" || lower == "حذف کریں" ||
+                        // Spanish & Portuguese
+                        lower == "aceptar" || lower == "sí" || lower == "limpiar" || lower == "eliminar" || lower == "borrar" ||
+                        lower == "excluir" || lower == "apagar" || lower == "sim" || lower == "confirmar" ||
+                        // French
+                        lower == "oui" || lower == "effacer" || lower == "supprimer" || lower == "confirmer" ||
+                        // German & Dutch
+                        lower == "ja" || lower == "löschen" || lower == "bestätigen" || lower == "wissen" || lower == "verwijderen" ||
+                        // Russian & Ukrainian
+                        lower == "ок" || lower == "да" || lower == "очистить" || lower == "удалить" || lower == "підтвердити" || lower == "так" ||
+                        // Turkish & Indonesian/Malay
+                        lower == "tamam" || lower == "evet" || lower == "onayla" || lower == "oke" || lower == "ya" || lower == "hapus" || lower == "bersihkan" ||
+                        // Vietnamese & Thai
+                        lower == "có" || lower == "xóa" || lower == "xác nhận" || lower == "ตกลง" || lower == "ล้าง" || lower == "ลบ" || lower == "ใช่" ||
+                        // Chinese, Japanese, Korean
+                        lower == "确定" || lower == "确认" || lower == "確定" || lower == "確認" || lower == "清除" || lower == "删除" ||
+                        lower == "はい" || lower == "確認" || lower == "削除" || lower == "消去" || lower == "확인" || lower == "삭제" ||
+                        // Italian & Polish
+                        lower == "cancella" || lower == "elimina" || lower == "wyczyść" || lower == "usuń" || lower == "tak" ||
+                        // Persian / Farsi
+                        lower == "تأیید" || lower == "بله" || lower == "قبول" ||
+                        // South Asian (Tamil, Telugu, Marathi, Gujarati, Punjabi, Kannada, Malayalam)
+                        lower == "சரி" || lower == "அழி" || lower == "సరే" || lower == "తొలగించు" || lower == "ठीक आहे" ||
+                        lower == "साफ करा" || lower == "બરાબર" || lower == "સાફ કરો" || lower == "ਠੀਕ ਹੈ" || lower == "ಸರಿ" || lower == "ശരി" ||
+                        // Hebrew & Swahili
+                        lower == "אישור" || lower == "sawa" || lower == "futa" ||
                         lowerDesc == "ok" || lowerDesc == "confirm"
 
                 if (isPositiveWord) {
                     candidates.add(node)
                 } else if (viewId.endsWith(":id/button1") || viewId.endsWith(":id/confirm") || viewId.endsWith(":id/ok")) {
                     candidates.add(node)
-                }
-
-                val className = node.className?.toString() ?: ""
-                if (node.isClickable && (className.contains("Button") || className.contains("TextView"))) {
-                    nonCancelButtons.add(node)
                 }
             }
 
@@ -961,7 +982,7 @@ class AutoCleanAccessibilityService : AccessibilityService() {
         return candidates.firstOrNull {
             val t = (it.text?.toString() ?: "").trim()
             val n = normalizeText(t)
-            t.equals("ok", ignoreCase = true) || n == "موافق" || t == "ঠিক আছে"
+            t.equals("ok", ignoreCase = true) || n == "موافق" || t == "ঠিক আছে" || t == "ठीक है" || t.equals("tamam", ignoreCase = true)
         } ?: candidates.firstOrNull()
     }
 
@@ -979,7 +1000,9 @@ class AutoCleanAccessibilityService : AccessibilityService() {
 
             val isCancel = text == "cancel" || text == "বাতিল" || text == "না" || text == "no" ||
                     text == "annuler" || text == "abbrechen" || text == "отмена" || text == "إلغاء" || norm == "الغاء" ||
-                    text == "iptal" || text == "batal" || text == "取消" || text == "キャンセル" || text == "cancelar"
+                    text == "iptal" || text == "batal" || text == "取消" || text == "キャンセル" || text == "cancelar" ||
+                    text == "취소" || text == "रद्द करें" || text == "منسوخ" || text == "anuluj" || text == "annulla" ||
+                    text == "ยกเลิก" || text == "huỷ" || text == "hủy" || text == "රద్దు"
             if (!isCancel && node.isEnabled) {
                 // Priority: Standard Android Dialog Positive Button (universal across all languages and RTL)
                 if (viewId.endsWith(":id/button1") || viewId.contains("confirm") || viewId.contains("button_ok")) {
@@ -987,21 +1010,26 @@ class AutoCleanAccessibilityService : AccessibilityService() {
                 }
 
                 val isConfirmText = text == "delete" || text == "মুছুন" || text == "ok" || text == "clear" ||
-                        text == "confirm" || text == "ঠিক আছে" || text == "হ্যাঁ" ||
+                        text == "confirm" || text == "ঠিক আছে" || text == "হ্যাঁ" || text == "মুছে ফেলুন" ||
                         text == "clear all data" || text == "সব ডেটা মুছুন" ||
-                        text == "हटाएं" || text == "ঠিক है" || text == "हाँ" || text == "साफ़ करें" || // Hindi
+                        text == "हटाएं" || text == "ठीक है" || text == "हाँ" || text == "साफ़ करें" || // Hindi
+                        text == "صاف کریں" || text == "حذف کریں" || text == "ٹھیک ہے" || // Urdu
                         text == "eliminar" || text == "aceptar" || text == "borrar" || text == "sí" || // Spanish
                         text == "supprimer" || text == "effacer" || text == "oui" || // French
-                        text == "löschen" || text == "ja" || // German
-                        text == "удалить" || text == "ок" || text == "да" || text == "очистить" || // Russian
+                        text == "löschen" || text == "ja" || text == "wissen" || text == "verwijderen" || // German & Dutch
+                        text == "удалить" || text == "ок" || text == "да" || text == "очистить" || text == "підтвердити" || // Russian & Ukrainian
                         // Arabic
                         text == "حذف" || norm == "موافق" || text == "نعم" || text == "مسح" || norm == "تاكيد" ||
                         text == "excluir" || text == "apagar" || text == "sim" || // Portuguese
                         text == "sil" || text == "tamam" || text == "evet" || // Turkish
-                        text == "hapus" || text == "oke" || text == "ya" || // Indonesian
-                        text == "删除" || text == "确定" || text == "是" || // Chinese
-                        text == "削除" || text == "はい" || // Japanese
-                        text == "xóa" || text == "có" // Vietnamese
+                        text == "hapus" || text == "oke" || text == "ya" || text == "bersihkan" || // Indonesian & Malay
+                        text == "删除" || text == "确定" || text == "是" || text == "確認" || text == "清除" || // Chinese
+                        text == "削除" || text == "はい" || text == "確認" || // Japanese
+                        text == "확인" || text == "삭제" || // Korean
+                        text == "xóa" || text == "có" || text == "xác nhận" || // Vietnamese
+                        text == "ตกลง" || text == "ล้าง" || text == "ลบ" || // Thai
+                        text == "சரி" || text == "அழி" || text == "సరే" || text == "తొలగించు" || // Tamil & Telugu
+                        text == "साफ करा" || text == "हटवा" || text == "સાદ કરો" || text == "אישור" || text == "futa"
 
                 if (isConfirmText) {
                     return node
@@ -1019,7 +1047,6 @@ class AutoCleanAccessibilityService : AccessibilityService() {
         val queue = ArrayDeque<AccessibilityNodeInfo>()
         queue.add(root)
         var count = 0
-        var fallbackButton: AccessibilityNodeInfo? = null
 
         while (queue.isNotEmpty() && count < 90) {
             val node = queue.removeFirst()
@@ -1032,9 +1059,11 @@ class AutoCleanAccessibilityService : AccessibilityService() {
             val isExactClear = text.equals("CLEAR", ignoreCase = true) ||
                     text.equals("Clear", ignoreCase = true) ||
                     text.equals("মুছুন") ||
-                    norm == "مسح" || // Arabic (EXACT MATCH FOR USER'S SCREENSHOT BLUE BUTTON!)
+                    text.equals("মুছে ফেলুন") ||
+                    norm == "مسح" || // Arabic
                     lower == "حذف" ||
                     lower == "साफ़ करें" ||
+                    lower == "صاف کریں" ||
                     lower == "limpiar" ||
                     lower == "effacer" ||
                     lower == "löschen" ||
@@ -1042,9 +1071,28 @@ class AutoCleanAccessibilityService : AccessibilityService() {
                     lower == "limpar" ||
                     lower == "temizle" ||
                     lower == "hapus" ||
+                    lower == "bersihkan" ||
+                    lower == "kosongkan" ||
                     lower == "清除" ||
                     lower == "消去" ||
+                    lower == "삭제" ||
                     lower == "xóa" ||
+                    lower == "ล้าง" ||
+                    lower == "ရှင်းလင်းပါ" ||
+                    lower == "wissen" ||
+                    lower == "cancella" ||
+                    lower == "wyczyść" ||
+                    lower == "очистити" ||
+                    lower == "پاک کردن" ||
+                    lower == "அழி" ||
+                    lower == "క్లియర్" ||
+                    lower == "साफ करा" ||
+                    lower == "સાફ કરો" ||
+                    lower == "ਸਾਫ਼ ਕਰੋ" ||
+                    lower == "ತೆರವುಗೊಳಿಸಿ" ||
+                    lower == "മായ്ക്കുക" ||
+                    lower == "נקה" ||
+                    lower == "futa" ||
                     desc.equals("CLEAR", ignoreCase = true)
 
             val isNotOtherClear = !text.contains("All", ignoreCase = true) &&
