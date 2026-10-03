@@ -268,27 +268,48 @@ class AutoCleanAccessibilityService : AccessibilityService() {
             .trim()
     }
 
-    private fun isLiteStorageScreen(rootNode: AccessibilityNodeInfo): Boolean {
-        val pkg = (rootNode.packageName?.toString() ?: "").lowercase()
-        val isLiteOrSettings = pkg.contains("lite") || pkg.contains("facebook") || pkg.contains("settings")
-        if (!isLiteOrSettings) {
-            return false
+    private fun countCheckableNodes(root: AccessibilityNodeInfo): Int {
+        val queue = ArrayDeque<AccessibilityNodeInfo>()
+        queue.add(root)
+        var count = 0
+        var checkableCount = 0
+        while (queue.isNotEmpty() && count < 80) {
+            val node = queue.removeFirst()
+            count++
+            if (node.isCheckable) checkableCount++
+            for (i in 0 until node.childCount) {
+                node.getChild(i)?.let { queue.add(it) }
+            }
         }
+        return checkableCount
+    }
+
+    private fun isLiteStorageScreen(rootNode: AccessibilityNodeInfo): Boolean {
+        // Condition A: If the Accounts and Settings row is detected
+        if (findAccountsAndSettingsRow(rootNode) != null) {
+            return true
+        }
+        // Condition B: If Blue CLEAR button is found along with multiple checkboxes
+        if (findLiteClearButton(rootNode) != null && countCheckableNodes(rootNode) >= 2) {
+            return true
+        }
+        // Condition C: Multilingual keywords across all languages
         val keywords = listOf(
-            "facebook lite storage",
-            "clear storage on your phone",
-            "accounts and settings",
-            "accounts and setting",
-            "photo cache",
-            "video cache",
-            "other cache",
-            "remove unnecessary app files to save space",
-            "not recommended",
-            "مسح وحدة التخزين على هاتفك",
-            "الحسابات والإعدادات",
-            "الحسابات والاعتدادات",
-            "অ্যাকাউন্ট এবং সেটিংস",
-            "আপনার ফোনে স্থান খালি করুন"
+            "facebook lite storage", "clear storage on your phone",
+            "accounts and settings", "accounts and setting",
+            "photo cache", "video cache", "other cache", "not recommended",
+            "مسح وحدة التخزين على هاتفك", "الحسابات والإعدادات", "الحسابات والاعتدادات", "غير موصى به",
+            "আপনার ফোনে স্থান খালি করুন", "অ্যাকাউন্ট এবং সেটিংস",
+            "अपने फोन पर स्टोरेज साफ़ करें", "खाते और सेटिंग", "اسٹوریج صاف کریں", "کھاتے",
+            "liberar espacio en el teléfono", "cuentas y configuración",
+            "libérer de l'espace sur votre téléphone", "comptes et paramètres",
+            "speicherplatz auf deinem handy freigeben", "konten und einstellungen",
+            "очистить память телефона", "аккаунты и настройки",
+            "liberar espaço no celular", "contas e configurações",
+            "telefonunuzda depolama alanı açın", "hesaplar ve ayarlar",
+            "xóa dung lượng trên điện thoại", "tài khoản và cài đặt",
+            "清理手机存储空间", "账户和设置",
+            "ล้างที่เก็บข้อมูลบนโทรศัพท์ของคุณ", "휴대폰 저장 공간 지우기"
         )
         return findNodeByKeywords(rootNode, keywords) != null
     }
@@ -456,7 +477,7 @@ class AutoCleanAccessibilityService : AccessibilityService() {
      */
     private fun handleAutoCleanStep(rootNode: AccessibilityNodeInfo) {
         val now = System.currentTimeMillis()
-        if (now - lastActionTime < 300) return
+        if (now - lastActionTime < 200) return
 
         // If Facebook Lite storage screen appeared during navigation, jump directly into Lite flow!
         if (isLiteStorageScreen(rootNode)) {
@@ -531,8 +552,8 @@ class AutoCleanAccessibilityService : AccessibilityService() {
                 }
             }
 
-            // Allow ~350ms after Clear Cache so Android updates cache to 0MB before clicking Clear Data
-            if (clickedClearCache && now - lastActionTime < 350) {
+            // Allow ~200ms after Clear Cache so Android updates cache before clicking Clear Data
+            if (clickedClearCache && now - lastActionTime < 200) {
                 return
             }
 
@@ -558,20 +579,19 @@ class AutoCleanAccessibilityService : AccessibilityService() {
             }
 
             // Priority B: Samsung One UI, Pixel, Xiaomi, Oppo, Vivo, Transsion, Facebook Main / Katana / FB Lite "Clear Data" / "Clear Storage" / "Manage space"
-            // Handles both LTR and RTL (left-right swapped / dan-dik bam-dik) by relying on Resource IDs and Multilingual Keywords
             val clearDataNode = findNodeByKeywords(
                 rootNode,
                 listOf(
                     "clear data", "ক্লিয়ার ডেটা", "ডেটা মুছুন", "ডাটা মুছুন", "clear storage",
                     "স্টোরেজ মুছুন", "manage space", "manage storage", "delete data",
-                    "ডेटा साफ़ करें", "स्टोरेज साफ़ करें", "स्पेस प्रबंधित करें",
-                    "borrar datos", "borrar almacenamiento", "administrar espacio",
+                    "ডेटा साफ़ करें", "डेटा हटाएं", "स्टोरेज साफ़ करें", "स्पेस प्रबंधित करें",
+                    "ڈیٹا صاف کریں", "اسٹوریج صاف کریں", "حذف کریں",
+                    "borrar datos", "borrar almacenamiento", "administrar espacio", "eliminar datos",
                     "effacer les données", "supprimer les données", "gérer l'espace",
-                    "daten löschen", "speicherplatz verwalten", "очистить хранилище", "стереть данные",
-                    // Arabic RTL (Swapped positions / dan-bam)
-                    "مسح مساحة التخزين", "مسح وحدة التخزين", "مسح البيانات", "مسح التخزين", "إدارة المساحة", "حذف البيانات", "مسح جميع البيانات",
-                    "limpar dados", "limpar armazenamento", "gerenciar espaço",
-                    "verileri temizle", "hapus data", "kelola ruang", "清除数据", "管理空间",
+                    "daten löschen", "speicherplatz verwalten", "очистить хранилище", "стереть данные", "удалить данные",
+                    "مسح مساحة التخزين", "مسح وحدة التخزين", "مسح البيانات", "مسح التخزين", "إدارة المساحة", "حذف البيانات", "مسح جميع البيانات", "مسح سعة التخزين",
+                    "limpar dados", "limpar armazenamento", "gerenciar espaço", "apagar dados",
+                    "verileri temizle", "hapus data", "kelola ruang", "bersihkan data", "清除数据", "管理空间",
                     "データを消去", "容量を管理", "xóa dữ liệu", "quản lý dung lượng"
                 ),
                 resourceIds = listOf(
@@ -593,26 +613,26 @@ class AutoCleanAccessibilityService : AccessibilityService() {
             )
 
             if (clearDataNode != null && clearDataNode.isEnabled) {
-                clickNode(clearDataNode)
-                clickedClearData = true
-                step = 3
-                lastActionTime = now
+                val clicked = clickNode(clearDataNode)
+                if (clicked) {
+                    clickedClearData = true
+                    step = 3
+                    lastActionTime = now
 
-                // Check if FB Lite internal screen opened immediately after clicking Manage space / Clear data
-                mainHandler.postDelayed({
-                    rootInActiveWindow?.let { refreshed ->
-                        if (isLiteStorageScreen(refreshed)) {
-                            handleLiteStorageScreenFlow(refreshed)
+                    // Immediately check if FB Lite internal screen opened after clicking Manage space / Clear data
+                    mainHandler.postDelayed({
+                        rootInActiveWindow?.let { refreshed ->
+                            if (isLiteStorageScreen(refreshed)) {
+                                handleLiteStorageScreenFlow(refreshed)
+                            }
                         }
-                    }
-                }, 80)
-                return
+                    }, 60)
+                    return
+                }
             }
 
-            // If Clear Data has not been clicked yet, keep waiting and searching for Clear Data button.
-            // NEVER prematurely close after 180ms!
-            if (!clickedClearData && clickedClearCache && now - lastActionTime > 3500) {
-                // Only if after 3.5 seconds on the storage screen there is genuinely no Clear Data button, close:
+            // If Clear Data has not been clicked yet, allow up to 2.5 seconds on storage screen before closing
+            if (!clickedClearData && clickedClearCache && now - lastActionTime > 2500) {
                 step = 4
                 autoCloseCleanedSequence()
                 return
@@ -621,19 +641,20 @@ class AutoCleanAccessibilityService : AccessibilityService() {
 
         // Step 3: Handle Confirmation Dialog (Samsung One UI "Delete", Xiaomi "OK", Pixel "Delete/OK")
         if (step == 3) {
+            if (isLiteStorageScreen(rootNode)) {
+                handleLiteStorageScreenFlow(rootNode)
+                return
+            }
             val confirmNode = findOkOrDeleteConfirmButton(rootNode)
             if (confirmNode != null && confirmNode.isEnabled) {
                 clickNode(confirmNode)
                 step = 4
                 lastActionTime = now
-                // Ultra-fast smooth close (~100ms) right after confirmation click
-                mainHandler.postDelayed({
-                    autoCloseCleanedSequence()
-                }, 100)
+                autoCloseCleanedSequence()
                 return
             } else {
-                // Wait up to 1500ms for confirmation dialog to animate and render
-                if (now - lastActionTime > 1500) {
+                // Wait up to 1200ms for confirmation dialog to animate and render
+                if (now - lastActionTime > 1200) {
                     step = 4
                     autoCloseCleanedSequence()
                 }
@@ -643,15 +664,15 @@ class AutoCleanAccessibilityService : AccessibilityService() {
 
     /**
      * Dedicated High-Speed Facebook Lite Handler:
-     * Paced over ~3 seconds so all checkboxes, OK popup, and blue CLEAR button click reliably!
+     * Fast and accurate (~2 seconds total):
      * 1. Checks "Accounts and settings" checkbox.
-     * 2. Exactly 1-second delay (1000ms) before clicking "OK" on confirmation popup.
+     * 2. Swiftly clicks "OK" on warning popup (~350ms).
      * 3. Taps blue "CLEAR" button without missing.
-     * 4. Confirms final popup and closes settings ultra-fast and smoothly!
+     * 4. Confirms final popup and closes instantly!
      */
     private fun handleLiteStorageScreenFlow(rootNode: AccessibilityNodeInfo) {
         val now = System.currentTimeMillis()
-        if (now - lastActionTime < 300) return
+        if (now - lastActionTime < 180) return
 
         // 1. If we already clicked CLEAR, wait for final confirmation dialog
         if (liteStep == LITE_STEP_FINAL_CONFIRM) {
@@ -660,13 +681,9 @@ class AutoCleanAccessibilityService : AccessibilityService() {
                 clickNode(finalOk)
                 liteStep = LITE_STEP_DONE
                 lastActionTime = now
-                // Ultra-fast smooth close (~100ms) right after final confirmation click
-                mainHandler.postDelayed({
-                    autoCloseCleanedSequence()
-                }, 100)
+                autoCloseCleanedSequence()
                 return
-            } else if (now - lastActionTime > 1200) {
-                // If no final confirmation dialog appeared after 1.2s, storage is cleared -> close
+            } else if (now - lastActionTime > 700) {
                 liteStep = LITE_STEP_DONE
                 autoCloseCleanedSequence()
                 return
@@ -679,64 +696,73 @@ class AutoCleanAccessibilityService : AccessibilityService() {
             val popupOk = findLiteOkDialogButton(rootNode)
             if (popupOk != null && popupOk.isEnabled) {
                 val elapsedSinceMark = now - accountsMarkedTime
-                if (elapsedSinceMark < 1000L) {
+                if (elapsedSinceMark < 300L) {
                     return
                 }
                 clickNode(popupOk)
                 liteStep = LITE_STEP_CLICK_CLEAR
                 lastActionTime = now
 
-                // Re-check after 400ms to click the blue CLEAR button smoothly
+                // Re-check after 200ms to click the blue CLEAR button smoothly
                 mainHandler.postDelayed({
                     rootInActiveWindow?.let { refreshed ->
                         handleLiteStorageScreenFlow(refreshed)
                     }
-                }, 400)
+                }, 200)
                 return
+            } else if (now - accountsMarkedTime > 600L) {
+                // Modded Lite versions without warning popup: proceed directly to CLEAR button!
+                liteStep = LITE_STEP_CLICK_CLEAR
+                lastActionTime = now
             }
-            return
+            if (liteStep != LITE_STEP_CLICK_CLEAR) return
         }
 
         // 3. Ready to click the blue CLEAR button
         if (liteStep == LITE_STEP_CLICK_CLEAR) {
-            if (now - lastActionTime < 350) return
             val clearBtn = findLiteClearButton(rootNode)
             if (clearBtn != null && clearBtn.isEnabled) {
                 clickNode(clearBtn)
                 liteStep = LITE_STEP_FINAL_CONFIRM
                 lastActionTime = now
 
-                // Re-check after 400ms for final confirmation popup
+                // Re-check after 200ms for final confirmation popup
                 mainHandler.postDelayed({
                     rootInActiveWindow?.let { refreshed ->
                         handleLiteStorageScreenFlow(refreshed)
                     }
-                }, 400)
+                }, 200)
                 return
             }
-            // Dialog might still be closing, wait for it
             return
         }
 
-        // 4. Initial state: Ensure "Accounts and settings" is checked
+        // 4. Initial state: Ensure "Clear all" and "Accounts and settings" are checked
         val accountsRow = findAccountsAndSettingsRow(rootNode)
+        ensureClearAllChecked(rootNode)
+
         if (accountsRow != null && !accountsRow.isChecked) {
-            ensureClearAllChecked(rootNode)
             liteStep = LITE_STEP_WAIT_ACCOUNTS_POPUP
             accountsMarkedTime = now
             lastActionTime = now
-            clickNode(accountsRow.clickableTarget)
 
-            // Trigger handler after 1000ms (1 second) to click OK on the warning popup
+            // Click both clickable row container and checkbox widget to guarantee it toggles
+            clickNode(accountsRow.clickableTarget)
+            accountsRow.checkboxNode?.let { cb ->
+                if (cb != accountsRow.clickableTarget) {
+                    try { cb.performAction(AccessibilityNodeInfo.ACTION_CLICK) } catch (_: Exception) {}
+                }
+            }
+
+            // Trigger handler after 300ms to click OK on the warning popup
             mainHandler.postDelayed({
                 rootInActiveWindow?.let { refreshedRoot ->
                     handleLiteStorageScreenFlow(refreshedRoot)
                 }
-            }, 1000L)
+            }, 300L)
             return
         } else {
             // Already checked or no accounts row, click CLEAR button directly!
-            if (now - lastActionTime < 350) return
             val clearBtn = findLiteClearButton(rootNode)
             if (clearBtn != null && clearBtn.isEnabled) {
                 clickNode(clearBtn)
@@ -746,7 +772,7 @@ class AutoCleanAccessibilityService : AccessibilityService() {
                     rootInActiveWindow?.let { refreshed ->
                         handleLiteStorageScreenFlow(refreshed)
                     }
-                }, 400)
+                }, 200)
                 return
             }
         }
@@ -866,9 +892,8 @@ class AutoCleanAccessibilityService : AccessibilityService() {
 
         // Structural Fallback for ANY unknown language or RTL layout in FB Lite:
         // In FB Lite storage screen:
-        // Cache checkboxes (Clear All, Photo, Video, Other) are pre-checked by FB Lite.
-        // "Accounts and settings" is ALWAYS the ONLY UNCHECKED checkbox, or the LAST checkbox!
-        val uncheckedCheckbox = allCheckableNodes.firstOrNull { !it.isChecked }
+        // "Accounts and settings" is ALWAYS the LAST checkbox in the checkable items list!
+        val uncheckedCheckbox = allCheckableNodes.lastOrNull { !it.isChecked }
         val targetCheckbox = uncheckedCheckbox ?: allCheckableNodes.lastOrNull()
 
         if (targetCheckbox != null) {
@@ -889,14 +914,19 @@ class AutoCleanAccessibilityService : AccessibilityService() {
         val queue = ArrayDeque<AccessibilityNodeInfo>()
         queue.add(root)
         var count = 0
+        var firstCheckable: AccessibilityNodeInfo? = null
 
-        while (queue.isNotEmpty() && count < 60) {
+        while (queue.isNotEmpty() && count < 80) {
             val node = queue.removeFirst()
             count++
+            if (node.isCheckable && firstCheckable == null) {
+                firstCheckable = node
+            }
             val text = (node.text?.toString() ?: "").lowercase()
             val norm = normalizeText(text)
 
-            if (text.contains("clear all") || text.contains("সব মুছুন") || norm.contains("مسح الكل")) {
+            if (text.contains("clear all") || text.contains("সব মুছুন") || norm.contains("مسح الكل") ||
+                text.contains("सभी") || text.contains("tout") || text.contains("alles")) {
                 val parent = node.parent
                 if (parent != null) {
                     for (i in 0 until parent.childCount) {
@@ -911,6 +941,13 @@ class AutoCleanAccessibilityService : AccessibilityService() {
 
             for (i in 0 until node.childCount) {
                 node.getChild(i)?.let { queue.add(it) }
+            }
+        }
+
+        // If the first checkbox (Clear all) is not checked, ensure it is checked
+        firstCheckable?.let { first ->
+            if (!first.isChecked) {
+                clickNode(first)
             }
         }
     }
