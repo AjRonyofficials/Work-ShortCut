@@ -804,6 +804,19 @@ class AutoCleanAccessibilityService : AccessibilityService() {
                     lower.contains("账户和设置") || // Chinese
                     lower.contains("アカウントと設定") || // Japanese
                     lower.contains("tài khoản và cài đặt") || // Vietnamese
+                    lower.contains("tài khoản") || // Vietnamese
+                    lower.contains("계정 및 설정") || lower.contains("계정") || // Korean
+                    lower.contains("บัญชีและการตั้งค่า") || lower.contains("บัญชี") || // Thai
+                    lower.contains("အကောင့်") || // Burmese
+                    lower.contains("کھاتے اور ترتیبات") || lower.contains("اکاؤنٹس") || // Urdu
+                    lower.contains("account e impostazioni") || // Italian
+                    lower.contains("konta i ustawienia") || // Polish
+                    lower.contains("חשבונות והגדרות") || lower.contains("חשבונות") || // Hebrew
+                    lower.contains("கணக்குகள்") || // Tamil
+                    lower.contains("ఖాతాలు") || // Telugu
+                    lower.contains("खाती आणि सेटिंग्ज") || // Marathi
+                    lower.contains("ખાતા અને સેટિંગ્સ") || // Gujarati
+                    lower.contains("ਖਾਤੇ ਅਤੇ ਸੈਟਿੰਗਾਂ") || // Punjabi
                     lower.contains("not recommended") ||
                     lower.contains("अनुशंसित नहीं") ||
                     lower.contains("não recomendado") ||
