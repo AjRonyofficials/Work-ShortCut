@@ -547,7 +547,7 @@ class AutoCleanAccessibilityService : AccessibilityService() {
             }
         }
 
-        // Step 1: In Storage screen -> Execute BOTH Clear Cache and Clear Data sequentially!
+        // Step 1: In Storage screen -> Execute BOTH Clear Cache and Clear Data sequentially without missing Clear Data!
         if (step in 1..2 || inStorageScreen) {
             // First: Click "Clear cache" if available and not yet clicked
             if (!clickedClearCache) {
@@ -596,7 +596,7 @@ class AutoCleanAccessibilityService : AccessibilityService() {
                 return
             }
 
-            // Priority B: Samsung One UI, Pixel, Facebook Main / Katana / FB Lite "Clear Data" / "Clear Storage" / "Manage space"
+            // Priority B: Samsung One UI, Pixel, Xiaomi, Oppo, Vivo, Transsion, Facebook Main / Katana / FB Lite "Clear Data" / "Clear Storage" / "Manage space"
             // Handles both LTR and RTL (left-right swapped / dan-dik bam-dik) by relying on Resource IDs and Multilingual Keywords
             val clearDataNode = findNodeByKeywords(
                 rootNode,
@@ -616,10 +616,18 @@ class AutoCleanAccessibilityService : AccessibilityService() {
                 resourceIds = listOf(
                     "com.samsung.android.settings:id/clear_data_button",
                     "com.android.settings:id/clear_data_button",
+                    "com.android.settings:id/clear_storage_button",
+                    "com.android.settings:id/manage_space_button",
                     "com.samsung.android.settings:id/button1",
                     "com.android.settings:id/button1",
                     "com.android.settings:id/clear_data_btn",
-                    "com.miui.securitycenter:id/clear_data"
+                    "com.miui.securitycenter:id/clear_data",
+                    "com.miui.securitycenter:id/clear_all_data",
+                    "com.coloros.safecenter:id/clear_data",
+                    "com.oplus.safecenter:id/clear_data",
+                    "com.vivo.safecenter:id/clear_data",
+                    "com.transsion.phonemaster:id/clear_data",
+                    "com.google.android.settings:id/clear_data_button"
                 )
             )
 
@@ -640,7 +648,9 @@ class AutoCleanAccessibilityService : AccessibilityService() {
                 return
             }
 
-            if (clickedClearCache && now - lastActionTime > 180) {
+            // CRITICAL FIX: NEVER give up on Clear Data after 180ms!
+            // Only advance to close after 2.5 seconds if the app genuinely has no Clear Data button
+            if (!clickedClearData && clickedClearCache && now - lastActionTime > 2500) {
                 step = 3
                 lastActionTime = now
             }
@@ -656,7 +666,8 @@ class AutoCleanAccessibilityService : AccessibilityService() {
                 autoCloseCleanedSequence()
                 return
             } else {
-                if (now - lastActionTime > 220) {
+                // Generous 1200ms timeout ensures confirmation dialog is detected and clicked without premature close
+                if (now - lastActionTime > 1200) {
                     step = 4
                     autoCloseCleanedSequence()
                 }
@@ -667,8 +678,7 @@ class AutoCleanAccessibilityService : AccessibilityService() {
     /**
      * Dedicated High-Speed Facebook Lite Handler:
      * 1. Checks "Accounts and settings" checkbox.
-     * 2. Exactly 1-second delay (1000ms) before clicking "OK" on confirmation popup,
-     *    ensuring the checkbox mark is fully registered by OS and dialog is stable.
+     * 2. Exactly ~850ms delay (1 second or slightly less as requested) before clicking "OK" on confirmation popup.
      * 3. Taps "CLEAR" button without missing.
      * 4. Confirms final popup and closes settings and app smoothly in milliseconds!
      */
@@ -679,11 +689,11 @@ class AutoCleanAccessibilityService : AccessibilityService() {
         // 1. Positive dialog button check (OK / Confirm)
         val okDialogBtn = findLiteOkDialogButton(rootNode)
         if (okDialogBtn != null && okDialogBtn.isEnabled) {
-            // If waiting for the accounts popup, enforce the requested 1-second delay
+            // If waiting for the accounts popup, enforce ~850ms delay (1s or slightly less as requested)
             if (liteStep == LITE_STEP_WAIT_ACCOUNTS_POPUP) {
                 val elapsedSinceMark = now - accountsMarkedTime
-                if (elapsedSinceMark < 1000L) {
-                    // Do not click yet, allow full 1-second stabilization
+                if (elapsedSinceMark < 850L) {
+                    // Do not click yet, allow mark stabilization
                     return
                 }
             }
@@ -701,7 +711,7 @@ class AutoCleanAccessibilityService : AccessibilityService() {
                     rootInActiveWindow?.let { refreshedRoot ->
                         clickClearButtonAndFinish(refreshedRoot)
                     }
-                }, 100)
+                }, 80)
             }
             return
         }
@@ -715,7 +725,7 @@ class AutoCleanAccessibilityService : AccessibilityService() {
             lastActionTime = now
             clickNode(accountsRow.clickableTarget)
 
-            // Exactly 1 second (1000ms) delay so user & OS see the mark cleanly before clicking OK popup
+            // ~850ms delay (1 second or slightly less as requested) so user & OS see the mark cleanly before clicking OK popup
             mainHandler.postDelayed({
                 rootInActiveWindow?.let { refreshedRoot ->
                     val popupOk = findLiteOkDialogButton(refreshedRoot)
@@ -728,12 +738,12 @@ class AutoCleanAccessibilityService : AccessibilityService() {
                             rootInActiveWindow?.let { rootAfterOk ->
                                 clickClearButtonAndFinish(rootAfterOk)
                             }
-                        }, 100)
+                        }, 80)
                     } else {
                         clickClearButtonAndFinish(refreshedRoot)
                     }
                 }
-            }, 1000L)
+            }, 850L)
             return
         }
 
@@ -758,7 +768,7 @@ class AutoCleanAccessibilityService : AccessibilityService() {
                     }
                 }
                 autoCloseCleanedSequence()
-            }, 160)
+            }, 100)
         } else {
             val finalOk = findLiteOkDialogButton(rootNode)
             if (finalOk != null && finalOk.isEnabled) {
