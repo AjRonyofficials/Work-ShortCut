@@ -261,17 +261,6 @@ class AutoCleanAccessibilityService : AccessibilityService() {
         if (liteStep in LITE_STEP_SELECTING_ACCOUNTS..LITE_STEP_FINAL_CONFIRM) {
             return true
         }
-        val currentPkg = (rootNode.packageName?.toString() ?: "").lowercase()
-        val target = (targetPackage ?: "").lowercase()
-        val isLiteApp = isTargetLiteMode || currentPkg.contains("facebook.lite") ||
-                currentPkg.contains(".lite") || target.contains("facebook.lite")
-
-        // Strictly verify this is Facebook Lite before checking internal storage screen
-        if (!isLiteApp) {
-            return false
-        }
-
-        // Keywords unique to Facebook Lite internal storage screen (never matching standard Android settings)
         val keywords = listOf(
             "facebook lite storage",
             "clear storage on your phone",
@@ -628,104 +617,106 @@ class AutoCleanAccessibilityService : AccessibilityService() {
     /**
      * Dedicated High-Speed Facebook Lite Handler:
      * 1. Checks "Accounts and settings" checkbox.
-     * 2. Exactly ~850ms delay (1 second or slightly less as requested) before clicking "OK" on confirmation popup.
-     * 3. Taps "CLEAR" button without missing.
+     * 2. Exactly ~850ms delay (1 second or slightly less) before clicking "OK" on confirmation popup.
+     * 3. Taps blue "CLEAR" button without missing.
      * 4. Confirms final popup and closes settings and app smoothly in milliseconds!
      */
     private fun handleLiteStorageScreenFlow(rootNode: AccessibilityNodeInfo) {
         val now = System.currentTimeMillis()
-        if (now - lastActionTime < 70) return
+        if (now - lastActionTime < 60) return
 
-        // 1. Positive dialog button check (OK / Confirm)
-        val okDialogBtn = findLiteOkDialogButton(rootNode)
-        if (okDialogBtn != null && okDialogBtn.isEnabled) {
-            // If waiting for the accounts popup, enforce ~850ms delay (1s or slightly less as requested)
-            if (liteStep == LITE_STEP_WAIT_ACCOUNTS_POPUP) {
-                val elapsedSinceMark = now - accountsMarkedTime
-                if (elapsedSinceMark < 850L) {
-                    // Do not click yet, allow mark stabilization
-                    return
-                }
-            }
-
-            clickNode(okDialogBtn)
-            lastActionTime = now
-
-            if (liteStep == LITE_STEP_FINAL_CONFIRM) {
+        // 1. If we already clicked CLEAR, wait for final confirmation dialog
+        if (liteStep == LITE_STEP_FINAL_CONFIRM) {
+            val finalOk = findLiteOkDialogButton(rootNode)
+            if (finalOk != null && finalOk.isEnabled) {
+                clickNode(finalOk)
+                liteStep = LITE_STEP_DONE
+                lastActionTime = now
+                mainHandler.postDelayed({
+                    autoCloseCleanedSequence()
+                }, 100)
+                return
+            } else if (now - lastActionTime > 800) {
+                // If no final confirmation dialog appeared after 800ms, storage is cleared -> close
                 liteStep = LITE_STEP_DONE
                 autoCloseCleanedSequence()
-            } else {
-                liteStep = LITE_STEP_CLICK_CLEAR
-                // Instant follow-up check for CLEAR button without sluggish wait
-                mainHandler.postDelayed({
-                    rootInActiveWindow?.let { refreshedRoot ->
-                        clickClearButtonAndFinish(refreshedRoot)
-                    }
-                }, 80)
+                return
             }
             return
         }
 
-        // 2. Ensure "Accounts and settings" is checked
+        // 2. If waiting for the accounts popup, check if OK button is ready
+        if (liteStep == LITE_STEP_WAIT_ACCOUNTS_POPUP) {
+            val popupOk = findLiteOkDialogButton(rootNode)
+            if (popupOk != null && popupOk.isEnabled) {
+                val elapsedSinceMark = now - accountsMarkedTime
+                if (elapsedSinceMark < 850L) {
+                    return
+                }
+                clickNode(popupOk)
+                liteStep = LITE_STEP_CLICK_CLEAR
+                lastActionTime = now
+
+                // Re-check after 150ms to click the blue CLEAR button
+                mainHandler.postDelayed({
+                    rootInActiveWindow?.let { refreshed ->
+                        handleLiteStorageScreenFlow(refreshed)
+                    }
+                }, 150)
+                return
+            }
+            return
+        }
+
+        // 3. Ready to click the blue CLEAR button
+        if (liteStep == LITE_STEP_CLICK_CLEAR) {
+            val clearBtn = findLiteClearButton(rootNode)
+            if (clearBtn != null && clearBtn.isEnabled) {
+                clickNode(clearBtn)
+                liteStep = LITE_STEP_FINAL_CONFIRM
+                lastActionTime = now
+
+                // Re-check after 150ms for final confirmation popup
+                mainHandler.postDelayed({
+                    rootInActiveWindow?.let { refreshed ->
+                        handleLiteStorageScreenFlow(refreshed)
+                    }
+                }, 150)
+                return
+            }
+            // Dialog might still be closing, wait for it
+            return
+        }
+
+        // 4. Initial state: Ensure "Accounts and settings" is checked
         val accountsRow = findAccountsAndSettingsRow(rootNode)
-        if (accountsRow != null && !accountsRow.isChecked && liteStep < LITE_STEP_CLICK_CLEAR) {
+        if (accountsRow != null && !accountsRow.isChecked) {
             ensureClearAllChecked(rootNode)
             liteStep = LITE_STEP_WAIT_ACCOUNTS_POPUP
             accountsMarkedTime = now
             lastActionTime = now
             clickNode(accountsRow.clickableTarget)
 
-            // ~850ms delay (1 second or slightly less as requested) so user & OS see the mark cleanly before clicking OK popup
+            // Trigger handler after 850ms to click OK on the warning popup
             mainHandler.postDelayed({
                 rootInActiveWindow?.let { refreshedRoot ->
-                    val popupOk = findLiteOkDialogButton(refreshedRoot)
-                    if (popupOk != null && popupOk.isEnabled) {
-                        clickNode(popupOk)
-                        liteStep = LITE_STEP_CLICK_CLEAR
-                        lastActionTime = System.currentTimeMillis()
-                        // Follow up immediately to click CLEAR
-                        mainHandler.postDelayed({
-                            rootInActiveWindow?.let { rootAfterOk ->
-                                clickClearButtonAndFinish(rootAfterOk)
-                            }
-                        }, 80)
-                    } else {
-                        clickClearButtonAndFinish(refreshedRoot)
-                    }
+                    handleLiteStorageScreenFlow(refreshedRoot)
                 }
             }, 850L)
             return
-        }
-
-        // 3. Accounts and settings is checked -> Click CLEAR
-        clickClearButtonAndFinish(rootNode)
-    }
-
-    private fun clickClearButtonAndFinish(rootNode: AccessibilityNodeInfo) {
-        val now = System.currentTimeMillis()
-        val clearBtn = findLiteClearButton(rootNode)
-
-        if (clearBtn != null && clearBtn.isEnabled) {
-            clickNode(clearBtn)
-            liteStep = LITE_STEP_FINAL_CONFIRM
-            lastActionTime = now
-
-            mainHandler.postDelayed({
-                rootInActiveWindow?.let { refreshedRoot ->
-                    val finalOk = findLiteOkDialogButton(refreshedRoot)
-                    if (finalOk != null && finalOk.isEnabled) {
-                        clickNode(finalOk)
-                    }
-                }
-                autoCloseCleanedSequence()
-            }, 100)
         } else {
-            val finalOk = findLiteOkDialogButton(rootNode)
-            if (finalOk != null && finalOk.isEnabled) {
-                clickNode(finalOk)
-                autoCloseCleanedSequence()
-            } else if (now - lastActionTime > 300) {
-                autoCloseCleanedSequence()
+            // Already checked or no accounts row, click CLEAR button directly!
+            val clearBtn = findLiteClearButton(rootNode)
+            if (clearBtn != null && clearBtn.isEnabled) {
+                clickNode(clearBtn)
+                liteStep = LITE_STEP_FINAL_CONFIRM
+                lastActionTime = now
+                mainHandler.postDelayed({
+                    rootInActiveWindow?.let { refreshed ->
+                        handleLiteStorageScreenFlow(refreshed)
+                    }
+                }, 150)
+                return
             }
         }
     }
