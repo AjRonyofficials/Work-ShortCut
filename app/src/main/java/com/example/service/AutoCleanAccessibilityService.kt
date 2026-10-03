@@ -262,11 +262,17 @@ class AutoCleanAccessibilityService : AccessibilityService() {
             return true
         }
         val currentPkg = (rootNode.packageName?.toString() ?: "").lowercase()
-        val isLiteApp = isTargetLiteMode || currentPkg.contains("lite") || currentPkg.contains("facebook")
+        val target = (targetPackage ?: "").lowercase()
+        val isLiteApp = isTargetLiteMode || currentPkg.contains("facebook.lite") ||
+                currentPkg.contains(".lite") || target.contains("facebook.lite")
 
-        // 1. Multilingual keywords across Arabic, English, Bengali, Hindi, Spanish, French, German, Russian, etc.
+        // Strictly verify this is Facebook Lite before checking internal storage screen
+        if (!isLiteApp) {
+            return false
+        }
+
+        // Keywords unique to Facebook Lite internal storage screen (never matching standard Android settings)
         val keywords = listOf(
-            // English
             "facebook lite storage",
             "clear storage on your phone",
             "accounts and settings",
@@ -276,66 +282,13 @@ class AutoCleanAccessibilityService : AccessibilityService() {
             "other cache",
             "remove unnecessary app files to save space",
             "not recommended",
-            // Arabic (RTL) - EXACT MATCH FOR USER'S SCREENSHOT
             "مسح وحدة التخزين على هاتفك",
-            "مسح وحدة التخزين",
             "الحسابات والإعدادات",
             "الحسابات والاعتدادات",
-            "ذاكرة التخزين المؤقت",
-            "ذاكرة التخزين المؤقت للصور",
-            "ذاكرة التخزين المؤقت لمقاطع الفيديو",
-            "ذاكرة تخزين مؤقت أخرى",
-            "غير موصى به",
-            "غير موصى",
-            "مسح الكل",
-            // Bengali
             "অ্যাকাউন্ট এবং সেটিংস",
-            "আপনার ফোনে স্থান খালি করুন",
-            "ফটো ক্যাশে",
-            "ভিডিও ক্যাশে",
-            "সুপারিশ করা হচ্ছে না",
-            // Hindi
-            "अपने फोन पर स्टोरेज साफ़ करें",
-            "खाते और सेटिंग",
-            "अनुशंसित नहीं",
-            // Spanish, French, Russian
-            "liberar espacio en el teléfono",
-            "cuentas y configuración",
-            "no recomendado",
-            "libérer de l’espace sur votre téléphone",
-            "comptes et paramètres",
-            "non recommandé",
-            "очистка памяти на телефоне",
-            "аккаунты и настройки",
-            "не рекомендуется"
+            "আপনার ফোনে স্থান খালি করুন"
         )
-        if (findNodeByKeywords(rootNode, keywords) != null) {
-            return true
-        }
-
-        // 2. Structural & Layout Agnostic Detection (independent of language, LTR or RTL):
-        // In Facebook Lite, this storage screen ALWAYS has checkable checkboxes (Clear All, Photo, Video, Other, Accounts)
-        if (isLiteApp) {
-            var checkableCount = 0
-            val queue = ArrayDeque<AccessibilityNodeInfo>()
-            queue.add(rootNode)
-            var scanned = 0
-            while (queue.isNotEmpty() && scanned < 80) {
-                val n = queue.removeFirst()
-                scanned++
-                if (n.isCheckable) {
-                    checkableCount++
-                }
-                for (i in 0 until n.childCount) {
-                    n.getChild(i)?.let { queue.add(it) }
-                }
-            }
-            if (checkableCount >= 2) {
-                return true
-            }
-        }
-
-        return false
+        return findNodeByKeywords(rootNode, keywords) != null
     }
 
     private fun handleForceCloseStep(rootNode: AccessibilityNodeInfo) {
@@ -648,9 +601,7 @@ class AutoCleanAccessibilityService : AccessibilityService() {
                 return
             }
 
-            // CRITICAL FIX: NEVER give up on Clear Data after 180ms!
-            // Only advance to close after 2.5 seconds if the app genuinely has no Clear Data button
-            if (!clickedClearData && clickedClearCache && now - lastActionTime > 2500) {
+            if (clickedClearCache && now - lastActionTime > 180) {
                 step = 3
                 lastActionTime = now
             }
@@ -666,8 +617,7 @@ class AutoCleanAccessibilityService : AccessibilityService() {
                 autoCloseCleanedSequence()
                 return
             } else {
-                // Generous 1200ms timeout ensures confirmation dialog is detected and clicked without premature close
-                if (now - lastActionTime > 1200) {
+                if (now - lastActionTime > 220) {
                     step = 4
                     autoCloseCleanedSequence()
                 }
