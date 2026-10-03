@@ -491,13 +491,33 @@ class AutoCleanAccessibilityService : AccessibilityService() {
         )
     }
 
+    private fun findClearCacheButton(root: AccessibilityNodeInfo): AccessibilityNodeInfo? {
+        return findNodeByKeywords(
+            root,
+            listOf(
+                "clear cache", "ক্যাশ মুছুন", "ক্যাশে মুছুন", "ক্লিয়ার ক্যাশ", "ক্লিন ক্যাশ",
+                "कैश साफ़ करें", "कैशे साफ़ करें", "limpiar caché", "borrar caché",
+                "vider le cache", "cache leeren", "очистить кэш",
+                "مسح ذاكرة التخزين المؤقت", "مسح التخزين المؤقت", "ذاكرة التخزين المؤقت", "مسح الذاكرة المؤقتة",
+                "limpar cache", "önbelleği temizle", "hapus cache", "清除缓存", "キャッシュを消去", "xóa bộ nhớ đệm"
+            ),
+            resourceIds = listOf(
+                "com.samsung.android.settings:id/clear_cache_button",
+                "com.android.settings:id/clear_cache_button",
+                "com.samsung.android.settings:id/button2",
+                "com.android.settings:id/button2",
+                "com.miui.securitycenter:id/clear_cache"
+            )
+        )
+    }
+
     /**
      * Universal High-Speed Auto Clean Step:
      * 1. Opens Storage & cache (never clicks Notifications).
-     * 2. Clears Cache first.
-     * 3. Clears Data / Manage Space.
-     * 4. Confirms dialog.
-     * 5. Fast auto-closes settings and app!
+     * 2. Clears Data FIRST (handles both LTR & RTL).
+     * 3. Confirms dialog.
+     * 4. Clears Cache NEXT.
+     * 5. Fast, smooth auto-close in milliseconds!
      */
     private fun handleAutoCleanStep(rootNode: AccessibilityNodeInfo) {
         val now = System.currentTimeMillis()
@@ -547,27 +567,78 @@ class AutoCleanAccessibilityService : AccessibilityService() {
             }
         }
 
-        // Step 1: In Storage screen -> Execute BOTH Clear Cache and Clear Data sequentially!
+        // Step 1: In Storage screen -> Execute Clear Data FIRST, then Clear Cache, then smooth fast close!
         if (step in 1..2 || inStorageScreen) {
-            // First: Click "Clear cache" if available and not yet clicked
-            if (!clickedClearCache) {
-                val clearCacheNode = findNodeByKeywords(
+            // PRIORITY 1: Click "Clear data" / "Clear all data" / "Clear storage" / "Manage space" FIRST
+            if (!clickedClearData) {
+                // Priority A: Xiaomi / HyperOS BottomSheet "Clear all data"
+                val clearAllDataNode = findNodeByKeywords(
                     rootNode,
                     listOf(
-                        "clear cache", "ক্যাশ মুছুন", "ক্যাশে মুছুন", "ক্লিয়ার ক্যাশ", "ক্লিন ক্যাশ",
-                        "कैश साफ़ करें", "कैशे साफ़ करें", "limpiar caché", "borrar caché",
-                        "vider le cache", "cache leeren", "очистить кэш",
-                        "مسح ذاكرة التخزين المؤقت", "مسح التخزين المؤقت", "ذاكرة التخزين المؤقت", "مسح الذاكرة المؤقتة",
-                        "limpar cache", "önbelleği temizle", "hapus cache", "清除缓存", "キャッシュを消去", "xóa bộ nhớ đệm"
+                        "clear all data", "সব ডেটা মুছুন", "সব ডাটা মুছুন", "सभी डेटा साफ़ करें",
+                        "borrar todos los datos", "effacer toutes les données", "все данные",
+                        "مسح جميع البيانات", "مسح كل البيانات"
                     ),
                     resourceIds = listOf(
-                        "com.samsung.android.settings:id/clear_cache_button",
-                        "com.android.settings:id/clear_cache_button",
-                        "com.samsung.android.settings:id/button2",
-                        "com.android.settings:id/button2",
-                        "com.miui.securitycenter:id/clear_cache"
+                        "com.miui.securitycenter:id/clear_all_data"
                     )
                 )
+                if (clearAllDataNode != null && clearAllDataNode.isEnabled) {
+                    clickNode(clearAllDataNode)
+                    clickedClearData = true
+                    step = 3
+                    lastActionTime = now
+                    return
+                }
+
+                // Priority B: Samsung One UI, Pixel, Facebook Main / Katana / FB Lite "Clear Data" / "Clear Storage" / "Manage space"
+                // Handles both LTR and RTL (left-right swapped / dan-dik bam-dik) by relying on Resource IDs and Multilingual Keywords
+                val clearDataNode = findNodeByKeywords(
+                    rootNode,
+                    listOf(
+                        "clear data", "ক্লিয়ার ডেটা", "ডেটা মুছুন", "ডাটা মুছুন", "clear storage",
+                        "স্টোরেজ মুছুন", "manage space", "manage storage", "delete data",
+                        "ডेटा साफ़ करें", "स्टोरेज साफ़ करें", "स्पेस प्रबंधित करें",
+                        "borrar datos", "borrar almacenamiento", "administrar espacio",
+                        "effacer les données", "supprimer les données", "gérer l'espace",
+                        "daten löschen", "speicherplatz verwalten", "очистить хранилище", "стереть данные",
+                        // Arabic RTL (Swapped positions / dan-bam)
+                        "مسح مساحة التخزين", "مسح وحدة التخزين", "مسح البيانات", "مسح التخزين", "إدارة المساحة", "حذف البيانات", "مسح جميع البيانات",
+                        "limpar dados", "limpar armazenamento", "gerenciar espaço",
+                        "verileri temizle", "hapus data", "kelola ruang", "清除数据", "管理空间",
+                        "データを消去", "容量を管理", "xóa dữ liệu", "quản lý dung lượng"
+                    ),
+                    resourceIds = listOf(
+                        "com.samsung.android.settings:id/clear_data_button",
+                        "com.android.settings:id/clear_data_button",
+                        "com.samsung.android.settings:id/button1",
+                        "com.android.settings:id/button1",
+                        "com.android.settings:id/clear_data_btn",
+                        "com.miui.securitycenter:id/clear_data"
+                    )
+                )
+
+                if (clearDataNode != null && clearDataNode.isEnabled) {
+                    clickNode(clearDataNode)
+                    clickedClearData = true
+                    step = 3
+                    lastActionTime = now
+
+                    // Check if FB Lite internal screen opened immediately after clicking Manage space / Clear data
+                    mainHandler.postDelayed({
+                        rootInActiveWindow?.let { refreshed ->
+                            if (isLiteStorageScreen(refreshed)) {
+                                handleLiteStorageScreenFlow(refreshed)
+                            }
+                        }
+                    }, 80)
+                    return
+                }
+            }
+
+            // PRIORITY 2: Click "Clear cache" (runs after Clear Data, or if Clear Data not found)
+            if (!clickedClearCache) {
+                val clearCacheNode = findClearCacheButton(rootNode)
                 if (clearCacheNode != null && clearCacheNode.isEnabled) {
                     clickNode(clearCacheNode)
                     clickedClearCache = true
@@ -575,74 +646,11 @@ class AutoCleanAccessibilityService : AccessibilityService() {
                 }
             }
 
-            // Next: Click "Clear data" / "Clear all data" / "Clear storage" / "Manage space"
-            // Priority A: Xiaomi / HyperOS BottomSheet "Clear all data"
-            val clearAllDataNode = findNodeByKeywords(
-                rootNode,
-                listOf(
-                    "clear all data", "সব ডেটা মুছুন", "সব ডাটা মুছুন", "सभी डेटा साफ़ करें",
-                    "borrar todos los datos", "effacer toutes les données", "все данные",
-                    "مسح جميع البيانات", "مسح كل البيانات"
-                ),
-                resourceIds = listOf(
-                    "com.miui.securitycenter:id/clear_all_data"
-                )
-            )
-            if (clearAllDataNode != null && clearAllDataNode.isEnabled) {
-                clickNode(clearAllDataNode)
-                clickedClearData = true
-                step = 3
-                lastActionTime = now
-                return
-            }
-
-            // Priority B: Samsung One UI, Pixel, Facebook Main / Katana / FB Lite "Clear Data" / "Clear Storage" / "Manage space"
-            // Handles both LTR and RTL (left-right swapped / dan-dik bam-dik) by relying on Resource IDs and Multilingual Keywords
-            val clearDataNode = findNodeByKeywords(
-                rootNode,
-                listOf(
-                    "clear data", "ক্লিয়ার ডেটা", "ডেটা মুছুন", "ডাটা মুছুন", "clear storage",
-                    "স্টোরেজ মুছুন", "manage space", "manage storage", "delete data",
-                    "ডेटा साफ़ करें", "स्टोरेज साफ़ करें", "स्पेस प्रबंधित करें",
-                    "borrar datos", "borrar almacenamiento", "administrar espacio",
-                    "effacer les données", "supprimer les données", "gérer l'espace",
-                    "daten löschen", "speicherplatz verwalten", "очистить хранилище", "стереть данные",
-                    // Arabic RTL (Swapped positions / dan-bam)
-                    "مسح مساحة التخزين", "مسح وحدة التخزين", "مسح البيانات", "مسح التخزين", "إدارة المساحة", "حذف البيانات", "مسح جميع البيانات",
-                    "limpar dados", "limpar armazenamento", "gerenciar espaço",
-                    "verileri temizle", "hapus data", "kelola ruang", "清除数据", "管理空间",
-                    "データを消去", "容量を管理", "xóa dữ liệu", "quản lý dung lượng"
-                ),
-                resourceIds = listOf(
-                    "com.samsung.android.settings:id/clear_data_button",
-                    "com.android.settings:id/clear_data_button",
-                    "com.samsung.android.settings:id/button1",
-                    "com.android.settings:id/button1",
-                    "com.android.settings:id/clear_data_btn",
-                    "com.miui.securitycenter:id/clear_data"
-                )
-            )
-
-            if (clearDataNode != null && clearDataNode.isEnabled) {
-                clickNode(clearDataNode)
-                clickedClearData = true
-                step = 3
-                lastActionTime = now
-
-                // Check if FB Lite internal screen opened immediately after clicking Manage space / Clear data
-                mainHandler.postDelayed({
-                    rootInActiveWindow?.let { refreshed ->
-                        if (isLiteStorageScreen(refreshed)) {
-                            handleLiteStorageScreenFlow(refreshed)
-                        }
-                    }
-                }, 80)
-                return
-            }
-
-            if (clickedClearCache && now - lastActionTime > 180) {
-                step = 3
-                lastActionTime = now
+            if (clickedClearData || clickedClearCache) {
+                if (now - lastActionTime > 150) {
+                    step = 4
+                    autoCloseCleanedSequence()
+                }
             }
         }
 
@@ -653,10 +661,21 @@ class AutoCleanAccessibilityService : AccessibilityService() {
                 clickNode(confirmNode)
                 step = 4
                 lastActionTime = now
-                autoCloseCleanedSequence()
+
+                // After confirming Clear Data, immediately click Clear Cache if available, then fast smooth close!
+                mainHandler.postDelayed({
+                    rootInActiveWindow?.let { refreshedRoot ->
+                        val cacheBtn = findClearCacheButton(refreshedRoot)
+                        if (cacheBtn != null && cacheBtn.isEnabled) {
+                            clickNode(cacheBtn)
+                            clickedClearCache = true
+                        }
+                    }
+                    autoCloseCleanedSequence()
+                }, 80)
                 return
             } else {
-                if (now - lastActionTime > 220) {
+                if (now - lastActionTime > 200) {
                     step = 4
                     autoCloseCleanedSequence()
                 }

@@ -175,20 +175,20 @@ fun MainScreen(
                     modifier = Modifier
                         .size(48.dp)
                         .clip(CircleShape)
-                        .background(AlertRed.copy(alpha = 0.15f)),
+                        .background(BrandSky.copy(alpha = 0.15f)),
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
-                        imageVector = Icons.Default.Warning,
+                        imageVector = Icons.Default.Send,
                         contentDescription = null,
-                        tint = AlertRed,
-                        modifier = Modifier.size(28.dp)
+                        tint = BrandSky,
+                        modifier = Modifier.size(26.dp)
                     )
                 }
             },
             title = {
                 Text(
-                    text = "⚠️ গুরুত্বপূর্ণ নোটিশ",
+                    text = "📢 Developer Notice",
                     fontWeight = FontWeight.Bold,
                     fontSize = 18.sp,
                     color = MaterialTheme.colorScheme.onSurface
@@ -200,17 +200,11 @@ fun MainScreen(
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     Text(
-                        text = "ভদ্র মানুষের জন্য বিনীত অনুরোধ এবং অভদ্রের জন্য যদি আপনার পিতৃ পরিচয় ঠিক থাকলে অ্যাপ এর নাম টা নিজের নামে চেইঞ্জ করে চালিয়ে দিয়েন না। কাউকে পারমিশন দেওয়া হবে না চাইলেও কারণ অ্যাপ ফ্রি কোনো টেলিগ্রাম চ্যানেল বা কিছুর রিকোয়ারমেন্ট নেই বা প্রমোশন নাই তাই এমনিতেই নিজের চ্যানেলে শেয়ার করতে পারেন ধন্যবাদ।",
+                        text = "কোনো পরিবর্তন চাইলে ডেভলপারের সাথে যোগাযোগ করেন। কোনো সমস্যা বা আপডেটের জন্য 'Contact Developer' বাটনে ক্লিক করে সরাসরি যোগাযোগ করতে পারেন।",
                         fontSize = 14.sp,
                         lineHeight = 21.sp,
                         fontWeight = FontWeight.Medium,
                         color = MaterialTheme.colorScheme.onSurface
-                    )
-                    Text(
-                        text = "কোনো পরিবর্তন চাইলে ডেভলপারের সাথে যোগাযোগ করেন। কোনো সমস্যা বা আপডেটের জন্য 'Contact Developer' বাটনে ক্লিক করে সরাসরি যোগাযোগ করতে পারেন।",
-                        fontSize = 13.sp,
-                        lineHeight = 19.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
             },
