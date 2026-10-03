@@ -269,8 +269,10 @@ class AutoCleanAccessibilityService : AccessibilityService() {
     }
 
     private fun isLiteStorageScreen(rootNode: AccessibilityNodeInfo): Boolean {
-        if (liteStep in LITE_STEP_SELECTING_ACCOUNTS..LITE_STEP_FINAL_CONFIRM) {
-            return true
+        val pkg = (rootNode.packageName?.toString() ?: "").lowercase()
+        val isLiteOrSettings = pkg.contains("lite") || pkg.contains("facebook") || pkg.contains("settings")
+        if (!isLiteOrSettings) {
+            return false
         }
         val keywords = listOf(
             "facebook lite storage",
@@ -955,12 +957,12 @@ class AutoCleanAccessibilityService : AccessibilityService() {
             }
         }
 
-        // Return candidate with highest priority
+        // Return candidate with highest priority - NEVER fall back to arbitrary buttons
         return candidates.firstOrNull {
             val t = (it.text?.toString() ?: "").trim()
             val n = normalizeText(t)
             t.equals("ok", ignoreCase = true) || n == "موافق" || t == "ঠিক আছে"
-        } ?: candidates.firstOrNull() ?: nonCancelButtons.lastOrNull()
+        } ?: candidates.firstOrNull()
     }
 
     private fun findOkOrDeleteConfirmButton(root: AccessibilityNodeInfo): AccessibilityNodeInfo? {
@@ -1069,7 +1071,7 @@ class AutoCleanAccessibilityService : AccessibilityService() {
     /**
      * Ultra-fast close sequence:
      * Immediately stops automation, purges all pending callbacks so nothing is clicked on Home screen,
-     * navigates double-back + home, kills background process, finishes cleanly.
+     * navigates double-back + home instantly, kills background process, finishes cleanly.
      */
     private fun autoCloseCleanedSequence() {
         if (!isAutomating) return
@@ -1081,19 +1083,19 @@ class AutoCleanAccessibilityService : AccessibilityService() {
         liteStep = LITE_STEP_IDLE
         isTargetLiteMode = false
 
+        // Ultra-fast instant close sequence
         performGlobalAction(GLOBAL_ACTION_BACK)
-        mainHandler.postDelayed({
-            performGlobalAction(GLOBAL_ACTION_BACK)
-            performGlobalAction(GLOBAL_ACTION_HOME)
-            pkgToKill?.let { pkg ->
-                try {
-                    val am = getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager
-                    am?.killBackgroundProcesses(pkg)
-                    Runtime.getRuntime().exec(arrayOf("am", "force-stop", pkg))
-                } catch (_: Exception) {}
-            }
-            Toast.makeText(applicationContext, "✓ $targetAppName ডেটা ক্লিয়ার ও অ্যাপ বন্ধ হয়েছে!", Toast.LENGTH_SHORT).show()
-        }, 50)
+        performGlobalAction(GLOBAL_ACTION_BACK)
+        performGlobalAction(GLOBAL_ACTION_HOME)
+
+        pkgToKill?.let { pkg ->
+            try {
+                val am = getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager
+                am?.killBackgroundProcesses(pkg)
+                Runtime.getRuntime().exec(arrayOf("am", "force-stop", pkg))
+            } catch (_: Exception) {}
+        }
+        Toast.makeText(applicationContext, "✓ $targetAppName ডেটা ক্লিয়ার ও অ্যাপ বন্ধ হয়েছে!", Toast.LENGTH_SHORT).show()
     }
 
     private fun finishAndCloseSettings(message: String) {
@@ -1107,18 +1109,17 @@ class AutoCleanAccessibilityService : AccessibilityService() {
         isTargetLiteMode = false
 
         performGlobalAction(GLOBAL_ACTION_BACK)
-        mainHandler.postDelayed({
-            performGlobalAction(GLOBAL_ACTION_BACK)
-            performGlobalAction(GLOBAL_ACTION_HOME)
-            pkgToKill?.let { pkg ->
-                try {
-                    val am = getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager
-                    am?.killBackgroundProcesses(pkg)
-                    Runtime.getRuntime().exec(arrayOf("am", "force-stop", pkg))
-                } catch (_: Exception) {}
-            }
-            Toast.makeText(applicationContext, message, Toast.LENGTH_SHORT).show()
-        }, 50)
+        performGlobalAction(GLOBAL_ACTION_BACK)
+        performGlobalAction(GLOBAL_ACTION_HOME)
+
+        pkgToKill?.let { pkg ->
+            try {
+                val am = getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager
+                am?.killBackgroundProcesses(pkg)
+                Runtime.getRuntime().exec(arrayOf("am", "force-stop", pkg))
+            } catch (_: Exception) {}
+        }
+        Toast.makeText(applicationContext, message, Toast.LENGTH_SHORT).show()
     }
 
     private fun findNodeByKeywords(
@@ -1161,6 +1162,14 @@ class AutoCleanAccessibilityService : AccessibilityService() {
 
     private fun clickNode(node: AccessibilityNodeInfo): Boolean {
         if (!isAutomating) return false
+        val nodePkg = (node.packageName?.toString() ?: "").lowercase()
+        val isForbidden = nodePkg.contains("launcher") || nodePkg.contains("home") ||
+                (nodePkg.contains("systemui") && !nodePkg.contains("settings"))
+        if (isForbidden) {
+            isAutomating = false
+            mainHandler.removeCallbacksAndMessages(null)
+            return false
+        }
         var curr: AccessibilityNodeInfo? = node
         while (curr != null) {
             if (curr.isClickable) {
