@@ -105,7 +105,6 @@ class AutoCleanAccessibilityService : AccessibilityService() {
                 return
             }
 
-            instance?.startActiveLoop()
             openAppSettings(context, packageName)
         }
 
@@ -142,7 +141,6 @@ class AutoCleanAccessibilityService : AccessibilityService() {
                 return
             }
 
-            instance?.startActiveLoop()
             openAppSettings(context, packageName)
         }
 
@@ -180,33 +178,9 @@ class AutoCleanAccessibilityService : AccessibilityService() {
         } catch (_: Throwable) {}
     }
 
-    private val automationTickRunnable = object : Runnable {
-        override fun run() {
-            if (!isAutomating) return
-            try {
-                rootInActiveWindow?.let { root ->
-                    dispatchScreenAutomation(root)
-                }
-            } catch (_: Throwable) {}
-            if (isAutomating) {
-                mainHandler.postDelayed(this, 150)
-            }
-        }
-    }
-
-    private fun startActiveLoop() {
-        mainHandler.removeCallbacks(automationTickRunnable)
-        mainHandler.postDelayed(automationTickRunnable, 200)
-    }
-
-    private fun stopActiveLoop() {
-        mainHandler.removeCallbacks(automationTickRunnable)
-    }
-
     override fun onUnbind(intent: Intent?): Boolean {
         instance = null
         isAutomating = false
-        stopActiveLoop()
         return super.onUnbind(intent)
     }
 
@@ -214,123 +188,84 @@ class AutoCleanAccessibilityService : AccessibilityService() {
         super.onDestroy()
         instance = null
         isAutomating = false
-        stopActiveLoop()
     }
 
     override fun onInterrupt() {
         isAutomating = false
-        stopActiveLoop()
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         try {
             if (!isAutomating) return
+            val currentTarget = targetPackage ?: return
+
             val now = System.currentTimeMillis()
-            if (now - lastEventProcessedTime < 40) return
+            // Throttle events to save CPU and battery (prevents overheating and lag)
+            if (now - lastEventProcessedTime < 70) return
             lastEventProcessedTime = now
-            rootInActiveWindow?.let { root ->
-                dispatchScreenAutomation(root)
+
+            // 10-second safety timeout prevents any hanging
+            if (now - lastActionTime > 10000) {
+                isAutomating = false
+                targetPackage = null
+                return
             }
-        } catch (_: Throwable) {}
-    }
 
-    private fun dispatchScreenAutomation(rootNode: AccessibilityNodeInfo) {
-        if (!isAutomating) return
-        val currentTarget = targetPackage ?: return
+            val pkg = (event?.packageName?.toString() ?: "").lowercase()
+            val isTargetPkg = currentTarget.isNotEmpty() && pkg.contains(currentTarget.lowercase())
+            val isKnownTarget = pkg.contains("lite") || pkg.contains("facebook") || pkg.contains("katana") ||
+                    pkg.contains("settings") || pkg.contains("samsung") || pkg.contains("miui") ||
+                    pkg.contains("securitycenter") || pkg.contains("packageinstaller") ||
+                    pkg.contains("systemui") || pkg.isEmpty()
 
-        val now = System.currentTimeMillis()
-        if (now - lastActionTime > 15000) {
-            isAutomating = false
-            targetPackage = null
-            stopActiveLoop()
-            return
-        }
-
-        val windowPkg = (rootNode.packageName?.toString() ?: "").lowercase()
-
-        // Only abort if user returned to Launcher/Home AFTER automation was running for at least 2 seconds
-        val isLauncher = (windowPkg.contains("launcher") || windowPkg.contains("nexuslauncher") ||
-                (windowPkg.contains("home") && !windowPkg.contains("settings"))) &&
-                !windowPkg.contains("settings") && !windowPkg.contains("systemui") &&
-                !windowPkg.contains("facebook") && !windowPkg.contains("lite") &&
-                now - lastActionTime > 2000
-
-        if (isLauncher) {
-            isAutomating = false
-            stopActiveLoop()
-            mainHandler.removeCallbacksAndMessages(null)
-            return
-        }
-
-        // 1. If Facebook Lite storage screen or its popup is active, handle custom Lite flow
-        if (isLiteStorageScreen(rootNode) || liteStep in LITE_STEP_SELECTING_ACCOUNTS..LITE_STEP_FINAL_CONFIRM) {
-            handleLiteStorageScreenFlow(rootNode)
-            return
-        }
-
-        // 2. Otherwise handle standard OEM clean / force close flow
-        if (currentMode == MODE_FORCE_CLOSE) {
-            handleForceCloseStep(rootNode)
-        } else {
-            handleAutoCleanStep(rootNode)
-        }
-    }
-
-    private fun normalizeText(str: String): String {
-        return str.lowercase()
-            .replace("أ", "ا")
-            .replace("إ", "ا")
-            .replace("آ", "ا")
-            .replace("ة", "ه")
-            .replace("ى", "ي")
-            .replace("ی", "ي")
-            .trim()
-    }
-
-    private fun countCheckableNodes(root: AccessibilityNodeInfo): Int {
-        val queue = ArrayDeque<AccessibilityNodeInfo>()
-        queue.add(root)
-        var count = 0
-        var checkableCount = 0
-        while (queue.isNotEmpty() && count < 80) {
-            val node = queue.removeFirst()
-            count++
-            if (node.isCheckable) checkableCount++
-            for (i in 0 until node.childCount) {
-                node.getChild(i)?.let { queue.add(it) }
+            if (!isTargetPkg && !isKnownTarget && !isTargetLiteMode) {
+                return
             }
+
+            val rootNode = rootInActiveWindow ?: return
+            val isLiteScreen = isLiteStorageScreen(rootNode)
+
+            // 1. If Facebook Lite storage screen or its popup is active, handle custom Lite flow
+            if (isLiteScreen) {
+                handleLiteStorageScreenFlow(rootNode)
+                return
+            }
+
+            // 2. Otherwise handle standard OEM clean / force close flow
+            if (currentMode == MODE_FORCE_CLOSE) {
+                handleForceCloseStep(rootNode)
+            } else {
+                handleAutoCleanStep(rootNode)
+            }
+        } catch (_: Throwable) {
+            // Absolute crash safety: never let any exception reach system framework
         }
-        return checkableCount
     }
 
     private fun isLiteStorageScreen(rootNode: AccessibilityNodeInfo): Boolean {
-        // Condition A: If the Accounts and Settings row is detected
-        if (findAccountsAndSettingsRow(rootNode) != null) {
+        if (liteStep in LITE_STEP_SELECTING_ACCOUNTS..LITE_STEP_FINAL_CONFIRM) {
             return true
         }
-        // Condition B: If Blue CLEAR button is found along with multiple checkboxes
-        if (findLiteClearButton(rootNode) != null && countCheckableNodes(rootNode) >= 2) {
-            return true
-        }
-        // Condition C: Multilingual keywords across all languages
         val keywords = listOf(
-            "facebook lite storage", "clear storage on your phone",
-            "accounts and settings", "accounts and setting",
-            "photo cache", "video cache", "other cache", "not recommended",
-            "مسح وحدة التخزين على هاتفك", "الحسابات والإعدادات", "الحسابات والاعتدادات", "غير موصى به",
-            "আপনার ফোনে স্থান খালি করুন", "অ্যাকাউন্ট এবং সেটিংস",
-            "अपने फोन पर स्टोरेज साफ़ करें", "खाते और सेटिंग", "اسٹوریج صاف کریں", "کھاتے",
-            "liberar espacio en el teléfono", "cuentas y configuración",
-            "libérer de l'espace sur votre téléphone", "comptes et paramètres",
-            "speicherplatz auf deinem handy freigeben", "konten und einstellungen",
-            "очистить память телефона", "аккаунты и настройки",
-            "liberar espaço no celular", "contas e configurações",
-            "telefonunuzda depolama alanı açın", "hesaplar ve ayarlar",
-            "xóa dung lượng trên điện thoại", "tài khoản và cài đặt",
-            "清理手机存储空间", "账户和设置",
-            "ล้างที่เก็บข้อมูลบนโทรศัพท์ของคุณ", "휴대폰 저장 공간 지우기"
+            "facebook lite storage",
+            "clear storage on your phone",
+            "libera espacio en el teléfono",
+            "accounts and settings",
+            "accounts and setting",
+            "cuentas y configuración",
+            "cuentas y configuracion",
+            "photo cache",
+            "video cache",
+            "other cache",
+            "remove unnecessary app files to save space",
+            "not recommended",
+            "no recomendado",
+            "অ্যাকাউন্ট এবং সেটিংস",
+            "مسح وحدة التخزين على هاتفك",
+            "الحسابات والإعدادات",
+            "غير موصى به"
         )
-        return findNodeByKeywords(rootNode, keywords) != null
+        return findNodeByKeywords(rootNode, keywords) != null || findLiteClearButton(rootNode) != null
     }
 
     private fun handleForceCloseStep(rootNode: AccessibilityNodeInfo) {
@@ -428,11 +363,7 @@ class AutoCleanAccessibilityService : AccessibilityService() {
                         combined.contains("speicher") || // German
                         combined.contains("хранилище") || // Russian
                         combined.contains("память") || // Russian
-                        combined.contains("التخزين") || // Arabic (Storage)
-                        combined.contains("مساحة التخزين") || // Arabic (Storage space)
-                        combined.contains("وحدة التخزين") || // Arabic (Storage unit)
-                        combined.contains("سعة التخزين") || // Arabic
-                        combined.contains("الذاكرة والتخزين") || // Arabic
+                        combined.contains("التخزين") || // Arabic
                         combined.contains("armazenamento") || // Portuguese
                         combined.contains("depolama") || // Turkish
                         combined.contains("penyimpanan") || // Indonesian
@@ -464,9 +395,7 @@ class AutoCleanAccessibilityService : AccessibilityService() {
                 "vider le cache", "effacer les données",
                 "cache leeren", "daten löschen",
                 "очистить кэш", "очистить хранилище", "стереть данные",
-                // Arabic (RTL support - Clear Cache & Clear Data in all variations)
-                "مسح ذاكرة التخزين المؤقت", "مسح التخزين المؤقت", "ذاكرة التخزين المؤقت",
-                "مسح البيانات", "مسح مساحة التخزين", "مسح وحدة التخزين", "مسح التخزين", "إدارة المساحة", "حذف البيانات", "مسح جميع البيانات",
+                "مسح ذاكرة التخزين المؤقت", "مسح البيانات",
                 "limpar cache", "limpar dados",
                 "önbelleği temizle", "verileri temizle",
                 "hapus cache", "hapus data",
@@ -496,7 +425,7 @@ class AutoCleanAccessibilityService : AccessibilityService() {
      */
     private fun handleAutoCleanStep(rootNode: AccessibilityNodeInfo) {
         val now = System.currentTimeMillis()
-        if (now - lastActionTime < 200) return
+        if (now - lastActionTime < 70) return
 
         // If Facebook Lite storage screen appeared during navigation, jump directly into Lite flow!
         if (isLiteStorageScreen(rootNode)) {
@@ -542,7 +471,7 @@ class AutoCleanAccessibilityService : AccessibilityService() {
             }
         }
 
-        // Step 1: In Storage screen -> Execute BOTH Clear Cache and Clear Data sequentially without missing Clear Data!
+        // Step 1: In Storage screen -> Execute BOTH Clear Cache and Clear Data sequentially!
         if (step in 1..2 || inStorageScreen) {
             // First: Click "Clear cache" if available and not yet clicked
             if (!clickedClearCache) {
@@ -551,8 +480,7 @@ class AutoCleanAccessibilityService : AccessibilityService() {
                     listOf(
                         "clear cache", "ক্যাশ মুছুন", "ক্যাশে মুছুন", "ক্লিয়ার ক্যাশ", "ক্লিন ক্যাশ",
                         "कैश साफ़ करें", "कैशे साफ़ करें", "limpiar caché", "borrar caché",
-                        "vider le cache", "cache leeren", "очистить кэш",
-                        "مسح ذاكرة التخزين المؤقت", "مسح التخزين المؤقت", "ذاكرة التخزين المؤقت", "مسح الذاكرة المؤقتة",
+                        "vider le cache", "cache leeren", "очистить кэш", "مسح ذاكرة التخزين المؤقت",
                         "limpar cache", "önbelleği temizle", "hapus cache", "清除缓存", "キャッシュを消去", "xóa bộ nhớ đệm"
                     ),
                     resourceIds = listOf(
@@ -567,13 +495,7 @@ class AutoCleanAccessibilityService : AccessibilityService() {
                     clickNode(clearCacheNode)
                     clickedClearCache = true
                     lastActionTime = now
-                    return
                 }
-            }
-
-            // Allow ~200ms after Clear Cache so Android updates cache before clicking Clear Data
-            if (clickedClearCache && now - lastActionTime < 200) {
-                return
             }
 
             // Next: Click "Clear data" / "Clear all data" / "Clear storage" / "Manage space"
@@ -582,8 +504,7 @@ class AutoCleanAccessibilityService : AccessibilityService() {
                 rootNode,
                 listOf(
                     "clear all data", "সব ডেটা মুছুন", "সব ডাটা মুছুন", "सभी डेटा साफ़ करें",
-                    "borrar todos los datos", "effacer toutes les données", "все данные",
-                    "مسح جميع البيانات", "مسح كل البيانات"
+                    "borrar todos los datos", "effacer toutes les données", "все данные"
                 ),
                 resourceIds = listOf(
                     "com.miui.securitycenter:id/clear_all_data"
@@ -597,73 +518,55 @@ class AutoCleanAccessibilityService : AccessibilityService() {
                 return
             }
 
-            // Priority B: Samsung One UI, Pixel, Xiaomi, Oppo, Vivo, Transsion, Facebook Main / Katana / FB Lite "Clear Data" / "Clear Storage" / "Manage space"
+            // Priority B: Samsung One UI, Pixel, Facebook Main / Katana / FB Lite "Clear Data" / "Clear Storage" / "Manage space"
             val clearDataNode = findNodeByKeywords(
                 rootNode,
                 listOf(
                     "clear data", "ক্লিয়ার ডেটা", "ডেটা মুছুন", "ডাটা মুছুন", "clear storage",
                     "স্টোরেজ মুছুন", "manage space", "manage storage", "delete data",
-                    "ডेटा साफ़ करें", "डेटा हटाएं", "स्टोरेज साफ़ करें", "स्पेस प्रबंधित करें",
-                    "ڈیٹا صاف کریں", "اسٹوریج صاف کریں", "حذف کریں",
-                    "borrar datos", "borrar almacenamiento", "administrar espacio", "eliminar datos",
+                    "ডेटा साफ़ करें", "स्टोरेज साफ़ करें", "स्पेस प्रबंधित करें",
+                    "borrar datos", "borrar almacenamiento", "administrar espacio",
                     "effacer les données", "supprimer les données", "gérer l'espace",
-                    "daten löschen", "speicherplatz verwalten", "очистить хранилище", "стереть данные", "удалить данные",
-                    "مسح مساحة التخزين", "مسح وحدة التخزين", "مسح البيانات", "مسح التخزين", "إدارة المساحة", "حذف البيانات", "مسح جميع البيانات", "مسح سعة التخزين",
-                    "limpar dados", "limpar armazenamento", "gerenciar espaço", "apagar dados",
-                    "verileri temizle", "hapus data", "kelola ruang", "bersihkan data", "清除数据", "管理空间",
+                    "daten löschen", "speicherplatz verwalten", "очистить хранилище", "стереть данные",
+                    "مسح البيانات", "إدارة المساحة", "limpar dados", "limpar armazenamento", "gerenciar espaço",
+                    "verileri temizle", "hapus data", "kelola ruang", "清除数据", "管理空间",
                     "データを消去", "容量を管理", "xóa dữ liệu", "quản lý dung lượng"
                 ),
                 resourceIds = listOf(
                     "com.samsung.android.settings:id/clear_data_button",
                     "com.android.settings:id/clear_data_button",
-                    "com.android.settings:id/clear_storage_button",
-                    "com.android.settings:id/manage_space_button",
                     "com.samsung.android.settings:id/button1",
                     "com.android.settings:id/button1",
                     "com.android.settings:id/clear_data_btn",
-                    "com.miui.securitycenter:id/clear_data",
-                    "com.miui.securitycenter:id/clear_all_data",
-                    "com.coloros.safecenter:id/clear_data",
-                    "com.oplus.safecenter:id/clear_data",
-                    "com.vivo.safecenter:id/clear_data",
-                    "com.transsion.phonemaster:id/clear_data",
-                    "com.google.android.settings:id/clear_data_button"
+                    "com.miui.securitycenter:id/clear_data"
                 )
             )
 
             if (clearDataNode != null && clearDataNode.isEnabled) {
-                val clicked = clickNode(clearDataNode)
-                if (clicked) {
-                    clickedClearData = true
-                    step = 3
-                    lastActionTime = now
+                clickNode(clearDataNode)
+                clickedClearData = true
+                step = 3
+                lastActionTime = now
 
-                    // Immediately check if FB Lite internal screen opened after clicking Manage space / Clear data
-                    mainHandler.postDelayed({
-                        rootInActiveWindow?.let { refreshed ->
-                            if (isLiteStorageScreen(refreshed)) {
-                                handleLiteStorageScreenFlow(refreshed)
-                            }
+                // Check if FB Lite internal screen opened immediately after clicking Manage space / Clear data
+                mainHandler.postDelayed({
+                    rootInActiveWindow?.let { refreshed ->
+                        if (isLiteStorageScreen(refreshed)) {
+                            handleLiteStorageScreenFlow(refreshed)
                         }
-                    }, 60)
-                    return
-                }
+                    }
+                }, 80)
+                return
             }
 
-            // If Clear Data has not been clicked yet, allow up to 3.5 seconds on storage screen before closing
-            if (!clickedClearData && clickedClearCache && now - lastActionTime > 3500) {
-                step = 4
-                autoCloseCleanedSequence()
-                return
+            if (clickedClearCache && now - lastActionTime > 180) {
+                step = 3
+                lastActionTime = now
             }
         }
 
         // Step 3: Handle Confirmation Dialog (Samsung One UI "Delete", Xiaomi "OK", Pixel "Delete/OK")
         if (step == 3) {
-            if (isLiteStorageScreen(rootNode)) {
-                handleLiteStorageScreenFlow(rootNode)
-                return
-            }
             val confirmNode = findOkOrDeleteConfirmButton(rootNode)
             if (confirmNode != null && confirmNode.isEnabled) {
                 clickNode(confirmNode)
@@ -672,8 +575,7 @@ class AutoCleanAccessibilityService : AccessibilityService() {
                 autoCloseCleanedSequence()
                 return
             } else {
-                // Wait up to 3500ms for confirmation dialog to animate and render
-                if (now - lastActionTime > 3500) {
+                if (now - lastActionTime > 220) {
                     step = 4
                     autoCloseCleanedSequence()
                 }
@@ -683,116 +585,106 @@ class AutoCleanAccessibilityService : AccessibilityService() {
 
     /**
      * Dedicated High-Speed Facebook Lite Handler:
-     * Fast and accurate (~2 seconds total):
      * 1. Checks "Accounts and settings" checkbox.
-     * 2. Swiftly clicks "OK" on warning popup (~350ms).
-     * 3. Taps blue "CLEAR" button without missing.
-     * 4. Confirms final popup and closes instantly!
+     * 2. Exactly 1-second delay (1000ms) before clicking "OK" on confirmation popup,
+     *    ensuring the checkbox mark is fully registered by OS and dialog is stable.
+     * 3. Taps "CLEAR" button without missing.
+     * 4. Confirms final popup and closes settings and app smoothly in milliseconds!
      */
     private fun handleLiteStorageScreenFlow(rootNode: AccessibilityNodeInfo) {
         val now = System.currentTimeMillis()
-        if (now - lastActionTime < 180) return
+        if (now - lastActionTime < 70) return
 
-        // 1. If we already clicked CLEAR, wait for final confirmation dialog
-        if (liteStep == LITE_STEP_FINAL_CONFIRM) {
-            val finalOk = findLiteOkDialogButton(rootNode)
-            if (finalOk != null && finalOk.isEnabled) {
-                clickNode(finalOk)
-                liteStep = LITE_STEP_DONE
-                lastActionTime = now
-                autoCloseCleanedSequence()
-                return
-            } else if (now - lastActionTime > 700) {
-                liteStep = LITE_STEP_DONE
-                autoCloseCleanedSequence()
-                return
-            }
-            return
-        }
-
-        // 2. If waiting for the accounts popup, check if OK button is ready
-        if (liteStep == LITE_STEP_WAIT_ACCOUNTS_POPUP) {
-            val popupOk = findLiteOkDialogButton(rootNode)
-            if (popupOk != null && popupOk.isEnabled) {
+        // 1. Positive dialog button check (OK / Confirm)
+        val okDialogBtn = findLiteOkDialogButton(rootNode)
+        if (okDialogBtn != null && okDialogBtn.isEnabled) {
+            // If waiting for the accounts popup, enforce the requested 1-second delay
+            if (liteStep == LITE_STEP_WAIT_ACCOUNTS_POPUP) {
                 val elapsedSinceMark = now - accountsMarkedTime
-                if (elapsedSinceMark < 300L) {
+                if (elapsedSinceMark < 1000L) {
+                    // Do not click yet, allow full 1-second stabilization
                     return
                 }
-                clickNode(popupOk)
-                liteStep = LITE_STEP_CLICK_CLEAR
-                lastActionTime = now
-
-                // Re-check after 200ms to click the blue CLEAR button smoothly
-                mainHandler.postDelayed({
-                    rootInActiveWindow?.let { refreshed ->
-                        handleLiteStorageScreenFlow(refreshed)
-                    }
-                }, 200)
-                return
-            } else if (now - accountsMarkedTime > 600L) {
-                // Modded Lite versions without warning popup: proceed directly to CLEAR button!
-                liteStep = LITE_STEP_CLICK_CLEAR
-                lastActionTime = now
             }
-            if (liteStep != LITE_STEP_CLICK_CLEAR) return
-        }
 
-        // 3. Ready to click the blue CLEAR button
-        if (liteStep == LITE_STEP_CLICK_CLEAR) {
-            val clearBtn = findLiteClearButton(rootNode)
-            if (clearBtn != null && clearBtn.isEnabled) {
-                clickNode(clearBtn)
-                liteStep = LITE_STEP_FINAL_CONFIRM
-                lastActionTime = now
+            clickNode(okDialogBtn)
+            lastActionTime = now
 
-                // Re-check after 200ms for final confirmation popup
+            if (liteStep == LITE_STEP_FINAL_CONFIRM) {
+                liteStep = LITE_STEP_DONE
+                autoCloseCleanedSequence()
+            } else {
+                liteStep = LITE_STEP_CLICK_CLEAR
+                // Instant follow-up check for CLEAR button without sluggish wait
                 mainHandler.postDelayed({
-                    rootInActiveWindow?.let { refreshed ->
-                        handleLiteStorageScreenFlow(refreshed)
+                    rootInActiveWindow?.let { refreshedRoot ->
+                        clickClearButtonAndFinish(refreshedRoot)
                     }
-                }, 200)
-                return
+                }, 100)
             }
             return
         }
 
-        // 4. Initial state: Ensure "Clear all" and "Accounts and settings" are checked
+        // 2. Ensure "Accounts and settings" is checked
         val accountsRow = findAccountsAndSettingsRow(rootNode)
-        ensureClearAllChecked(rootNode)
-
-        if (accountsRow != null && !accountsRow.isChecked) {
+        if (accountsRow != null && !accountsRow.isChecked && liteStep < LITE_STEP_CLICK_CLEAR) {
+            ensureClearAllChecked(rootNode)
             liteStep = LITE_STEP_WAIT_ACCOUNTS_POPUP
             accountsMarkedTime = now
             lastActionTime = now
-
-            // Click both clickable row container and checkbox widget to guarantee it toggles
             clickNode(accountsRow.clickableTarget)
-            accountsRow.checkboxNode?.let { cb ->
-                if (cb != accountsRow.clickableTarget) {
-                    try { cb.performAction(AccessibilityNodeInfo.ACTION_CLICK) } catch (_: Exception) {}
-                }
-            }
 
-            // Trigger handler after 300ms to click OK on the warning popup
+            // Exactly 1 second (1000ms) delay so user & OS see the mark cleanly before clicking OK popup
             mainHandler.postDelayed({
                 rootInActiveWindow?.let { refreshedRoot ->
-                    handleLiteStorageScreenFlow(refreshedRoot)
-                }
-            }, 300L)
-            return
-        } else {
-            // Already checked or no accounts row, click CLEAR button directly!
-            val clearBtn = findLiteClearButton(rootNode)
-            if (clearBtn != null && clearBtn.isEnabled) {
-                clickNode(clearBtn)
-                liteStep = LITE_STEP_FINAL_CONFIRM
-                lastActionTime = now
-                mainHandler.postDelayed({
-                    rootInActiveWindow?.let { refreshed ->
-                        handleLiteStorageScreenFlow(refreshed)
+                    val popupOk = findLiteOkDialogButton(refreshedRoot)
+                    if (popupOk != null && popupOk.isEnabled) {
+                        clickNode(popupOk)
+                        liteStep = LITE_STEP_CLICK_CLEAR
+                        lastActionTime = System.currentTimeMillis()
+                        // Follow up immediately to click CLEAR
+                        mainHandler.postDelayed({
+                            rootInActiveWindow?.let { rootAfterOk ->
+                                clickClearButtonAndFinish(rootAfterOk)
+                            }
+                        }, 100)
+                    } else {
+                        clickClearButtonAndFinish(refreshedRoot)
                     }
-                }, 200)
-                return
+                }
+            }, 1000L)
+            return
+        }
+
+        // 3. Accounts and settings is checked -> Click CLEAR
+        clickClearButtonAndFinish(rootNode)
+    }
+
+    private fun clickClearButtonAndFinish(rootNode: AccessibilityNodeInfo) {
+        val now = System.currentTimeMillis()
+        val clearBtn = findLiteClearButton(rootNode)
+
+        if (clearBtn != null && clearBtn.isEnabled) {
+            clickNode(clearBtn)
+            liteStep = LITE_STEP_FINAL_CONFIRM
+            lastActionTime = now
+
+            mainHandler.postDelayed({
+                rootInActiveWindow?.let { refreshedRoot ->
+                    val finalOk = findLiteOkDialogButton(refreshedRoot)
+                    if (finalOk != null && finalOk.isEnabled) {
+                        clickNode(finalOk)
+                    }
+                }
+                autoCloseCleanedSequence()
+            }, 160)
+        } else {
+            val finalOk = findLiteOkDialogButton(rootNode)
+            if (finalOk != null && finalOk.isEnabled) {
+                clickNode(finalOk)
+                autoCloseCleanedSequence()
+            } else if (now - lastActionTime > 300) {
+                autoCloseCleanedSequence()
             }
         }
     }
@@ -815,7 +707,6 @@ class AutoCleanAccessibilityService : AccessibilityService() {
             count++
             val text = (node.text?.toString() ?: "") + " " + (node.contentDescription?.toString() ?: "")
             val lower = text.lowercase()
-            val norm = normalizeText(text)
 
             if (node.isCheckable) {
                 allCheckableNodes.add(node)
@@ -824,43 +715,30 @@ class AutoCleanAccessibilityService : AccessibilityService() {
             // Universal multilingual matching for FB Lite Accounts and Settings row
             val isAccountsMatch = lower.contains("accounts and setting") ||
                     lower.contains("accounts & setting") ||
-                    lower.contains("cuentas y configuración") || // Spanish (Screenshot 3)
-                    lower.contains("cuentas y configuracion") ||
-                    lower.contains("cuentas") ||
                     lower.contains("অ্যাকাউন্ট এবং সেটিংস") ||
                     lower.contains("অ্যাকাউন্ট ও সেটিংস") ||
                     lower.contains("একাউন্ট") ||
                     lower.contains("खाते और सेटिंग") || // Hindi
+                    lower.contains("cuentas y configuración") || // Spanish
+                    lower.contains("cuentas") || // Spanish
                     lower.contains("comptes et paramètres") || // French
-                    lower.contains("comptes") ||
+                    lower.contains("comptes") || // French
                     lower.contains("konten und einstellungen") || // German
-                    lower.contains("konten") ||
+                    lower.contains("konten") || // German
                     lower.contains("аккаунты и настройки") || // Russian
-                    lower.contains("учетные записи") ||
-                    norm.contains("الحسابات والاعدادات") || // Arabic
-                    norm.contains("الحسابات والاعتدادات") ||
-                    norm.contains("الحسابات") ||
-                    norm.contains("غير موصى به") ||
-                    norm.contains("غير موصى") ||
-                    lower.contains("not recommended") ||
-                    lower.contains("no recomendado") || // Spanish subtitle (Screenshot 3)
-                    lower.contains("अनुशंसित नहीं") ||
-                    lower.contains("não recomendado") ||
-                    lower.contains("non recommandé") ||
-                    lower.contains("не рекомендуется") ||
+                    lower.contains("учетные записи") || // Russian
+                    lower.contains("الحسابات والإعدادات") || // Arabic
                     lower.contains("contas e configurações") || // Portuguese
                     lower.contains("hesaplar ve ayarlar") || // Turkish
                     lower.contains("akun dan pengaturan") || // Indonesian
                     lower.contains("账户和设置") || // Chinese
                     lower.contains("アカウントと設定") || // Japanese
                     lower.contains("tài khoản và cài đặt") || // Vietnamese
-                    lower.contains("tài khoản") ||
-                    lower.contains("계정 및 설정") || lower.contains("계정") || // Korean
-                    lower.contains("บัญชีและการตั้งค่า") || lower.contains("บัญชี") || // Thai
-                    lower.contains("အကောင့်") || // Burmese
-                    lower.contains("کھاتے اور ترتیبات") || lower.contains("اکاؤنটস") || // Urdu
-                    lower.contains("account e impostazioni") || // Italian
-                    lower.contains("konta i ustawienia") // Polish
+                    lower.contains("not recommended") ||
+                    lower.contains("अनुशंसित नहीं") ||
+                    lower.contains("não recomendado") ||
+                    lower.contains("non recommandé") ||
+                    lower.contains("не рекомендуется")
 
             if (isAccountsMatch) {
                 var checkableNode: AccessibilityNodeInfo? = null
@@ -903,20 +781,17 @@ class AutoCleanAccessibilityService : AccessibilityService() {
             }
         }
 
-        // Structural Fallback for ANY unknown language or RTL layout in FB Lite:
-        // In FB Lite storage screen:
-        // "Accounts and settings" is ALWAYS the LAST checkbox in the checkable items list!
-        val uncheckedCheckbox = allCheckableNodes.lastOrNull { !it.isChecked }
-        val targetCheckbox = uncheckedCheckbox ?: allCheckableNodes.lastOrNull()
-
-        if (targetCheckbox != null) {
-            val parent = targetCheckbox.parent
-            val targetClickable = if (targetCheckbox.isClickable) targetCheckbox else (parent ?: targetCheckbox)
+        // Structural Fallback for FB Lite across all languages:
+        // Cache items (Clear all, Photo, Video, Other) are pre-checked; "Accounts and settings" is the ONLY unchecked checkbox on screen!
+        val uncheckedCheckbox = allCheckableNodes.lastOrNull { !it.isChecked } ?: allCheckableNodes.lastOrNull()
+        if (uncheckedCheckbox != null) {
+            val parent = uncheckedCheckbox.parent
+            val targetClickable = if (uncheckedCheckbox.isClickable) uncheckedCheckbox else (parent ?: uncheckedCheckbox)
             return AccountsRowInfo(
-                textNode = targetCheckbox,
-                checkboxNode = targetCheckbox,
+                textNode = uncheckedCheckbox,
+                checkboxNode = uncheckedCheckbox,
                 clickableTarget = targetClickable,
-                isChecked = targetCheckbox.isChecked
+                isChecked = uncheckedCheckbox.isChecked
             )
         }
 
@@ -927,19 +802,13 @@ class AutoCleanAccessibilityService : AccessibilityService() {
         val queue = ArrayDeque<AccessibilityNodeInfo>()
         queue.add(root)
         var count = 0
-        var firstCheckable: AccessibilityNodeInfo? = null
 
-        while (queue.isNotEmpty() && count < 80) {
+        while (queue.isNotEmpty() && count < 60) {
             val node = queue.removeFirst()
             count++
-            if (node.isCheckable && firstCheckable == null) {
-                firstCheckable = node
-            }
             val text = (node.text?.toString() ?: "").lowercase()
-            val norm = normalizeText(text)
 
-            if (text.contains("clear all") || text.contains("সব মুছুন") || norm.contains("مسح الكل") ||
-                text.contains("सभी") || text.contains("tout") || text.contains("alles")) {
+            if (text.contains("clear all") || text.contains("সব মুছুন")) {
                 val parent = node.parent
                 if (parent != null) {
                     for (i in 0 until parent.childCount) {
@@ -954,13 +823,6 @@ class AutoCleanAccessibilityService : AccessibilityService() {
 
             for (i in 0 until node.childCount) {
                 node.getChild(i)?.let { queue.add(it) }
-            }
-        }
-
-        // If the first checkbox (Clear all) is not checked, ensure it is checked
-        firstCheckable?.let { first ->
-            if (!first.isChecked) {
-                clickNode(first)
             }
         }
     }
@@ -979,57 +841,16 @@ class AutoCleanAccessibilityService : AccessibilityService() {
             val desc = (node.contentDescription?.toString() ?: "").trim()
             val lower = text.lowercase()
             val lowerDesc = desc.lowercase()
-            val norm = normalizeText(text)
             val viewId = node.viewIdResourceName?.lowercase() ?: ""
 
             val isCancel = lower == "cancel" || lower == "বাতিল" || lower == "না" || lower == "no" ||
-                    lower == "إلغاء" || norm == "الغاء" || lower == "annuler" || lower == "abbrechen" ||
-                    lower == "отмена" || lower == "iptal" || lower == "batal" || lower == "cancelar" ||
-                    lower == "huỷ" || lower == "hủy" || lower == "取消" || lower == "キャンセル" || lower == "취소" ||
-                    lower == "रद्द करें" || lower == "منسوخ" || lower == "انصراف" || lower == "annulla" ||
-                    lower == "anuluj" || lower == "скасувати" || lower == "ยกเลิก" || lower == "পယ်ဖျက်ပါ" ||
-                    lower == "kanselahin" || lower == "రద్దు" || lower == "ரத்து" || lower == "ರದ್ದು" ||
-                    lower == "റദ്ദാക്കുക" || lower == "ביטול" || lower == "ghairi" || lower == "annuleren"
-
+                    lower == "cancelar" || lower == "annuler" || lower == "abbrechen" || lower == "إلغاء" ||
+                    lower == "отмена" || lower == "iptal" || lower == "batal" || lower == "取消"
             if (!isCancel && node.isEnabled) {
-                // Multilingual Positive Confirm words for Facebook, FB Lite, Messenger (35+ languages)
-                val isPositiveWord = lower == "ok" || lower == "okay" || lower == "confirm" ||
-                        lower == "yes" || lower == "clear" || lower == "delete" ||
-                        // Bengali
-                        lower == "ঠিক আছে" || lower == "হ্যাঁ" || lower == "মুছুন" || lower == "নিশ্চিত করুন" || lower == "মুছে ফেলুন" ||
-                        // Arabic
-                        norm == "موافق" || lower == "مسح" || lower == "حذف" || lower == "نعم" || norm == "تاكيد" || norm == "متابعه" ||
-                        // Hindi & Urdu
-                        lower == "ठीक है" || lower == "हाँ" || lower == "साफ़ करें" || lower == "हटाएं" || lower == "पुष्टि करें" ||
-                        lower == "ٹھیک ہے" || lower == "صاف کریں" || lower == "حذف کریں" ||
-                        // Spanish & Portuguese
-                        lower == "aceptar" || lower == "sí" || lower == "limpiar" || lower == "eliminar" || lower == "borrar" ||
-                        lower == "excluir" || lower == "apagar" || lower == "sim" || lower == "confirmar" ||
-                        // French
-                        lower == "oui" || lower == "effacer" || lower == "supprimer" || lower == "confirmer" ||
-                        // German & Dutch
-                        lower == "ja" || lower == "löschen" || lower == "bestätigen" || lower == "wissen" || lower == "verwijderen" ||
-                        // Russian & Ukrainian
-                        lower == "ок" || lower == "да" || lower == "очистить" || lower == "удалить" || lower == "підтвердити" || lower == "так" ||
-                        // Turkish & Indonesian/Malay
-                        lower == "tamam" || lower == "evet" || lower == "onayla" || lower == "oke" || lower == "ya" || lower == "hapus" || lower == "bersihkan" ||
-                        // Vietnamese & Thai
-                        lower == "có" || lower == "xóa" || lower == "xác nhận" || lower == "ตกลง" || lower == "ล้าง" || lower == "ลบ" || lower == "ใช่" ||
-                        // Chinese, Japanese, Korean
-                        lower == "确定" || lower == "确认" || lower == "確定" || lower == "確認" || lower == "清除" || lower == "删除" ||
-                        lower == "はい" || lower == "確認" || lower == "削除" || lower == "消去" || lower == "확인" || lower == "삭제" ||
-                        // Italian & Polish
-                        lower == "cancella" || lower == "elimina" || lower == "wyczyść" || lower == "usuń" || lower == "tak" ||
-                        // Persian / Farsi
-                        lower == "تأیید" || lower == "بله" || lower == "قبول" ||
-                        // South Asian (Tamil, Telugu, Marathi, Gujarati, Punjabi, Kannada, Malayalam)
-                        lower == "சரி" || lower == "அழி" || lower == "సరే" || lower == "తొలగించు" || lower == "ठीक आहे" ||
-                        lower == "साफ करा" || lower == "બરાબર" || lower == "સાફ કરો" || lower == "ਠੀਕ ਹੈ" || lower == "ಸರಿ" || lower == "ശരി" ||
-                        // Hebrew & Swahili
-                        lower == "אישור" || lower == "sawa" || lower == "futa" ||
-                        lowerDesc == "ok" || lowerDesc == "confirm" || lowerDesc == "aceptar"
-
-                if (isPositiveWord) {
+                if (lower == "ok" || lower == "okay" || lower == "confirm" ||
+                    lower == "ঠিক আছে" || lower == "yes" || lower == "হ্যাঁ" ||
+                    lower == "aceptar" || lower == "sí" || lower == "موافق" || lower == "tamam" ||
+                    lowerDesc == "ok" || lowerDesc == "confirm" || lowerDesc == "aceptar") {
                     candidates.add(node)
                 } else if (viewId.endsWith(":id/button1") || viewId.endsWith(":id/confirm") || viewId.endsWith(":id/ok")) {
                     candidates.add(node)
@@ -1046,17 +867,15 @@ class AutoCleanAccessibilityService : AccessibilityService() {
             }
         }
 
-        // Return candidate with highest priority
         val priorityMatch = candidates.firstOrNull {
             val t = (it.text?.toString() ?: "").trim()
-            val n = normalizeText(t)
             t.equals("ok", ignoreCase = true) || t.equals("aceptar", ignoreCase = true) ||
-                    n == "موافق" || t == "ঠিক আছে" || t == "ठीक है" || t.equals("tamam", ignoreCase = true)
+                    t == "ঠিক আছে" || t == "موافق" || t.equals("tamam", ignoreCase = true)
         } ?: candidates.firstOrNull()
 
         if (priorityMatch != null) return priorityMatch
 
-        // Geometric Right-Side Dialog Button Fallback (as user noted: OK option is always on the right side)
+        // Geometric Right-Side Dialog Button Fallback (OK / Aceptar option is on the right side of dialog)
         if (nonCancelButtons.isNotEmpty()) {
             val rect = android.graphics.Rect()
             return nonCancelButtons.maxByOrNull {
@@ -1077,41 +896,32 @@ class AutoCleanAccessibilityService : AccessibilityService() {
             val node = queue.removeFirst()
             count++
             val text = (node.text?.toString() ?: "").trim().lowercase()
-            val norm = normalizeText(text)
             val viewId = node.viewIdResourceName?.lowercase() ?: ""
 
             val isCancel = text == "cancel" || text == "বাতিল" || text == "না" || text == "no" ||
-                    text == "annuler" || text == "abbrechen" || text == "отмена" || text == "إلغاء" || norm == "الغاء" ||
-                    text == "iptal" || text == "batal" || text == "取消" || text == "キャンセル" || text == "cancelar" ||
-                    text == "취소" || text == "रद्द करें" || text == "منسوخ" || text == "anuluj" || text == "annulla" ||
-                    text == "ยกเลิก" || text == "huỷ" || text == "hủy" || text == "රద్దు"
+                    text == "annuler" || text == "abbrechen" || text == "отмена" || text == "إلغاء" ||
+                    text == "iptal" || text == "batal" || text == "取消" || text == "キャンセル"
             if (!isCancel && node.isEnabled) {
-                // Priority: Standard Android Dialog Positive Button (universal across all languages and RTL)
+                // Priority: Standard Android Dialog Positive Button (universal across all languages)
                 if (viewId.endsWith(":id/button1") || viewId.contains("confirm") || viewId.contains("button_ok")) {
                     return node
                 }
 
                 val isConfirmText = text == "delete" || text == "মুছুন" || text == "ok" || text == "clear" ||
-                        text == "confirm" || text == "ঠিক আছে" || text == "হ্যাঁ" || text == "মুছে ফেলুন" ||
+                        text == "confirm" || text == "ঠিক আছে" || text == "হ্যাঁ" ||
                         text == "clear all data" || text == "সব ডেটা মুছুন" ||
                         text == "हटाएं" || text == "ठीक है" || text == "हाँ" || text == "साफ़ करें" || // Hindi
-                        text == "صاف کریں" || text == "حذف کریں" || text == "ٹھیک ہے" || // Urdu
                         text == "eliminar" || text == "aceptar" || text == "borrar" || text == "sí" || // Spanish
                         text == "supprimer" || text == "effacer" || text == "oui" || // French
-                        text == "löschen" || text == "ja" || text == "wissen" || text == "verwijderen" || // German & Dutch
-                        text == "удалить" || text == "ок" || text == "да" || text == "очистить" || text == "підтвердити" || // Russian & Ukrainian
-                        // Arabic
-                        text == "حذف" || norm == "موافق" || text == "نعم" || text == "مسح" || norm == "تاكيد" ||
+                        text == "löschen" || text == "ja" || // German
+                        text == "удалить" || text == "ок" || text == "да" || text == "очистить" || // Russian
+                        text == "حذف" || text == "موافق" || text == "نعم" || // Arabic
                         text == "excluir" || text == "apagar" || text == "sim" || // Portuguese
                         text == "sil" || text == "tamam" || text == "evet" || // Turkish
-                        text == "hapus" || text == "oke" || text == "ya" || text == "bersihkan" || // Indonesian & Malay
-                        text == "删除" || text == "确定" || text == "是" || text == "確認" || text == "清除" || // Chinese
-                        text == "削除" || text == "はい" || text == "確認" || // Japanese
-                        text == "확인" || text == "삭제" || // Korean
-                        text == "xóa" || text == "có" || text == "xác nhận" || // Vietnamese
-                        text == "ตกลง" || text == "ล้าง" || text == "ลบ" || // Thai
-                        text == "சரி" || text == "அழி" || text == "సరే" || text == "తొలగించు" || // Tamil & Telugu
-                        text == "साफ करा" || text == "हटवा" || text == "સાદ કરો" || text == "אישור" || text == "futa"
+                        text == "hapus" || text == "oke" || text == "ya" || // Indonesian
+                        text == "删除" || text == "确定" || text == "是" || // Chinese
+                        text == "削除" || text == "はい" || // Japanese
+                        text == "xóa" || text == "có" // Vietnamese
 
                 if (isConfirmText) {
                     return node
@@ -1130,70 +940,43 @@ class AutoCleanAccessibilityService : AccessibilityService() {
         queue.add(root)
         var count = 0
 
-        while (queue.isNotEmpty() && count < 90) {
+        while (queue.isNotEmpty() && count < 80) {
             val node = queue.removeFirst()
             count++
             val text = (node.text?.toString() ?: "").trim()
             val desc = (node.contentDescription?.toString() ?: "").trim()
             val lower = text.lowercase()
-            val norm = normalizeText(text)
 
             val isExactClear = text.equals("CLEAR", ignoreCase = true) ||
                     text.equals("Clear", ignoreCase = true) ||
                     text.equals("BORRAR", ignoreCase = true) ||
                     text.equals("Borrar", ignoreCase = true) ||
                     text.equals("মুছুন") ||
-                    text.equals("মুছে ফেলুন") ||
-                    norm == "مسح" || // Arabic
-                    lower == "حذف" ||
                     lower == "साफ़ करें" ||
-                    lower == "صاف کریں" ||
                     lower == "limpiar" ||
                     lower == "borrar" ||
                     lower == "effacer" ||
                     lower == "löschen" ||
                     lower == "очистить" ||
+                    lower == "مسح" ||
                     lower == "limpar" ||
                     lower == "temizle" ||
                     lower == "hapus" ||
-                    lower == "bersihkan" ||
-                    lower == "kosongkan" ||
                     lower == "清除" ||
                     lower == "消去" ||
-                    lower == "삭제" ||
                     lower == "xóa" ||
-                    lower == "ล้าง" ||
-                    lower == "ရှင်းလင်းပါ" ||
-                    lower == "wissen" ||
-                    lower == "cancella" ||
-                    lower == "wyczyść" ||
-                    lower == "очистити" ||
-                    lower == "پاک کردن" ||
-                    lower == "அழி" ||
-                    lower == "క్లియర్" ||
-                    lower == "साफ करा" ||
-                    lower == "સાફ કરો" ||
-                    lower == "ਸਾਫ਼ ਕਰੋ" ||
-                    lower == "ತೆರವುಗೊಳಿಸಿ" ||
-                    lower == "മായ്ക്കുക" ||
-                    lower == "נקה" ||
-                    lower == "futa" ||
                     desc.equals("CLEAR", ignoreCase = true) ||
                     desc.equals("BORRAR", ignoreCase = true)
 
             val isNotOtherClear = !text.contains("All", ignoreCase = true) &&
-                    !text.contains("Todo", ignoreCase = true) && // Exclude "Borrar todo"
+                    !text.contains("Todo", ignoreCase = true) &&
                     !text.contains("Phone", ignoreCase = true) &&
                     !text.contains("Teléfono", ignoreCase = true) &&
                     !text.contains("Cache", ignoreCase = true) &&
                     !text.contains("Caché", ignoreCase = true) &&
                     !text.contains("Storage", ignoreCase = true) &&
                     !text.contains("Accounts", ignoreCase = true) &&
-                    !text.contains("Cuentas", ignoreCase = true) &&
-                    !norm.contains("الكل") && // exclude "مسح الكل" (Clear all checkbox)
-                    !norm.contains("هاتفك") && // exclude header "مسح وحدة التخزين على هاتفك"
-                    !norm.contains("الموقت") && // exclude cache
-                    !norm.contains("المؤقت")
+                    !text.contains("Cuentas", ignoreCase = true)
 
             if (isExactClear && isNotOtherClear && node.isEnabled) {
                 return node
@@ -1208,56 +991,50 @@ class AutoCleanAccessibilityService : AccessibilityService() {
 
     /**
      * Ultra-fast close sequence:
-     * Immediately stops automation, purges all pending callbacks so nothing is clicked on Home screen,
-     * navigates double-back + home instantly, kills background process, finishes cleanly.
+     * Navigates double-back + home, kills background process, finishes in ~20ms.
      */
     private fun autoCloseCleanedSequence() {
-        if (!isAutomating) return
-        isAutomating = false
-        mainHandler.removeCallbacksAndMessages(null)
         val pkgToKill = targetPackage
-        targetPackage = null
-        step = 0
-        liteStep = LITE_STEP_IDLE
-        isTargetLiteMode = false
-
-        // Ultra-fast instant close sequence
         performGlobalAction(GLOBAL_ACTION_BACK)
-        performGlobalAction(GLOBAL_ACTION_BACK)
-        performGlobalAction(GLOBAL_ACTION_HOME)
-
-        pkgToKill?.let { pkg ->
-            try {
-                val am = getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager
-                am?.killBackgroundProcesses(pkg)
-                Runtime.getRuntime().exec(arrayOf("am", "force-stop", pkg))
-            } catch (_: Exception) {}
-        }
-        Toast.makeText(applicationContext, "✓ $targetAppName ডেটা ক্লিয়ার ও অ্যাপ বন্ধ হয়েছে!", Toast.LENGTH_SHORT).show()
+        mainHandler.postDelayed({
+            performGlobalAction(GLOBAL_ACTION_BACK)
+            performGlobalAction(GLOBAL_ACTION_HOME)
+            pkgToKill?.let { pkg ->
+                try {
+                    val am = getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager
+                    am?.killBackgroundProcesses(pkg)
+                    Runtime.getRuntime().exec(arrayOf("am", "force-stop", pkg))
+                } catch (_: Exception) {}
+            }
+            Toast.makeText(applicationContext, "✓ $targetAppName ডেটা ক্লিয়ার ও অ্যাপ বন্ধ হয়েছে!", Toast.LENGTH_SHORT).show()
+            isAutomating = false
+            targetPackage = null
+            step = 0
+            liteStep = LITE_STEP_IDLE
+            isTargetLiteMode = false
+        }, 20)
     }
 
     private fun finishAndCloseSettings(message: String) {
-        if (!isAutomating) return
-        isAutomating = false
-        mainHandler.removeCallbacksAndMessages(null)
         val pkgToKill = targetPackage
-        targetPackage = null
-        step = 0
-        liteStep = LITE_STEP_IDLE
-        isTargetLiteMode = false
-
         performGlobalAction(GLOBAL_ACTION_BACK)
-        performGlobalAction(GLOBAL_ACTION_BACK)
-        performGlobalAction(GLOBAL_ACTION_HOME)
-
-        pkgToKill?.let { pkg ->
-            try {
-                val am = getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager
-                am?.killBackgroundProcesses(pkg)
-                Runtime.getRuntime().exec(arrayOf("am", "force-stop", pkg))
-            } catch (_: Exception) {}
-        }
-        Toast.makeText(applicationContext, message, Toast.LENGTH_SHORT).show()
+        mainHandler.postDelayed({
+            performGlobalAction(GLOBAL_ACTION_BACK)
+            performGlobalAction(GLOBAL_ACTION_HOME)
+            pkgToKill?.let { pkg ->
+                try {
+                    val am = getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager
+                    am?.killBackgroundProcesses(pkg)
+                    Runtime.getRuntime().exec(arrayOf("am", "force-stop", pkg))
+                } catch (_: Exception) {}
+            }
+            Toast.makeText(applicationContext, message, Toast.LENGTH_SHORT).show()
+            isAutomating = false
+            targetPackage = null
+            step = 0
+            liteStep = LITE_STEP_IDLE
+            isTargetLiteMode = false
+        }, 20)
     }
 
     private fun findNodeByKeywords(
@@ -1299,15 +1076,6 @@ class AutoCleanAccessibilityService : AccessibilityService() {
     }
 
     private fun clickNode(node: AccessibilityNodeInfo): Boolean {
-        if (!isAutomating) return false
-        val nodePkg = (node.packageName?.toString() ?: "").lowercase()
-        val isForbidden = nodePkg.contains("launcher") || nodePkg.contains("home") ||
-                (nodePkg.contains("systemui") && !nodePkg.contains("settings"))
-        if (isForbidden) {
-            isAutomating = false
-            mainHandler.removeCallbacksAndMessages(null)
-            return false
-        }
         var curr: AccessibilityNodeInfo? = node
         while (curr != null) {
             if (curr.isClickable) {
