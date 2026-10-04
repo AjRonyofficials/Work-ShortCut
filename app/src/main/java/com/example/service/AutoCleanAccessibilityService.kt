@@ -105,6 +105,7 @@ class AutoCleanAccessibilityService : AccessibilityService() {
                 return
             }
 
+            instance?.startActiveLoop()
             openAppSettings(context, packageName)
         }
 
@@ -141,6 +142,7 @@ class AutoCleanAccessibilityService : AccessibilityService() {
                 return
             }
 
+            instance?.startActiveLoop()
             openAppSettings(context, packageName)
         }
 
@@ -178,9 +180,33 @@ class AutoCleanAccessibilityService : AccessibilityService() {
         } catch (_: Throwable) {}
     }
 
+    private val automationTickRunnable = object : Runnable {
+        override fun run() {
+            if (!isAutomating) return
+            try {
+                rootInActiveWindow?.let { root ->
+                    dispatchScreenAutomation(root)
+                }
+            } catch (_: Throwable) {}
+            if (isAutomating) {
+                mainHandler.postDelayed(this, 150)
+            }
+        }
+    }
+
+    private fun startActiveLoop() {
+        mainHandler.removeCallbacks(automationTickRunnable)
+        mainHandler.postDelayed(automationTickRunnable, 200)
+    }
+
+    private fun stopActiveLoop() {
+        mainHandler.removeCallbacks(automationTickRunnable)
+    }
+
     override fun onUnbind(intent: Intent?): Boolean {
         instance = null
         isAutomating = false
+        stopActiveLoop()
         return super.onUnbind(intent)
     }
 
@@ -188,72 +214,65 @@ class AutoCleanAccessibilityService : AccessibilityService() {
         super.onDestroy()
         instance = null
         isAutomating = false
+        stopActiveLoop()
     }
 
     override fun onInterrupt() {
         isAutomating = false
+        stopActiveLoop()
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         try {
             if (!isAutomating) return
-            val currentTarget = targetPackage ?: return
-
             val now = System.currentTimeMillis()
-            // Throttle events to save CPU and battery (prevents overheating and lag)
-            if (now - lastEventProcessedTime < 70) return
+            if (now - lastEventProcessedTime < 40) return
             lastEventProcessedTime = now
-
-            // 10-second safety timeout prevents any hanging
-            if (now - lastActionTime > 10000) {
-                isAutomating = false
-                targetPackage = null
-                return
+            rootInActiveWindow?.let { root ->
+                dispatchScreenAutomation(root)
             }
+        } catch (_: Throwable) {}
+    }
 
-            val eventPkg = (event?.packageName?.toString() ?: "").lowercase()
-            val rootNode = rootInActiveWindow ?: return
-            val windowPkg = (rootNode.packageName?.toString() ?: "").lowercase()
-            val pkg = if (eventPkg.isNotEmpty()) eventPkg else windowPkg
+    private fun dispatchScreenAutomation(rootNode: AccessibilityNodeInfo) {
+        if (!isAutomating) return
+        val currentTarget = targetPackage ?: return
 
-            // Immediately abort if user is on Home screen / Launcher (never click anything on Home screen!)
-            val isLauncher = pkg.contains("launcher") || windowPkg.contains("launcher") ||
-                    pkg.contains("home") || windowPkg.contains("home") ||
-                    pkg.contains("nexuslauncher") || windowPkg.contains("nexuslauncher") ||
-                    pkg.contains("systemui") && !windowPkg.contains("settings")
-            if (isLauncher) {
-                isAutomating = false
-                mainHandler.removeCallbacksAndMessages(null)
-                return
-            }
+        val now = System.currentTimeMillis()
+        if (now - lastActionTime > 15000) {
+            isAutomating = false
+            targetPackage = null
+            stopActiveLoop()
+            return
+        }
 
-            // Strictly allow only Settings, SecurityCenter, PackageInstaller, or the target app itself
-            val isSettings = pkg.contains("settings") || windowPkg.contains("settings") ||
-                    pkg.contains("securitycenter") || windowPkg.contains("securitycenter") ||
-                    pkg.contains("packageinstaller") || windowPkg.contains("packageinstaller")
-            val isTarget = currentTarget.isNotEmpty() && (pkg.contains(currentTarget.lowercase()) || windowPkg.contains(currentTarget.lowercase()))
-            val isLite = isTargetLiteMode && (pkg.contains("lite") || windowPkg.contains("lite") || pkg.contains("facebook") || windowPkg.contains("facebook"))
+        val windowPkg = (rootNode.packageName?.toString() ?: "").lowercase()
 
-            if (!isSettings && !isTarget && !isLite) {
-                return
-            }
+        // Only abort if user returned to Launcher/Home AFTER automation was running for at least 2 seconds
+        val isLauncher = (windowPkg.contains("launcher") || windowPkg.contains("nexuslauncher") ||
+                (windowPkg.contains("home") && !windowPkg.contains("settings"))) &&
+                !windowPkg.contains("settings") && !windowPkg.contains("systemui") &&
+                !windowPkg.contains("facebook") && !windowPkg.contains("lite") &&
+                now - lastActionTime > 2000
 
-            val isLiteScreen = isLiteStorageScreen(rootNode)
+        if (isLauncher) {
+            isAutomating = false
+            stopActiveLoop()
+            mainHandler.removeCallbacksAndMessages(null)
+            return
+        }
 
-            // 1. If Facebook Lite storage screen or its popup is active, handle custom Lite flow
-            if (isLiteScreen) {
-                handleLiteStorageScreenFlow(rootNode)
-                return
-            }
+        // 1. If Facebook Lite storage screen or its popup is active, handle custom Lite flow
+        if (isLiteStorageScreen(rootNode) || liteStep in LITE_STEP_SELECTING_ACCOUNTS..LITE_STEP_FINAL_CONFIRM) {
+            handleLiteStorageScreenFlow(rootNode)
+            return
+        }
 
-            // 2. Otherwise handle standard OEM clean / force close flow
-            if (currentMode == MODE_FORCE_CLOSE) {
-                handleForceCloseStep(rootNode)
-            } else {
-                handleAutoCleanStep(rootNode)
-            }
-        } catch (_: Throwable) {
-            // Absolute crash safety: never let any exception reach system framework
+        // 2. Otherwise handle standard OEM clean / force close flow
+        if (currentMode == MODE_FORCE_CLOSE) {
+            handleForceCloseStep(rootNode)
+        } else {
+            handleAutoCleanStep(rootNode)
         }
     }
 
@@ -631,8 +650,8 @@ class AutoCleanAccessibilityService : AccessibilityService() {
                 }
             }
 
-            // If Clear Data has not been clicked yet, allow up to 2.5 seconds on storage screen before closing
-            if (!clickedClearData && clickedClearCache && now - lastActionTime > 2500) {
+            // If Clear Data has not been clicked yet, allow up to 3.5 seconds on storage screen before closing
+            if (!clickedClearData && clickedClearCache && now - lastActionTime > 3500) {
                 step = 4
                 autoCloseCleanedSequence()
                 return
@@ -653,8 +672,8 @@ class AutoCleanAccessibilityService : AccessibilityService() {
                 autoCloseCleanedSequence()
                 return
             } else {
-                // Wait up to 1200ms for confirmation dialog to animate and render
-                if (now - lastActionTime > 1200) {
+                // Wait up to 3500ms for confirmation dialog to animate and render
+                if (now - lastActionTime > 3500) {
                     step = 4
                     autoCloseCleanedSequence()
                 }
