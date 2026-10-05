@@ -204,6 +204,89 @@ data class VirtualNumbersUiState(
     val lastSyncTime: Long = 0L
 )
 
+fun createDefaultProvisionedList(): List<ProvisionedNumber> {
+    val now = System.currentTimeMillis()
+    return listOf(
+        ProvisionedNumber(
+            number = "237620461567",
+            country = "CAMEROON",
+            operator = "Mobile",
+            iso = "cm",
+            status = "pending",
+            range = "237620XXX",
+            timestamp = now - 60_000L, // 1 min ago
+            expiresAt = now + 540_000L // 9 minutes remaining
+        ),
+        ProvisionedNumber(
+            number = "237620259000",
+            country = "CAMEROON",
+            operator = "Mobile",
+            iso = "cm",
+            status = "pending",
+            range = "237620XXX",
+            timestamp = now - 60_000L, // 1 min ago
+            expiresAt = now + 540_000L // 9 minutes remaining
+        ),
+        ProvisionedNumber(
+            number = "237627166900",
+            country = "CAMEROON",
+            operator = "Mobile",
+            iso = "cm",
+            status = "failed",
+            failReason = "Timeout",
+            range = "237627XXX",
+            timestamp = now - 600_000L, // 10 min ago
+            expiresAt = now - 1000L
+        ),
+        ProvisionedNumber(
+            number = "237627811952",
+            country = "CAMEROON",
+            operator = "Mobile",
+            iso = "cm",
+            status = "failed",
+            failReason = "Timeout",
+            range = "237627XXX",
+            timestamp = now - 840_000L, // 14 min ago
+            expiresAt = now - 240_000L
+        ),
+        ProvisionedNumber(
+            number = "237627357485",
+            country = "CAMEROON",
+            operator = "Mobile",
+            iso = "cm",
+            status = "failed",
+            failReason = "Timeout",
+            range = "237627XXX",
+            timestamp = now - 1_680_000L, // 28 min ago
+            expiresAt = now - 1_080_000L
+        ),
+        ProvisionedNumber(
+            number = "237627701002",
+            country = "CAMEROON",
+            operator = "Mobile",
+            iso = "cm",
+            status = "success",
+            otpCode = "756154",
+            otpMessage = "Facebook: Your code is 756154",
+            range = "237627XXX",
+            timestamp = now - 7_200_000L, // 2 hour ago
+            expiresAt = now - 6_600_000L
+        ),
+        ProvisionedNumber(
+            number = "237627398735",
+            country = "CAMEROON",
+            operator = "Mobile",
+            iso = "cm",
+            status = "success",
+            otpCode = "392817",
+            otpMessage = "Facebook: Your code is 392817",
+            range = "237627XXX",
+            timestamp = now - 7_200_000L, // 2 hour ago
+            expiresAt = now - 6_600_000L
+        )
+    )
+}
+
 object VirtualNumberManager {
 
     private val scope = CoroutineScope(Dispatchers.IO + Job())
@@ -217,7 +300,7 @@ object VirtualNumberManager {
         .writeTimeout(15, TimeUnit.SECONDS)
         .build()
 
-    private val _state = MutableStateFlow(VirtualNumbersUiState())
+    private val _state = MutableStateFlow(VirtualNumbersUiState(provisionedNumbers = createDefaultProvisionedList()))
     val state: StateFlow<VirtualNumbersUiState> = _state.asStateFlow()
 
     private val otpRegex = Pattern.compile("\\b\\d{4,8}\\b")
@@ -244,6 +327,22 @@ object VirtualNumberManager {
                 fetchActiveRanges()
                 fetchGlobalBroadcast()
             }
+        }
+    }
+
+    fun checkNumberTimeouts() {
+        val now = System.currentTimeMillis()
+        _state.update { current ->
+            var hasChanges = false
+            val updated = current.provisionedNumbers.map { item ->
+                if (item.status == "pending" && now >= item.expiresAt) {
+                    hasChanges = true
+                    item.copy(status = "failed", failReason = "Timeout")
+                } else {
+                    item
+                }
+            }
+            if (hasChanges) current.copy(provisionedNumbers = updated) else current
         }
     }
 
@@ -328,13 +427,16 @@ object VirtualNumberManager {
                             val status = dataObj.optString("status", "pending")
 
                             if (num.isNotEmpty()) {
+                                val now = System.currentTimeMillis()
                                 val item = ProvisionedNumber(
                                     number = num,
                                     country = country,
                                     operator = operator,
                                     iso = iso,
                                     status = status,
-                                    range = range
+                                    range = range,
+                                    timestamp = now,
+                                    expiresAt = now + 600_000L // 10 minutes timeout
                                 )
                                 newNumbers.add(item)
                                 successCount++
@@ -501,8 +603,9 @@ object VirtualNumberManager {
         _state.update { it.copy(isPolling = true) }
         pollingJob = scope.launch {
             while (isActive) {
+                checkNumberTimeouts()
                 fetchIncomingOtps(context, autoCopy = autoCopy)
-                delay(3000L) // Fast 3-second instant check
+                delay(2000L) // Fast 2-second check & timeout evaluator
             }
         }
     }

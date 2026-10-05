@@ -1358,11 +1358,22 @@ fun VirtualNumbersOverlaySection(
                                                     modifier = Modifier.padding(horizontal = 3.dp, vertical = 1.dp)
                                                 )
                                             }
-                                        } else {
+                                        } else if (item.status == "failed") {
                                             Text(
-                                                text = "Wait...",
-                                                color = Color(0xFFFFD600),
+                                                text = item.failReason ?: "Timeout",
+                                                color = Color(0xFFFF5252),
                                                 fontSize = 8.sp,
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                        } else {
+                                            val remMs = (item.expiresAt - System.currentTimeMillis()).coerceAtLeast(0)
+                                            val mins = (remMs / 1000) / 60
+                                            val secs = (remMs / 1000) % 60
+                                            val remStr = String.format(java.util.Locale.US, "%02d:%02d", mins, secs)
+                                            Text(
+                                                text = "Wait ($remStr)",
+                                                color = Color(0xFFFFD600),
+                                                fontSize = 7.5.sp,
                                                 fontWeight = FontWeight.Bold
                                             )
                                         }

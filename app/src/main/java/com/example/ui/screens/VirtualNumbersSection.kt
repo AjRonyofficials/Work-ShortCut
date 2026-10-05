@@ -102,9 +102,14 @@ fun VirtualNumbersSection(
     var consoleFilter by remember { mutableStateOf("") }
     var quantityDropdownExpanded by remember { mutableStateOf(false) }
 
+    var nowTick by remember { mutableStateOf(System.currentTimeMillis()) }
     LaunchedEffect(Unit) {
         VirtualNumberManager.init(context)
         VirtualNumberManager.startAutoPolling(context, autoCopy = false)
+        while (true) {
+            delay(1000L)
+            nowTick = System.currentTimeMillis()
+        }
     }
 
     val total = state.provisionedNumbers.size
@@ -600,7 +605,7 @@ fun VirtualNumbersSection(
                 }
             } else {
                 items(filteredList, key = { it.id }) { item ->
-                    ProvisionedNumberCard(item = item, context = context)
+                    ProvisionedNumberCard(item = item, now = nowTick, context = context)
                 }
             }
         } else {
@@ -944,9 +949,33 @@ private fun StatPill(
     }
 }
 
+fun formatTimeElapsed(timestamp: Long, now: Long): String {
+    val diffMs = (now - timestamp).coerceAtLeast(0)
+    val seconds = diffMs / 1000
+    val minutes = seconds / 60
+    val hours = minutes / 60
+    val days = hours / 24
+
+    return when {
+        seconds < 45 -> "just now"
+        minutes < 60 -> "$minutes min ago"
+        hours < 24 -> if (hours == 1L) "1 hour ago" else "$hours hours ago"
+        else -> if (days == 1L) "1 day ago" else "$days days ago"
+    }
+}
+
+fun formatTimeRemaining(expiresAt: Long, now: Long): String {
+    val remainingMs = (expiresAt - now).coerceAtLeast(0)
+    val totalSeconds = remainingMs / 1000
+    val minutes = totalSeconds / 60
+    val seconds = totalSeconds % 60
+    return String.format(Locale.US, "%02d:%02d", minutes, seconds)
+}
+
 @Composable
 private fun ProvisionedNumberCard(
     item: ProvisionedNumber,
+    now: Long,
     context: Context
 ) {
     Card(
@@ -954,92 +983,223 @@ private fun ProvisionedNumberCard(
         shape = RoundedCornerShape(12.dp),
         border = androidx.compose.foundation.BorderStroke(
             1.dp,
-            if (item.status == "success") Color(0xFF00E676).copy(alpha = 0.5f) else Color(0xFF1E3A56)
+            when (item.status) {
+                "success" -> Color(0xFF00E676).copy(alpha = 0.5f)
+                "failed" -> Color(0xFFFF5252).copy(alpha = 0.4f)
+                else -> Color(0xFF1E3A56)
+            }
         ),
         modifier = Modifier.fillMaxWidth()
     ) {
         Column(modifier = Modifier.padding(12.dp)) {
+            // Header Row: Left (Number + Country badge) | Right (Status Pill + Time Ago + Mobile)
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+                verticalAlignment = Alignment.Top
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        text = item.number,
-                        color = Color.White,
-                        fontSize = 15.sp,
-                        fontWeight = FontWeight.Bold,
-                        fontFamily = FontFamily.Monospace
-                    )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    IconButton(
-                        onClick = {
-                            ClipboardHelper.copyToClipboard(context, item.number, "Phone Number")
-                        },
-                        modifier = Modifier.size(24.dp)
-                    ) {
-                        Icon(
-                            Icons.Default.ContentCopy,
-                            contentDescription = "Copy Number",
-                            tint = Color(0xFF00B0FF),
-                            modifier = Modifier.size(14.dp)
+                // Left: Number & Country Badge & Status subtext
+                Column(modifier = Modifier.weight(1f)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = item.number,
+                            color = Color.White,
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.Bold,
+                            fontFamily = FontFamily.Monospace,
+                            modifier = Modifier.clickable {
+                                ClipboardHelper.copyToClipboard(context, item.number, "Phone Number")
+                            }
                         )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Surface(
+                            color = Color(0xFF1E2D3B),
+                            shape = RoundedCornerShape(4.dp)
+                        ) {
+                            Text(
+                                text = item.country.uppercase(),
+                                color = Color(0xFF90A4AE),
+                                fontSize = 8.5.sp,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
+                            )
+                        }
+                        IconButton(
+                            onClick = {
+                                ClipboardHelper.copyToClipboard(context, item.number, "Phone Number")
+                            },
+                            modifier = Modifier.size(24.dp)
+                        ) {
+                            Icon(
+                                Icons.Default.ContentCopy,
+                                contentDescription = "Copy Number",
+                                tint = Color(0xFF00B0FF),
+                                modifier = Modifier.size(13.dp)
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(4.dp))
+
+                    // Left Side Description by Status
+                    when (item.status) {
+                        "pending" -> {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(6.dp)
+                                        .clip(CircleShape)
+                                        .background(Color(0xFFFFD600))
+                                )
+                                Spacer(modifier = Modifier.width(5.dp))
+                                Text(
+                                    text = "Waiting...",
+                                    color = Color(0xFFFFD600),
+                                    fontSize = 11.5.sp,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                            }
+                        }
+                        "failed" -> {
+                            Text(
+                                text = item.failReason ?: "Timeout",
+                                color = Color(0xFFFF5252),
+                                fontSize = 11.5.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                        "success" -> {
+                            Text(
+                                text = item.otpMessage ?: "Facebook: Your code is ${item.otpCode}",
+                                color = Color(0xFFB0BEC5),
+                                fontSize = 10.5.sp,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
                     }
                 }
 
-                // Status pill
-                val (statusBg, statusFg, statusText) = when (item.status) {
-                    "success" -> Triple(Color(0xFF00E676).copy(alpha = 0.2f), Color(0xFF00E676), "SUCCESS")
-                    "failed" -> Triple(Color(0xFFFF5252).copy(alpha = 0.2f), Color(0xFFFF5252), "FAILED")
-                    else -> Triple(Color(0xFFFFD600).copy(alpha = 0.2f), Color(0xFFFFD600), "PENDING")
-                }
-
-                Surface(
-                    color = statusBg,
-                    shape = RoundedCornerShape(6.dp)
+                // Right: Status Pill + Elapsed Time + Mobile
+                Column(
+                    horizontalAlignment = Alignment.End,
+                    verticalArrangement = Arrangement.spacedBy(2.dp)
                 ) {
+                    val (statusBg, statusFg, statusText) = when (item.status) {
+                        "success" -> Triple(Color(0xFF0F3320), Color(0xFF00E676), "SUCCESS")
+                        "failed" -> Triple(Color(0xFF381515), Color(0xFFFF5252), "FAILED")
+                        else -> Triple(Color(0xFF332A00), Color(0xFFFFD600), "PENDING")
+                    }
+
+                    Surface(
+                        color = statusBg,
+                        shape = RoundedCornerShape(4.dp),
+                        border = androidx.compose.foundation.BorderStroke(0.8.dp, statusFg.copy(alpha = 0.5f))
+                    ) {
+                        Text(
+                            text = statusText,
+                            color = statusFg,
+                            fontSize = 9.5.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp)
+                        )
+                    }
+
+                    // Time elapsed: "kotokhon aga neowa hoyse"
                     Text(
-                        text = statusText,
-                        color = statusFg,
+                        text = formatTimeElapsed(item.timestamp, now),
+                        color = Color(0xFF90A4AE),
                         fontSize = 10.sp,
-                        fontWeight = FontWeight.ExtraBold,
-                        modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp)
+                        fontWeight = FontWeight.Medium
                     )
+
+                    // Mobile badge
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Default.Sensors,
+                            contentDescription = null,
+                            tint = Color(0xFF607D8B),
+                            modifier = Modifier.size(11.dp)
+                        )
+                        Spacer(modifier = Modifier.width(3.dp))
+                        Text(
+                            text = item.operator.uppercase(),
+                            color = Color(0xFF78909C),
+                            fontSize = 9.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
                 }
             }
 
-            Spacer(modifier = Modifier.height(4.dp))
+            // PENDING STATUS: TIME REMAINING COUNTDOWN CARD (Live expiresAt - now)
+            if (item.status == "pending") {
+                Spacer(modifier = Modifier.height(8.dp))
+                val remainingMs = (item.expiresAt - now).coerceAtLeast(0)
+                val remainingStr = formatTimeRemaining(item.expiresAt, now)
+                val progressRatio = (remainingMs.toFloat() / 600_000f).coerceIn(0f, 1f)
 
-            Row(verticalAlignment = Alignment.CenterVertically) {
                 Surface(
-                    color = Color(0xFF1E3A56),
-                    shape = RoundedCornerShape(4.dp)
+                    color = Color(0xFF131D24),
+                    shape = RoundedCornerShape(8.dp),
+                    border = androidx.compose.foundation.BorderStroke(0.8.dp, Color(0xFFFFD600).copy(alpha = 0.35f)),
+                    modifier = Modifier.fillMaxWidth()
                 ) {
-                    Text(
-                        text = item.country.uppercase(),
-                        color = Color(0xFFB0BEC5),
-                        fontSize = 9.sp,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp)
-                    )
+                    Column(modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    imageVector = Icons.Default.Bolt,
+                                    contentDescription = null,
+                                    tint = Color(0xFFFFD600),
+                                    modifier = Modifier.size(13.dp)
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(
+                                    text = "Time Remaining:",
+                                    color = Color(0xFFFFE082),
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Medium
+                                )
+                            }
+                            Text(
+                                text = remainingStr,
+                                color = if (remainingMs > 60_000L) Color(0xFFFFD600) else Color(0xFFFF5252),
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.ExtraBold,
+                                fontFamily = FontFamily.Monospace
+                            )
+                        }
+                        Spacer(modifier = Modifier.height(4.dp))
+                        LinearProgressIndicator(
+                            progress = { progressRatio },
+                            color = if (remainingMs > 60_000L) Color(0xFFFFD600) else Color(0xFFFF5252),
+                            trackColor = Color(0xFF1C2731),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(3.dp)
+                                .clip(RoundedCornerShape(2.dp))
+                        )
+                    }
                 }
-                Spacer(modifier = Modifier.width(6.dp))
-                Text(
-                    text = "• ${item.operator}",
-                    color = Color(0xFF78909C),
-                    fontSize = 11.sp
-                )
             }
 
-            // OTP RESULT CARD IF RECEIVED
-            if (!item.otpCode.isNullOrEmpty()) {
+            // SUCCESS STATUS: OTP RESULT BOX
+            if (item.status == "success" && !item.otpCode.isNullOrEmpty()) {
                 Spacer(modifier = Modifier.height(8.dp))
                 Surface(
                     color = Color(0xFF00E676).copy(alpha = 0.12f),
                     shape = RoundedCornerShape(8.dp),
                     border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF00E676).copy(alpha = 0.4f)),
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable {
+                            ClipboardHelper.copyToClipboard(context, item.otpCode, "OTP Code")
+                        }
                 ) {
                     Row(
                         modifier = Modifier
@@ -1048,72 +1208,36 @@ private fun ProvisionedNumberCard(
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Surface(
-                                    color = Color(0xFF00E676),
-                                    shape = RoundedCornerShape(4.dp)
-                                ) {
-                                    Text(
-                                        text = item.otpCode,
-                                        color = Color.Black,
-                                        fontSize = 14.sp,
-                                        fontWeight = FontWeight.ExtraBold,
-                                        fontFamily = FontFamily.Monospace,
-                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                                    )
-                                }
-                                Spacer(modifier = Modifier.width(8.dp))
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Surface(
+                                color = Color(0xFF00E676),
+                                shape = RoundedCornerShape(4.dp)
+                            ) {
                                 Text(
-                                    text = "OTP Code",
-                                    color = Color(0xFF00E676),
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.Bold
+                                    text = item.otpCode,
+                                    color = Color.Black,
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.ExtraBold,
+                                    fontFamily = FontFamily.Monospace,
+                                    modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp)
                                 )
                             }
-                            if (!item.otpMessage.isNullOrEmpty()) {
-                                Spacer(modifier = Modifier.height(4.dp))
-                                Text(
-                                    text = item.otpMessage,
-                                    color = Color(0xFFE0E0E0),
-                                    fontSize = 11.sp,
-                                    maxLines = 2,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                            }
-                        }
-
-                        IconButton(
-                            onClick = {
-                                ClipboardHelper.copyToClipboard(context, item.otpCode, "OTP Code")
-                            },
-                            modifier = Modifier.size(32.dp)
-                        ) {
-                            Icon(
-                                Icons.Default.ContentCopy,
-                                contentDescription = "Copy OTP",
-                                tint = Color(0xFF00E676),
-                                modifier = Modifier.size(18.dp)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "OTP Code",
+                                color = Color(0xFF00E676),
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold
                             )
                         }
+
+                        Icon(
+                            imageVector = Icons.Default.ContentCopy,
+                            contentDescription = "Copy OTP",
+                            tint = Color(0xFF00E676),
+                            modifier = Modifier.size(16.dp)
+                        )
                     }
-                }
-            } else if (item.status == "pending") {
-                Spacer(modifier = Modifier.height(6.dp))
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box(
-                        modifier = Modifier
-                            .size(6.dp)
-                            .clip(CircleShape)
-                            .background(Color(0xFFFFD600))
-                    )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(
-                        text = "Waiting for incoming OTP...",
-                        color = Color(0xFFFFD600),
-                        fontSize = 11.sp,
-                        fontStyle = androidx.compose.ui.text.font.FontStyle.Italic
-                    )
                 }
             }
         }

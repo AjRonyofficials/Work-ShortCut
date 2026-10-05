@@ -10,7 +10,9 @@ data class ProvisionedNumber(
     val otpCode: String? = null,
     val otpMessage: String? = null,
     val range: String = "",
-    val timestamp: Long = System.currentTimeMillis()
+    val timestamp: Long = System.currentTimeMillis(),
+    val expiresAt: Long = System.currentTimeMillis() + 600_000L, // 10 minutes timeout (Zenex standard)
+    val failReason: String? = null // "Timeout"
 )
 
 data class ActiveRangeItem(
