@@ -64,6 +64,9 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
@@ -245,6 +248,71 @@ fun MainScreen(
                         titleContentColor = MaterialTheme.colorScheme.onSurface
                     )
                 )
+            },
+            bottomBar = {
+                NavigationBar(
+                    containerColor = MaterialTheme.colorScheme.surface,
+                    tonalElevation = 8.dp,
+                    windowInsets = WindowInsets(0.dp, 0.dp, 0.dp, 0.dp)
+                ) {
+                    val bottomTabs = listOf(
+                        AppNavTab.SHORTCUTS to "Apps",
+                        AppNavTab.PROXY to "Proxy",
+                        AppNavTab.VIRTUAL_NUMBERS to "Numbers",
+                        AppNavTab.EXCEL to "Excel",
+                        AppNavTab.NAMES to "Names",
+                        AppNavTab.CLEAR_DATA to "Clean",
+                        AppNavTab.SETTINGS to "Settings"
+                    )
+                    bottomTabs.forEach { (tab, label) ->
+                        val isSelected = selectedTab == tab
+                        val badgeCount = when (tab) {
+                            AppNavTab.EXCEL -> if (state.draftRow.duplicateColumn != null) "!" else null
+                            AppNavTab.PROXY -> if (state.proxyState.isConnected) "ON" else null
+                            else -> null
+                        }
+                        NavigationBarItem(
+                            selected = isSelected,
+                            onClick = { selectedTab = tab },
+                            icon = {
+                                if (badgeCount != null) {
+                                    BadgedBox(
+                                        badge = {
+                                            Badge(
+                                                containerColor = if (badgeCount == "!") AlertRed else BrandGreen
+                                            ) {
+                                                Text(badgeCount, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                                            }
+                                        }
+                                    ) {
+                                        Icon(
+                                            imageVector = if (isSelected) tab.selectedIcon else tab.unselectedIcon,
+                                            contentDescription = label
+                                        )
+                                    }
+                                } else {
+                                    Icon(
+                                        imageVector = if (isSelected) tab.selectedIcon else tab.unselectedIcon,
+                                        contentDescription = label
+                                    )
+                                }
+                            },
+                            label = {
+                                Text(
+                                    text = label,
+                                    fontSize = 10.5.sp,
+                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                                )
+                            },
+                            colors = NavigationBarItemDefaults.colors(
+                                indicatorColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.2f),
+                                selectedIconColor = MaterialTheme.colorScheme.primary,
+                                selectedTextColor = MaterialTheme.colorScheme.primary
+                            ),
+                            modifier = Modifier.testTag("nav_tab_${tab.name}")
+                        )
+                    }
+                }
             }
         ) { paddingValues ->
             Box(

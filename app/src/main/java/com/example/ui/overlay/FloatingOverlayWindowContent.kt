@@ -249,20 +249,18 @@ fun FloatingOverlayWindowContent(
 
                     Spacer(modifier = Modifier.height(2.dp))
 
-                    // 1. PROXY TAB
-                    if (state.showOverlayProxy) {
-                        GlossyTactileButton(
-                            title = if (state.proxyState.isConnected) "Proxy ✓" else "Proxy",
-                            icon = Icons.Default.Bolt,
-                            brush = gradProxy,
-                            shape = tabShape,
-                            onClick = {
-                                OverlayStateManager.toggleProxyConnection(context)
-                            },
-                            modifier = Modifier.fillMaxWidth(),
-                            testTag = "tab_proxy"
-                        )
-                    }
+                    // 1. PROXY TAB (Original Always-Visible Tactile Button from #40,#41,#42)
+                    GlossyTactileButton(
+                        title = if (state.proxyState.isConnected) "Proxy ✓" else "Proxy",
+                        icon = Icons.Default.Bolt,
+                        brush = gradProxy,
+                        shape = tabShape,
+                        onClick = {
+                            OverlayStateManager.toggleProxyConnection(context)
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        testTag = "tab_proxy"
+                    )
 
                     // 2. NAME GENERATOR TAB
                     if (state.showOverlayName) {
