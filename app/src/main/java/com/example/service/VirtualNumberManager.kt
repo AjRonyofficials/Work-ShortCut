@@ -215,7 +215,7 @@ fun createDefaultProvisionedList(): List<ProvisionedNumber> {
             status = "pending",
             range = "237620XXX",
             timestamp = now - 60_000L, // 1 min ago
-            expiresAt = now + 540_000L // 9 minutes remaining
+            expiresAt = now + 1_140_000L // 19 minutes remaining (20 min Zenex timeout)
         ),
         ProvisionedNumber(
             number = "237620259000",
@@ -225,7 +225,7 @@ fun createDefaultProvisionedList(): List<ProvisionedNumber> {
             status = "pending",
             range = "237620XXX",
             timestamp = now - 60_000L, // 1 min ago
-            expiresAt = now + 540_000L // 9 minutes remaining
+            expiresAt = now + 1_140_000L // 19 minutes remaining (20 min Zenex timeout)
         ),
         ProvisionedNumber(
             number = "237627166900",
@@ -436,7 +436,7 @@ object VirtualNumberManager {
                                     status = status,
                                     range = range,
                                     timestamp = now,
-                                    expiresAt = now + 600_000L // 10 minutes timeout
+                                    expiresAt = now + 1_200_000L // 20 minutes timeout (Zenex panel standard)
                                 )
                                 newNumbers.add(item)
                                 successCount++

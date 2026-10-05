@@ -1137,7 +1137,7 @@ private fun ProvisionedNumberCard(
                 Spacer(modifier = Modifier.height(8.dp))
                 val remainingMs = (item.expiresAt - now).coerceAtLeast(0)
                 val remainingStr = formatTimeRemaining(item.expiresAt, now)
-                val progressRatio = (remainingMs.toFloat() / 600_000f).coerceIn(0f, 1f)
+                val progressRatio = (remainingMs.toFloat() / 1_200_000f).coerceIn(0f, 1f)
 
                 Surface(
                     color = Color(0xFF131D24),
