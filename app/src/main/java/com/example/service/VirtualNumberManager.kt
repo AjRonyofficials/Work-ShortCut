@@ -585,7 +585,7 @@ object VirtualNumberManager {
                                         fullMessage = prov.otpMessage ?: "Your OTP is $code"
                                     )
                                 }
-                                if (copiedOtpCode != null && autoCopy) {
+                                if (copiedOtpCode != null) {
                                     ClipboardHelper.copyToClipboard(context, copiedOtpCode!!, "OTP Code")
                                     Toast.makeText(context, "⚡ OTP কপি হয়েছে: $copiedOtpCode", Toast.LENGTH_SHORT).show()
                                     VibrationHelper.vibrateSuccess(context)

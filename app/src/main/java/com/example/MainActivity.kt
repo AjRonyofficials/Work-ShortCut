@@ -19,6 +19,26 @@ import com.example.ui.theme.WorkShortcutTheme
 
 class MainActivity : ComponentActivity() {
 
+    private val notificationPermissionLauncher = registerForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        if (isGranted) {
+            android.widget.Toast.makeText(this, "✓ নোটিফিকেশন পারমিশন চালু হয়েছে! ওটিপি আসলে নোটিফিকেশনে পাবেন।", android.widget.Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun checkNotificationPermission() {
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+            if (androidx.core.content.ContextCompat.checkSelfPermission(
+                    this,
+                    android.Manifest.permission.POST_NOTIFICATIONS
+                ) != android.content.pm.PackageManager.PERMISSION_GRANTED
+            ) {
+                notificationPermissionLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+            }
+        }
+    }
+
     private val vpnPermissionLauncher = registerForActivityResult(
         androidx.activity.result.contract.ActivityResultContracts.StartActivityForResult()
     ) { result ->
@@ -66,6 +86,7 @@ class MainActivity : ComponentActivity() {
             OverlayStateManager.requestTab("EXCEL")
         }
         checkVpnPermissionRequest(intent)
+        checkNotificationPermission()
 
         setContent {
             val state by OverlayStateManager.uiState.collectAsStateWithLifecycle()

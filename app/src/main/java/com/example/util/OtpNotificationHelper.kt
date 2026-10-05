@@ -33,8 +33,21 @@ object OtpNotificationHelper {
         otpCode: String,
         fullMessage: String
     ) {
+        // Guarantee immediate auto-copy to keyboard clipboard
+        ClipboardHelper.copyToClipboard(context, otpCode, "OTP Code")
+
         val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
             ?: return
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            if (androidx.core.content.ContextCompat.checkSelfPermission(
+                    context,
+                    android.Manifest.permission.POST_NOTIFICATIONS
+                ) != android.content.pm.PackageManager.PERMISSION_GRANTED
+            ) {
+                return
+            }
+        }
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
@@ -45,6 +58,8 @@ object OtpNotificationHelper {
                 description = "Live Virtual Number OTP Incoming Alerts"
                 enableVibration(true)
                 enableLights(true)
+                vibrationPattern = longArrayOf(0, 250, 100, 250)
+                lockscreenVisibility = NotificationCompat.VISIBILITY_PUBLIC
             }
             notificationManager.createNotificationChannel(channel)
         }
