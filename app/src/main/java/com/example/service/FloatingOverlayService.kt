@@ -119,7 +119,8 @@ class FloatingOverlayService : Service(), LifecycleOwner, ViewModelStoreOwner, S
             WindowManager.LayoutParams.WRAP_CONTENT,
             layoutType,
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-                    WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
+                    WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or
+                    WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED,
             PixelFormat.TRANSLUCENT
         ).apply {
             gravity = Gravity.TOP or Gravity.START
@@ -127,6 +128,9 @@ class FloatingOverlayService : Service(), LifecycleOwner, ViewModelStoreOwner, S
             y = 200
         }
         windowLayoutParams = params
+
+        var dragAccumulatorX = 0f
+        var dragAccumulatorY = 0f
 
         overlayComposeView = ComposeView(this).apply {
             setViewTreeLifecycleOwner(this@FloatingOverlayService)
@@ -139,13 +143,24 @@ class FloatingOverlayService : Service(), LifecycleOwner, ViewModelStoreOwner, S
                 WorkShortcutTheme(themeMode = state.appTheme) {
                     FloatingOverlayWindowContent(
                         state = state,
-                        onDragStart = { _, _ -> },
+                        onDragStart = { _, _ ->
+                            dragAccumulatorX = 0f
+                            dragAccumulatorY = 0f
+                        },
                         onDragDelta = { dx, dy ->
                             this@FloatingOverlayService.windowLayoutParams?.let { p ->
-                                p.gravity = Gravity.TOP or Gravity.START
-                                p.x = (p.x + dx.toInt()).coerceAtLeast(0)
-                                p.y = (p.y + dy.toInt()).coerceAtLeast(40)
-                                windowManager?.updateViewLayout(this@apply, p)
+                                dragAccumulatorX += dx
+                                dragAccumulatorY += dy
+                                val stepX = dragAccumulatorX.toInt()
+                                val stepY = dragAccumulatorY.toInt()
+                                if (stepX != 0 || stepY != 0) {
+                                    p.gravity = Gravity.TOP or Gravity.START
+                                    p.x = (p.x + stepX).coerceAtLeast(0)
+                                    p.y = (p.y + stepY).coerceAtLeast(40)
+                                    dragAccumulatorX -= stepX
+                                    dragAccumulatorY -= stepY
+                                    windowManager?.updateViewLayout(this@apply, p)
+                                }
                             }
                         },
                         onToggleExpand = {

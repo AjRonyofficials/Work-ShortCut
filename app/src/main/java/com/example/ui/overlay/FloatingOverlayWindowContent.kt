@@ -68,6 +68,38 @@ import com.example.service.OverlayUiState
 import com.example.service.VirtualNumberManager
 import com.example.util.ClipboardHelper
 
+// Static Precomputed Cached Brushes & Shapes for Zero GC Allocation and Butter-Smooth 120fps UI
+private val TabShape = RoundedCornerShape(10.dp)
+private val DockShapeLeft = RoundedCornerShape(topStart = 0.dp, bottomStart = 0.dp, topEnd = 16.dp, bottomEnd = 16.dp)
+private val DockShapeRight = RoundedCornerShape(topStart = 16.dp, bottomStart = 16.dp, topEnd = 0.dp, bottomEnd = 0.dp)
+
+private val GradProxy = Brush.verticalGradient(listOf(Color(0xFF40C4FF), Color(0xFF0091EA), Color(0xFF01579B)))
+private val GradName = Brush.verticalGradient(listOf(Color(0xFF69F0AE), Color(0xFF00C853), Color(0xFF1B5E20)))
+private val GradDual = Brush.verticalGradient(listOf(Color(0xFFFFB74D), Color(0xFFFF6D00), Color(0xFFE65100)))
+private val GradFb = Brush.verticalGradient(listOf(Color(0xFF82B1FF), Color(0xFF1E88E5), Color(0xFF0D47A1)))
+private val GradColC = Brush.verticalGradient(listOf(Color(0xFFEA80FC), Color(0xFFAA00FF), Color(0xFF4A148C)))
+private val Grad2Fa = Brush.verticalGradient(listOf(Color(0xFFFF5252), Color(0xFFD50000), Color(0xFFB71C1C)))
+private val GradClean = Brush.verticalGradient(listOf(Color(0xFF18FFFF), Color(0xFF00B8D4), Color(0xFF006064)))
+private val GradSwitch = Brush.verticalGradient(listOf(Color(0xFF78909C), Color(0xFF37474F), Color(0xFF212121)))
+private val GradClose = Brush.verticalGradient(listOf(Color(0xFFFF5252), Color(0xFFC62828), Color(0xFF880E4F)))
+
+private val TactileShineBrush = Brush.verticalGradient(listOf(Color.White.copy(alpha = 0.28f), Color.Transparent))
+private val TactileBorderBrush = Brush.verticalGradient(listOf(Color.White.copy(alpha = 0.55f), Color.White.copy(alpha = 0.15f)))
+private val SphereCoreBrush = Brush.radialGradient(listOf(Color(0xFF263238), Color(0xFF19222D), Color(0xFF101720), Color(0xFF0A0F16)))
+private val SphereSpecularBrush = Brush.verticalGradient(listOf(Color.White.copy(alpha = 0.45f), Color.Transparent))
+
+private val RimBrushA = Brush.sweepGradient(listOf(Color(0xFF00E5FF), Color(0xFF80D8FF), Color(0xFF0091EA), Color(0xFF00E5FF)))
+private val RimBrushB = Brush.sweepGradient(listOf(Color(0xFFFFD700), Color(0xFFFFEA00), Color(0xFFFF8F00), Color(0xFFFFD700)))
+private val RimBrushC = Brush.sweepGradient(listOf(Color(0xFFE040FB), Color(0xFFEA80FC), Color(0xFFAA00FF), Color(0xFFE040FB)))
+private val RimBrushD = Brush.sweepGradient(listOf(Color(0xFF00E676), Color(0xFFB9F6CA), Color(0xFF00C853), Color(0xFF00E676)))
+private val RimBrushE = Brush.sweepGradient(listOf(Color(0xFFFF5252), Color(0xFFFF8A80), Color(0xFFD50000), Color(0xFFFF5252)))
+private val RimBrushF = Brush.sweepGradient(listOf(Color(0xFF448AFF), Color(0xFF82B1FF), Color(0xFF2979FF), Color(0xFF448AFF)))
+
+private val ChassisBackgroundBrush = Brush.verticalGradient(listOf(Color(0xF20F1626), Color(0xEB131B2E), Color(0xF20B101C)))
+private val ChassisBorderBrush = Brush.verticalGradient(listOf(Color(0x9900E5FF), Color(0x442979FF), Color(0x6600E5FF)))
+private val MainBubbleRadialBrush = Brush.radialGradient(listOf(Color(0xFF40C4FF), Color(0xFF1E88E5), Color(0xFF0D47A1)))
+private val MainBubbleBorderBrush = Brush.verticalGradient(listOf(Color(0xFF80D8FF), Color(0xFF0091EA)))
+
 /**
  * Ultra-Premium, Glassmorphic Floating Overlay UI:
  * 1. Gorgeous frosted dark sapphire glass chassis dock with glowing cyber border.
@@ -89,43 +121,19 @@ fun FloatingOverlayWindowContent(
     val isLeft = state.isDockedLeft
 
     // Dock chassis shape (curved outer corners)
-    val dockChassisShape = if (isLeft) {
-        RoundedCornerShape(topStart = 0.dp, bottomStart = 0.dp, topEnd = 16.dp, bottomEnd = 16.dp)
-    } else {
-        RoundedCornerShape(topStart = 16.dp, bottomStart = 16.dp, topEnd = 0.dp, bottomEnd = 0.dp)
-    }
-
-    // Individual button capsule shape
-    val tabShape = RoundedCornerShape(10.dp)
+    val dockChassisShape = if (isLeft) DockShapeLeft else DockShapeRight
+    val tabShape = TabShape
 
     // Multi-stop 3D Depth Gradients for Glossy Tactile Buttons
-    val gradProxy = Brush.verticalGradient(
-        listOf(Color(0xFF40C4FF), Color(0xFF0091EA), Color(0xFF01579B))
-    )
-    val gradName = Brush.verticalGradient(
-        listOf(Color(0xFF69F0AE), Color(0xFF00C853), Color(0xFF1B5E20))
-    )
-    val gradDual = Brush.verticalGradient(
-        listOf(Color(0xFFFFB74D), Color(0xFFFF6D00), Color(0xFFE65100))
-    )
-    val gradFb = Brush.verticalGradient(
-        listOf(Color(0xFF82B1FF), Color(0xFF1E88E5), Color(0xFF0D47A1))
-    )
-    val gradColC = Brush.verticalGradient(
-        listOf(Color(0xFFEA80FC), Color(0xFFAA00FF), Color(0xFF4A148C))
-    )
-    val grad2Fa = Brush.verticalGradient(
-        listOf(Color(0xFFFF5252), Color(0xFFD50000), Color(0xFFB71C1C))
-    )
-    val gradClean = Brush.verticalGradient(
-        listOf(Color(0xFF18FFFF), Color(0xFF00B8D4), Color(0xFF006064))
-    )
-    val gradSwitch = Brush.verticalGradient(
-        listOf(Color(0xFF78909C), Color(0xFF37474F), Color(0xFF212121))
-    )
-    val gradClose = Brush.verticalGradient(
-        listOf(Color(0xFFFF5252), Color(0xFFC62828), Color(0xFF880E4F))
-    )
+    val gradProxy = GradProxy
+    val gradName = GradName
+    val gradDual = GradDual
+    val gradFb = GradFb
+    val gradColC = GradColC
+    val grad2Fa = Grad2Fa
+    val gradClean = GradClean
+    val gradSwitch = GradSwitch
+    val gradClose = GradClose
 
     Box(
         modifier = Modifier
@@ -152,16 +160,10 @@ fun FloatingOverlayWindowContent(
                     modifier = Modifier
                         .size(56.dp)
                         .clip(CircleShape)
-                        .background(
-                            Brush.radialGradient(
-                                colors = listOf(Color(0xFF40C4FF), Color(0xFF1E88E5), Color(0xFF0D47A1))
-                            )
-                        )
+                        .background(MainBubbleRadialBrush)
                         .border(
                             1.5.dp,
-                            Brush.verticalGradient(
-                                listOf(Color(0xFF80D8FF), Color(0xFF0091EA))
-                            ),
+                            MainBubbleBorderBrush,
                             CircleShape
                         )
                         .shadow(10.dp, CircleShape)
@@ -206,24 +208,10 @@ fun FloatingOverlayWindowContent(
                 modifier = Modifier
                     .wrapContentSize()
                     .clip(dockChassisShape)
-                    .background(
-                        Brush.verticalGradient(
-                            listOf(
-                                Color(0xF20F1626),
-                                Color(0xEB131B2E),
-                                Color(0xF20B101C)
-                            )
-                        )
-                    )
+                    .background(ChassisBackgroundBrush)
                     .border(
                         1.5.dp,
-                        Brush.verticalGradient(
-                            listOf(
-                                Color(0x9900E5FF),
-                                Color(0x442979FF),
-                                Color(0x6600E5FF)
-                            )
-                        ),
+                        ChassisBorderBrush,
                         dockChassisShape
                     )
             ) {
@@ -559,12 +547,7 @@ fun GlossyTactileButton(
             .background(brush)
             .border(
                 1.dp,
-                Brush.verticalGradient(
-                    listOf(
-                        Color.White.copy(alpha = 0.55f),
-                        Color.White.copy(alpha = 0.15f)
-                    )
-                ),
+                TactileBorderBrush,
                 shape
             )
             .combinedClickable(
@@ -579,14 +562,7 @@ fun GlossyTactileButton(
             modifier = Modifier
                 .align(Alignment.TopCenter)
                 .fillMaxSize()
-                .background(
-                    Brush.verticalGradient(
-                        listOf(
-                            Color.White.copy(alpha = 0.28f),
-                            Color.Transparent
-                        )
-                    )
-                )
+                .background(TactileShineBrush)
         )
 
         Row(
@@ -693,83 +669,13 @@ fun SheetCircularButton(
     // Dynamic luxury theme per column letter
     val colKey = title.take(1).uppercase()
     val (accentGlow, rimBorder, textColor) = when (colKey) {
-        "A" -> Triple(
-            Color(0xFF00E5FF),
-            Brush.sweepGradient(
-                listOf(
-                    Color(0xFF00E5FF),
-                    Color(0xFF80D8FF),
-                    Color(0xFF0091EA),
-                    Color(0xFF00E5FF)
-                )
-            ),
-            Color(0xFF00F0FF) // Electric Cyber Cyan
-        )
-        "B" -> Triple(
-            Color(0xFFFFD700),
-            Brush.sweepGradient(
-                listOf(
-                    Color(0xFFFFD700),
-                    Color(0xFFFFEA00),
-                    Color(0xFFFF8F00),
-                    Color(0xFFFFD700)
-                )
-            ),
-            Color(0xFFFFD700) // Pure Solar Gold
-        )
-        "C" -> Triple(
-            Color(0xFFE040FB),
-            Brush.sweepGradient(
-                listOf(
-                    Color(0xFFE040FB),
-                    Color(0xFFEA80FC),
-                    Color(0xFFAA00FF),
-                    Color(0xFFE040FB)
-                )
-            ),
-            Color(0xFFF06292) // Luminous Rose Amethyst
-        )
-        "D" -> Triple(
-            Color(0xFF00E676),
-            Brush.sweepGradient(
-                listOf(
-                    Color(0xFF00E676),
-                    Color(0xFFB9F6CA),
-                    Color(0xFF00C853),
-                    Color(0xFF00E676)
-                )
-            ),
-            Color(0xFF00E676) // Radiant Cyber Emerald
-        )
-        "E" -> Triple(
-            Color(0xFFFF5252),
-            Brush.sweepGradient(
-                listOf(
-                    Color(0xFFFF5252),
-                    Color(0xFFFF8A80),
-                    Color(0xFFD50000),
-                    Color(0xFFFF5252)
-                )
-            ),
-            Color(0xFFFF5252) // Vivid Sunset Coral
-        )
-        "F" -> Triple(
-            Color(0xFF448AFF),
-            Brush.sweepGradient(
-                listOf(
-                    Color(0xFF448AFF),
-                    Color(0xFF82B1FF),
-                    Color(0xFF2979FF),
-                    Color(0xFF448AFF)
-                )
-            ),
-            Color(0xFF448AFF) // Royal Azure Sapphire
-        )
-        else -> Triple(
-            Color(0xFF00E5FF),
-            Brush.linearGradient(listOf(Color(0xFF00E5FF), Color(0xFF7C4DFF))),
-            Color(0xFF00E5FF)
-        )
+        "A" -> Triple(Color(0xFF00E5FF), RimBrushA, Color(0xFF00F0FF))
+        "B" -> Triple(Color(0xFFFFD700), RimBrushB, Color(0xFFFFD700))
+        "C" -> Triple(Color(0xFFE040FB), RimBrushC, Color(0xFFF06292))
+        "D" -> Triple(Color(0xFF00E676), RimBrushD, Color(0xFF00E676))
+        "E" -> Triple(Color(0xFFFF5252), RimBrushE, Color(0xFFFF5252))
+        "F" -> Triple(Color(0xFF448AFF), RimBrushF, Color(0xFF448AFF))
+        else -> Triple(Color(0xFF00E5FF), RimBrushA, Color(0xFF00E5FF))
     }
 
     Box(
@@ -777,16 +683,7 @@ fun SheetCircularButton(
             .size(38.dp)
             .shadow(5.dp, CircleShape)
             .clip(CircleShape)
-            .background(
-                Brush.radialGradient(
-                    colors = listOf(
-                        Color(0xFF263238),
-                        Color(0xFF19222D),
-                        Color(0xFF101720),
-                        Color(0xFF0A0F16)
-                    )
-                )
-            )
+            .background(SphereCoreBrush)
             .border(1.6.dp, rimBorder, CircleShape)
             .clickable(onClick = onClick)
             .testTag(testTag),
@@ -799,11 +696,7 @@ fun SheetCircularButton(
                 .fillMaxWidth(0.72f)
                 .height(11.dp)
                 .clip(CircleShape)
-                .background(
-                    Brush.verticalGradient(
-                        listOf(Color.White.copy(alpha = 0.45f), Color.Transparent)
-                    )
-                )
+                .background(SphereSpecularBrush)
         )
 
         // Subtle ambient inner glow from column accent
