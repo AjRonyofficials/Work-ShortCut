@@ -1358,56 +1358,28 @@ fun VirtualNumbersOverlaySection(
                             }
                         }
 
-                        // Quantity Selector Dropdown Button
-                        Box {
-                            Surface(
-                                color = Color(0xFF0B141E),
-                                shape = RoundedCornerShape(4.dp),
-                                border = androidx.compose.foundation.BorderStroke(0.8.dp, Color(0xFF1E3A56)),
-                                modifier = Modifier
-                                    .height(26.dp)
-                                    .clickable { dropdownExpanded = true }
-                            ) {
-                                Row(
-                                    modifier = Modifier.padding(horizontal = 4.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Text(
-                                        text = "${vnState.requestCount}",
-                                        color = Color(0xFF40C4FF),
-                                        fontSize = 10.sp,
-                                        fontWeight = FontWeight.ExtraBold
-                                    )
-                                    Icon(
-                                        Icons.Default.ArrowDropDown,
-                                        contentDescription = null,
-                                        tint = Color(0xFF40C4FF),
-                                        modifier = Modifier.size(12.dp)
-                                    )
+                        // Quantity Selector (Inline cycling 1..10, zero pop-up window overhead in overlay service)
+                        Surface(
+                            color = Color(0xFF0B141E),
+                            shape = RoundedCornerShape(4.dp),
+                            border = androidx.compose.foundation.BorderStroke(0.8.dp, Color(0xFF1E3A56)),
+                            modifier = Modifier
+                                .height(26.dp)
+                                .clickable {
+                                    val next = if (vnState.requestCount >= 10) 1 else vnState.requestCount + 1
+                                    VirtualNumberManager.setRequestCount(next)
                                 }
-                            }
-
-                            DropdownMenu(
-                                expanded = dropdownExpanded,
-                                onDismissRequest = { dropdownExpanded = false },
-                                modifier = Modifier.background(Color(0xFF13202E))
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 6.dp),
+                                verticalAlignment = Alignment.CenterVertically
                             ) {
-                                (1..10).forEach { qty ->
-                                    DropdownMenuItem(
-                                        text = {
-                                            Text(
-                                                "$qty টি",
-                                                color = if (vnState.requestCount == qty) Color(0xFF00E676) else Color.White,
-                                                fontSize = 11.sp,
-                                                fontWeight = if (vnState.requestCount == qty) FontWeight.Bold else FontWeight.Normal
-                                            )
-                                        },
-                                        onClick = {
-                                            VirtualNumberManager.setRequestCount(qty)
-                                            dropdownExpanded = false
-                                        }
-                                    )
-                                }
+                                Text(
+                                    text = "Qty: ${vnState.requestCount}",
+                                    color = Color(0xFF40C4FF),
+                                    fontSize = 9.5.sp,
+                                    fontWeight = FontWeight.ExtraBold
+                                )
                             }
                         }
 

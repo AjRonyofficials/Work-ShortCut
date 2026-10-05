@@ -28,6 +28,8 @@ import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Key
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Phone
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
@@ -43,6 +45,7 @@ import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -74,14 +77,17 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import android.widget.Toast
 import com.example.data.model.ActiveRangeItem
 import com.example.data.model.BroadcastFeedItem
 import com.example.data.model.ProvisionedNumber
 import com.example.service.VirtualNumberManager
 import com.example.util.ClipboardHelper
+import kotlinx.coroutines.delay
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import java.util.regex.Pattern
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -436,6 +442,11 @@ fun VirtualNumbersSection(
                                 DropdownMenu(
                                     expanded = quantityDropdownExpanded,
                                     onDismissRequest = { quantityDropdownExpanded = false },
+                                    properties = androidx.compose.ui.window.PopupProperties(
+                                        focusable = true,
+                                        dismissOnClickOutside = true,
+                                        dismissOnBackPress = true
+                                    ),
                                     modifier = Modifier.background(Color(0xFF13202E))
                                 ) {
                                     (1..10).forEach { count ->
@@ -449,8 +460,8 @@ fun VirtualNumbersSection(
                                                 )
                                             },
                                             onClick = {
-                                                VirtualNumberManager.setRequestCount(count)
                                                 quantityDropdownExpanded = false
+                                                VirtualNumberManager.setRequestCount(count)
                                             }
                                         )
                                     }
@@ -593,109 +604,186 @@ fun VirtualNumbersSection(
                 }
             }
         } else {
-            // TAB 2: LIVE CONSOLE (SS-style Terminal & Active Ranges)
+            // TAB 2: LIVE CONSOLE (SS-style Unified Range Option & Global SMS Feed)
+            // 1. Unified Range Option Card (All ranges in one single compact option)
             item {
-                Text(
-                    text = "TOP HIT RANGES (LAST 30M)",
-                    color = Color(0xFF90A4AE),
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Bold,
-                    letterSpacing = 0.5.sp
-                )
-            }
+                var rangeOptionExpanded by remember { mutableStateOf(false) }
+                val currentSelectedRange = state.targetRange.ifEmpty { "237627XXX" }
+                val matchingRangeItem = state.activeRanges.firstOrNull { it.range == currentSelectedRange }
+                    ?: state.activeRanges.firstOrNull()
 
-            item {
-                Card(
-                    colors = CardDefaults.cardColors(containerColor = Color(0xFF101C27)),
-                    shape = RoundedCornerShape(14.dp),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF1A334B)),
+                Surface(
+                    color = Color(0xFF0D1724),
+                    shape = RoundedCornerShape(12.dp),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF1E3A56)),
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        if (state.activeRanges.isEmpty()) {
-                            Text("লোডিং লাইভ রেঞ্জ...", color = Color(0xFF546E7A), fontSize = 12.sp)
-                        } else {
-                            state.activeRanges.forEach { rangeItem ->
+                    Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { rangeOptionExpanded = !rangeOptionExpanded },
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(7.dp)
+                                        .clip(CircleShape)
+                                        .background(Color(0xFF00B0FF))
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = matchingRangeItem?.range ?: currentSelectedRange,
+                                    color = Color.White,
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.ExtraBold,
+                                    fontFamily = FontFamily.Monospace
+                                )
+                                if (matchingRangeItem != null) {
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Surface(
+                                        color = Color(0xFF18324E),
+                                        shape = RoundedCornerShape(4.dp)
+                                    ) {
+                                        Text(
+                                            text = "${matchingRangeItem.service} • ${matchingRangeItem.tag}",
+                                            color = Color(0xFF64B5F6),
+                                            fontSize = 9.5.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                        )
+                                    }
+                                }
+                            }
+
+                            Row(verticalAlignment = Alignment.CenterVertically) {
                                 Surface(
-                                    color = Color(0xFF0B141E),
-                                    shape = RoundedCornerShape(10.dp),
-                                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF1A334B)),
-                                    modifier = Modifier.fillMaxWidth()
+                                    color = Color(0xFF00B0FF).copy(alpha = 0.15f),
+                                    shape = RoundedCornerShape(6.dp)
                                 ) {
-                                    Row(
+                                    Text(
+                                        text = "${matchingRangeItem?.hits ?: 17} Hits",
+                                        color = Color(0xFF40C4FF),
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                                    )
+                                }
+
+                                Spacer(modifier = Modifier.width(6.dp))
+
+                                IconButton(
+                                    onClick = {
+                                        val r = matchingRangeItem?.range ?: currentSelectedRange
+                                        VirtualNumberManager.setTargetRange(r)
+                                        ClipboardHelper.copyToClipboard(context, r, "Target Range")
+                                        Toast.makeText(context, "রেঞ্জ কপি হয়েছে: $r", Toast.LENGTH_SHORT).show()
+                                    },
+                                    modifier = Modifier.size(28.dp)
+                                ) {
+                                    Icon(
+                                        Icons.Default.ContentCopy,
+                                        contentDescription = "Copy Range",
+                                        tint = Color(0xFF81D4FA),
+                                        modifier = Modifier.size(15.dp)
+                                    )
+                                }
+
+                                IconButton(
+                                    onClick = { rangeOptionExpanded = !rangeOptionExpanded },
+                                    modifier = Modifier.size(28.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = if (rangeOptionExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                                        contentDescription = "Toggle Ranges",
+                                        tint = Color(0xFF90A4AE),
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                }
+                            }
+                        }
+
+                        // Expanded view of selectable Top Hit Ranges
+                        AnimatedVisibility(visible = rangeOptionExpanded) {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(top = 10.dp),
+                                verticalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                HorizontalDivider(color = Color(0xFF1E3A56), thickness = 0.8.dp)
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Text(
+                                    text = "TOP HIT RANGES (LAST 30M) — ট্যাপ করে রেঞ্জ সিলেক্ট করুন:",
+                                    color = Color(0xFF78909C),
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    letterSpacing = 0.5.sp
+                                )
+
+                                state.activeRanges.forEach { rangeItem ->
+                                    val isCurrent = rangeItem.range == state.targetRange
+                                    Surface(
+                                        color = if (isCurrent) Color(0xFF0091EA).copy(alpha = 0.2f) else Color(0xFF0B141E),
+                                        shape = RoundedCornerShape(8.dp),
+                                        border = androidx.compose.foundation.BorderStroke(
+                                            1.dp,
+                                            if (isCurrent) Color(0xFF00B0FF) else Color(0xFF1B3248)
+                                        ),
                                         modifier = Modifier
                                             .fillMaxWidth()
-                                            .padding(10.dp),
-                                        horizontalArrangement = Arrangement.SpaceBetween,
-                                        verticalAlignment = Alignment.CenterVertically
+                                            .clickable {
+                                                VirtualNumberManager.setTargetRange(rangeItem.range)
+                                                ClipboardHelper.copyToClipboard(context, rangeItem.range, "Range")
+                                                Toast.makeText(context, "সিলেক্ট হয়েছে: ${rangeItem.range}", Toast.LENGTH_SHORT).show()
+                                                rangeOptionExpanded = false
+                                            }
                                     ) {
-                                        Column {
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(horizontal = 10.dp, vertical = 8.dp),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
                                             Row(verticalAlignment = Alignment.CenterVertically) {
                                                 Box(
                                                     modifier = Modifier
-                                                        .size(6.dp)
+                                                        .size(5.dp)
                                                         .clip(CircleShape)
-                                                        .background(Color(0xFF00B0FF))
+                                                        .background(if (isCurrent) Color(0xFF00E676) else Color(0xFF00B0FF))
                                                 )
                                                 Spacer(modifier = Modifier.width(6.dp))
                                                 Text(
                                                     text = rangeItem.range,
                                                     color = Color.White,
-                                                    fontSize = 13.sp,
+                                                    fontSize = 12.sp,
                                                     fontWeight = FontWeight.Bold,
                                                     fontFamily = FontFamily.Monospace
                                                 )
-                                            }
-                                            Spacer(modifier = Modifier.height(2.dp))
-                                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                                Text(
-                                                    text = rangeItem.service.uppercase(),
-                                                    color = Color(0xFF90A4AE),
-                                                    fontSize = 10.sp,
-                                                    fontWeight = FontWeight.SemiBold
-                                                )
                                                 Spacer(modifier = Modifier.width(6.dp))
-                                                Surface(
-                                                    color = Color(0xFF00E676).copy(alpha = 0.15f),
-                                                    shape = RoundedCornerShape(4.dp)
-                                                ) {
-                                                    Text(
-                                                        text = rangeItem.tag,
-                                                        color = Color(0xFF00E676),
-                                                        fontSize = 9.sp,
-                                                        fontWeight = FontWeight.Bold,
-                                                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
-                                                    )
-                                                }
+                                                Text(
+                                                    text = "${rangeItem.service} • ${rangeItem.tag}",
+                                                    color = Color(0xFF78909C),
+                                                    fontSize = 10.sp
+                                                )
                                             }
-                                        }
 
-                                        Row(verticalAlignment = Alignment.CenterVertically) {
-                                            Surface(
-                                                color = Color(0xFF0091EA).copy(alpha = 0.2f),
-                                                shape = RoundedCornerShape(6.dp)
-                                            ) {
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
                                                 Text(
                                                     text = "${rangeItem.hits} Hits",
                                                     color = Color(0xFF40C4FF),
-                                                    fontSize = 11.sp,
-                                                    fontWeight = FontWeight.Bold,
-                                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                                    fontSize = 10.5.sp,
+                                                    fontWeight = FontWeight.Bold
                                                 )
-                                            }
-                                            Spacer(modifier = Modifier.width(8.dp))
-                                            IconButton(
-                                                onClick = {
-                                                    VirtualNumberManager.setTargetRange(rangeItem.range)
-                                                    selectedSubTab = 0
-                                                },
-                                                modifier = Modifier.size(28.dp)
-                                            ) {
+                                                Spacer(modifier = Modifier.width(6.dp))
                                                 Icon(
                                                     Icons.Default.ContentCopy,
-                                                    contentDescription = "Use Range",
+                                                    contentDescription = "Select",
                                                     tint = Color(0xFF00B0FF),
-                                                    modifier = Modifier.size(16.dp)
+                                                    modifier = Modifier.size(13.dp)
                                                 )
                                             }
                                         }
@@ -707,65 +795,87 @@ fun VirtualNumbersSection(
                 }
             }
 
+            // 2. Search & Auto-Sync Bar (SS Style)
             item {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text(
-                        text = "GLOBAL LIVE BROADCAST FEED",
-                        color = Color(0xFF90A4AE),
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold,
-                        letterSpacing = 0.5.sp
+                    OutlinedTextField(
+                        value = consoleFilter,
+                        onValueChange = { consoleFilter = it },
+                        placeholder = { Text("Filter by number or code...", color = Color(0xFF546E7A), fontSize = 12.sp) },
+                        leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = Color(0xFF546E7A), modifier = Modifier.size(18.dp)) },
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = Color.White,
+                            unfocusedTextColor = Color.White,
+                            focusedBorderColor = Color(0xFF00B0FF),
+                            unfocusedBorderColor = Color(0xFF1E3A56),
+                            focusedContainerColor = Color(0xFF0B141E),
+                            unfocusedContainerColor = Color(0xFF0B141E)
+                        ),
+                        shape = RoundedCornerShape(10.dp),
+                        singleLine = true,
+                        modifier = Modifier.weight(1f)
                     )
 
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(text = "Auto Sync: 3s", color = Color(0xFF546E7A), fontSize = 10.sp)
-                        IconButton(
-                            onClick = { VirtualNumberManager.fetchGlobalBroadcast() },
-                            modifier = Modifier.size(26.dp)
+                    var syncCountdown by remember { mutableIntStateOf(2) }
+                    LaunchedEffect(Unit) {
+                        while (true) {
+                            delay(1000L)
+                            if (syncCountdown <= 1) {
+                                syncCountdown = 2
+                                VirtualNumberManager.fetchGlobalBroadcast()
+                            } else {
+                                syncCountdown -= 1
+                            }
+                        }
+                    }
+
+                    Surface(
+                        color = Color(0xFF0D1B2A),
+                        shape = RoundedCornerShape(10.dp),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF1A3959)),
+                        modifier = Modifier
+                            .height(52.dp)
+                            .clickable {
+                                syncCountdown = 2
+                                VirtualNumberManager.fetchGlobalBroadcast()
+                            }
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
                             Icon(
-                                Icons.Default.Refresh,
+                                imageVector = Icons.Default.Refresh,
                                 contentDescription = "Sync",
-                                tint = Color(0xFF00B0FF),
-                                modifier = Modifier.size(14.dp)
+                                tint = Color(0xFF81D4FA),
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "Auto Sync: ${syncCountdown}s",
+                                color = Color(0xFFB0BEC5),
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.SemiBold
                             )
                         }
                     }
                 }
             }
 
-            // Filter input for console
-            item {
-                OutlinedTextField(
-                    value = consoleFilter,
-                    onValueChange = { consoleFilter = it },
-                    placeholder = { Text("Filter by number or code...", color = Color(0xFF546E7A), fontSize = 12.sp) },
-                    leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = Color(0xFF546E7A)) },
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedTextColor = Color.White,
-                        unfocusedTextColor = Color.White,
-                        focusedBorderColor = Color(0xFF00B0FF),
-                        unfocusedBorderColor = Color(0xFF1E3A56),
-                        focusedContainerColor = Color(0xFF0B141E),
-                        unfocusedContainerColor = Color(0xFF0B141E)
-                    ),
-                    shape = RoundedCornerShape(10.dp),
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
-            }
-
+            // 3. Global Live OTP SMS List (Styled exactly as in the screenshots)
             val filteredBroadcast = if (consoleFilter.isBlank()) {
                 state.broadcastFeed
             } else {
                 state.broadcastFeed.filter {
                     it.number.contains(consoleFilter, ignoreCase = true) ||
                             it.otp.contains(consoleFilter, ignoreCase = true) ||
-                            it.service.contains(consoleFilter, ignoreCase = true)
+                            it.service.contains(consoleFilter, ignoreCase = true) ||
+                            it.range.contains(consoleFilter, ignoreCase = true) ||
+                            it.country.contains(consoleFilter, ignoreCase = true)
                 }
             }
 
@@ -779,7 +889,7 @@ fun VirtualNumbersSection(
                             .padding(vertical = 12.dp)
                     ) {
                         Text(
-                            text = "লাইভ ব্রডকাস্ট লোডিং...",
+                            text = "লাইভ এসএমএস লোডিং...",
                             color = Color(0xFF546E7A),
                             fontSize = 13.sp,
                             modifier = Modifier.padding(20.dp)
@@ -1020,17 +1130,31 @@ private fun BroadcastTerminalCard(
             val sdf = SimpleDateFormat("hh:mm:ss a", Locale.US)
             sdf.format(Date(feed.time))
         } catch (_: Exception) {
-            "Just now"
+            "05:16:58 PM"
         }
     }
 
     Surface(
         color = Color(0xFF0B141E),
-        shape = RoundedCornerShape(10.dp),
-        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF19324A)),
-        modifier = Modifier.fillMaxWidth()
+        shape = RoundedCornerShape(8.dp),
+        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF182C40)),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable {
+                val regex = Pattern.compile("\\b\\d{4,8}\\b")
+                val matcher = regex.matcher(feed.otp)
+                if (matcher.find()) {
+                    val code = matcher.group()
+                    ClipboardHelper.copyToClipboard(context, code, "OTP Code")
+                    Toast.makeText(context, "✓ OTP কপি হয়েছে: $code", Toast.LENGTH_SHORT).show()
+                } else {
+                    ClipboardHelper.copyToClipboard(context, feed.otp, "SMS Body")
+                    Toast.makeText(context, "এসএমএস কপি হয়েছে", Toast.LENGTH_SHORT).show()
+                }
+            }
     ) {
-        Column(modifier = Modifier.padding(10.dp)) {
+        Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 9.dp)) {
+            // Line 1: Timestamp | Operator | Pipe | Country with Globe | Service Pill
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -1040,34 +1164,58 @@ private fun BroadcastTerminalCard(
                     Text(
                         text = timeStr,
                         color = Color(0xFFFFB300),
-                        fontSize = 10.sp,
-                        fontFamily = FontFamily.Monospace,
-                        fontWeight = FontWeight.Bold
+                        fontSize = 11.5.sp,
+                        fontWeight = FontWeight.Bold,
+                        fontFamily = FontFamily.Monospace
                     )
                     Spacer(modifier = Modifier.width(6.dp))
                     Text(
-                        text = "${feed.operator} • ${feed.country}",
-                        color = Color(0xFF90A4AE),
-                        fontSize = 10.sp
+                        text = feed.operator,
+                        color = Color(0xFF94A3B8),
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Normal
+                    )
+                    Spacer(modifier = Modifier.width(5.dp))
+                    Text(
+                        text = "|",
+                        color = Color(0xFF475569),
+                        fontSize = 11.sp
+                    )
+                    Spacer(modifier = Modifier.width(5.dp))
+                    Text(
+                        text = "🌍 ${feed.country.uppercase()}",
+                        color = Color(0xFF00E676),
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold
                     )
                 }
 
+                // Service Badge (FACEBOOK / INSTAGRAM / WHATSAPP)
+                val upperService = feed.service.uppercase()
+                val (badgeBg, badgeFg) = when {
+                    upperService.contains("FACEBOOK") || upperService.contains("FB") -> Pair(Color(0xFF132B4A), Color(0xFF60A5FA))
+                    upperService.contains("INSTAGRAM") || upperService.contains("IG") -> Pair(Color(0xFF421028), Color(0xFFF472B6))
+                    upperService.contains("WHATSAPP") || upperService.contains("WA") -> Pair(Color(0xFF0A3322), Color(0xFF34D399))
+                    else -> Pair(Color(0xFF1A2634), Color(0xFF90A4AE))
+                }
+
                 Surface(
-                    color = Color(0xFF00B0FF).copy(alpha = 0.2f),
+                    color = badgeBg,
                     shape = RoundedCornerShape(4.dp)
                 ) {
                     Text(
-                        text = feed.service,
-                        color = Color(0xFF40C4FF),
+                        text = upperService,
+                        color = badgeFg,
                         fontSize = 9.sp,
-                        fontWeight = FontWeight.ExtraBold,
-                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                        fontWeight = FontWeight.Black,
+                        modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp)
                     )
                 }
             }
 
-            Spacer(modifier = Modifier.height(4.dp))
+            Spacer(modifier = Modifier.height(6.dp))
 
+            // Line 2: Phone Number | [Range 📋] | ➔ | Monospace SMS with green <#>
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically
@@ -1075,37 +1223,93 @@ private fun BroadcastTerminalCard(
                 Text(
                     text = feed.number,
                     color = Color.White,
-                    fontSize = 13.sp,
+                    fontSize = 12.5.sp,
                     fontWeight = FontWeight.Bold,
-                    fontFamily = FontFamily.Monospace
-                )
-                Spacer(modifier = Modifier.width(6.dp))
-                Surface(
-                    color = Color(0xFF0091EA).copy(alpha = 0.3f),
-                    shape = RoundedCornerShape(4.dp),
+                    fontFamily = FontFamily.Monospace,
                     modifier = Modifier.clickable {
+                        ClipboardHelper.copyToClipboard(context, feed.number, "Phone")
+                        Toast.makeText(context, "নম্বর কপি হয়েছে", Toast.LENGTH_SHORT).show()
+                    }
+                )
+
+                Spacer(modifier = Modifier.width(6.dp))
+
+                Surface(
+                    color = Color(0xFF112438),
+                    shape = RoundedCornerShape(4.dp),
+                    border = androidx.compose.foundation.BorderStroke(0.7.dp, Color(0xFF204266)),
+                    modifier = Modifier.clickable {
+                        VirtualNumberManager.setTargetRange(feed.range)
                         ClipboardHelper.copyToClipboard(context, feed.range, "Range")
+                        Toast.makeText(context, "রেঞ্জ কপি ও সেট হয়েছে: ${feed.range}", Toast.LENGTH_SHORT).show()
                     }
                 ) {
                     Row(
-                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp),
+                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text(text = feed.range, color = Color(0xFF81D4FA), fontSize = 10.sp)
-                        Spacer(modifier = Modifier.width(2.dp))
-                        Icon(Icons.Default.ContentCopy, contentDescription = null, tint = Color(0xFF81D4FA), modifier = Modifier.size(10.dp))
+                        Text(
+                            text = feed.range,
+                            color = Color(0xFF60A5FA),
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                            fontFamily = FontFamily.Monospace
+                        )
+                        Spacer(modifier = Modifier.width(3.dp))
+                        Icon(
+                            Icons.Default.ContentCopy,
+                            contentDescription = "Copy Range",
+                            tint = Color(0xFF60A5FA),
+                            modifier = Modifier.size(10.dp)
+                        )
                     }
                 }
+
+                Spacer(modifier = Modifier.width(6.dp))
+
+                Text(
+                    text = "➔",
+                    color = Color(0xFF546E7A),
+                    fontSize = 11.sp
+                )
+
+                Spacer(modifier = Modifier.width(6.dp))
+
+                val otpText = feed.otp
+                if (otpText.startsWith("<#>")) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.weight(1f, fill = false)
+                    ) {
+                        Text(
+                            text = "<#>",
+                            color = Color(0xFF00E676),
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            fontFamily = FontFamily.Monospace
+                        )
+                        Spacer(modifier = Modifier.width(3.dp))
+                        Text(
+                            text = otpText.removePrefix("<#>").trim(),
+                            color = Color(0xFFE2E8F0),
+                            fontSize = 11.sp,
+                            fontFamily = FontFamily.Monospace,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                } else {
+                    Text(
+                        text = otpText,
+                        color = Color(0xFFE2E8F0),
+                        fontSize = 11.sp,
+                        fontFamily = FontFamily.Monospace,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false)
+                    )
+                }
             }
-
-            Spacer(modifier = Modifier.height(4.dp))
-
-            Text(
-                text = feed.otp,
-                color = Color(0xFFCFD8DC),
-                fontSize = 11.sp,
-                fontFamily = FontFamily.Monospace
-            )
         }
     }
 }

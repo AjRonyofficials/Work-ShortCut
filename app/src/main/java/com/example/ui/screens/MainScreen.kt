@@ -10,6 +10,10 @@ import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import com.example.ui.components.AppNavTab
+import com.example.ui.components.PremiumNavigationMenu
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -100,22 +104,6 @@ import com.example.ui.theme.AlertRed
 import com.example.ui.theme.BrandGreen
 import com.example.ui.theme.BrandSky
 import kotlin.math.roundToInt
-
-enum class AppNavTab(
-    val title: String,
-    val selectedIcon: ImageVector,
-    val unselectedIcon: ImageVector
-) {
-    VIRTUAL_NUMBERS("Virtual Numbers", Icons.Filled.Phone, Icons.Outlined.Phone),
-    NAMES("Names", Icons.Filled.Person, Icons.Outlined.Person),
-    SHORTCUTS("Apps", Icons.Filled.Apps, Icons.Outlined.Apps),
-    PROXY("Proxy", Icons.Filled.Security, Icons.Outlined.Security),
-    TWO_FACTOR("2FA", Icons.Filled.Lock, Icons.Outlined.Lock),
-    PW_COPY("PW Copy", Icons.Filled.Key, Icons.Outlined.Key),
-    EXCEL("Excel", Icons.Filled.TableChart, Icons.Outlined.TableChart),
-    CLEAR_DATA("Clean", Icons.Filled.CleaningServices, Icons.Outlined.CleaningServices),
-    SETTINGS("Settings", Icons.Filled.Settings, Icons.Outlined.Settings)
-}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -212,63 +200,43 @@ fun MainScreen(
                             }
                         }
 
-                        // 3-Dot Menu for All Sections ("Sob gula section a 3dot menute convert kore felo")
-                        Box {
-                            IconButton(
-                                onClick = { sectionsMenuExpanded = true },
-                                modifier = Modifier.testTag("appbar_3dot_menu")
+                        // Modern Premium Menu Trigger Button
+                        Surface(
+                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                            shape = RoundedCornerShape(10.dp),
+                            border = androidx.compose.foundation.BorderStroke(
+                                1.dp,
+                                MaterialTheme.colorScheme.outline.copy(alpha = 0.25f)
+                            ),
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(10.dp))
+                                .clickable { sectionsMenuExpanded = true }
+                                .testTag("appbar_3dot_menu")
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 9.dp, vertical = 6.dp),
+                                verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Icon(
-                                    imageVector = Icons.Default.MoreVert,
-                                    contentDescription = "Sections Menu",
-                                    tint = MaterialTheme.colorScheme.onSurface
+                                    imageVector = Icons.Default.Apps,
+                                    contentDescription = "Menu",
+                                    tint = BrandSky,
+                                    modifier = Modifier.size(17.dp)
                                 )
-                            }
-
-                            DropdownMenu(
-                                expanded = sectionsMenuExpanded,
-                                onDismissRequest = { sectionsMenuExpanded = false },
-                                modifier = Modifier.background(MaterialTheme.colorScheme.surface)
-                            ) {
-                                AppNavTab.entries.forEach { tab ->
-                                    val isSelected = selectedTab == tab
-                                    DropdownMenuItem(
-                                        text = {
-                                            Row(
-                                                verticalAlignment = Alignment.CenterVertically,
-                                                modifier = Modifier.fillMaxWidth()
-                                            ) {
-                                                Icon(
-                                                    imageVector = if (isSelected) tab.selectedIcon else tab.unselectedIcon,
-                                                    contentDescription = null,
-                                                    tint = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                                                    modifier = Modifier.size(20.dp)
-                                                )
-                                                Spacer(modifier = Modifier.width(12.dp))
-                                                Text(
-                                                    text = tab.title,
-                                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                                                    color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
-                                                    fontSize = 14.sp
-                                                )
-                                                if (isSelected) {
-                                                    Spacer(modifier = Modifier.weight(1f))
-                                                    Icon(
-                                                        imageVector = Icons.Default.Check,
-                                                        contentDescription = null,
-                                                        tint = MaterialTheme.colorScheme.primary,
-                                                        modifier = Modifier.size(16.dp)
-                                                    )
-                                                }
-                                            }
-                                        },
-                                        onClick = {
-                                            selectedTab = tab
-                                            sectionsMenuExpanded = false
-                                        },
-                                        modifier = Modifier.testTag("menu_section_${tab.name}")
-                                    )
-                                }
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(
+                                    text = "Menu",
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                                Spacer(modifier = Modifier.width(2.dp))
+                                Icon(
+                                    imageVector = Icons.Default.MoreVert,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(15.dp)
+                                )
                             }
                         }
                     },
@@ -373,5 +341,15 @@ fun MainScreen(
                 }
             }
         }
+
+        // Modern Premium Mega Navigation Menu Overlay (Website / App style)
+        PremiumNavigationMenu(
+            isOpen = sectionsMenuExpanded,
+            currentTab = selectedTab,
+            onSelectTab = { selectedTab = it },
+            onDismiss = { sectionsMenuExpanded = false },
+            isOverlayActive = state.isOverlayActive,
+            onToggleOverlay = { OverlayStateManager.toggleOverlayExpanded() }
+        )
     }
 }

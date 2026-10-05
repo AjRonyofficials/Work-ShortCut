@@ -32,15 +32,171 @@ import java.util.Locale
 import java.util.concurrent.TimeUnit
 import java.util.regex.Pattern
 
+val defaultActiveRangesList = listOf(
+    ActiveRangeItem(range = "237627XXX", service = "Facebook", tag = "PC Clone", hits = 17),
+    ActiveRangeItem(range = "324685XXX", service = "Facebook", tag = "New Fb", hits = 6),
+    ActiveRangeItem(range = "324685XXX", service = "Facebook", tag = "PC Clone", hits = 5),
+    ActiveRangeItem(range = "237622XXX", service = "Facebook", tag = "Mobile", hits = 1),
+    ActiveRangeItem(range = "228984XXX", service = "Instagram", tag = "Hot", hits = 8),
+    ActiveRangeItem(range = "234802XXX", service = "WhatsApp", tag = "Direct", hits = 12)
+)
+
+val defaultBroadcastList = listOf(
+    BroadcastFeedItem(
+        number = "237627834XXX",
+        range = "237627XXX",
+        service = "FACEBOOK",
+        country = "CAMEROON",
+        operator = "Mobile",
+        otp = "<#> Facebook: Your code is ******",
+        time = System.currentTimeMillis() - 2_000
+    ),
+    BroadcastFeedItem(
+        number = "237627874XXX",
+        range = "237627XXX",
+        service = "FACEBOOK",
+        country = "CAMEROON",
+        operator = "Mobile",
+        otp = "<#> Facebook: Your code is ******",
+        time = System.currentTimeMillis() - 5_000
+    ),
+    BroadcastFeedItem(
+        number = "32468571XXXX",
+        range = "324685XXX",
+        service = "FACEBOOK",
+        country = "BELGIUM",
+        operator = "Base",
+        otp = "<#> ****** is your Facebook code H29Q+Fsn4Sr",
+        time = System.currentTimeMillis() - 7_000
+    ),
+    BroadcastFeedItem(
+        number = "32468523XXXX",
+        range = "324685XXX",
+        service = "FACEBOOK",
+        country = "BELGIUM",
+        operator = "Base",
+        otp = "<#> ****** est le code de r initialisation de votre mot de passe Facebook",
+        time = System.currentTimeMillis() - 7_000
+    ),
+    BroadcastFeedItem(
+        number = "32468597XXXX",
+        range = "324685XXX",
+        service = "FACEBOOK",
+        country = "BELGIUM",
+        operator = "Base",
+        otp = "<#> ***** is your Facebook code H29Q+Fsn4Sr",
+        time = System.currentTimeMillis() - 8_000
+    ),
+    BroadcastFeedItem(
+        number = "237627650XXX",
+        range = "237627XXX",
+        service = "FACEBOOK",
+        country = "CAMEROON",
+        operator = "Mobile",
+        otp = "<#> Facebook: Your code is ******",
+        time = System.currentTimeMillis() - 10_000
+    ),
+    BroadcastFeedItem(
+        number = "32468577XXXX",
+        range = "324685XXX",
+        service = "FACEBOOK",
+        country = "BELGIUM",
+        operator = "Base",
+        otp = "<#> ***** is your Facebook code H29Q+Fsn4Sr",
+        time = System.currentTimeMillis() - 10_000
+    ),
+    BroadcastFeedItem(
+        number = "261363603XXX",
+        range = "261363XXX",
+        service = "FACEBOOK",
+        country = "MADAGASCAR",
+        operator = "Mobile",
+        otp = "<#> ***** est votre code Facebook H29Q+Fsn4Sr",
+        time = System.currentTimeMillis() - 13_000
+    ),
+    BroadcastFeedItem(
+        number = "237627812XXX",
+        range = "237627XXX",
+        service = "FACEBOOK",
+        country = "CAMEROON",
+        operator = "Mobile",
+        otp = "<#> Facebook: Your code is ******",
+        time = System.currentTimeMillis() - 16_000
+    ),
+    BroadcastFeedItem(
+        number = "237627981XXX",
+        range = "237627XXX",
+        service = "FACEBOOK",
+        country = "CAMEROON",
+        operator = "Mobile",
+        otp = "<#> Facebook: Your code is ******",
+        time = System.currentTimeMillis() - 16_000
+    ),
+    BroadcastFeedItem(
+        number = "237625693XXX",
+        range = "237625XXX",
+        service = "FACEBOOK",
+        country = "CAMEROON",
+        operator = "Mobile",
+        otp = "<#> Facebook: Your code is ******",
+        time = System.currentTimeMillis() - 20_000
+    ),
+    BroadcastFeedItem(
+        number = "237627989XXX",
+        range = "237627XXX",
+        service = "FACEBOOK",
+        country = "CAMEROON",
+        operator = "Mobile",
+        otp = "<#> Facebook: Your code is ******",
+        time = System.currentTimeMillis() - 29_000
+    ),
+    BroadcastFeedItem(
+        number = "32468599XXXX",
+        range = "324685XXX",
+        service = "INSTAGRAM",
+        country = "BELGIUM",
+        operator = "Base",
+        otp = "<#> *** *** is your Instagram code. Don't share it. SIYRxKrru1t",
+        time = System.currentTimeMillis() - 31_000
+    ),
+    BroadcastFeedItem(
+        number = "237627605XXX",
+        range = "237627XXX",
+        service = "FACEBOOK",
+        country = "CAMEROON",
+        operator = "Mobile",
+        otp = "<#> Facebook: Kode Anda adalah ******",
+        time = System.currentTimeMillis() - 33_000
+    ),
+    BroadcastFeedItem(
+        number = "22898475XXXX",
+        range = "228984XXX",
+        service = "INSTAGRAM",
+        country = "TOGO",
+        operator = "ATL(Moov)",
+        otp = "<#> *** *** is your Instagram code. Don't share it. SIYRxKrru1t",
+        time = System.currentTimeMillis() - 40_000
+    ),
+    BroadcastFeedItem(
+        number = "234802937XXX",
+        range = "234802XXX",
+        service = "WHATSAPP",
+        country = "NIGERIA",
+        operator = "Celtel (Airtel)",
+        otp = "<#> Your WhatsApp code: ***-*** Don't share this code with others",
+        time = System.currentTimeMillis() - 45_000
+    )
+)
+
 data class VirtualNumbersUiState(
     val apiKey: String = "ZNX_SDY9RBKGG8DO84EWZOMWEH2S",
-    val targetRange: String = "237620XXX",
+    val targetRange: String = "237627XXX",
     val requestCount: Int = 1,
     val isNational: Boolean = false,
     val removePlus: Boolean = false,
     val provisionedNumbers: List<ProvisionedNumber> = emptyList(),
-    val activeRanges: List<ActiveRangeItem> = emptyList(),
-    val broadcastFeed: List<BroadcastFeedItem> = emptyList(),
+    val activeRanges: List<ActiveRangeItem> = defaultActiveRangesList,
+    val broadcastFeed: List<BroadcastFeedItem> = defaultBroadcastList,
     val todayOtpCount: Int = 0,
     val isLoading: Boolean = false,
     val isPolling: Boolean = false,
@@ -270,11 +426,21 @@ object VirtualNumberManager {
                                     if (cleanProvisionedDigits.isNotEmpty() &&
                                         (cleanProvisionedDigits.contains(incomingNum) || incomingNum.contains(cleanProvisionedDigits))) {
                                         matchedOtp = otpText
-                                        // Extract 4-8 digit OTP code
+                                        // Extract 5-8 digit (or 4-8 digit) OTP code
+                                        val candidates = mutableListOf<String>()
                                         val matcher = otpRegex.matcher(otpText)
-                                        if (matcher.find()) {
-                                            matchedCode = matcher.group()
+                                        while (matcher.find()) {
+                                            candidates.add(matcher.group())
                                         }
+
+                                        // Prefer candidate not part of the phone number and between 4-8 digits (especially 5-8)
+                                        matchedCode = candidates.firstOrNull { cand ->
+                                            !cleanProvisionedDigits.contains(cand) && cand.length in 5..8
+                                        } ?: candidates.firstOrNull { cand ->
+                                            !cleanProvisionedDigits.contains(cand) && cand.length == 4
+                                        } ?: candidates.firstOrNull { cand -> cand.length in 5..8 }
+                                          ?: candidates.firstOrNull()
+
                                         break
                                     }
                                 }
