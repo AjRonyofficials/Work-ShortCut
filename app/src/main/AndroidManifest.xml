@@ -50,6 +50,10 @@
             android:exported="false"
             android:noHistory="true" />
 
+        <receiver
+            android:name=".util.CopyOtpReceiver"
+            android:exported="false" />
+
         <service
             android:name=".service.FloatingOverlayService"
             android:enabled="true"

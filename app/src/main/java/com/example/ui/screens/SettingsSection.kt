@@ -252,6 +252,80 @@ fun SettingsSection(
             }
         }
 
+        // Overlay Sections Customization (Add / Remove any section in floating overlay)
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            border = androidx.compose.foundation.BorderStroke(1.5.dp, BrandBlue.copy(alpha = 0.4f))
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Default.Visibility,
+                        contentDescription = null,
+                        tint = BrandSky,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Column {
+                        Text(
+                            text = "Overlay Sections (Add / Remove)",
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            text = "Choose which buttons appear in the floating edge bar",
+                            fontSize = 11.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(14.dp))
+
+                val overlaySections = listOf(
+                    Triple("VIRTUAL", "📱 Virtual Numbers (Get & OTP)", state.showOverlayVirtualNumbers),
+                    Triple("PROXY", "🛡️ Proxy Switcher", state.showOverlayProxy),
+                    Triple("NAME", "👤 Name Generator", state.showOverlayName),
+                    Triple("EXCEL", "📊 Excel Columns (A, B, C...)", state.showOverlayExcel),
+                    Triple("2FA", "🔒 2FA Authenticator Code", state.showOverlay2Fa),
+                    Triple("PW", "🔑 Password Copy (PW Copy)", state.showOverlayPwCopy),
+                    Triple("APPS", "🚀 Custom Apps Shortcuts", state.showOverlayApps),
+                    Triple("CLEAN", "🧹 Clear Data & Auto Close", state.showOverlayClean)
+                )
+
+                overlaySections.forEachIndexed { index, (key, title, isEnabled) ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text(
+                            text = title,
+                            fontWeight = FontWeight.Medium,
+                            fontSize = 13.sp,
+                            color = if (isEnabled) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Switch(
+                            checked = isEnabled,
+                            onCheckedChange = { OverlayStateManager.toggleShowOverlaySection(key) },
+                            modifier = Modifier.testTag("toggle_overlay_section_$key")
+                        )
+                    }
+                    if (index < overlaySections.size - 1) {
+                        androidx.compose.material3.HorizontalDivider(
+                            color = MaterialTheme.colorScheme.outline.copy(alpha = 0.12f),
+                            thickness = 0.8.dp,
+                            modifier = Modifier.padding(vertical = 2.dp)
+                        )
+                    }
+                }
+            }
+        }
+
         // UI Theme Selector (Dark, Light, Eye-Friendly, AMOLED)
         Card(
             modifier = Modifier.fillMaxWidth(),

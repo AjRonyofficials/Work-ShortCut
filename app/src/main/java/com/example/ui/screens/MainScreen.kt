@@ -29,10 +29,13 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Apps
 import androidx.compose.material.icons.filled.Bolt
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CleaningServices
 import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Phone
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.Settings
@@ -43,21 +46,20 @@ import androidx.compose.material.icons.outlined.CleaningServices
 import androidx.compose.material.icons.outlined.Key
 import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.Person
+import androidx.compose.material.icons.outlined.Phone
 import androidx.compose.material.icons.outlined.Security
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.TableChart
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
-import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
@@ -104,12 +106,13 @@ enum class AppNavTab(
     val selectedIcon: ImageVector,
     val unselectedIcon: ImageVector
 ) {
+    VIRTUAL_NUMBERS("Virtual Numbers", Icons.Filled.Phone, Icons.Outlined.Phone),
+    NAMES("Names", Icons.Filled.Person, Icons.Outlined.Person),
     SHORTCUTS("Apps", Icons.Filled.Apps, Icons.Outlined.Apps),
     PROXY("Proxy", Icons.Filled.Security, Icons.Outlined.Security),
     TWO_FACTOR("2FA", Icons.Filled.Lock, Icons.Outlined.Lock),
     PW_COPY("PW Copy", Icons.Filled.Key, Icons.Outlined.Key),
     EXCEL("Excel", Icons.Filled.TableChart, Icons.Outlined.TableChart),
-    NAMES("Names", Icons.Filled.Person, Icons.Outlined.Person),
     CLEAR_DATA("Clean", Icons.Filled.CleaningServices, Icons.Outlined.CleaningServices),
     SETTINGS("Settings", Icons.Filled.Settings, Icons.Outlined.Settings)
 }
@@ -124,145 +127,36 @@ fun MainScreen(
     repository: WorkShortcutRepository?,
     modifier: Modifier = Modifier
 ) {
-    var selectedTab by remember { mutableStateOf(AppNavTab.NAMES) }
+    var selectedTab by remember { mutableStateOf(AppNavTab.VIRTUAL_NUMBERS) }
+    var sectionsMenuExpanded by remember { mutableStateOf(false) }
     val context = LocalContext.current
     var showBottomDeveloperCredit by remember { mutableStateOf(false) }
-    var showDeveloperNoticeDialog by remember { mutableStateOf(false) }
-    var noticeOkCountdown by remember { mutableStateOf(3) }
     var hasRunStartupFlow by rememberSaveable { mutableStateOf(false) }
 
     // Sequential startup flow:
-    // Only runs on fresh app launch when overlay is NOT active
+    // Only shows subtle bottom developer credit for 3 seconds on fresh app launch
     androidx.compose.runtime.LaunchedEffect(Unit) {
         if (!hasRunStartupFlow) {
             hasRunStartupFlow = true
-            // If overlay is off and entering app fresh, trigger startup flow
             if (!state.isOverlayActive) {
-                // 1. First show animated bottom developer credit for 3 seconds
                 showBottomDeveloperCredit = true
                 kotlinx.coroutines.delay(3000L)
                 showBottomDeveloperCredit = false
-
-                // Small delay for smooth exit animation before dialog opens
-                kotlinx.coroutines.delay(300L)
-
-                // 2. Then show the main notice popup
-                showDeveloperNoticeDialog = true
             }
         }
-    }
-
-    // 3-second countdown before OK button becomes clickable in Notice Dialog
-    androidx.compose.runtime.LaunchedEffect(showDeveloperNoticeDialog) {
-        if (showDeveloperNoticeDialog) {
-            noticeOkCountdown = 3
-            while (noticeOkCountdown > 0) {
-                kotlinx.coroutines.delay(1000L)
-                noticeOkCountdown--
-            }
-        }
-    }
-
-    // Main Notice Dialog with Revised Text
-    if (showDeveloperNoticeDialog) {
-        val isOkActive = noticeOkCountdown == 0
-        AlertDialog(
-            onDismissRequest = {
-                if (isOkActive) showDeveloperNoticeDialog = false
-            },
-            icon = {
-                Box(
-                    modifier = Modifier
-                        .size(48.dp)
-                        .clip(CircleShape)
-                        .background(BrandSky.copy(alpha = 0.15f)),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Send,
-                        contentDescription = null,
-                        tint = BrandSky,
-                        modifier = Modifier.size(26.dp)
-                    )
-                }
-            },
-            title = {
-                Text(
-                    text = "📢 Developer Notice",
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 18.sp,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-            },
-            text = {
-                Column(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    Text(
-                        text = "কোনো পরিবর্তন চাইলে ডেভলপারের সাথে যোগাযোগ করেন। কোনো সমস্যা বা আপডেটের জন্য 'Contact Developer' বাটনে ক্লিক করে সরাসরি যোগাযোগ করতে পারেন।",
-                        fontSize = 14.sp,
-                        lineHeight = 21.sp,
-                        fontWeight = FontWeight.Medium,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                }
-            },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        if (isOkActive) showDeveloperNoticeDialog = false
-                    },
-                    enabled = isOkActive,
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = if (isOkActive) MaterialTheme.colorScheme.primary else Color.Gray
-                    ),
-                    shape = RoundedCornerShape(10.dp)
-                ) {
-                    Text(
-                        text = if (isOkActive) "OK / ঠিক আছে" else "অপেক্ষা করুন (${noticeOkCountdown}s)",
-                        fontWeight = FontWeight.Bold
-                    )
-                }
-            },
-            dismissButton = {
-                OutlinedButton(
-                    onClick = {
-                        try {
-                            val telegramIntent = Intent(Intent.ACTION_VIEW, Uri.parse("https://t.me/ismailislamrony1")).apply {
-                                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                            }
-                            context.startActivity(telegramIntent)
-                        } catch (_: Exception) {
-                            Toast.makeText(context, "Telegram: @ismailislamrony1", Toast.LENGTH_LONG).show()
-                        }
-                    },
-                    shape = RoundedCornerShape(10.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Send,
-                        contentDescription = null,
-                        modifier = Modifier.size(16.dp),
-                        tint = BrandSky
-                    )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text("Contact Developer", color = BrandSky, fontWeight = FontWeight.Bold)
-                }
-            },
-            containerColor = MaterialTheme.colorScheme.surface,
-            shape = RoundedCornerShape(20.dp)
-        )
     }
 
     androidx.compose.runtime.LaunchedEffect(Unit) {
         OverlayStateManager.requestedAppTab.collect { tabName ->
             when (tabName) {
+                "VIRTUAL_NUMBERS" -> selectedTab = AppNavTab.VIRTUAL_NUMBERS
                 "PROXY" -> selectedTab = AppNavTab.PROXY
                 "NAMES" -> selectedTab = AppNavTab.NAMES
                 "EXCEL" -> selectedTab = AppNavTab.EXCEL
                 "TWO_FACTOR" -> selectedTab = AppNavTab.TWO_FACTOR
                 "APPS" -> selectedTab = AppNavTab.SHORTCUTS
                 "CLEAR_DATA" -> selectedTab = AppNavTab.CLEAR_DATA
+                "SETTINGS" -> selectedTab = AppNavTab.SETTINGS
             }
         }
     }
@@ -272,11 +166,26 @@ fun MainScreen(
             topBar = {
                 TopAppBar(
                     title = {
-                        Text(
-                            text = "Work ShortCut",
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 20.sp
-                        )
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                text = "Work ShortCut",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 18.sp
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Surface(
+                                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f),
+                                shape = RoundedCornerShape(6.dp)
+                            ) {
+                                Text(
+                                    text = selectedTab.title,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 11.sp,
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                )
+                            }
+                        }
                     },
                     actions = {
                         // Quick Toggle for Floating Bubble Overlay
@@ -302,63 +211,72 @@ fun MainScreen(
                                 )
                             }
                         }
+
+                        // 3-Dot Menu for All Sections ("Sob gula section a 3dot menute convert kore felo")
+                        Box {
+                            IconButton(
+                                onClick = { sectionsMenuExpanded = true },
+                                modifier = Modifier.testTag("appbar_3dot_menu")
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.MoreVert,
+                                    contentDescription = "Sections Menu",
+                                    tint = MaterialTheme.colorScheme.onSurface
+                                )
+                            }
+
+                            DropdownMenu(
+                                expanded = sectionsMenuExpanded,
+                                onDismissRequest = { sectionsMenuExpanded = false },
+                                modifier = Modifier.background(MaterialTheme.colorScheme.surface)
+                            ) {
+                                AppNavTab.entries.forEach { tab ->
+                                    val isSelected = selectedTab == tab
+                                    DropdownMenuItem(
+                                        text = {
+                                            Row(
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                modifier = Modifier.fillMaxWidth()
+                                            ) {
+                                                Icon(
+                                                    imageVector = if (isSelected) tab.selectedIcon else tab.unselectedIcon,
+                                                    contentDescription = null,
+                                                    tint = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                                    modifier = Modifier.size(20.dp)
+                                                )
+                                                Spacer(modifier = Modifier.width(12.dp))
+                                                Text(
+                                                    text = tab.title,
+                                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                                    color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                                                    fontSize = 14.sp
+                                                )
+                                                if (isSelected) {
+                                                    Spacer(modifier = Modifier.weight(1f))
+                                                    Icon(
+                                                        imageVector = Icons.Default.Check,
+                                                        contentDescription = null,
+                                                        tint = MaterialTheme.colorScheme.primary,
+                                                        modifier = Modifier.size(16.dp)
+                                                    )
+                                                }
+                                            }
+                                        },
+                                        onClick = {
+                                            selectedTab = tab
+                                            sectionsMenuExpanded = false
+                                        },
+                                        modifier = Modifier.testTag("menu_section_${tab.name}")
+                                    )
+                                }
+                            }
+                        }
                     },
                     colors = TopAppBarDefaults.topAppBarColors(
                         containerColor = MaterialTheme.colorScheme.surface,
                         titleContentColor = MaterialTheme.colorScheme.onSurface
                     )
                 )
-            },
-            bottomBar = {
-                NavigationBar(
-                    containerColor = MaterialTheme.colorScheme.surface,
-                    tonalElevation = 8.dp,
-                    windowInsets = WindowInsets(0.dp, 0.dp, 0.dp, 0.dp)
-                ) {
-                    AppNavTab.entries.forEach { tab ->
-                        val isSelected = selectedTab == tab
-                        val badgeCount = when (tab) {
-                            AppNavTab.EXCEL -> if (state.draftRow.duplicateColumn != null) "!" else null
-                            AppNavTab.PROXY -> if (state.proxyState.isConnected) "ON" else null
-                            else -> null
-                        }
-
-                        NavigationBarItem(
-                            selected = isSelected,
-                            onClick = { selectedTab = tab },
-                            icon = {
-                                if (badgeCount != null) {
-                                    BadgedBox(
-                                        badge = {
-                                            Badge(
-                                                containerColor = if (badgeCount == "!") AlertRed else BrandGreen
-                                            ) {
-                                                Text(badgeCount, fontSize = 9.sp, fontWeight = FontWeight.Bold)
-                                            }
-                                        }
-                                    ) {
-                                        Icon(
-                                            imageVector = if (isSelected) tab.selectedIcon else tab.unselectedIcon,
-                                            contentDescription = tab.title
-                                        )
-                                    }
-                                } else {
-                                    Icon(
-                                        imageVector = if (isSelected) tab.selectedIcon else tab.unselectedIcon,
-                                        contentDescription = tab.title
-                                    )
-                                }
-                            },
-                            label = { Text(tab.title, fontSize = 11.sp, fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal) },
-                            colors = NavigationBarItemDefaults.colors(
-                                indicatorColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.2f),
-                                selectedIconColor = MaterialTheme.colorScheme.primary,
-                                selectedTextColor = MaterialTheme.colorScheme.primary
-                            ),
-                            modifier = Modifier.testTag("nav_tab_${tab.name}")
-                        )
-                    }
-                }
             }
         ) { paddingValues ->
             Box(
@@ -368,6 +286,7 @@ fun MainScreen(
                     .imePadding()
             ) {
                 when (selectedTab) {
+                    AppNavTab.VIRTUAL_NUMBERS -> VirtualNumbersSection()
                     AppNavTab.SHORTCUTS -> AppShortcutsSection(state = state)
                     AppNavTab.NAMES -> NameGeneratorSection(state = state)
                     AppNavTab.EXCEL -> ExcelCollectorSection(

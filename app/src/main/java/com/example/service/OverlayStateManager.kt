@@ -105,7 +105,16 @@ data class OverlayUiState(
     val backgroundDataCaching: Boolean = true,
     val isDockedLeft: Boolean = true,
     val isEdgeBarMinimized: Boolean = false,
-    val customAppShortcuts: List<CustomAppShortcut> = emptyList()
+    val customAppShortcuts: List<CustomAppShortcut> = emptyList(),
+    val showOverlayProxy: Boolean = true,
+    val showOverlayName: Boolean = true,
+    val showOverlayExcel: Boolean = true,
+    val showOverlay2Fa: Boolean = true,
+    val showOverlayPwCopy: Boolean = true,
+    val showOverlayApps: Boolean = true,
+    val showOverlayClean: Boolean = true,
+    val showOverlayVirtualNumbers: Boolean = true,
+    val isVirtualNumbersOverlayExpanded: Boolean = false
 )
 
 object OverlayStateManager {
@@ -209,6 +218,15 @@ object OverlayStateManager {
             val randomPwSymbols = p.getBoolean("random_pw_symbols", true)
             val initialRandomPw = generateStrongPassword(randomPwLen, randomPwSymbols)
 
+            val showProxy = p.getBoolean("show_overlay_proxy", true)
+            val showName = p.getBoolean("show_overlay_name", true)
+            val showExcel = p.getBoolean("show_overlay_excel", true)
+            val show2Fa = p.getBoolean("show_overlay_2fa", true)
+            val showPw = p.getBoolean("show_overlay_pw", true)
+            val showApps = p.getBoolean("show_overlay_apps", true)
+            val showClean = p.getBoolean("show_overlay_clean", true)
+            val showVirtual = p.getBoolean("show_overlay_virtual", true)
+
             val savedShortcutsString = p.getString("custom_app_shortcuts", null)
             val loadedShortcuts = if (savedShortcutsString != null) {
                 if (savedShortcutsString.isNotEmpty()) {
@@ -261,6 +279,14 @@ object OverlayStateManager {
                     selectedClearDataApps = loadedApps,
                     backgroundDataCaching = bgDataCaching,
                     customAppShortcuts = loadedShortcuts,
+                    showOverlayProxy = showProxy,
+                    showOverlayName = showName,
+                    showOverlayExcel = showExcel,
+                    showOverlay2Fa = show2Fa,
+                    showOverlayPwCopy = showPw,
+                    showOverlayApps = showApps,
+                    showOverlayClean = showClean,
+                    showOverlayVirtualNumbers = showVirtual,
                     proxyState = it.proxyState.copy(
                         profileName = profileName,
                         host = proxyHost,
@@ -305,6 +331,38 @@ object OverlayStateManager {
         // Shuffle characters
         val list = sb.toString().toList().shuffled()
         return list.joinToString("")
+    }
+
+    fun setOverlaySectionVisibility(section: String, visible: Boolean) {
+        _uiState.update {
+            when (section.uppercase()) {
+                "PROXY" -> it.copy(showOverlayProxy = visible)
+                "NAME" -> it.copy(showOverlayName = visible)
+                "EXCEL" -> it.copy(showOverlayExcel = visible)
+                "2FA" -> it.copy(showOverlay2Fa = visible)
+                "PW" -> it.copy(showOverlayPwCopy = visible)
+                "APPS" -> it.copy(showOverlayApps = visible)
+                "CLEAN" -> it.copy(showOverlayClean = visible)
+                "VIRTUAL" -> it.copy(showOverlayVirtualNumbers = visible)
+                else -> it
+            }
+        }
+        val prefKey = when (section.uppercase()) {
+            "PROXY" -> "show_overlay_proxy"
+            "NAME" -> "show_overlay_name"
+            "EXCEL" -> "show_overlay_excel"
+            "2FA" -> "show_overlay_2fa"
+            "PW" -> "show_overlay_pw"
+            "APPS" -> "show_overlay_apps"
+            "CLEAN" -> "show_overlay_clean"
+            "VIRTUAL" -> "show_overlay_virtual"
+            else -> null
+        }
+        prefKey?.let { prefs?.edit()?.putBoolean(it, visible)?.apply() }
+    }
+
+    fun toggleVirtualNumbersOverlay() {
+        _uiState.update { it.copy(isVirtualNumbersOverlayExpanded = !it.isVirtualNumbersOverlayExpanded) }
     }
 
     fun setRandomPasswordMode(enabled: Boolean) {
@@ -1450,6 +1508,58 @@ object OverlayStateManager {
         VibrationHelper.vibrateSuccess(context)
         Toast.makeText(context, "⚡ $appName ফোর্স স্টপ ও ক্লোজ করা হচ্ছে...", Toast.LENGTH_SHORT).show()
         AutoCleanAccessibilityService.startForceClose(context, packageName, appName)
+    }
+
+    fun toggleShowOverlaySection(sectionKey: String) {
+        _uiState.update { current ->
+            when (sectionKey) {
+                "PROXY" -> {
+                    val newVal = !current.showOverlayProxy
+                    prefs?.edit()?.putBoolean("show_overlay_proxy", newVal)?.apply()
+                    current.copy(showOverlayProxy = newVal)
+                }
+                "NAME" -> {
+                    val newVal = !current.showOverlayName
+                    prefs?.edit()?.putBoolean("show_overlay_name", newVal)?.apply()
+                    current.copy(showOverlayName = newVal)
+                }
+                "EXCEL" -> {
+                    val newVal = !current.showOverlayExcel
+                    prefs?.edit()?.putBoolean("show_overlay_excel", newVal)?.apply()
+                    current.copy(showOverlayExcel = newVal)
+                }
+                "2FA" -> {
+                    val newVal = !current.showOverlay2Fa
+                    prefs?.edit()?.putBoolean("show_overlay_2fa", newVal)?.apply()
+                    current.copy(showOverlay2Fa = newVal)
+                }
+                "PW" -> {
+                    val newVal = !current.showOverlayPwCopy
+                    prefs?.edit()?.putBoolean("show_overlay_pw", newVal)?.apply()
+                    current.copy(showOverlayPwCopy = newVal)
+                }
+                "APPS" -> {
+                    val newVal = !current.showOverlayApps
+                    prefs?.edit()?.putBoolean("show_overlay_apps", newVal)?.apply()
+                    current.copy(showOverlayApps = newVal)
+                }
+                "CLEAN" -> {
+                    val newVal = !current.showOverlayClean
+                    prefs?.edit()?.putBoolean("show_overlay_clean", newVal)?.apply()
+                    current.copy(showOverlayClean = newVal)
+                }
+                "VIRTUAL" -> {
+                    val newVal = !current.showOverlayVirtualNumbers
+                    prefs?.edit()?.putBoolean("show_overlay_virtual", newVal)?.apply()
+                    current.copy(showOverlayVirtualNumbers = newVal)
+                }
+                else -> current
+            }
+        }
+    }
+
+    fun toggleVirtualNumbersOverlayExpanded() {
+        _uiState.update { it.copy(isVirtualNumbersOverlayExpanded = !it.isVirtualNumbersOverlayExpanded) }
     }
 
     private fun startPeriodicPingTester() {
