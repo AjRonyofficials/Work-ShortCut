@@ -105,6 +105,7 @@ class AutoCleanAccessibilityService : AccessibilityService() {
                 return
             }
 
+            instance?.startActiveRunner()
             openAppSettings(context, packageName)
         }
 
@@ -141,6 +142,7 @@ class AutoCleanAccessibilityService : AccessibilityService() {
                 return
             }
 
+            instance?.startActiveRunner()
             openAppSettings(context, packageName)
         }
 
@@ -178,9 +180,33 @@ class AutoCleanAccessibilityService : AccessibilityService() {
         } catch (_: Throwable) {}
     }
 
+    private val activeTickRunnable = object : Runnable {
+        override fun run() {
+            if (!isAutomating) return
+            try {
+                rootInActiveWindow?.let { root ->
+                    processAutomation(root)
+                }
+            } catch (_: Throwable) {}
+            if (isAutomating) {
+                mainHandler.postDelayed(this, 120)
+            }
+        }
+    }
+
+    private fun startActiveRunner() {
+        mainHandler.removeCallbacks(activeTickRunnable)
+        mainHandler.postDelayed(activeTickRunnable, 200)
+    }
+
+    private fun stopActiveRunner() {
+        mainHandler.removeCallbacks(activeTickRunnable)
+    }
+
     override fun onUnbind(intent: Intent?): Boolean {
         instance = null
         isAutomating = false
+        stopActiveRunner()
         return super.onUnbind(intent)
     }
 
@@ -188,10 +214,12 @@ class AutoCleanAccessibilityService : AccessibilityService() {
         super.onDestroy()
         instance = null
         isAutomating = false
+        stopActiveRunner()
     }
 
     override fun onInterrupt() {
         isAutomating = false
+        stopActiveRunner()
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
@@ -200,45 +228,71 @@ class AutoCleanAccessibilityService : AccessibilityService() {
             val currentTarget = targetPackage ?: return
 
             val now = System.currentTimeMillis()
-            // Throttle events to save CPU and battery (prevents overheating and lag)
-            if (now - lastEventProcessedTime < 70) return
+            if (now - lastEventProcessedTime < 35) return
             lastEventProcessedTime = now
-
-            // 10-second safety timeout prevents any hanging
-            if (now - lastActionTime > 10000) {
-                isAutomating = false
-                targetPackage = null
-                return
-            }
 
             val pkg = (event?.packageName?.toString() ?: "").lowercase()
             val isTargetPkg = currentTarget.isNotEmpty() && pkg.contains(currentTarget.lowercase())
+            // Universal matching for all Android 10-16+ brands: Samsung, Xiaomi, Oppo, Realme, OnePlus, Vivo, iQOO, Transsion, Pixel, Moto, Huawei
             val isKnownTarget = pkg.contains("lite") || pkg.contains("facebook") || pkg.contains("katana") ||
                     pkg.contains("settings") || pkg.contains("samsung") || pkg.contains("miui") ||
                     pkg.contains("securitycenter") || pkg.contains("packageinstaller") ||
-                    pkg.contains("systemui") || pkg.isEmpty()
+                    pkg.contains("systemui") || pkg.contains("coloros") || pkg.contains("oplus") ||
+                    pkg.contains("vivo") || pkg.contains("iqoo") || pkg.contains("transsion") ||
+                    pkg.contains("phonemaster") || pkg.contains("huawei") || pkg.contains("android") ||
+                    pkg.isEmpty()
 
             if (!isTargetPkg && !isKnownTarget && !isTargetLiteMode) {
                 return
             }
 
             val rootNode = rootInActiveWindow ?: return
-            val isLiteScreen = isLiteStorageScreen(rootNode)
-
-            // 1. If Facebook Lite storage screen or its popup is active, handle custom Lite flow
-            if (isLiteScreen) {
-                handleLiteStorageScreenFlow(rootNode)
-                return
-            }
-
-            // 2. Otherwise handle standard OEM clean / force close flow
-            if (currentMode == MODE_FORCE_CLOSE) {
-                handleForceCloseStep(rootNode)
-            } else {
-                handleAutoCleanStep(rootNode)
-            }
+            processAutomation(rootNode)
         } catch (_: Throwable) {
             // Absolute crash safety: never let any exception reach system framework
+        }
+    }
+
+    private fun processAutomation(rootNode: AccessibilityNodeInfo) {
+        if (!isAutomating) return
+        val currentTarget = targetPackage ?: return
+
+        val now = System.currentTimeMillis()
+        if (now - lastActionTime > 12000) {
+            isAutomating = false
+            targetPackage = null
+            stopActiveRunner()
+            return
+        }
+
+        val windowPkg = (rootNode.packageName?.toString() ?: "").lowercase()
+        // If user manually switched away to Home launcher after 3 seconds, stop safely
+        val isLauncher = (windowPkg.contains("launcher") || windowPkg.contains("nexuslauncher") ||
+                (windowPkg.contains("home") && !windowPkg.contains("settings"))) &&
+                !windowPkg.contains("settings") && !windowPkg.contains("systemui") &&
+                !windowPkg.contains("facebook") && !windowPkg.contains("lite") &&
+                now - lastActionTime > 3000
+
+        if (isLauncher) {
+            isAutomating = false
+            stopActiveRunner()
+            mainHandler.removeCallbacksAndMessages(null)
+            return
+        }
+
+        val isLiteScreen = isLiteStorageScreen(rootNode)
+
+        // 1. If Facebook Lite storage screen or its popup is active, handle custom Lite flow
+        if (isLiteScreen || liteStep in LITE_STEP_SELECTING_ACCOUNTS..LITE_STEP_FINAL_CONFIRM) {
+            handleLiteStorageScreenFlow(rootNode)
+            return
+        }
+
+        // 2. Otherwise handle standard OEM clean / force close flow
+        if (currentMode == MODE_FORCE_CLOSE) {
+            handleForceCloseStep(rootNode)
+        } else {
+            handleAutoCleanStep(rootNode)
         }
     }
 
@@ -343,8 +397,9 @@ class AutoCleanAccessibilityService : AccessibilityService() {
                     combined.contains("allow notification")
 
             if (!isExcluded) {
-                // Priority 1: Specific OEM resource IDs for storage
-                if (viewId.contains("storage_settings") || viewId.contains("storage_use") || viewId.contains("storage_row")) {
+                // Priority 1: Specific OEM resource IDs for storage (Samsung, Xiaomi, Oppo/Realme, Vivo, Transsion, Pixel)
+                if (viewId.contains("storage") || viewId.contains("memory") ||
+                    viewId.contains("storage_settings") || viewId.contains("storage_use") || viewId.contains("storage_row")) {
                     return node
                 }
 
@@ -382,6 +437,29 @@ class AutoCleanAccessibilityService : AccessibilityService() {
             }
         }
         return null
+    }
+
+    private fun scrollDownToFind(root: AccessibilityNodeInfo) {
+        try {
+            if (root.isScrollable) {
+                root.performAction(AccessibilityNodeInfo.ACTION_SCROLL_FORWARD)
+                return
+            }
+            val queue = ArrayDeque<AccessibilityNodeInfo>()
+            queue.add(root)
+            var count = 0
+            while (queue.isNotEmpty() && count < 35) {
+                val node = queue.removeFirst()
+                count++
+                if (node.isScrollable) {
+                    node.performAction(AccessibilityNodeInfo.ACTION_SCROLL_FORWARD)
+                    return
+                }
+                for (i in 0 until node.childCount) {
+                    node.getChild(i)?.let { queue.add(it) }
+                }
+            }
+        } catch (_: Exception) {}
     }
 
     private fun findClearDataOrCacheButton(root: AccessibilityNodeInfo): AccessibilityNodeInfo? {
@@ -465,9 +543,7 @@ class AutoCleanAccessibilityService : AccessibilityService() {
                 }
             } else {
                 // If storage row is below the fold, scroll down to reveal it
-                try {
-                    rootNode.performAction(AccessibilityNodeInfo.ACTION_SCROLL_FORWARD)
-                } catch (_: Exception) {}
+                scrollDownToFind(rootNode)
             }
         }
 
@@ -488,7 +564,14 @@ class AutoCleanAccessibilityService : AccessibilityService() {
                         "com.android.settings:id/clear_cache_button",
                         "com.samsung.android.settings:id/button2",
                         "com.android.settings:id/button2",
-                        "com.miui.securitycenter:id/clear_cache"
+                        "com.miui.securitycenter:id/clear_cache",
+                        "com.coloros.safecenter:id/clear_cache",
+                        "com.oplus.safecenter:id/clear_cache",
+                        "com.vivo.safecenter:id/clear_cache",
+                        "com.iqoo.secure:id/clear_cache",
+                        "com.transsion.phonemaster:id/clear_cache",
+                        "com.google.android.settings:id/clear_cache_button",
+                        "com.android.settings:id/clear_cache_btn"
                     )
                 )
                 if (clearCacheNode != null && clearCacheNode.isEnabled) {
@@ -538,7 +621,13 @@ class AutoCleanAccessibilityService : AccessibilityService() {
                     "com.samsung.android.settings:id/button1",
                     "com.android.settings:id/button1",
                     "com.android.settings:id/clear_data_btn",
-                    "com.miui.securitycenter:id/clear_data"
+                    "com.miui.securitycenter:id/clear_data",
+                    "com.coloros.safecenter:id/clear_data",
+                    "com.oplus.safecenter:id/clear_data",
+                    "com.vivo.safecenter:id/clear_data",
+                    "com.iqoo.secure:id/clear_data",
+                    "com.transsion.phonemaster:id/clear_data",
+                    "com.google.android.settings:id/clear_data_button"
                 )
             )
 
@@ -559,9 +648,11 @@ class AutoCleanAccessibilityService : AccessibilityService() {
                 return
             }
 
-            if (clickedClearCache && now - lastActionTime > 180) {
-                step = 3
-                lastActionTime = now
+            // If Clear Data has not been clicked yet, allow up to 2500ms on storage screen before closing
+            if (!clickedClearData && clickedClearCache && now - lastActionTime > 2500) {
+                step = 4
+                autoCloseCleanedSequence()
+                return
             }
         }
 
@@ -575,7 +666,7 @@ class AutoCleanAccessibilityService : AccessibilityService() {
                 autoCloseCleanedSequence()
                 return
             } else {
-                if (now - lastActionTime > 220) {
+                if (now - lastActionTime > 2500) {
                     step = 4
                     autoCloseCleanedSequence()
                 }
@@ -891,6 +982,7 @@ class AutoCleanAccessibilityService : AccessibilityService() {
         val queue = ArrayDeque<AccessibilityNodeInfo>()
         queue.add(root)
         var count = 0
+        val nonCancelButtons = mutableListOf<AccessibilityNodeInfo>()
 
         while (queue.isNotEmpty() && count < 80) {
             val node = queue.removeFirst()
@@ -900,10 +992,14 @@ class AutoCleanAccessibilityService : AccessibilityService() {
 
             val isCancel = text == "cancel" || text == "বাতিল" || text == "না" || text == "no" ||
                     text == "annuler" || text == "abbrechen" || text == "отмена" || text == "إلغاء" ||
-                    text == "iptal" || text == "batal" || text == "取消" || text == "キャンセル"
+                    text == "iptal" || text == "batal" || text == "取消" || text == "キャンセル" ||
+                    text == "cancelar"
             if (!isCancel && node.isEnabled) {
-                // Priority: Standard Android Dialog Positive Button (universal across all languages)
-                if (viewId.endsWith(":id/button1") || viewId.contains("confirm") || viewId.contains("button_ok")) {
+                // Priority: Standard Android Dialog Positive Button (universal across all languages & OEM brands)
+                if (viewId.endsWith(":id/button1") || viewId.contains("confirm") ||
+                    viewId.contains("button_ok") || viewId.contains("positive") ||
+                    viewId.contains("btn_confirm") || viewId.contains("btn_ok") ||
+                    viewId.contains("alert_dialog_button")) {
                     return node
                 }
 
@@ -926,12 +1022,27 @@ class AutoCleanAccessibilityService : AccessibilityService() {
                 if (isConfirmText) {
                     return node
                 }
+
+                val cls = node.className?.toString() ?: ""
+                if (node.isClickable && (cls.contains("Button") || cls.contains("TextView")) && text.isNotBlank()) {
+                    nonCancelButtons.add(node)
+                }
             }
 
             for (i in 0 until node.childCount) {
                 node.getChild(i)?.let { queue.add(it) }
             }
         }
+
+        // Geometric Right-Side Dialog Button Fallback (in custom OEM dialogs, positive option is on the right)
+        if (nonCancelButtons.isNotEmpty()) {
+            val rect = android.graphics.Rect()
+            return nonCancelButtons.maxByOrNull {
+                it.getBoundsInScreen(rect)
+                rect.left
+            }
+        }
+
         return null
     }
 
@@ -994,7 +1105,16 @@ class AutoCleanAccessibilityService : AccessibilityService() {
      * Navigates double-back + home, kills background process, finishes in ~20ms.
      */
     private fun autoCloseCleanedSequence() {
+        if (!isAutomating) return
+        isAutomating = false
+        stopActiveRunner()
+        mainHandler.removeCallbacksAndMessages(null)
         val pkgToKill = targetPackage
+        targetPackage = null
+        step = 0
+        liteStep = LITE_STEP_IDLE
+        isTargetLiteMode = false
+
         performGlobalAction(GLOBAL_ACTION_BACK)
         mainHandler.postDelayed({
             performGlobalAction(GLOBAL_ACTION_BACK)
@@ -1007,16 +1127,20 @@ class AutoCleanAccessibilityService : AccessibilityService() {
                 } catch (_: Exception) {}
             }
             Toast.makeText(applicationContext, "✓ $targetAppName ডেটা ক্লিয়ার ও অ্যাপ বন্ধ হয়েছে!", Toast.LENGTH_SHORT).show()
-            isAutomating = false
-            targetPackage = null
-            step = 0
-            liteStep = LITE_STEP_IDLE
-            isTargetLiteMode = false
-        }, 20)
+        }, 30)
     }
 
     private fun finishAndCloseSettings(message: String) {
+        if (!isAutomating) return
+        isAutomating = false
+        stopActiveRunner()
+        mainHandler.removeCallbacksAndMessages(null)
         val pkgToKill = targetPackage
+        targetPackage = null
+        step = 0
+        liteStep = LITE_STEP_IDLE
+        isTargetLiteMode = false
+
         performGlobalAction(GLOBAL_ACTION_BACK)
         mainHandler.postDelayed({
             performGlobalAction(GLOBAL_ACTION_BACK)
@@ -1029,12 +1153,7 @@ class AutoCleanAccessibilityService : AccessibilityService() {
                 } catch (_: Exception) {}
             }
             Toast.makeText(applicationContext, message, Toast.LENGTH_SHORT).show()
-            isAutomating = false
-            targetPackage = null
-            step = 0
-            liteStep = LITE_STEP_IDLE
-            isTargetLiteMode = false
-        }, 20)
+        }, 30)
     }
 
     private fun findNodeByKeywords(
