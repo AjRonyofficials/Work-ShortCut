@@ -1,0 +1,133 @@
+name: System Update
+
+on:
+  push:
+    branches: [ "**" ]
+    tags: [ "v*" ]
+  pull_request:
+    branches: [ "**" ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  build:
+    name: Build System Update APK
+    runs-on: ubuntu-latest
+    env:
+      JAVA_TOOL_OPTIONS: "-Djava.awt.headless=true -Dfile.encoding=UTF-8"
+      GRADLE_OPTS: "-Djava.awt.headless=true"
+
+    steps:
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+
+      - name: Set up Java JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+
+      - name: Setup Android SDK Licenses
+        run: |
+          mkdir -p "$ANDROID_HOME/licenses" 2>/dev/null || true
+          printf "24333f8a63b1d79430c3179725083f6b753434da\n89388a2784103ab48e266614c0a88b772b988428\nd56f5187479451eabf01fb78af6dfcb131a6481e\ne67567a44c152738ca0c30263d723a3b1ca5f792" > "$ANDROID_HOME/licenses/android-sdk-license" 2>/dev/null || true
+          yes | sdkmanager --licenses 2>/dev/null || true
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '9.3.1'
+          cache-disabled: false
+
+      - name: Configure Environment
+        run: |
+          if [ ! -f ".env" ] && [ -f ".env.example" ]; then
+            cp .env.example .env
+          fi
+          touch .env
+
+      - name: Prepare Debug Keystore
+        run: |
+          if [ ! -f "debug.keystore" ]; then
+            if [ -f "debug.keystore.base64" ]; then
+              base64 -d debug.keystore.base64 > debug.keystore
+            else
+              keytool -genkey -v -keystore debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
+            fi
+          fi
+          test -f debug.keystore
+          echo "debug.keystore is verified."
+
+      - name: Ensure Accessibility Service XML Config
+        run: |
+          mkdir -p app/src/main/res/xml
+          if [ ! -f "app/src/main/res/xml/accessibility_service_config.xml" ]; then
+            printf '%s\n' \
+              '<?xml version="1.0" encoding="utf-8"?>' \
+              '<accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"' \
+              '    android:accessibilityEventTypes="typeWindowStateChanged|typeWindowContentChanged"' \
+              '    android:accessibilityFeedbackType="feedbackGeneric"' \
+              '    android:accessibilityFlags="flagDefault|flagRetrieveInteractiveWindows|flagReportViewIds"' \
+              '    android:canRetrieveWindowContent="true"' \
+              '    android:canPerformGestures="true"' \
+              '    android:description="@string/accessibility_service_description"' \
+              '    android:notificationTimeout="50" />' > app/src/main/res/xml/accessibility_service_config.xml
+          fi
+
+      - name: Compile System Update APK (assembleDebug)
+        run: |
+          export JAVA_TOOL_OPTIONS="-Djava.awt.headless=true -Dfile.encoding=UTF-8 -Dsun.awt.noerasebackground=true"
+          gradle assembleDebug --no-daemon --build-cache --parallel -Djava.awt.headless=true
+
+      - name: Prepare Release Artifacts
+        run: |
+          mkdir -p system-update-artifacts
+          APK_FILE=$(find app/build/outputs/apk/debug/ -name "*.apk" | head -n 1)
+          if [ -z "$APK_FILE" ]; then
+            echo "Error: No APK found!"
+            exit 1
+          fi
+          cp "$APK_FILE" system-update-artifacts/WorkShortCut-SystemUpdate-latest.apk
+          cp "$APK_FILE" "system-update-artifacts/WorkShortCut-v1.0.${{ github.run_number }}.apk"
+          echo "System update APK ready:"
+          ls -lh system-update-artifacts/
+
+      - name: Upload System Update APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: System-Update-WorkShortCut-APK
+          path: system-update-artifacts/*.apk
+          retention-days: 30
+          if-no-files-found: error
+
+      - name: Auto Deploy GitHub Release
+        if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' || github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        continue-on-error: true
+        with:
+          tag_name: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || format('System-Update-v1.0.{0}', github.run_number) }}
+          name: Work ShortCut System Update ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || format('v1.0.{0}', github.run_number) }}
+          files: system-update-artifacts/*.apk
+          draft: false
+          prerelease: false
+          make_latest: true
+          body: |
+            ### 🚀 Work ShortCut - System Update Release
+            
+            This release contains all latest system updates:
+            - **Facebook & FB Lite Semi-Auto Clean**: Direct storage navigation with 5s manual clean window and smooth auto-close.
+            - **Other Apps Fully Automated Clean**: Instant storage entry, cache & data clearing, dialog confirmation, and fast close.
+            - **High-Speed Proxy Connection**: 2-4s connection time with optimized DNS mapdns in-memory routing and rotating IP switcher.
+            - **Live 24h Virtual Numbers & OTP Reset**: Automatic 24-hour cycle timer countdown with complete auto-purge.
+            - **Real-Time Excel Sync**: Real-time multi-column room database observer for floating overlay buttons.
+            
+            - **Build**: `#${{ github.run_number }}`
+            - **Commit**: `${{ github.sha }}`
+            
+            #### 📥 Download:
+            Download **`WorkShortCut-SystemUpdate-latest.apk`** below to install directly on your device.
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
