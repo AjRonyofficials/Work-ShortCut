@@ -344,8 +344,8 @@ fun ProxySection(
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     Column {
-                                        Text("REAL PUBLIC IP", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                        Text(proxy.ipAddress, fontSize = 13.sp, fontWeight = FontWeight.ExtraBold, color = BrandBlue)
+                                        Text("REAL PUBLIC IP (${proxy.ipVersion})", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                        Text("${proxy.ipAddress} [${proxy.ipVersion}]", fontSize = 13.sp, fontWeight = FontWeight.ExtraBold, color = BrandBlue)
                                     }
                                     Column(horizontalAlignment = Alignment.End) {
                                         Text("LIVE ACTIVE TIME", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurfaceVariant)

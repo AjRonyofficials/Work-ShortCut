@@ -18,31 +18,7 @@ class BatteryEfficientProxyWorker(
 ) : CoroutineWorker(appContext, workerParams) {
 
     override suspend fun doWork(): Result {
-        val state = OverlayStateManager.uiState.value
-        // If background caching / monitoring is disabled for battery saving, skip
-        if (!state.backgroundDataCaching) {
-            return Result.success()
-        }
-
-        val proxy = state.proxyState
-        if (proxy.isConnected && proxy.host.isNotEmpty()) {
-            val result = ProxyTester.testProxy(
-                host = proxy.host,
-                port = proxy.port,
-                protocol = proxy.protocol,
-                pingOptimized = true
-            )
-            // Update state quietly without battery drain or wake locks
-            if (result.isSuccess) {
-                OverlayStateManager.updateProxyConfig(
-                    host = proxy.host,
-                    port = proxy.port,
-                    protocol = proxy.protocol,
-                    countryCode = proxy.countryCode,
-                    username = proxy.username
-                )
-            }
-        }
+        // Keep active proxy connection stable without background IP testing
         return Result.success()
     }
 

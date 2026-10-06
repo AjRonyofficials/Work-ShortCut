@@ -216,35 +216,41 @@ object LocalSocks5ToHttpBridge {
         val in2 = s2.getInputStream()
         val out2 = s2.getOutputStream()
 
-        val latch = java.util.concurrent.CountDownLatch(1)
+        val latch = java.util.concurrent.CountDownLatch(2)
 
         Thread {
             try {
-                val buffer = ByteArray(65536)
+                val buffer = ByteArray(32768)
                 var len: Int
                 while (in1.read(buffer).also { len = it } != -1) {
                     out2.write(buffer, 0, len)
                     out2.flush()
                 }
-            } catch (_: Exception) {}
-            try { s2.close() } catch (_: Exception) {}
-            latch.countDown()
+                try { s2.shutdownOutput() } catch (_: Exception) {}
+            } catch (_: Exception) {
+                try { s2.close() } catch (_: Exception) {}
+            } finally {
+                latch.countDown()
+            }
         }.apply { isDaemon = true; start() }
 
         Thread {
             try {
-                val buffer = ByteArray(65536)
+                val buffer = ByteArray(32768)
                 var len: Int
                 while (in2.read(buffer).also { len = it } != -1) {
                     out1.write(buffer, 0, len)
                     out1.flush()
                 }
-            } catch (_: Exception) {}
-            try { s1.close() } catch (_: Exception) {}
-            latch.countDown()
+                try { s1.shutdownOutput() } catch (_: Exception) {}
+            } catch (_: Exception) {
+                try { s1.close() } catch (_: Exception) {}
+            } finally {
+                latch.countDown()
+            }
         }.apply { isDaemon = true; start() }
 
-        try { latch.await() } catch (_: Exception) {}
+        try { latch.await(90, java.util.concurrent.TimeUnit.SECONDS) } catch (_: Exception) {}
     }
 
     private fun readFully(input: InputStream, buffer: ByteArray) {

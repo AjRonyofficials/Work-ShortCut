@@ -63,7 +63,9 @@ class SuperProxyVpnService : VpnService() {
         val allowedApps = intent?.getStringArrayListExtra(EXTRA_ALLOWED_APPS) ?: arrayListOf<String>()
 
         startForegroundNotification(profileName, server, port)
-        startVpn(profileName, server, port, protocol, user, pass, allowedApps)
+        serviceScope.launch(Dispatchers.IO) {
+            startVpn(profileName, server, port, protocol, user, pass, allowedApps)
+        }
 
         return START_STICKY
     }
@@ -82,25 +84,25 @@ class SuperProxyVpnService : VpnService() {
         }
 
         try {
-            // 1. Resolve server hostname to IP address BEFORE establishing VPN!
-            // If server is "gw.dataimpulse.com", resolving it now uses physical network.
+            // 1. Resolve server hostname to IP address asynchronously on IO thread BEFORE establishing VPN
+            val cleanServer = server.trim().removePrefix("[").removeSuffix("]")
             val resolvedServerIp = try {
-                java.net.InetAddress.getByName(server.trim()).hostAddress ?: server.trim()
+                java.net.InetAddress.getByName(cleanServer).hostAddress ?: cleanServer
             } catch (_: Exception) {
-                server.trim()
+                cleanServer
             }
 
             val builder = Builder()
                 .setSession("SuperProxy: $profileName")
                 .setMtu(1400) // Standard safe MTU prevents mobile carrier packet fragmentation
                 .addAddress("10.10.10.10", 24)
-                .addDnsServer("8.8.8.8") // Intercepted instantly locally in-memory by mapdns on tun0 (0ms latency)
+                .addDnsServer("8.8.8.8") // Intercepted instantly in-memory by mapdns on tun0 (0ms latency)
                 .addRoute("240.0.0.0", 4) // Synthetic mapped DNS network
                 .addRoute("0.0.0.0", 0)   // Route entire device IPv4 traffic into tun0
 
-            // Anti-Leak: Route IPv6 into TUN interface to prevent physical carrier IPv6 from bypassing proxy
+            // Dual-Stack: Support both IPv4 and IPv6 traffic without dropping packets
             try {
-                builder.addAddress("fd00:1::1", 128)
+                builder.addAddress("fd00:1::1", 64)
                 builder.addRoute("::", 0)
             } catch (_: Exception) {}
 
@@ -178,11 +180,17 @@ class SuperProxyVpnService : VpnService() {
             sb.append("  name: tun0\n")
             sb.append("  mtu: 1400\n")
             sb.append("  ipv4: 10.10.10.10\n")
+            sb.append("  ipv6: 'fd00:1::1'\n")
             sb.append("  icmp: true\n")
             sb.append("\n")
             sb.append("socks5:\n")
             sb.append("  port: ").append(finalPort).append("\n")
-            sb.append("  address: '").append(finalServerIp).append("'\n")
+            val formattedAddress = if (finalServerIp.contains(":") && !finalServerIp.startsWith("[")) {
+                "[$finalServerIp]"
+            } else {
+                finalServerIp
+            }
+            sb.append("  address: '").append(formattedAddress).append("'\n")
             sb.append("  udp: 'tcp'\n") // Translate UDP to TCP to prevent browser UDP DNS/QUIC stalls
             if (finalUser.isNotBlank() && finalPass.isNotBlank()) {
                 val safeUser = finalUser.replace("'", "''")
@@ -201,7 +209,7 @@ class SuperProxyVpnService : VpnService() {
             sb.append("misc:\n")
             sb.append("  task-stack-size: 20480\n")
             sb.append("  connect-timeout: 4000\n")
-            sb.append("  tcp-read-write-timeout: 60000\n")
+            sb.append("  tcp-read-write-timeout: 300000\n") // 5-minute stable session persistence during connection
 
             FileOutputStream(configFile).use { it.write(sb.toString().toByteArray()) }
             configFile.setReadable(true, false)
