@@ -84,29 +84,30 @@ class SuperProxyVpnService : VpnService() {
         }
 
         try {
-            // 1. Resolve server hostname to IP address asynchronously on IO thread BEFORE establishing VPN
-            val cleanServer = server.trim().removePrefix("[").removeSuffix("]")
+            // 1. Resolve server hostname to IP address BEFORE establishing VPN!
+            // If server is "gw.dataimpulse.com", resolving it now uses physical network.
             val resolvedServerIp = try {
-                java.net.InetAddress.getByName(cleanServer).hostAddress ?: cleanServer
+                java.net.InetAddress.getByName(server.trim()).hostAddress ?: server.trim()
             } catch (_: Exception) {
-                cleanServer
+                server.trim()
             }
 
             val builder = Builder()
                 .setSession("SuperProxy: $profileName")
-                .setMtu(1280) // 1280 bytes: Universal IPv6 & cellular MTU standard, prevents carrier packet fragmentation on all mobile ISPs (Orange, CAMTEL, etc.)
+                .setMtu(1400) // Standard safe MTU prevents mobile carrier packet fragmentation
                 .addAddress("10.10.10.10", 24)
-                .addDnsServer("8.8.8.8") // Intercepted instantly by mapdns on tun0 with public DNS fallback
+                .addDnsServer("8.8.8.8") // Intercepted instantly locally in-memory by mapdns on tun0 (0ms latency)
                 .addRoute("240.0.0.0", 4) // Synthetic mapped DNS network
                 .addRoute("0.0.0.0", 0)   // Route entire device IPv4 traffic into tun0
 
-            // Dual-Stack: Support both IPv4 and IPv6 traffic without dropping packets
+            // Anti-Leak: Route IPv6 into TUN interface to prevent physical carrier IPv6 from bypassing proxy
             try {
-                builder.addAddress("fd00:1::1", 64)
+                builder.addAddress("fd00:1::1", 128)
                 builder.addRoute("::", 0)
             } catch (_: Exception) {}
 
-            builder.allowBypass() // Allows critical OS network connectivity checks so browsers don't think internet is offline
+            builder.allowBypass()
+            // Allows critical OS network probing so Android never reports Offline
 
             // Unmetered on Android 10+ so OS and apps don't restrict background sync
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
@@ -178,19 +179,13 @@ class SuperProxyVpnService : VpnService() {
             val sb = java.lang.StringBuilder()
             sb.append("tunnel:\n")
             sb.append("  name: tun0\n")
-            sb.append("  mtu: 1280\n")
+            sb.append("  mtu: 1400\n")
             sb.append("  ipv4: 10.10.10.10\n")
-            sb.append("  ipv6: 'fd00:1::1'\n")
             sb.append("  icmp: true\n")
             sb.append("\n")
             sb.append("socks5:\n")
             sb.append("  port: ").append(finalPort).append("\n")
-            val formattedAddress = if (finalServerIp.contains(":") && !finalServerIp.startsWith("[")) {
-                "[$finalServerIp]"
-            } else {
-                finalServerIp
-            }
-            sb.append("  address: '").append(formattedAddress).append("'\n")
+            sb.append("  address: '").append(finalServerIp).append("'\n")
             sb.append("  udp: 'tcp'\n") // Translate UDP to TCP to prevent browser UDP DNS/QUIC stalls
             if (finalUser.isNotBlank() && finalPass.isNotBlank()) {
                 val safeUser = finalUser.replace("'", "''")
@@ -204,16 +199,12 @@ class SuperProxyVpnService : VpnService() {
             sb.append("  port: 53\n")
             sb.append("  network: 240.0.0.0\n")
             sb.append("  netmask: 240.0.0.0\n")
-            sb.append("  cache-size: 8192\n")
+            sb.append("  cache-size: 4096\n")
             sb.append("\n")
             sb.append("misc:\n")
             sb.append("  task-stack-size: 20480\n")
-            sb.append("  tcp-buffer-size: 32768\n")
-            sb.append("  limit-nofile: 65535\n")
-            sb.append("  max-session-count: 1024\n")
-            sb.append("  connect-timeout: 8000\n") // 8s connect timeout ensures high-latency mobile carrier nodes (like 900ms+ Cameroon) don't abort
-            sb.append("  tcp-read-write-timeout: 300000\n") // 5-minute stable session persistence during connection
-            sb.append("  udp-read-write-timeout: 60000\n")
+            sb.append("  connect-timeout: 5000\n")
+            sb.append("  tcp-read-write-timeout: 300000\n")
 
             FileOutputStream(configFile).use { it.write(sb.toString().toByteArray()) }
             configFile.setReadable(true, false)
