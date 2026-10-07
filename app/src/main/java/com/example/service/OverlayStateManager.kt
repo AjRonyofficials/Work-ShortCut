@@ -24,22 +24,10 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
-enum class BubbleSize(val title: String, val dpSize: Int, val scaleFactor: Float) {
-    SMALL("Small (80%)", 44, 0.80f),
-    MEDIUM("Medium (100%)", 56, 1.0f),
-    LARGE("Large (120%)", 68, 1.20f);
-
-    fun next(): BubbleSize = when (this) {
-        SMALL -> MEDIUM
-        MEDIUM -> LARGE
-        LARGE -> SMALL
-    }
-
-    fun previous(): BubbleSize = when (this) {
-        SMALL -> LARGE
-        MEDIUM -> SMALL
-        LARGE -> MEDIUM
-    }
+enum class BubbleSize(val title: String, val dpSize: Int) {
+    SMALL("Small (44dp)", 44),
+    MEDIUM("Medium (56dp)", 56),
+    LARGE("Large (68dp)", 68)
 }
 
 enum class AppThemeMode(val title: String) {
@@ -94,7 +82,6 @@ data class OverlayUiState(
     val columnCount: Int = 6,
     val columnRowMap: Map<String, Int> = mapOf("A" to 1, "B" to 1, "C" to 1, "D" to 1, "E" to 1, "F" to 1),
     val currentSheetRowIndex: Int = 1,
-    val excelRows: List<com.example.data.local.model.ExcelRowEntity> = emptyList(),
     val draftRow: ExcelDraftRow = ExcelDraftRow(),
     val duplicateHighlightRow: Long? = null,
     val duplicateHighlightCol: String? = null,
@@ -134,7 +121,7 @@ object OverlayStateManager {
 
     private val scope = CoroutineScope(Dispatchers.Main + Job())
     private var totpTickerJob: Job? = null
-    private var excelRowsJob: Job? = null
+    private var pingTickerJob: Job? = null
     private var prefs: SharedPreferences? = null
     private var repository: com.example.data.local.WorkShortcutRepository? = null
 
@@ -313,35 +300,8 @@ object OverlayStateManager {
             }
         }
 
-        excelRowsJob?.cancel()
-        excelRowsJob = scope.launch {
-            repository?.allExcelRows?.collect { rows ->
-                _uiState.update { current ->
-                    val nextA = (rows.filter { it.colA.isNotBlank() }.maxOfOrNull { it.id.toInt() } ?: 0) + 1
-                    val nextB = (rows.filter { it.colB.isNotBlank() }.maxOfOrNull { it.id.toInt() } ?: 0) + 1
-                    val nextC = (rows.filter { it.colC.isNotBlank() }.maxOfOrNull { it.id.toInt() } ?: 0) + 1
-                    val nextD = (rows.filter { it.colD.isNotBlank() }.maxOfOrNull { it.id.toInt() } ?: 0) + 1
-                    val nextE = (rows.filter { it.colE.isNotBlank() }.maxOfOrNull { it.id.toInt() } ?: 0) + 1
-                    val nextF = (rows.filter { it.colF.isNotBlank() }.maxOfOrNull { it.id.toInt() } ?: 0) + 1
-
-                    val maxRow = rows.maxOfOrNull { it.id.toInt() } ?: 0
-                    current.copy(
-                        excelRows = rows,
-                        currentSheetRowIndex = (maxRow + 1).coerceAtLeast(1),
-                        columnRowMap = mapOf(
-                            "A" to nextA.coerceAtLeast(1),
-                            "B" to nextB.coerceAtLeast(1),
-                            "C" to nextC.coerceAtLeast(1),
-                            "D" to nextD.coerceAtLeast(1),
-                            "E" to nextE.coerceAtLeast(1),
-                            "F" to nextF.coerceAtLeast(1)
-                        )
-                    )
-                }
-            }
-        }
-
         startTotpTicker()
+        startPeriodicPingTester()
         com.example.worker.BatteryEfficientProxyWorker.schedule(context)
         com.example.worker.AutomatedCacheCleanerWorker.schedule(context)
     }
@@ -513,30 +473,6 @@ object OverlayStateManager {
         prefs?.edit()?.putString("bubble_size", size.name)?.apply()
     }
 
-    fun increaseTabSize() {
-        val current = _uiState.value.bubbleSize
-        val next = when (current) {
-            BubbleSize.SMALL -> BubbleSize.MEDIUM
-            BubbleSize.MEDIUM -> BubbleSize.LARGE
-            BubbleSize.LARGE -> BubbleSize.LARGE
-        }
-        setBubbleSize(next)
-    }
-
-    fun decreaseTabSize() {
-        val current = _uiState.value.bubbleSize
-        val prev = when (current) {
-            BubbleSize.SMALL -> BubbleSize.SMALL
-            BubbleSize.MEDIUM -> BubbleSize.SMALL
-            BubbleSize.LARGE -> BubbleSize.MEDIUM
-        }
-        setBubbleSize(prev)
-    }
-
-    fun cycleTabSize() {
-        setBubbleSize(_uiState.value.bubbleSize.next())
-    }
-
     fun setAppTheme(theme: AppThemeMode) {
         _uiState.update { it.copy(appTheme = theme) }
         prefs?.edit()?.putString("app_theme", theme.name)?.apply()
@@ -545,6 +481,8 @@ object OverlayStateManager {
     fun setLowPowerMode(enabled: Boolean) {
         _uiState.update { it.copy(lowPowerMode = enabled) }
         prefs?.edit()?.putBoolean("low_power", enabled)?.apply()
+        // Restart ping tester with new intervals
+        startPeriodicPingTester()
     }
 
     fun setPingOptimization(enabled: Boolean) {
@@ -1181,17 +1119,6 @@ object OverlayStateManager {
         }
     }
 
-    fun rotateProxyIp(context: Context? = null) {
-        disconnectProxy(context)
-        scope.launch {
-            delay(400)
-            kotlinx.coroutines.withContext(Dispatchers.Main) {
-                context?.let { Toast.makeText(it, "🔄 নতুন আইপিতে রিকানেক্ট হচ্ছে...", Toast.LENGTH_SHORT).show() }
-                startProxyConnection(context)
-            }
-        }
-    }
-
     fun startProxyConnection(context: Context? = null) {
         val state = _uiState.value
         val proxy = state.proxyState
@@ -1214,49 +1141,16 @@ object OverlayStateManager {
             }
         }
 
-        // 1. Immediately launch SuperProxy VPN Service without delaying for tests (0ms connection lag)
-        context?.let { ctx ->
-            VibrationHelper.vibrateSuccess(ctx)
-            SuperProxyVpnService.start(
-                context = ctx,
-                profileName = proxy.profileName,
-                server = proxy.host,
-                port = proxy.port,
-                protocol = proxy.protocol,
-                user = proxy.username,
-                pass = proxy.password,
-                allowedApps = proxy.allowedApps
-            )
-        }
-
-        // 2. Immediately mark proxy connected and start timer in UI
+        // Show connecting / handshake validation status in UI
         _uiState.update {
             it.copy(
                 proxyState = it.proxyState.copy(
-                    isConnected = true,
                     isTesting = true,
-                    connectedDurationSeconds = 0,
-                    statusText = "Connected • Resolving IP..."
+                    statusText = "Validating ${proxy.host}:${proxy.port}..."
                 )
             )
         }
 
-        // Start live duration timer
-        proxyDurationJob?.cancel()
-        proxyDurationJob = scope.launch {
-            while (isActive) {
-                delay(1000)
-                _uiState.update {
-                    it.copy(
-                        proxyState = it.proxyState.copy(
-                            connectedDurationSeconds = it.proxyState.connectedDurationSeconds + 1
-                        )
-                    )
-                }
-            }
-        }
-
-        // 3. Asynchronously probe egress IP (IPv4 / IPv6), country, and latency in background
         scope.launch(Dispatchers.IO) {
             val result = ProxyTester.testProxy(
                 host = proxy.host,
@@ -1264,8 +1158,8 @@ object OverlayStateManager {
                 protocol = proxy.protocol,
                 username = proxy.username,
                 password = proxy.password,
-                timeoutMs = 4000,
-                pingOptimized = true
+                timeoutMs = 12000,
+                pingOptimized = false
             )
 
             kotlinx.coroutines.withContext(Dispatchers.Main) {
@@ -1275,13 +1169,14 @@ object OverlayStateManager {
                     val countryName = result.countryName ?: "United States"
                     val city = result.city ?: ""
                     val isp = result.isp ?: ""
-                    val latency = if (result.latencyMs > 0) result.latencyMs else 38L
+                    val latency = if (result.latencyMs > 0) result.latencyMs else 45L
 
                     _uiState.update {
                         it.copy(
                             proxyState = it.proxyState.copy(
                                 isConnected = true,
                                 isTesting = false,
+                                connectedDurationSeconds = 0,
                                 ipAddress = effectiveIp,
                                 ipVersion = result.ipVersion,
                                 countryCode = country,
@@ -1289,23 +1184,56 @@ object OverlayStateManager {
                                 city = city,
                                 isp = isp,
                                 pingMs = latency,
-                                statusText = "Connected: $effectiveIp [${result.ipVersion}] • ${latency}ms"
+                                statusText = "Connected to $effectiveIp [${result.ipVersion}] • ${latency}ms"
                             )
                         )
                     }
 
+                    // Start live duration timer
+                    proxyDurationJob?.cancel()
+                    proxyDurationJob = scope.launch {
+                        while (isActive) {
+                            delay(1000)
+                            _uiState.update {
+                                it.copy(
+                                    proxyState = it.proxyState.copy(
+                                        connectedDurationSeconds = it.proxyState.connectedDurationSeconds + 1
+                                    )
+                                )
+                            }
+                        }
+                    }
+
                     context?.let { ctx ->
+                        VibrationHelper.vibrateSuccess(ctx)
+                        SuperProxyVpnService.start(
+                            context = ctx,
+                            profileName = proxy.profileName,
+                            server = proxy.host,
+                            port = proxy.port,
+                            protocol = proxy.protocol,
+                            user = proxy.username,
+                            pass = proxy.password,
+                            allowedApps = proxy.allowedApps
+                        )
                         val locLabel = if (city.isNotEmpty()) "$city, $country" else country
-                        Toast.makeText(ctx, "✅ Proxy Live: $effectiveIp ($locLabel • ${result.ipVersion})", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(ctx, "✅ Super Proxy Connected! ($locLabel • ${latency}ms)", Toast.LENGTH_SHORT).show()
                     }
                 } else {
+                    // Revert switch and display exact error message
+                    val errorMsg = result.errorMessage ?: "Proxy connection failed"
                     _uiState.update {
                         it.copy(
                             proxyState = it.proxyState.copy(
+                                isConnected = false,
                                 isTesting = false,
-                                statusText = "Connected to ${proxy.host}:${proxy.port}"
+                                statusText = "Error: $errorMsg"
                             )
                         )
+                    }
+                    context?.let { ctx ->
+                        VibrationHelper.vibrateTactileClick(ctx)
+                        Toast.makeText(ctx, "❌ Handshake Failed: $errorMsg", Toast.LENGTH_LONG).show()
                     }
                 }
             }
@@ -1632,5 +1560,44 @@ object OverlayStateManager {
 
     fun toggleVirtualNumbersOverlayExpanded() {
         _uiState.update { it.copy(isVirtualNumbersOverlayExpanded = !it.isVirtualNumbersOverlayExpanded) }
+    }
+
+    private fun startPeriodicPingTester() {
+        pingTickerJob?.cancel()
+        pingTickerJob = scope.launch(Dispatchers.IO) {
+            while (isActive) {
+                val state = _uiState.value
+                val interval = if (state.lowPowerMode) 90_000L else 30_000L
+                delay(interval)
+
+                if (_uiState.value.proxyState.isConnected) {
+                    val p = _uiState.value.proxyState
+                    val test = ProxyTester.testProxy(
+                        host = p.host,
+                        port = p.port,
+                        protocol = p.protocol,
+                        username = p.username,
+                        password = p.password,
+                        pingOptimized = _uiState.value.pingOptimization
+                    )
+                    if (test.isSuccess) {
+                        _uiState.update {
+                            it.copy(
+                                proxyState = it.proxyState.copy(
+                                    ipAddress = test.resolvedIp ?: it.proxyState.ipAddress,
+                                    ipVersion = test.ipVersion,
+                                    countryCode = test.countryCode ?: it.proxyState.countryCode,
+                                    countryName = test.countryName ?: it.proxyState.countryName,
+                                    city = test.city ?: it.proxyState.city,
+                                    isp = test.isp ?: it.proxyState.isp,
+                                    pingMs = test.latencyMs,
+                                    statusText = "Connected (${test.latencyMs}ms)"
+                                )
+                            )
+                        }
+                    }
+                }
+            }
+        }
     }
 }

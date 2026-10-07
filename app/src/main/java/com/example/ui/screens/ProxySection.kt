@@ -344,8 +344,8 @@ fun ProxySection(
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     Column {
-                                        Text("REAL PUBLIC IP (${proxy.ipVersion})", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                        Text("${proxy.ipAddress} [${proxy.ipVersion}]", fontSize = 13.sp, fontWeight = FontWeight.ExtraBold, color = BrandBlue)
+                                        Text("REAL PUBLIC IP", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                        Text(proxy.ipAddress, fontSize = 13.sp, fontWeight = FontWeight.ExtraBold, color = BrandBlue)
                                     }
                                     Column(horizontalAlignment = Alignment.End) {
                                         Text("LIVE ACTIVE TIME", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -356,26 +356,6 @@ fun ProxySection(
                                             color = BrandGreen
                                         )
                                     }
-                                }
-
-                                Spacer(modifier = Modifier.height(4.dp))
-
-                                OutlinedButton(
-                                    onClick = {
-                                        OverlayStateManager.rotateProxyIp(context)
-                                    },
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .height(38.dp),
-                                    shape = RoundedCornerShape(8.dp),
-                                    colors = ButtonDefaults.outlinedButtonColors(
-                                        contentColor = BrandBlue
-                                    ),
-                                    border = androidx.compose.foundation.BorderStroke(1.dp, BrandBlue.copy(alpha = 0.5f))
-                                ) {
-                                    Icon(Icons.Default.RestartAlt, contentDescription = null, modifier = Modifier.size(16.dp))
-                                    Spacer(modifier = Modifier.width(6.dp))
-                                    Text("ROTATE / CHANGE IP (নতুন আইপিতে চেঞ্জ)", fontWeight = FontWeight.Bold, fontSize = 12.sp)
                                 }
                             }
                         }

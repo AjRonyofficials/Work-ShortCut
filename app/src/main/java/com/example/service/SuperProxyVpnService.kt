@@ -63,9 +63,7 @@ class SuperProxyVpnService : VpnService() {
         val allowedApps = intent?.getStringArrayListExtra(EXTRA_ALLOWED_APPS) ?: arrayListOf<String>()
 
         startForegroundNotification(profileName, server, port)
-        serviceScope.launch(Dispatchers.IO) {
-            startVpn(profileName, server, port, protocol, user, pass, allowedApps)
-        }
+        startVpn(profileName, server, port, protocol, user, pass, allowedApps)
 
         return START_STICKY
     }
@@ -96,7 +94,8 @@ class SuperProxyVpnService : VpnService() {
                 .setSession("SuperProxy: $profileName")
                 .setMtu(1400) // Standard safe MTU prevents mobile carrier packet fragmentation
                 .addAddress("10.10.10.10", 24)
-                .addDnsServer("8.8.8.8") // Intercepted instantly locally in-memory by mapdns on tun0 (0ms latency)
+                .addDnsServer("8.8.8.8") // Intercepted locally in-memory by mapdns on tun0
+                .addDnsServer("1.1.1.1")
                 .addRoute("240.0.0.0", 4) // Synthetic mapped DNS network
                 .addRoute("0.0.0.0", 0)   // Route entire device IPv4 traffic into tun0
 
@@ -106,8 +105,7 @@ class SuperProxyVpnService : VpnService() {
                 builder.addRoute("::", 0)
             } catch (_: Exception) {}
 
-            builder.allowBypass()
-            // Allows critical OS network probing so Android never reports Offline
+            builder.allowBypass()            // Allows critical OS network probing so Android never reports Offline
 
             // Unmetered on Android 10+ so OS and apps don't restrict background sync
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
@@ -186,7 +184,6 @@ class SuperProxyVpnService : VpnService() {
             sb.append("socks5:\n")
             sb.append("  port: ").append(finalPort).append("\n")
             sb.append("  address: '").append(finalServerIp).append("'\n")
-            sb.append("  udp: 'tcp'\n") // Translate UDP to TCP to prevent browser UDP DNS/QUIC stalls
             if (finalUser.isNotBlank() && finalPass.isNotBlank()) {
                 val safeUser = finalUser.replace("'", "''")
                 val safePass = finalPass.replace("'", "''")
@@ -199,11 +196,11 @@ class SuperProxyVpnService : VpnService() {
             sb.append("  port: 53\n")
             sb.append("  network: 240.0.0.0\n")
             sb.append("  netmask: 240.0.0.0\n")
-            sb.append("  cache-size: 4096\n")
+            sb.append("  cache-size: 8192\n")
             sb.append("\n")
             sb.append("misc:\n")
             sb.append("  task-stack-size: 20480\n")
-            sb.append("  connect-timeout: 5000\n")
+            sb.append("  connect-timeout: 10000\n")
             sb.append("  tcp-read-write-timeout: 300000\n")
 
             FileOutputStream(configFile).use { it.write(sb.toString().toByteArray()) }

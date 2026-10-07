@@ -34,19 +34,20 @@ object ProxyTester {
     private val IPV4_REGEX = Pattern.compile("\\b(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\\b")
     private val IPV6_REGEX = Pattern.compile("(?i)\\b(?:[a-f0-9]{1,4}:){7}[a-f0-9]{1,4}\\b|\\b(?:[a-f0-9]{1,4}:){1,7}:\\b|\\b:(?::[a-f0-9]{1,4}){1,7}\\b")
 
-    // Fast, reliable global IP check endpoints with sequential fallback (lightweight plain text endpoints first)
+    // Sequential fallback endpoints required by specification
     private val IP_CHECK_ENDPOINTS = listOf(
-        "http://icanhazip.com",
-        "http://api.ipify.org",
-        "http://checkip.amazonaws.com",
-        "https://ifconfig.me/ip"
+        "https://ip.me",
+        "https://ifconfig.me/ip",
+        "https://api.ipify.org?format=text",
+        "https://icanhazip.com"
     )
 
     /**
      * Multi-Endpoint Real-Time IP & Geo Detection (Super Proxy Grade):
-     * 1. Queries external IP directly through the configured proxy (fast 2.5s connect timeout).
-     * 2. Extracts real public IP within 3-5 seconds.
-     * 3. Non-blocking Geo-Location lookup for instant UI response.
+     * 1. Protects the test socket to avoid VPN loop deadlocks.
+     * 2. Tests socket reachability to host:port.
+     * 3. Queries external IP strictly through the configured proxy using sequential fallback.
+     * 4. Queries ipwho.is / ip-api to extract exact country, city, ISP and real public egress IP.
      */
     suspend fun testProxy(
         host: String,
@@ -54,10 +55,10 @@ object ProxyTester {
         protocol: String = "SOCKS5",
         username: String = "",
         password: String = "",
-        timeoutMs: Int = 3500,
+        timeoutMs: Int = 5000,
         pingOptimized: Boolean = true
     ): PingResult = withContext(Dispatchers.IO) {
-        val effectiveTimeout = if (pingOptimized) 2500 else timeoutMs
+        val effectiveTimeout = if (pingOptimized) 4000 else timeoutMs
         val startTime = System.currentTimeMillis()
 
         val cleanHost = host.trim()
@@ -78,20 +79,42 @@ object ProxyTester {
             })
         }
 
-        // Configure Proxy object based on protocol
+        // Step 1: Direct TCP socket test to verify proxy server port is accepting connections
+        var testSocket: Socket? = null
+        try {
+            testSocket = Socket()
+            testSocket.tcpNoDelay = true
+            testSocket.soTimeout = effectiveTimeout
+            SuperProxyVpnService.protectSocket(testSocket)
+            val socketAddress = InetSocketAddress(cleanHost, port)
+            testSocket.connect(socketAddress, effectiveTimeout)
+        } catch (e: Exception) {
+            return@withContext PingResult(
+                isSuccess = false,
+                latencyMs = -1,
+                resolvedIp = cleanHost,
+                errorMessage = "Cannot reach $cleanHost:$port (${e.message ?: "Connection timed out"})"
+            )
+        } finally {
+            try { testSocket?.close() } catch (_: Exception) {}
+        }
+
+        val socketLatency = System.currentTimeMillis() - startTime
+
+        // Step 2: Configure Proxy object based on protocol
         val isHttp = protocol.equals("HTTP", ignoreCase = true) || protocol.equals("HTTPS", ignoreCase = true)
         val proxyType = if (isHttp) Proxy.Type.HTTP else Proxy.Type.SOCKS
         val javaProxy = Proxy(proxyType, InetSocketAddress(cleanHost, port))
 
         var resolvedIp: String? = null
 
-        // Sequential fallback IP detection directly through configured proxy
+        // Step 3: Sequential fallback IP detection strictly through the configured proxy
         for (endpoint in IP_CHECK_ENDPOINTS) {
             try {
                 val url = URL(endpoint)
                 val conn = url.openConnection(javaProxy) as HttpURLConnection
-                conn.connectTimeout = effectiveTimeout
-                conn.readTimeout = effectiveTimeout
+                conn.connectTimeout = 8500
+                conn.readTimeout = 8500
                 conn.requestMethod = "GET"
                 conn.setRequestProperty("User-Agent", "curl/7.88.1")
 
@@ -133,7 +156,7 @@ object ProxyTester {
             }
         }
 
-        // If fallback endpoints failed through proxy:
+        // If all 4 fallback endpoints failed through proxy:
         if (resolvedIp.isNullOrBlank()) {
             return@withContext PingResult(
                 isSuccess = false,
@@ -142,9 +165,7 @@ object ProxyTester {
             )
         }
 
-        val ipFetchLatency = System.currentTimeMillis() - startTime
-
-        // Fast Geo-Location (Country, City, ISP) using ip-api / ipwho.is with short 1.5s timeout
+        // Step 4: Extract Real Geo-Location (Country, City, ISP) using ipwho.is / ip-api
         var countryCode = "US"
         var countryName = "United States"
         var city = ""
@@ -152,54 +173,61 @@ object ProxyTester {
         var timezone = ""
 
         try {
-            val ipApiUrl = URL("http://ip-api.com/json/$resolvedIp?fields=query,status,country,countryCode,city,isp,timezone")
-            val conn = ipApiUrl.openConnection() as HttpURLConnection
-            conn.connectTimeout = 1500
-            conn.readTimeout = 1500
+            val geoUrl = URL("https://ipwho.is/$resolvedIp")
+            val conn = geoUrl.openConnection() as HttpURLConnection
+            conn.connectTimeout = 3000
+            conn.readTimeout = 3000
+            conn.requestMethod = "GET"
+            conn.setRequestProperty("User-Agent", "SuperProxy/3.0")
+
             if (conn.responseCode == 200) {
                 val reader = BufferedReader(InputStreamReader(conn.inputStream))
                 val response = reader.readText()
                 reader.close()
+
                 val json = JSONObject(response)
-                if (json.optString("status") == "success") {
-                    countryCode = json.optString("countryCode", "US")
+                if (json.optBoolean("success", false)) {
+                    countryCode = json.optString("country_code", "US")
                     countryName = json.optString("country", "United States")
                     city = json.optString("city", "")
-                    isp = json.optString("isp", "")
-                    timezone = json.optString("timezone", "")
+                    val connObj = json.optJSONObject("connection")
+                    isp = connObj?.optString("isp", "") ?: ""
+                    val timeObj = json.optJSONObject("timezone")
+                    timezone = timeObj?.optString("id", "") ?: ""
                 }
             }
             conn.disconnect()
         } catch (_: Exception) {
+            // Fallback to ip-api.com
             try {
-                val geoUrl = URL("https://ipwho.is/$resolvedIp")
-                val conn = geoUrl.openConnection() as HttpURLConnection
-                conn.connectTimeout = 1500
-                conn.readTimeout = 1500
+                val ipApiUrl = URL("http://ip-api.com/json/$resolvedIp?fields=query,status,country,countryCode,city,isp,timezone")
+                val conn = ipApiUrl.openConnection() as HttpURLConnection
+                conn.connectTimeout = 2500
+                conn.readTimeout = 2500
                 if (conn.responseCode == 200) {
                     val reader = BufferedReader(InputStreamReader(conn.inputStream))
                     val response = reader.readText()
                     reader.close()
                     val json = JSONObject(response)
-                    if (json.optBoolean("success", false)) {
-                        countryCode = json.optString("country_code", "US")
+                    if (json.optString("status") == "success") {
+                        countryCode = json.optString("countryCode", "US")
                         countryName = json.optString("country", "United States")
                         city = json.optString("city", "")
-                        val connObj = json.optJSONObject("connection")
-                        isp = connObj?.optString("isp", "") ?: ""
-                        val timeObj = json.optJSONObject("timezone")
-                        timezone = timeObj?.optString("id", "") ?: ""
+                        isp = json.optString("isp", "")
+                        timezone = json.optString("timezone", "")
                     }
                 }
                 conn.disconnect()
             } catch (_: Exception) {}
         }
 
+        val totalLatency = System.currentTimeMillis() - startTime
+        val finalLatency = if (totalLatency > 0) totalLatency else socketLatency
         val detectedVersion = if (resolvedIp?.contains(":") == true) "IPv6" else "IPv4"
 
         PingResult(
             isSuccess = true,
-            latencyMs = ipFetchLatency,
+            latencyMs = finalLatency,
             resolvedIp = resolvedIp,
             ipVersion = detectedVersion,
             countryCode = countryCode,
