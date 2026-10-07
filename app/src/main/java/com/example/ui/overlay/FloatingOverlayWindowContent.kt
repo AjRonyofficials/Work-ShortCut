@@ -228,74 +228,20 @@ fun FloatingOverlayWindowContent(
                         .padding(horizontal = (6 * scale).dp, vertical = (6 * scale).dp)
                         .testTag("floating_edge_tabs_column")
                 ) {
-                    // Sleek Drag Grip & Size Controls Header ([-], Percentage / Cycle, [+])
-                    Row(
+                    // Sleek Center Drag Grip Header
+                    Box(
+                        contentAlignment = Alignment.Center,
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = (2 * scale).dp, vertical = (2 * scale).dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
+                            .padding(vertical = (4 * scale).dp)
                     ) {
-                        // Decrease Tab Size [-]
                         Box(
-                            contentAlignment = Alignment.Center,
                             modifier = Modifier
-                                .size((22 * scale).dp)
-                                .clip(CircleShape)
-                                .background(Color.White.copy(alpha = 0.16f))
-                                .clickable { OverlayStateManager.decreaseTabSize() }
-                                .testTag("overlay_decrease_tab_size")
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Remove,
-                                contentDescription = "Decrease Tab Size",
-                                tint = Color.White,
-                                modifier = Modifier.size((13 * scale).dp)
-                            )
-                        }
-
-                        // Center Drag Grip with Percentage Label
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(3.dp),
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(4.dp))
-                                .clickable { OverlayStateManager.cycleTabSize() }
-                                .padding(horizontal = 4.dp, vertical = 2.dp)
-                                .testTag("overlay_tab_size_label")
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .width((14 * scale).dp)
-                                    .height(3.dp)
-                                    .clip(RoundedCornerShape(2.dp))
-                                    .background(Color.White.copy(alpha = 0.45f))
-                            )
-                            Text(
-                                text = "${(scale * 100).toInt()}%",
-                                color = Color.White.copy(alpha = 0.85f),
-                                fontSize = (9 * scale).sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                        }
-
-                        // Increase Tab Size [+]
-                        Box(
-                            contentAlignment = Alignment.Center,
-                            modifier = Modifier
-                                .size((22 * scale).dp)
-                                .clip(CircleShape)
-                                .background(Color.White.copy(alpha = 0.16f))
-                                .clickable { OverlayStateManager.increaseTabSize() }
-                                .testTag("overlay_increase_tab_size")
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Add,
-                                contentDescription = "Increase Tab Size",
-                                tint = Color.White,
-                                modifier = Modifier.size((13 * scale).dp)
-                            )
-                        }
+                                .width((28 * scale).dp)
+                                .height((4 * scale).dp)
+                                .clip(RoundedCornerShape(2.dp))
+                                .background(Color.White.copy(alpha = 0.45f))
+                        )
                     }
 
                     Spacer(modifier = Modifier.height((2 * scale).dp))

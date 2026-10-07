@@ -96,8 +96,7 @@ class SuperProxyVpnService : VpnService() {
                 .setSession("SuperProxy: $profileName")
                 .setMtu(1400) // Standard safe MTU prevents mobile carrier packet fragmentation
                 .addAddress("10.10.10.10", 24)
-                .addDnsServer("10.10.10.1") // Local private subnet DNS: eliminates Android DoT (port 853) probe freeze
-                .addRoute("10.10.10.1", 32)
+                .addDnsServer("8.8.8.8") // Intercepted instantly by mapdns on tun0 with public DNS fallback
                 .addRoute("240.0.0.0", 4) // Synthetic mapped DNS network
                 .addRoute("0.0.0.0", 0)   // Route entire device IPv4 traffic into tun0
 
@@ -107,7 +106,7 @@ class SuperProxyVpnService : VpnService() {
                 builder.addRoute("::", 0)
             } catch (_: Exception) {}
 
-            // Anti-Leak: Strict VPN routing, no bypass allowed so real carrier IP/DNS cannot leak
+            builder.allowBypass() // Allows critical OS network connectivity checks so browsers don't think internet is offline
 
             // Unmetered on Android 10+ so OS and apps don't restrict background sync
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
@@ -202,7 +201,7 @@ class SuperProxyVpnService : VpnService() {
             }
             sb.append("\n")
             sb.append("mapdns:\n")
-            sb.append("  address: 10.10.10.1\n")
+            sb.append("  address: 8.8.8.8\n")
             sb.append("  port: 53\n")
             sb.append("  network: 240.0.0.0\n")
             sb.append("  netmask: 240.0.0.0\n")
