@@ -106,7 +106,7 @@ class SuperProxyVpnService : VpnService() {
                 builder.addRoute("::", 0)
             } catch (_: Exception) {}
 
-            builder.allowBypass()            // Allows critical OS network probing so Android never reports Offline
+            // Anti-Leak: Strict VPN routing, no bypass allowed so real carrier IP/DNS cannot leak
 
             // Unmetered on Android 10+ so OS and apps don't restrict background sync
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
@@ -204,12 +204,16 @@ class SuperProxyVpnService : VpnService() {
             sb.append("  port: 53\n")
             sb.append("  network: 240.0.0.0\n")
             sb.append("  netmask: 240.0.0.0\n")
-            sb.append("  cache-size: 4096\n")
+            sb.append("  cache-size: 8192\n")
             sb.append("\n")
             sb.append("misc:\n")
             sb.append("  task-stack-size: 20480\n")
-            sb.append("  connect-timeout: 4000\n")
+            sb.append("  tcp-buffer-size: 65536\n")
+            sb.append("  limit-nofile: 65535\n")
+            sb.append("  max-session-count: 1024\n")
+            sb.append("  connect-timeout: 5000\n")
             sb.append("  tcp-read-write-timeout: 300000\n") // 5-minute stable session persistence during connection
+            sb.append("  udp-read-write-timeout: 60000\n")
 
             FileOutputStream(configFile).use { it.write(sb.toString().toByteArray()) }
             configFile.setReadable(true, false)

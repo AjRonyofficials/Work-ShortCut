@@ -122,7 +122,6 @@ object OverlayStateManager {
 
     private val scope = CoroutineScope(Dispatchers.Main + Job())
     private var totpTickerJob: Job? = null
-    private var pingTickerJob: Job? = null
     private var excelRowsJob: Job? = null
     private var prefs: SharedPreferences? = null
     private var repository: com.example.data.local.WorkShortcutRepository? = null
@@ -331,7 +330,6 @@ object OverlayStateManager {
         }
 
         startTotpTicker()
-        startPeriodicPingTester()
         com.example.worker.BatteryEfficientProxyWorker.schedule(context)
         com.example.worker.AutomatedCacheCleanerWorker.schedule(context)
     }
@@ -511,8 +509,6 @@ object OverlayStateManager {
     fun setLowPowerMode(enabled: Boolean) {
         _uiState.update { it.copy(lowPowerMode = enabled) }
         prefs?.edit()?.putBoolean("low_power", enabled)?.apply()
-        // Restart ping tester with new intervals
-        startPeriodicPingTester()
     }
 
     fun setPingOptimization(enabled: Boolean) {
@@ -1600,44 +1596,5 @@ object OverlayStateManager {
 
     fun toggleVirtualNumbersOverlayExpanded() {
         _uiState.update { it.copy(isVirtualNumbersOverlayExpanded = !it.isVirtualNumbersOverlayExpanded) }
-    }
-
-    private fun startPeriodicPingTester() {
-        pingTickerJob?.cancel()
-        pingTickerJob = scope.launch(Dispatchers.IO) {
-            while (isActive) {
-                val state = _uiState.value
-                val interval = if (state.lowPowerMode) 90_000L else 30_000L
-                delay(interval)
-
-                if (_uiState.value.proxyState.isConnected) {
-                    val p = _uiState.value.proxyState
-                    val test = ProxyTester.testProxy(
-                        host = p.host,
-                        port = p.port,
-                        protocol = p.protocol,
-                        username = p.username,
-                        password = p.password,
-                        pingOptimized = _uiState.value.pingOptimization
-                    )
-                    if (test.isSuccess) {
-                        _uiState.update {
-                            it.copy(
-                                proxyState = it.proxyState.copy(
-                                    ipAddress = test.resolvedIp ?: it.proxyState.ipAddress,
-                                    ipVersion = test.ipVersion,
-                                    countryCode = test.countryCode ?: it.proxyState.countryCode,
-                                    countryName = test.countryName ?: it.proxyState.countryName,
-                                    city = test.city ?: it.proxyState.city,
-                                    isp = test.isp ?: it.proxyState.isp,
-                                    pingMs = test.latencyMs,
-                                    statusText = "Connected (${test.latencyMs}ms)"
-                                )
-                            )
-                        }
-                    }
-                }
-            }
-        }
     }
 }
