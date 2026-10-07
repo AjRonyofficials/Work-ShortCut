@@ -96,7 +96,8 @@ class SuperProxyVpnService : VpnService() {
                 .setSession("SuperProxy: $profileName")
                 .setMtu(1400) // Standard safe MTU prevents mobile carrier packet fragmentation
                 .addAddress("10.10.10.10", 24)
-                .addDnsServer("8.8.8.8") // Intercepted instantly in-memory by mapdns on tun0 (0ms latency)
+                .addDnsServer("10.10.10.1") // Local private subnet DNS: eliminates Android DoT (port 853) probe freeze
+                .addRoute("10.10.10.1", 32)
                 .addRoute("240.0.0.0", 4) // Synthetic mapped DNS network
                 .addRoute("0.0.0.0", 0)   // Route entire device IPv4 traffic into tun0
 
@@ -191,6 +192,7 @@ class SuperProxyVpnService : VpnService() {
                 finalServerIp
             }
             sb.append("  address: '").append(formattedAddress).append("'\n")
+            sb.append("  pipeline: true\n") // SOCKS5 Handshake & Request Pipelining: 0-RTT ultra-fast web page loading
             sb.append("  udp: 'tcp'\n") // Translate UDP to TCP to prevent browser UDP DNS/QUIC stalls
             if (finalUser.isNotBlank() && finalPass.isNotBlank()) {
                 val safeUser = finalUser.replace("'", "''")
@@ -200,7 +202,7 @@ class SuperProxyVpnService : VpnService() {
             }
             sb.append("\n")
             sb.append("mapdns:\n")
-            sb.append("  address: 8.8.8.8\n")
+            sb.append("  address: 10.10.10.1\n")
             sb.append("  port: 53\n")
             sb.append("  network: 240.0.0.0\n")
             sb.append("  netmask: 240.0.0.0\n")

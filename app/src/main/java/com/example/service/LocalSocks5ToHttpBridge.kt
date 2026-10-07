@@ -155,7 +155,7 @@ object LocalSocks5ToHttpBridge {
             } catch (_: Exception) {}
             SuperProxyVpnService.protectSocket(upstream)
             activeSockets.add(upstream)
-            upstream.connect(InetSocketAddress(httpHost, httpPort), 4500)
+            upstream.connect(InetSocketAddress(httpHost, httpPort), 6000)
 
             val upIn = upstream.getInputStream()
             val upOut = upstream.getOutputStream()

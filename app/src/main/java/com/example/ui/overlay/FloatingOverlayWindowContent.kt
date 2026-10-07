@@ -26,6 +26,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.Close
@@ -33,6 +34,7 @@ import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Phone
+import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
@@ -119,6 +121,7 @@ fun FloatingOverlayWindowContent(
 ) {
     val context = LocalContext.current
     val isLeft = state.isDockedLeft
+    val scale = state.bubbleSize.scaleFactor
 
     // Dock chassis shape (curved outer corners)
     val dockChassisShape = if (isLeft) DockShapeLeft else DockShapeRight
@@ -216,26 +219,86 @@ fun FloatingOverlayWindowContent(
                     )
             ) {
                 Column(
-                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                    verticalArrangement = Arrangement.spacedBy((4 * scale).dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
                     modifier = Modifier
-                        .widthIn(min = 124.dp, max = if (state.isVirtualNumbersOverlayExpanded) 175.dp else 138.dp)
-                        .heightIn(max = 580.dp)
+                        .widthIn(min = (124 * scale).dp, max = if (state.isVirtualNumbersOverlayExpanded) (175 * scale).dp else (138 * scale).dp)
+                        .heightIn(max = (580 * scale).dp)
                         .verticalScroll(rememberScrollState())
-                        .padding(horizontal = 6.dp, vertical = 6.dp)
+                        .padding(horizontal = (6 * scale).dp, vertical = (6 * scale).dp)
                         .testTag("floating_edge_tabs_column")
                 ) {
-                    // Sleek Drag Grip Header Handle
-                    Box(
+                    // Sleek Drag Grip & Size Controls Header ([-], Percentage / Cycle, [+])
+                    Row(
                         modifier = Modifier
-                            .align(Alignment.CenterHorizontally)
-                            .width(28.dp)
-                            .height(4.dp)
-                            .clip(RoundedCornerShape(2.dp))
-                            .background(Color.White.copy(alpha = 0.35f))
-                    )
+                            .fillMaxWidth()
+                            .padding(horizontal = (2 * scale).dp, vertical = (2 * scale).dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        // Decrease Tab Size [-]
+                        Box(
+                            contentAlignment = Alignment.Center,
+                            modifier = Modifier
+                                .size((22 * scale).dp)
+                                .clip(CircleShape)
+                                .background(Color.White.copy(alpha = 0.16f))
+                                .clickable { OverlayStateManager.decreaseTabSize() }
+                                .testTag("overlay_decrease_tab_size")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Remove,
+                                contentDescription = "Decrease Tab Size",
+                                tint = Color.White,
+                                modifier = Modifier.size((13 * scale).dp)
+                            )
+                        }
 
-                    Spacer(modifier = Modifier.height(2.dp))
+                        // Center Drag Grip with Percentage Label
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(3.dp),
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(4.dp))
+                                .clickable { OverlayStateManager.cycleTabSize() }
+                                .padding(horizontal = 4.dp, vertical = 2.dp)
+                                .testTag("overlay_tab_size_label")
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .width((14 * scale).dp)
+                                    .height(3.dp)
+                                    .clip(RoundedCornerShape(2.dp))
+                                    .background(Color.White.copy(alpha = 0.45f))
+                            )
+                            Text(
+                                text = "${(scale * 100).toInt()}%",
+                                color = Color.White.copy(alpha = 0.85f),
+                                fontSize = (9 * scale).sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+
+                        // Increase Tab Size [+]
+                        Box(
+                            contentAlignment = Alignment.Center,
+                            modifier = Modifier
+                                .size((22 * scale).dp)
+                                .clip(CircleShape)
+                                .background(Color.White.copy(alpha = 0.16f))
+                                .clickable { OverlayStateManager.increaseTabSize() }
+                                .testTag("overlay_increase_tab_size")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Add,
+                                contentDescription = "Increase Tab Size",
+                                tint = Color.White,
+                                modifier = Modifier.size((13 * scale).dp)
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height((2 * scale).dp))
 
                     // 1. PROXY TAB (Original Always-Visible Tactile Button from #40,#41,#42)
                     GlossyTactileButton(
@@ -274,6 +337,9 @@ fun FloatingOverlayWindowContent(
                         val rowE = state.columnRowMap["E"] ?: 1
                         val rowF = state.columnRowMap["F"] ?: 1
 
+                        val ballSize = (38 * scale).dp
+                        val ballFont = (13.5 * scale).sp
+
                         // Grid Row 1: Columns A, B, C
                         Row(
                             modifier = Modifier.fillMaxWidth(),
@@ -285,6 +351,8 @@ fun FloatingOverlayWindowContent(
                                 onClick = {
                                     OverlayStateManager.fastPasteToSheetColumn(context, "A")
                                 },
+                                sizeDp = ballSize,
+                                fontSp = ballFont,
                                 testTag = "tab_col_a"
                             )
                             SheetCircularButton(
@@ -292,6 +360,8 @@ fun FloatingOverlayWindowContent(
                                 onClick = {
                                     OverlayStateManager.fastPasteToSheetColumn(context, "B")
                                 },
+                                sizeDp = ballSize,
+                                fontSp = ballFont,
                                 testTag = "tab_col_b"
                             )
                             if (state.columnCount >= 3) {
@@ -300,6 +370,8 @@ fun FloatingOverlayWindowContent(
                                     onClick = {
                                         OverlayStateManager.fastPasteToSheetColumn(context, "C")
                                     },
+                                    sizeDp = ballSize,
+                                    fontSp = ballFont,
                                     testTag = "tab_col_c"
                                 )
                             }
@@ -317,6 +389,8 @@ fun FloatingOverlayWindowContent(
                                     onClick = {
                                         OverlayStateManager.fastPasteToSheetColumn(context, "D")
                                     },
+                                    sizeDp = ballSize,
+                                    fontSp = ballFont,
                                     testTag = "tab_col_d"
                                 )
                                 if (state.columnCount >= 5) {
@@ -325,6 +399,8 @@ fun FloatingOverlayWindowContent(
                                         onClick = {
                                             OverlayStateManager.fastPasteToSheetColumn(context, "E")
                                         },
+                                        sizeDp = ballSize,
+                                        fontSp = ballFont,
                                         testTag = "tab_col_e"
                                     )
                                 }
@@ -334,6 +410,8 @@ fun FloatingOverlayWindowContent(
                                         onClick = {
                                             OverlayStateManager.fastPasteToSheetColumn(context, "F")
                                         },
+                                        sizeDp = ballSize,
+                                        fontSp = ballFont,
                                         testTag = "tab_col_f"
                                     )
                                 }
@@ -664,6 +742,8 @@ fun SheetCircularButton(
     title: String,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    sizeDp: androidx.compose.ui.unit.Dp = 38.dp,
+    fontSp: androidx.compose.ui.unit.TextUnit = 13.5.sp,
     testTag: String = ""
 ) {
     // Dynamic luxury theme per column letter
@@ -680,7 +760,7 @@ fun SheetCircularButton(
 
     Box(
         modifier = modifier
-            .size(38.dp)
+            .size(sizeDp)
             .shadow(5.dp, CircleShape)
             .clip(CircleShape)
             .background(SphereCoreBrush)
@@ -711,7 +791,7 @@ fun SheetCircularButton(
             text = title,
             color = textColor,
             fontWeight = FontWeight.Black,
-            fontSize = 13.5.sp,
+            fontSize = fontSp,
             letterSpacing = (-0.3).sp,
             textAlign = TextAlign.Center
         )

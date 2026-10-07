@@ -24,10 +24,22 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
-enum class BubbleSize(val title: String, val dpSize: Int) {
-    SMALL("Small (44dp)", 44),
-    MEDIUM("Medium (56dp)", 56),
-    LARGE("Large (68dp)", 68)
+enum class BubbleSize(val title: String, val dpSize: Int, val scaleFactor: Float) {
+    SMALL("Small (80%)", 44, 0.80f),
+    MEDIUM("Medium (100%)", 56, 1.0f),
+    LARGE("Large (120%)", 68, 1.20f);
+
+    fun next(): BubbleSize = when (this) {
+        SMALL -> MEDIUM
+        MEDIUM -> LARGE
+        LARGE -> SMALL
+    }
+
+    fun previous(): BubbleSize = when (this) {
+        SMALL -> LARGE
+        MEDIUM -> SMALL
+        LARGE -> MEDIUM
+    }
 }
 
 enum class AppThemeMode(val title: String) {
@@ -499,6 +511,30 @@ object OverlayStateManager {
     fun setBubbleSize(size: BubbleSize) {
         _uiState.update { it.copy(bubbleSize = size) }
         prefs?.edit()?.putString("bubble_size", size.name)?.apply()
+    }
+
+    fun increaseTabSize() {
+        val current = _uiState.value.bubbleSize
+        val next = when (current) {
+            BubbleSize.SMALL -> BubbleSize.MEDIUM
+            BubbleSize.MEDIUM -> BubbleSize.LARGE
+            BubbleSize.LARGE -> BubbleSize.LARGE
+        }
+        setBubbleSize(next)
+    }
+
+    fun decreaseTabSize() {
+        val current = _uiState.value.bubbleSize
+        val prev = when (current) {
+            BubbleSize.SMALL -> BubbleSize.SMALL
+            BubbleSize.MEDIUM -> BubbleSize.SMALL
+            BubbleSize.LARGE -> BubbleSize.MEDIUM
+        }
+        setBubbleSize(prev)
+    }
+
+    fun cycleTabSize() {
+        setBubbleSize(_uiState.value.bubbleSize.next())
     }
 
     fun setAppTheme(theme: AppThemeMode) {
