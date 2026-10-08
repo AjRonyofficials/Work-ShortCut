@@ -28,7 +28,9 @@ import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Key
+import com.example.ui.components.UserProfileOtpHistoryDialog
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Notifications
@@ -103,6 +105,9 @@ fun VirtualNumbersSection(
     var filterTab by remember { mutableStateOf("ALL") } // "ALL", "SUCCESS", "PENDING", "FAILED"
     var consoleFilter by remember { mutableStateOf("") }
     var quantityDropdownExpanded by remember { mutableStateOf(false) }
+    var selectedPanel by remember { mutableIntStateOf(0) } // 0: Unix SMS, 1: Zenex SMS
+    var panelDropdownExpanded by remember { mutableStateOf(false) }
+    var showProfileHistoryDialog by remember { mutableStateOf(false) }
 
     var hasNotificationPermission by remember {
         mutableStateOf(
@@ -149,6 +154,11 @@ fun VirtualNumbersSection(
         else -> state.provisionedNumbers
     }
 
+    UserProfileOtpHistoryDialog(
+        isOpen = showProfileHistoryDialog,
+        onDismiss = { showProfileHistoryDialog = false }
+    )
+
     LazyColumn(
         modifier = modifier
             .fillMaxSize()
@@ -156,8 +166,134 @@ fun VirtualNumbersSection(
             .padding(horizontal = 14.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
+        // TOP PANEL SELECTOR (1. Unix SMS, 2. Zenex SMS) + 7D OTP HISTORY BUTTON
         item {
-            Spacer(modifier = Modifier.height(6.dp))
+            Spacer(modifier = Modifier.height(4.dp))
+
+            Card(
+                colors = CardDefaults.cardColors(containerColor = Color(0xFF131F2E)),
+                shape = RoundedCornerShape(14.dp),
+                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF1E3A56)),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = "SELECT PANEL:",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            color = Color(0xFF90A4AE),
+                            letterSpacing = 0.5.sp
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Box {
+                            Surface(
+                                color = if (selectedPanel == 0) Color(0xFF0284C7).copy(alpha = 0.25f) else Color(0xFF10B981).copy(alpha = 0.25f),
+                                shape = RoundedCornerShape(8.dp),
+                                border = androidx.compose.foundation.BorderStroke(
+                                    1.dp,
+                                    if (selectedPanel == 0) Color(0xFF38BDF8) else Color(0xFF34D399)
+                                ),
+                                modifier = Modifier.clickable { panelDropdownExpanded = true }
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = if (selectedPanel == 0) "1. Unix SMS" else "2. Zenex SMS",
+                                        color = Color.White,
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.ExtraBold
+                                    )
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text(text = "▼", color = Color(0xFF81D4FA), fontSize = 10.sp)
+                                }
+                            }
+
+                            DropdownMenu(
+                                expanded = panelDropdownExpanded,
+                                onDismissRequest = { panelDropdownExpanded = false },
+                                modifier = Modifier.background(Color(0xFF0F1A28))
+                            ) {
+                                DropdownMenuItem(
+                                    text = {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Text(text = "1. Unix SMS", color = Color(0xFF38BDF8), fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                                            Spacer(modifier = Modifier.width(6.dp))
+                                            Surface(
+                                                color = Color(0xFF00E676).copy(alpha = 0.2f),
+                                                shape = RoundedCornerShape(4.dp)
+                                            ) {
+                                                Text(text = "FAST 1s", color = Color(0xFF00E676), fontSize = 9.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp))
+                                            }
+                                        }
+                                    },
+                                    onClick = {
+                                        selectedPanel = 0
+                                        panelDropdownExpanded = false
+                                    }
+                                )
+                                DropdownMenuItem(
+                                    text = {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Text(text = "2. Zenex SMS", color = Color(0xFF34D399), fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                                            Spacer(modifier = Modifier.width(6.dp))
+                                            Surface(
+                                                color = Color(0xFF34D399).copy(alpha = 0.2f),
+                                                shape = RoundedCornerShape(4.dp)
+                                            ) {
+                                                Text(text = "NETWORK", color = Color(0xFF34D399), fontSize = 9.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp))
+                                            }
+                                        }
+                                    },
+                                    onClick = {
+                                        selectedPanel = 1
+                                        panelDropdownExpanded = false
+                                    }
+                                )
+                            }
+                        }
+                    }
+
+                    // User Profile / 7-Day History Button
+                    Surface(
+                        color = Color(0xFF1E293B),
+                        shape = RoundedCornerShape(8.dp),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF38BDF8).copy(alpha = 0.5f)),
+                        modifier = Modifier.clickable { showProfileHistoryDialog = true }
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(Icons.Default.DateRange, contentDescription = null, tint = Color(0xFF38BDF8), modifier = Modifier.size(14.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                text = "7d History",
+                                color = Color.White,
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        if (selectedPanel == 0) {
+            item {
+                UnixSmsSectionContent()
+            }
+        } else {
+        item {
+            Spacer(modifier = Modifier.height(2.dp))
 
             // 1. ZENEX HEADER & TODAY OTP COUNTER
             Card(
@@ -1143,6 +1279,7 @@ fun VirtualNumbersSection(
                     BroadcastTerminalCard(feed = feed, context = context)
                 }
             }
+        }
         }
 
         item {

@@ -599,6 +599,17 @@ object VirtualNumberManager {
                             if (newlyArrivedList.isNotEmpty()) {
                                 val todayKey = getTodayKey()
                                 prefs?.edit()?.putInt(todayKey, newCount)?.apply()
+
+                                // Record to permanent Total OTP History
+                                newlyArrivedList.forEach { prov ->
+                                    val code = prov.otpCode ?: ""
+                                    OtpHistoryManager.recordOtp(
+                                        phoneNumber = prov.number,
+                                        otpCode = code,
+                                        service = prov.range.ifEmpty { "Zenex" },
+                                        platform = "Zenex"
+                                    )
+                                }
                             }
                             saveUserProvisionedNumbers(updatedList)
 

@@ -74,6 +74,7 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
 
         OverlayStateManager.init(this)
+        com.example.service.AuthManager.init(this)
 
         val database = AppDatabase.getDatabase(this)
         val repository = WorkShortcutRepository(
@@ -90,19 +91,26 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             val state by OverlayStateManager.uiState.collectAsStateWithLifecycle()
+            val isLoggedIn by com.example.service.AuthManager.isLoggedIn.collectAsStateWithLifecycle()
             val savedExcelRows by repository.allExcelRows.collectAsStateWithLifecycle(initialValue = emptyList())
             val savedProxies by repository.allProxies.collectAsStateWithLifecycle(initialValue = emptyList())
             val savedTwoFactorKeys by repository.allTwoFactorKeys.collectAsStateWithLifecycle(initialValue = emptyList())
 
             WorkShortcutTheme(themeMode = state.appTheme) {
                 Surface(modifier = Modifier.fillMaxSize()) {
-                    MainScreen(
-                        state = state,
-                        savedExcelRows = savedExcelRows,
-                        savedProxies = savedProxies,
-                        savedTwoFactorKeys = savedTwoFactorKeys,
-                        repository = repository
-                    )
+                    if (!isLoggedIn) {
+                        com.example.ui.screens.LoginScreen(
+                            onLoginSuccess = { /* Automatically refreshes state */ }
+                        )
+                    } else {
+                        MainScreen(
+                            state = state,
+                            savedExcelRows = savedExcelRows,
+                            savedProxies = savedProxies,
+                            savedTwoFactorKeys = savedTwoFactorKeys,
+                            repository = repository
+                        )
+                    }
                 }
             }
         }

@@ -173,6 +173,15 @@ enum class AppNavTab(
         unselectedIcon = Icons.Outlined.Settings,
         gradientColors = listOf(Color(0xFF64748B), Color(0xFF334155)),
         accentColor = Color(0xFF94A3B8)
+    ),
+    ADMIN_PANEL(
+        title = "Admin Panel",
+        subtitle = "Unix SMS & User Accounts",
+        category = "ADMIN",
+        selectedIcon = Icons.Filled.Security,
+        unselectedIcon = Icons.Outlined.Security,
+        gradientColors = listOf(Color(0xFF6366F1), Color(0xFF4338CA)),
+        accentColor = Color(0xFF818CF8)
     )
 }
 
