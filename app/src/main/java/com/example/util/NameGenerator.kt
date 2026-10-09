@@ -475,28 +475,261 @@ object NameGenerator {
                 "Sato", "Suzuki", "Takahashi", "Tanaka", "Watanabe", "Ito", "Yamamoto", "Nakamura", "Kobayashi", "Kato",
                 "Yoshida", "Yamada", "Sasaki", "Yamaguchi", "Saito", "Matsumoto", "Inoue", "Kimura", "Hayashi", "Shimizu"
             )
+        ),
+        "RU" to CountryNames(
+            maleFirst = listOf(
+                "Ivan", "Dmitry", "Alexander", "Sergey", "Mikhail", "Maxim", "Andrey", "Artem", "Nikita", "Ilya",
+                "Kirill", "Egor", "Matvey", "Timofey", "Roman", "Vladimir", "Yaroslav", "Fedor", "Gleb", "Konstantin"
+            ),
+            femaleFirst = listOf(
+                "Anastasia", "Elena", "Olga", "Anna", "Maria", "Daria", "Polina", "Alisa", "Victoria", "Ekaterina",
+                "Ksenia", "Arina", "Valeria", "Veronika", "Vasilisa", "Margarita", "Svetlana", "Yulia", "Tatiana", "Natalia"
+            ),
+            lastNames = listOf(
+                "Ivanov", "Smirnov", "Kuznetsov", "Popov", "Sokolov", "Lebedev", "Kozlov", "Novikov", "Morozov", "Petrov",
+                "Volkov", "Solovyov", "Vasilyev", "Zaytsev", "Pavlov", "Semyonov", "Golubev", "Vinogradov", "Bogdanov", "Vorobyov"
+            )
+        ),
+        "KR" to CountryNames(
+            maleFirst = listOf(
+                "Min-jun", "Seo-jun", "Do-yun", "Ye-jun", "Si-woo", "Ha-joon", "Ji-ho", "Ju-won", "Jun-woo", "Min-jae",
+                "Hyun-woo", "Jun-seo", "Gun-woo", "Woo-jin", "Eun-woo", "Sun-woo", "Yu-jun", "Jin-woo", "Seung-woo", "Ji-hoon"
+            ),
+            femaleFirst = listOf(
+                "Seo-yeon", "Seo-yun", "Ji-woo", "Ha-eun", "Ha-rin", "Seo-ah", "Ji-a", "Si-eun", "Ah-rin", "Chae-won",
+                "Soo-ah", "Ji-yoo", "Da-eun", "Yu-na", "Eun-seo", "Ye-eun", "Yoon-seo", "Min-seo", "Chae-eun", "So-yoon"
+            ),
+            lastNames = listOf(
+                "Kim", "Lee", "Park", "Choi", "Jung", "Kang", "Cho", "Yoon", "Jang", "Lim",
+                "Han", "Oh", "Seo", "Shin", "Kwon", "Hwang", "Ahn", "Song", "Yoo", "Hong"
+            )
+        ),
+        "CN" to CountryNames(
+            maleFirst = listOf(
+                "Wei", "Jun", "Lei", "Yong", "Jie", "Tao", "Ming", "Bo", "Hao", "Yi",
+                "Feng", "Peng", "Qiang", "Chao", "Bin", "Yu", "Xin", "Kai", "Rui", "Zhe"
+            ),
+            femaleFirst = listOf(
+                "Jing", "Li", "Yan", "Na", "Fang", "Ling", "Min", "Xiu", "Dan", "Ping",
+                "Juan", "Lan", "Ting", "Hui", "Qian", "Ying", "Mei", "Xue", "Lu", "Yue"
+            ),
+            lastNames = listOf(
+                "Wang", "Li", "Zhang", "Liu", "Chen", "Yang", "Huang", "Zhao", "Wu", "Zhou",
+                "Xu", "Sun", "Ma", "Zhu", "Hu", "Guo", "He", "Gao", "Lin", "Luo"
+            )
+        ),
+        "NG" to CountryNames(
+            maleFirst = listOf(
+                "Chukwudi", "Emeka", "Babatunde", "Oluwaseun", "Adebayo", "Chinedu", "Olumide", "Ifeanyi", "Chidi", "Obinna",
+                "Dapo", "Femi", "Kayode", "Tunde", "Segun", "Kunle", "Uche", "Kelechi", "Nnamdi", "Tochukwu"
+            ),
+            femaleFirst = listOf(
+                "Ngozi", "Chioma", "Ifeoma", "Funmilayo", "Folake", "Amaka", "Zainab", "Aisha", "Yetunde", "Bolanle",
+                "Chiamaka", "Chinelo", "Adaeze", "Olamide", "Simisola", "Eniola", "Bukola", "Ronke", "Tolani", "Halima"
+            ),
+            lastNames = listOf(
+                "Adeyemi", "Okafor", "Balogun", "Eze", "Obi", "Adeleke", "Bello", "Danjuma", "Alabi", "Oladipo",
+                "Nwosu", "Okonkwo", "Chukwu", "Ibrahim", "Abubakar", "Lawal", "Musa", "Ojo", "Ogunleye", "Fashola"
+            )
+        ),
+        "PH" to CountryNames(
+            maleFirst = listOf(
+                "Joshua", "Christian", "Angelo", "John Paul", "Gabriel", "Mark", "Daniel", "Justin", "Nathaniel", "Carl",
+                "Kenneth", "Alexander", "Ethan", "Jerome", "Francis", "Miguel", "Rafael", "Vincent", "Paolo", "Renz"
+            ),
+            femaleFirst = listOf(
+                "Angel", "Princess", "Nicole", "Christine", "Mary Grace", "Althea", "Jasmine", "Bea", "Patricia", "Samantha",
+                "Alyssa", "Camille", "Ella", "Kaye", "Bernadette", "Chloe", "Sofia", "Andrea", "Clarisse", "Geline"
+            ),
+            lastNames = listOf(
+                "Santos", "Reyes", "Cruz", "Bautista", "Ocampo", "Garcia", "Mendoza", "Ramos", "Flores", "Gonzales",
+                "Villanueva", "Castillo", "Rivera", "Aquino", "Castro", "Dela Cruz", "Tolentino", "Salazar", "Mercado", "Perez"
+            )
+        ),
+        "ID" to CountryNames(
+            maleFirst = listOf(
+                "Budi", "Agus", "Eko", "Rizky", "Dimas", "Bayu", "Hendra", "Aditya", "Fajar", "Bambang",
+                "Wahyu", "Surya", "Ilham", "Gilang", "Arif", "Dedi", "Tri", "Doni", "Reza", "Faisal"
+            ),
+            femaleFirst = listOf(
+                "Siti", "Nur", "Dewi", "Putri", "Rini", "Tri", "Ayu", "Sri", "Mega", "Dian",
+                "Wulan", "Intan", "Nia", "Fitri", "Lestari", "Ratna", "Tari", "Maya", "Indah", "Rani"
+            ),
+            lastNames = listOf(
+                "Saputra", "Wijaya", "Setiawan", "Hidayat", "Pratama", "Nugroho", "Kusuma", "Wibowo", "Santoso", "Suryono",
+                "Permana", "Kurniawan", "Gunawan", "Susanto", "Firmansyah", "Siregar", "Nasution", "Lubis", "Harahap", "Sitorus"
+            )
+        ),
+        "VN" to CountryNames(
+            maleFirst = listOf(
+                "Minh", "Duc", "Tuan", "Nam", "Huy", "Hoang", "Long", "Phong", "Hai", "Quang",
+                "Dung", "Thanh", "Bao", "Khang", "Phuc", "Thien", "Hieu", "Khoa", "Nhat", "Dat"
+            ),
+            femaleFirst = listOf(
+                "Linh", "Trang", "Huong", "Mai", "Hoa", "Lan", "Anh", "Ngoc", "Thao", "Phuong",
+                "Vy", "Ha", "Huyen", "Nhi", "Quynh", "Chi", "My", "Tuyet", "Duyen", "Yen"
+            ),
+            lastNames = listOf(
+                "Nguyen", "Tran", "Le", "Pham", "Hoang", "Phan", "Vu", "Dang", "Bui", "Do",
+                "Ho", "Ngo", "Duong", "Ly", "Luong", "Dinh", "Dao", "Doan", "Ta", "Trinh"
+            )
+        ),
+        "NL" to CountryNames(
+            maleFirst = listOf(
+                "Daan", "Sem", "Lucas", "Milan", "Levi", "Finn", "Noah", "Luuk", "Jesse", "Bram",
+                "Lars", "Thijs", "Ruben", "Liam", "Mees", "Stijn", "Sven", "Tim", "Julian", "Thomas"
+            ),
+            femaleFirst = listOf(
+                "Emma", "Sophie", "Julia", "Tess", "Anna", "Sara", "Eva", "Lieke", "Fleur", "Lotte",
+                "Sanne", "Noa", "Roos", "Fenan", "Iris", "Maud", "Lynn", "Yara", "Evi", "Amber"
+            ),
+            lastNames = listOf(
+                "De Jong", "Jansen", "De Vries", "Van de Berg", "Van Dijk", "Bakker", "Janssen", "Visser", "Smit", "Meijer",
+                "De Boer", "Mulder", "De Groot", "Bos", "Vos", "Peters", "Hendriks", "Van Leeuwen", "Dekker", "Brouwer"
+            )
+        ),
+        "SE" to CountryNames(
+            maleFirst = listOf(
+                "Lars", "Johan", "Erik", "Karl", "Anders", "Mikael", "Per", "Magnus", "Fredrik", "Daniel",
+                "Oskar", "William", "Lucas", "Liam", "Elias", "Hugo", "Oliver", "Alexander", "Filip", "Leo"
+            ),
+            femaleFirst = listOf(
+                "Astrid", "Elsa", "Freja", "Maja", "Karin", "Sara", "Emma", "Maria", "Alice", "Alma",
+                "Ebba", "Ella", "Wilma", "Klara", "Agnes", "Saga", "Signe", "Stella", "Linnea", "Ida"
+            ),
+            lastNames = listOf(
+                "Andersson", "Johansson", "Karlsson", "Nilsson", "Eriksson", "Larsson", "Olsson", "Persson", "Svensson", "Gustafsson",
+                "Pettersson", "Jonsson", "Jansson", "Hansson", "Bengtsson", "Jonsson", "Lindberg", "Jakobsson", "Magnusson", "Olofsson"
+            )
+        ),
+        "PL" to CountryNames(
+            maleFirst = listOf(
+                "Jakub", "Kacper", "Szymon", "Jan", "Mateusz", "Filip", "Wojciech", "Mikolaj", "Aleksander", "Piotr",
+                "Michal", "Stanislaw", "Bartosz", "Dawid", "Tomasz", "Pawel", "Krzysztof", "Adam", "Marcin", "Lukasz"
+            ),
+            femaleFirst = listOf(
+                "Julia", "Zuzanna", "Maja", "Lena", "Wiktoria", "Oliwia", "Natalia", "Aleksandra", "Hanna", "Amelia",
+                "Zofia", "Alicja", "Emilia", "Maria", "Antonina", "Laura", "Pola", "Iga", "Kornelia", "Nadia"
+            ),
+            lastNames = listOf(
+                "Nowak", "Kowalski", "Wisniewski", "Wojcik", "Kowalczyk", "Kaminski", "Lewandowski", "Zielinski", "Szymanski", "Wozniak",
+                "Kozlowski", "Jankowski", "Mazur", "Kwiatkowski", "Wojciechowski", "Krawczyk", "Kaczmarek", "Piotrowski", "Grabowski", "Zajac"
+            )
+        ),
+        "UA" to CountryNames(
+            maleFirst = listOf(
+                "Oleksandr", "Dmytro", "Maksym", "Serhiy", "Vladyslav", "Artem", "Andriy", "Ivan", "Mykhailo", "Yaroslav",
+                "Bohdan", "Nazar", "Taras", "Roman", "Vitaliy", "Denys", "Ihor", "Yevhen", "Pavlo", "Oleg"
+            ),
+            femaleFirst = listOf(
+                "Anastasiya", "Anna", "Daryna", "Sofiya", "Kateryna", "Maryna", "Viktoriya", "Yuliya", "Olha", "Alina",
+                "Diana", "Polina", "Valeriya", "Iryna", "Nataliya", "Oksana", "Tetyana", "Nadiya", "Mariya", "Svitlana"
+            ),
+            lastNames = listOf(
+                "Shevchenko", "Boyko", "Kravchenko", "Bondarenko", "Tkachenko", "Kovalenko", "Melnyk", "Moroz", "Marchenko", "Lysenko",
+                "Rudenko", "Kovalchuk", "Ponomarenko", "Savchenko", "Hrytsenko", "Kuzmenko", "Lytvynenko", "Kostenko", "Pavlenko", "Shapoval"
+            )
+        ),
+        "MX" to CountryNames(
+            maleFirst = listOf(
+                "Carlos", "Jose", "Luis", "Juan", "Alejandro", "Miguel", "Diego", "Fernando", "Jorge", "Ricardo",
+                "Eduardo", "Javier", "Daniel", "Mateo", "Santiago", "Emiliano", "Sebastian", "Leonardo", "Gael", "Mauricio"
+            ),
+            femaleFirst = listOf(
+                "Maria", "Guadalupe", "Sofia", "Camila", "Valentina", "Ximena", "Mariana", "Fernanda", "Daniela", "Valeria",
+                "Regina", "Renata", "Andrea", "Natalia", "Alejandra", "Gabriela", "Paola", "Romina", "Paulina", "Jimena"
+            ),
+            lastNames = listOf(
+                "Hernandez", "Garcia", "Martinez", "Lopez", "Gonzalez", "Rodriguez", "Perez", "Sanchez", "Ramirez", "Cruz",
+                "Flores", "Gomez", "Morales", "Vazquez", "Reyes", "Jimenez", "Torres", "Diaz", "Gutierrez", "Mendoza"
+            )
+        ),
+        "CO" to CountryNames(
+            maleFirst = listOf(
+                "Santiago", "Mateo", "Sebastian", "David", "Nicolas", "Samuel", "Alejandro", "Daniel", "Jerónimo", "Emiliano",
+                "Juan Jose", "Andres", "Felipe", "Camilo", "Esteban", "Julian", "Gabriel", "Tomas", "Martin", "Lucas"
+            ),
+            femaleFirst = listOf(
+                "Isabella", "Mariana", "Valeria", "Sofia", "Salome", "Gabriela", "Luciana", "Sara", "Valentina", "Camila",
+                "Antonella", "Juliana", "Daniela", "Laura", "Catalina", "Paula", "Manuela", "Alejandra", "Maria Jose", "Victoria"
+            ),
+            lastNames = listOf(
+                "Rodriguez", "Gomez", "Lopez", "Gonzalez", "Garcia", "Martinez", "Ramirez", "Sanchez", "Diaz", "Perez",
+                "Castro", "Vargas", "Rios", "Torres", "Morales", "Suarez", "Rojas", "Jimenez", "Muñoz", "Castillo"
+            )
+        ),
+        "AR" to CountryNames(
+            maleFirst = listOf(
+                "Joaquin", "Bautista", "Benjamin", "Tomas", "Facundo", "Agustin", "Mateo", "Franco", "Thiago", "Santino",
+                "Lautaro", "Ignacio", "Nicolas", "Lucas", "Valentin", "Felipe", "Bruno", "Manuel", "Lorenzo", "Martin"
+            ),
+            femaleFirst = listOf(
+                "Martina", "Lucia", "Catalina", "Mia", "Delfina", "Emilia", "Valentina", "Camila", "Julieta", "Zoe",
+                "Sofia", "Pilar", "Victoria", "Morena", "Abril", "Guadalupe", "Malena", "Juana", "Renata", "Lola"
+            ),
+            lastNames = listOf(
+                "Gonzalez", "Rodriguez", "Lopez", "Fernandez", "Garcia", "Perez", "Martinez", "Gomez", "Diaz", "Alvarez",
+                "Romero", "Sosa", "Torres", "Ruiz", "Ramirez", "Flores", "Acosta", "Benitez", "Medina", "Herrera"
+            )
+        ),
+        "EG" to CountryNames(
+            maleFirst = listOf(
+                "Mohamed", "Ahmed", "Mahmoud", "Mostafa", "Youssef", "Omar", "Amr", "Khaled", "Ali", "Tarek",
+                "Karim", "Hassan", "Hussein", "Ibrahim", "Sherif", "Sameh", "Hazem", "Ziad", "Yasser", "Ramy"
+            ),
+            femaleFirst = listOf(
+                "Fatima", "Mariam", "Aya", "Nour", "Sarah", "Yasmin", "Menna", "Salma", "Heba", "Rania",
+                "Dina", "Noha", "Reem", "Mona", "Nada", "Rawan", "Esraa", "Nadine", "Shahd", "Habiba"
+            ),
+            lastNames = listOf(
+                "Hassan", "Ibrahim", "Ali", "Khalil", "Mostafa", "El-Sayed", "Abdel-Rahman", "Mansour", "Osman", "Salem",
+                "Mahmoud", "Farouk", "Shaker", "Soliman", "Fouad", "Fahmy", "Kamel", "Badawi", "Shawky", "Radwan"
+            )
+        ),
+        "GR" to CountryNames(
+            maleFirst = listOf(
+                "Georgios", "Dimitrios", "Konstantinos", "Ioannis", "Nikolaos", "Panagiotis", "Vasileios", "Christos", "Athanasios", "Michail",
+                "Spyridon", "Antonios", "Alexandros", "Evangelos", "Stefanos", "Marios", "Ilias", "Stavros", "Petros", "Theodoros"
+            ),
+            femaleFirst = listOf(
+                "Maria", "Eleni", "Aikaterini", "Vasiliki", "Sophia", "Angeliki", "Georgia", "Dimitra", "Konstantina", "Ioanna",
+                "Paraskevi", "Christina", "Eirini", "Evangelia", "Styliani", "Anna", "Despoina", "Kalliopi", "Theodora", "Fotini"
+            ),
+            lastNames = listOf(
+                "Papadopoulos", "Pappas", "Oikonomou", "Georgiou", "Nikolaou", "Dimitriou", "Vlachos", "Angelopoulos", "Konstantinou", "Karras",
+                "Giannakopoulos", "Petridis", "Vassiliou", "Athanasiou", "Alexiou", "Ioannidis", "Stavropoulos", "Christodoulou", "Antoniou", "Sidiropoulos"
+            )
+        ),
+        "TH" to CountryNames(
+            maleFirst = listOf(
+                "Somchai", "Natthaphon", "Kittisak", "Thanawat", "Chaiwat", "Krit", "Thanakorn", "Piyawat", "Anan", "Sarayut",
+                "Teerapat", "Worawut", "Wichai", "Chatchai", "Prasert", "Somsak", "Boonmee", "Santi", "Prawit", "Wirote"
+            ),
+            femaleFirst = listOf(
+                "Supaporn", "Kanya", "Rattana", "Wanida", "Ploy", "Siriporn", "Nattaya", "Chutima", "Sunisa", "Jiraporn",
+                "Kanokwan", "Sasithorn", "Pornthip", "Supatra", "Malai", "Boonreung", "Apinya", "Uraiwan", "Phannee", "Kamonwan"
+            ),
+            lastNames = listOf(
+                "Saelim", "Thongkham", "Saetan", "Wongsuwan", "Chaiprasert", "Ratanakul", "Suwanarat", "Phasuk", "Srisuk", "Wongchai",
+                "Kittisuk", "Bunnak", "Chaisri", "Sae-tang", "Sae-lee", "Sae-heng", "Sae-chua", "Charoenwong", "Petchrat", "Thongsuk"
+            )
         )
     )
 
-    fun generateName(countryCode: String, gender: Gender = Gender.ANY): String {
+    data class PersonDetails(
+        val fullName: String,
+        val firstName: String,
+        val lastName: String,
+        val prefix: String = "",
+        val gender: Gender,
+        val countryCode: String,
+        val countryName: String,
+        val flag: String
+    )
+
+    fun generatePersonDetails(countryCode: String, gender: Gender = Gender.ANY): PersonDetails {
         val code = countryCode.uppercase()
-        val data = namesByCountry[code] ?: when (code) {
-            "SA", "AE", "EG", "QA", "KW", "BH", "OM", "JO", "LB", "IQ", "DZ", "MA", "YE" -> namesByCountry["SA"]!!
-            "ES", "MX", "AR", "CO", "PE", "CL", "CR", "PA", "UY", "BO" -> namesByCountry["ES"]!!
-            "PT", "BR" -> namesByCountry["BR"]!!
-            "IN", "NP", "LK" -> namesByCountry["IN"]!!
-            "PK", "AF" -> namesByCountry["PK"]!!
-            "BD" -> namesByCountry["BD"]!!
-            "FR", "BE", "LU" -> namesByCountry["FR"]!!
-            "DE", "AT", "CH", "NL" -> namesByCountry["DE"]!!
-            "IT" -> namesByCountry["IT"]!!
-            "TR", "AZ" -> namesByCountry["TR"]!!
-            "JP" -> namesByCountry["JP"]!!
-            "UK", "IE" -> namesByCountry["UK"]!!
-            "AU", "NZ" -> namesByCountry["AU"]!!
-            "CA" -> namesByCountry["CA"]!!
-            else -> namesByCountry["US"]!!
-        }
+        val data = getCountryData(code)
         val isMale = when (gender) {
             Gender.MALE -> true
             Gender.FEMALE -> false
@@ -514,7 +747,55 @@ object NameGenerator {
         } else ""
 
         val fullName = "$prefix$firstName $lastName".trim()
-        return fullName
+        val countryOpt = getCountryOption(code)
+
+        return PersonDetails(
+            fullName = fullName,
+            firstName = firstName,
+            lastName = lastName,
+            prefix = prefix.trim(),
+            gender = if (isMale) Gender.MALE else Gender.FEMALE,
+            countryCode = countryOpt.code,
+            countryName = countryOpt.name,
+            flag = countryOpt.flag
+        )
+    }
+
+    private fun getCountryData(code: String): CountryNames {
+        return namesByCountry[code] ?: when (code) {
+            "SA", "AE", "EG", "QA", "KW", "BH", "OM", "JO", "LB", "IQ", "DZ", "MA", "YE" -> namesByCountry["SA"]!!
+            "ES", "MX", "AR", "CO", "PE", "CL", "CR", "PA", "UY", "BO" -> namesByCountry[code] ?: namesByCountry["ES"]!!
+            "PT", "BR" -> namesByCountry["BR"]!!
+            "IN", "NP", "LK" -> namesByCountry["IN"]!!
+            "PK", "AF" -> namesByCountry["PK"]!!
+            "BD" -> namesByCountry["BD"]!!
+            "FR", "BE", "LU" -> namesByCountry["FR"]!!
+            "DE", "AT", "CH" -> namesByCountry["DE"]!!
+            "NL" -> namesByCountry["NL"] ?: namesByCountry["DE"]!!
+            "IT" -> namesByCountry["IT"]!!
+            "TR", "AZ" -> namesByCountry["TR"]!!
+            "JP" -> namesByCountry["JP"]!!
+            "KR" -> namesByCountry["KR"] ?: namesByCountry["JP"]!!
+            "CN", "TW", "HK" -> namesByCountry["CN"] ?: namesByCountry["JP"]!!
+            "RU", "BY", "KZ", "UZ" -> namesByCountry["RU"] ?: namesByCountry["US"]!!
+            "UA" -> namesByCountry["UA"] ?: namesByCountry["RU"] ?: namesByCountry["US"]!!
+            "PL", "CZ", "SK" -> namesByCountry["PL"] ?: namesByCountry["DE"]!!
+            "SE", "NO", "DK", "FI", "IS" -> namesByCountry["SE"] ?: namesByCountry["DE"]!!
+            "PH" -> namesByCountry["PH"] ?: namesByCountry["US"]!!
+            "ID", "MY" -> namesByCountry["ID"] ?: namesByCountry["BD"]!!
+            "VN" -> namesByCountry["VN"] ?: namesByCountry["CN"] ?: namesByCountry["US"]!!
+            "TH" -> namesByCountry["TH"] ?: namesByCountry["IN"]!!
+            "NG", "GH", "KE", "ZA" -> namesByCountry["NG"] ?: namesByCountry["US"]!!
+            "GR", "CY" -> namesByCountry["GR"] ?: namesByCountry["IT"]!!
+            "UK", "IE" -> namesByCountry["UK"]!!
+            "AU", "NZ" -> namesByCountry["AU"]!!
+            "CA" -> namesByCountry["CA"]!!
+            else -> namesByCountry["US"]!!
+        }
+    }
+
+    fun generateName(countryCode: String, gender: Gender = Gender.ANY): String {
+        return generatePersonDetails(countryCode, gender).fullName
     }
 
     fun generateNameList(countryCode: String, gender: Gender, count: Int = 12): List<String> {

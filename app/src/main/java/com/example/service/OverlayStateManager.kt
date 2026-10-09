@@ -575,12 +575,14 @@ object OverlayStateManager {
         val state = _uiState.value
         val name = NameGenerator.generateName(state.selectedCountry, state.selectedGender)
         _uiState.update { it.copy(lastGeneratedName = name) }
+        prefs?.edit()?.putString("last_generated_name", name)?.apply()
         com.example.util.ClipboardHelper.copyToClipboard(
             context = context,
             text = name,
             label = "Name ${state.selectedCountry}",
-            toastMessage = "Copied name: $name (${state.selectedCountry})"
+            toastMessage = "📋 Copied to keyboard: $name (${state.selectedCountry})"
         )
+        com.example.util.VibrationHelper.vibrateSuccess(context)
         return name
     }
 

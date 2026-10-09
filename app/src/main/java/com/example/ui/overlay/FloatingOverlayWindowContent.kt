@@ -262,13 +262,21 @@ fun FloatingOverlayWindowContent(
                         testTag = "tab_proxy"
                     )
 
-                    // 2. NAME GENERATOR TAB
+                    // 2. NAME GENERATOR TAB (Tap auto-copies authentic name to keyboard)
                     if (state.showOverlayName) {
+                        val activeCountryFlag = NameGenerator.countryCodeToEmojiFlag(state.selectedCountry)
+                        val nameBtnTitle = if (state.lastGeneratedName.isNotBlank()) {
+                            "$activeCountryFlag ${state.lastGeneratedName}"
+                        } else {
+                            "$activeCountryFlag Name (${state.selectedCountry})"
+                        }
                         GlossyTactileButton(
-                            title = "Name",
+                            title = nameBtnTitle,
                             icon = Icons.Default.Person,
                             brush = gradName,
                             shape = tabShape,
+                            fontSize = if (state.lastGeneratedName.isNotBlank()) 10.sp else 12.sp,
+                            horizontalPadding = 6.dp,
                             onClick = {
                                 OverlayStateManager.generateAndCopyRealtimeName(context)
                             },

@@ -612,54 +612,115 @@ fun NameGeneratorSection(
 
         if (state.lastGeneratedName.isNotEmpty()) {
             Spacer(modifier = Modifier.height(14.dp))
+            val parts = state.lastGeneratedName.split(" ").filter { it.isNotBlank() }
+            val firstName = if (parts.isNotEmpty()) parts.first() else state.lastGeneratedName
+            val lastName = if (parts.size > 1) parts.drop(1).joinToString(" ") else ""
+
             Surface(
-                onClick = {
-                    com.example.util.ClipboardHelper.copyToClipboard(
-                        context,
-                        state.lastGeneratedName,
-                        "Name",
-                        "Copied: ${state.lastGeneratedName}"
-                    )
-                    com.example.util.VibrationHelper.vibrateSuccess(context)
-                },
-                shape = RoundedCornerShape(12.dp),
+                shape = RoundedCornerShape(14.dp),
                 color = MaterialTheme.colorScheme.surfaceVariant,
                 border = androidx.compose.foundation.BorderStroke(1.dp, BrandGreen.copy(alpha = 0.5f)),
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Row(
-                    modifier = Modifier.padding(14.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = "Last Generated & Copied (Tap to Copy again):",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = BrandGreen,
-                            fontWeight = FontWeight.Bold
-                        )
-                        Text(
-                            text = state.lastGeneratedName,
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold
-                        )
+                Column(modifier = Modifier.padding(14.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Generated Fake Name (${state.selectedCountry}):",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = BrandGreen,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                text = state.lastGeneratedName,
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+
+                        IconButton(onClick = {
+                            com.example.util.ClipboardHelper.copyToClipboard(
+                                context,
+                                state.lastGeneratedName,
+                                "Full Name",
+                                "📋 Copied Full Name: ${state.lastGeneratedName}"
+                            )
+                            com.example.util.VibrationHelper.vibrateSuccess(context)
+                        }) {
+                            Icon(
+                                imageVector = Icons.Default.ContentCopy,
+                                contentDescription = "Copy Full Name",
+                                tint = BrandBlue
+                            )
+                        }
                     }
 
-                    IconButton(onClick = {
-                        com.example.util.ClipboardHelper.copyToClipboard(
-                            context,
-                            state.lastGeneratedName,
-                            "Name",
-                            "Copied: ${state.lastGeneratedName}"
-                        )
-                        com.example.util.VibrationHelper.vibrateSuccess(context)
-                    }) {
-                        Icon(
-                            imageVector = Icons.Default.ContentCopy,
-                            contentDescription = "Copy Again",
-                            tint = BrandBlue
-                        )
+                    if (lastName.isNotEmpty()) {
+                        Spacer(modifier = Modifier.height(10.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Surface(
+                                onClick = {
+                                    com.example.util.ClipboardHelper.copyToClipboard(
+                                        context,
+                                        firstName,
+                                        "First Name",
+                                        "📋 Copied First Name: $firstName"
+                                    )
+                                    com.example.util.VibrationHelper.vibrateSuccess(context)
+                                },
+                                shape = RoundedCornerShape(8.dp),
+                                color = MaterialTheme.colorScheme.surface,
+                                border = androidx.compose.foundation.BorderStroke(0.8.dp, BrandBlue.copy(alpha = 0.4f)),
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Column {
+                                        Text("First Name", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                        Text(firstName, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                                    }
+                                    Icon(Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.size(14.dp), tint = BrandBlue)
+                                }
+                            }
+
+                            Surface(
+                                onClick = {
+                                    com.example.util.ClipboardHelper.copyToClipboard(
+                                        context,
+                                        lastName,
+                                        "Last Name",
+                                        "📋 Copied Last Name: $lastName"
+                                    )
+                                    com.example.util.VibrationHelper.vibrateSuccess(context)
+                                },
+                                shape = RoundedCornerShape(8.dp),
+                                color = MaterialTheme.colorScheme.surface,
+                                border = androidx.compose.foundation.BorderStroke(0.8.dp, BrandBlue.copy(alpha = 0.4f)),
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Column {
+                                        Text("Last Name", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                        Text(lastName, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                                    }
+                                    Icon(Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.size(14.dp), tint = BrandBlue)
+                                }
+                            }
+                        }
                     }
                 }
             }
