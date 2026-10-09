@@ -145,17 +145,10 @@ object LocalSocks5ToHttpBridge {
             // 3. Connect to upstream HTTP proxy (Protected from VPN tunnel)
             upstream = Socket()
             upstream.tcpNoDelay = true
-            upstream.trafficClass = 0x10 // IPTOS_LOWDELAY
-            upstream.soTimeout = 12000
-            try {
-                upstream.sendBufferSize = 65536
-                upstream.receiveBufferSize = 65536
-                client.sendBufferSize = 65536
-                client.receiveBufferSize = 65536
-            } catch (_: Exception) {}
+            upstream.soTimeout = 20000
             SuperProxyVpnService.protectSocket(upstream)
             activeSockets.add(upstream)
-            upstream.connect(InetSocketAddress(httpHost, httpPort), 6000)
+            upstream.connect(InetSocketAddress(httpHost, httpPort), 12000)
 
             val upIn = upstream.getInputStream()
             val upOut = upstream.getOutputStream()
@@ -216,7 +209,7 @@ object LocalSocks5ToHttpBridge {
         val in2 = s2.getInputStream()
         val out2 = s2.getOutputStream()
 
-        val latch = java.util.concurrent.CountDownLatch(2)
+        val latch = java.util.concurrent.CountDownLatch(1)
 
         Thread {
             try {
@@ -226,12 +219,9 @@ object LocalSocks5ToHttpBridge {
                     out2.write(buffer, 0, len)
                     out2.flush()
                 }
-                try { s2.shutdownOutput() } catch (_: Exception) {}
-            } catch (_: Exception) {
-                try { s2.close() } catch (_: Exception) {}
-            } finally {
-                latch.countDown()
-            }
+            } catch (_: Exception) {}
+            try { s2.close() } catch (_: Exception) {}
+            latch.countDown()
         }.apply { isDaemon = true; start() }
 
         Thread {
@@ -242,15 +232,12 @@ object LocalSocks5ToHttpBridge {
                     out1.write(buffer, 0, len)
                     out1.flush()
                 }
-                try { s1.shutdownOutput() } catch (_: Exception) {}
-            } catch (_: Exception) {
-                try { s1.close() } catch (_: Exception) {}
-            } finally {
-                latch.countDown()
-            }
+            } catch (_: Exception) {}
+            try { s1.close() } catch (_: Exception) {}
+            latch.countDown()
         }.apply { isDaemon = true; start() }
 
-        try { latch.await(90, java.util.concurrent.TimeUnit.SECONDS) } catch (_: Exception) {}
+        try { latch.await() } catch (_: Exception) {}
     }
 
     private fun readFully(input: InputStream, buffer: ByteArray) {
