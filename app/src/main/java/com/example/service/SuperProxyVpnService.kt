@@ -98,7 +98,7 @@ class SuperProxyVpnService : VpnService() {
                 .addRoute("240.0.0.0", 4) // Synthetic mapped DNS network
                 .addRoute("0.0.0.0", 0)   // Route entire device IPv4 traffic into tun0
 
-            builder.allowBypass()            // Allows critical OS network probing so Android never reports Offline
+            // Strict Anti-Leak: No bypass allowed so Facebook, WhatsApp, Instagram cannot leak carrier IP/DNS
 
             // Unmetered on Android 10+ so OS and apps don't restrict background sync
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
