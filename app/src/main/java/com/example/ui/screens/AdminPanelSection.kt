@@ -26,6 +26,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AccountBalanceWallet
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AdminPanelSettings
 import androidx.compose.material.icons.filled.Bolt
@@ -105,6 +106,10 @@ import com.example.util.VibrationHelper
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import com.example.service.VirtualNumberManager
+import com.example.service.WithdrawalManager
+import com.example.service.WithdrawalRequest
+import com.example.util.AllCountriesProvider
 
 data class AdminCountryInfo(
     val code: String,
@@ -113,30 +118,7 @@ data class AdminCountryInfo(
     val dialCode: String
 )
 
-val ADMIN_PRESET_COUNTRIES = listOf(
-    AdminCountryInfo("US", "United States", "🇺🇸", "+1"),
-    AdminCountryInfo("BD", "Bangladesh", "🇧🇩", "+880"),
-    AdminCountryInfo("GB", "United Kingdom", "🇬🇧", "+44"),
-    AdminCountryInfo("CA", "Canada", "🇨🇦", "+1"),
-    AdminCountryInfo("CM", "Cameroon", "🇨🇲", "+237"),
-    AdminCountryInfo("BO", "Bolivia", "🇧🇴", "+591"),
-    AdminCountryInfo("SD", "Sudan", "🇸🇩", "+249"),
-    AdminCountryInfo("IN", "India", "🇮🇳", "+91"),
-    AdminCountryInfo("PK", "Pakistan", "🇵🇰", "+92"),
-    AdminCountryInfo("NG", "Nigeria", "🇳🇬", "+234"),
-    AdminCountryInfo("PH", "Philippines", "🇵🇭", "+63"),
-    AdminCountryInfo("ID", "Indonesia", "🇮🇩", "+62"),
-    AdminCountryInfo("KE", "Kenya", "🇰🇪", "+254"),
-    AdminCountryInfo("ZA", "South Africa", "🇿🇦", "+27"),
-    AdminCountryInfo("BR", "Brazil", "🇧🇷", "+55"),
-    AdminCountryInfo("MY", "Malaysia", "🇲🇾", "+60"),
-    AdminCountryInfo("AE", "United Arab Emirates", "🇦🇪", "+971"),
-    AdminCountryInfo("SA", "Saudi Arabia", "🇸🇦", "+966"),
-    AdminCountryInfo("EG", "Egypt", "🇪🇬", "+20"),
-    AdminCountryInfo("DE", "Germany", "🇩🇪", "+49"),
-    AdminCountryInfo("FR", "France", "🇫🇷", "+33"),
-    AdminCountryInfo("RU", "Russia", "🇷🇺", "+7")
-)
+val ADMIN_PRESET_COUNTRIES = AllCountriesProvider.allCountries
 
 val ADMIN_SERVICES = listOf("Facebook", "Instagram", "WhatsApp")
 
@@ -149,12 +131,16 @@ fun AdminPanelSection(
     val isAdmin = AuthManager.isAdmin()
     val unixState by UnixSmsManager.state.collectAsState()
     val managedUsers by AuthManager.managedUsers.collectAsState()
+    val withdrawState by WithdrawalManager.state.collectAsState()
+    val zenexOtpRate by VirtualNumberManager.zenexOtpRate.collectAsState()
 
-    var selectedTab by remember { mutableIntStateOf(0) } // 0: Unix SMS, 1: Users, 2: Live CDR
+    var selectedTab by remember { mutableIntStateOf(0) } // 0: SMS Panels, 1: Withdrawals, 2: Users, 3: Live CDR/DLR
 
     LaunchedEffect(Unit) {
         UnixSmsManager.init(context)
         AuthManager.init(context)
+        WithdrawalManager.init(context)
+        VirtualNumberManager.init(context)
     }
 
     if (!isAdmin) {
@@ -323,9 +309,9 @@ fun AdminPanelSection(
                     onClick = { selectedTab = 0 },
                     text = {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Default.Phone, contentDescription = null, modifier = Modifier.size(14.dp))
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text("Unix SMS (${unixState.uploadedNumbers.size})", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            Icon(Icons.Default.Phone, contentDescription = null, modifier = Modifier.size(13.dp))
+                            Spacer(modifier = Modifier.width(3.dp))
+                            Text("SMS Panels (${unixState.uploadedNumbers.size})", fontSize = 10.sp, fontWeight = FontWeight.Bold)
                         }
                     }
                 )
@@ -333,10 +319,16 @@ fun AdminPanelSection(
                     selected = selectedTab == 1,
                     onClick = { selectedTab = 1 },
                     text = {
+                        val pendingCount = withdrawState.allRequests.count { it.status == "PENDING" }
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Default.Person, contentDescription = null, modifier = Modifier.size(14.dp))
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text("Users (${managedUsers.size})", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            Icon(Icons.Default.AccountBalanceWallet, contentDescription = null, modifier = Modifier.size(13.dp), tint = if (pendingCount > 0) Color(0xFFFFD600) else Color(0xFF818CF8))
+                            Spacer(modifier = Modifier.width(3.dp))
+                            Text(
+                                text = if (pendingCount > 0) "Withdraw ($pendingCount)" else "Withdraw",
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = if (pendingCount > 0) Color(0xFFFFD600) else Color.Unspecified
+                            )
                         }
                     }
                 )
@@ -345,9 +337,20 @@ fun AdminPanelSection(
                     onClick = { selectedTab = 2 },
                     text = {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Default.Bolt, contentDescription = null, modifier = Modifier.size(14.dp))
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text("Live CDR (${unixState.liveCdrRecords.size})", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            Icon(Icons.Default.Person, contentDescription = null, modifier = Modifier.size(13.dp))
+                            Spacer(modifier = Modifier.width(3.dp))
+                            Text("Users (${managedUsers.size})", fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                )
+                Tab(
+                    selected = selectedTab == 3,
+                    onClick = { selectedTab = 3 },
+                    text = {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.Bolt, contentDescription = null, modifier = Modifier.size(13.dp))
+                            Spacer(modifier = Modifier.width(3.dp))
+                            Text("Live CDR/DLR (${unixState.liveCdrRecords.size})", fontSize = 10.sp, fontWeight = FontWeight.Bold)
                         }
                     }
                 )
@@ -356,16 +359,26 @@ fun AdminPanelSection(
 
         when (selectedTab) {
             0 -> {
-                // TAB 0: UNIX SMS NUMBER MANAGEMENT
+                // TAB 0: UNIX & ZENEX SMS NUMBER MANAGEMENT
                 item {
                     AdminUnixSmsCard(
                         context = context,
-                        unixState = unixState
+                        unixState = unixState,
+                        zenexRate = zenexOtpRate
                     )
                 }
             }
             1 -> {
-                // TAB 1: USER ACCOUNT MANAGEMENT
+                // TAB 1: WITHDRAW REQUESTS MANAGEMENT
+                item {
+                    AdminWithdrawRequestsCard(
+                        context = context,
+                        withdrawState = withdrawState
+                    )
+                }
+            }
+            2 -> {
+                // TAB 2: USER ACCOUNT MANAGEMENT
                 item {
                     AdminUserManagerCard(
                         context = context,
@@ -373,8 +386,8 @@ fun AdminPanelSection(
                     )
                 }
             }
-            2 -> {
-                // TAB 2: LIVE CDR TRAFFIC
+            3 -> {
+                // TAB 3: LIVE CDR & DLR TRAFFIC
                 item {
                     AdminLiveCdrCard(
                         unixState = unixState
@@ -395,12 +408,15 @@ fun AdminPanelSection(
 @Composable
 fun AdminUnixSmsCard(
     context: Context,
-    unixState: com.example.service.UnixSmsState
+    unixState: com.example.service.UnixSmsState,
+    zenexRate: Double = 0.014
 ) {
     var selectedCountry by remember { mutableStateOf(ADMIN_PRESET_COUNTRIES.first()) }
     var selectedService by remember { mutableStateOf(ADMIN_SERVICES.first()) }
     var numbersInput by remember { mutableStateOf("") }
     var countryDropdownExpanded by remember { mutableStateOf(false) }
+    var showCountrySearchDialog by remember { mutableStateOf(false) }
+    var countrySearchQuery by remember { mutableStateOf("") }
     var isUploading by remember { mutableStateOf(false) }
 
     // Clear by country
@@ -447,7 +463,7 @@ fun AdminUnixSmsCard(
             AdminStatPill(title = "TODAY OTP", count = unixState.todayOtpCount.toString(), color = Color(0xFFF472B6), modifier = Modifier.weight(1f))
         }
 
-        // 1.5 USER OTP RATE CONTROL CARD (Increase / Decrease rate)
+        // 1.5 USER OTP RATE CONTROL CARD: BOTH UNIX SMS & ZENEX SMS
         Card(
             colors = CardDefaults.cardColors(containerColor = Color(0xFF101C2B)),
             shape = RoundedCornerShape(16.dp),
@@ -455,6 +471,7 @@ fun AdminUnixSmsCard(
             modifier = Modifier.fillMaxWidth()
         ) {
             Column(modifier = Modifier.padding(14.dp)) {
+                // Unix SMS Rate Header
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -464,7 +481,7 @@ fun AdminUnixSmsCard(
                         Icon(Icons.Default.Bolt, contentDescription = null, tint = Color(0xFF38BDF8), modifier = Modifier.size(18.dp))
                         Spacer(modifier = Modifier.width(6.dp))
                         Text(
-                            text = "USER OTP RATE CONTROL (ওটিপি রেট নিয়ন্ত্রণ)",
+                            text = "1. UNIX SMS OTP RATE",
                             fontSize = 12.sp,
                             fontWeight = FontWeight.Bold,
                             color = Color.White
@@ -476,34 +493,27 @@ fun AdminUnixSmsCard(
                         shape = RoundedCornerShape(6.dp)
                     ) {
                         Text(
-                            text = "$${String.format(java.util.Locale.US, "%.3f", unixState.otpRatePerSms)} / OTP",
+                            text = "$${String.format(java.util.Locale.US, "%.3f", unixState.otpRatePerSms)} (৳${String.format(java.util.Locale.US, "%.2f", unixState.otpRatePerSms * 120.0)}) / OTP",
                             color = Color(0xFF38BDF8),
-                            fontSize = 11.sp,
+                            fontSize = 10.sp,
                             fontWeight = FontWeight.ExtraBold,
                             modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
                         )
                     }
                 }
 
-                Spacer(modifier = Modifier.height(6.dp))
-                Text(
-                    text = "ইউজারদের ওটিপি রেট বাড়াতে (+) বা কমাতে (-) নিচের বোতাম ব্যবহার করুন:",
-                    fontSize = 11.sp,
-                    color = Color(0xFF94A3B8)
-                )
-
-                Spacer(modifier = Modifier.height(10.dp))
+                Spacer(modifier = Modifier.height(8.dp))
 
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    // Decrease buttons
                     Button(
                         onClick = {
                             UnixSmsManager.adjustOtpRate(-0.005)
-                            Toast.makeText(context, "রেট কমানো হয়েছে: $${String.format(java.util.Locale.US, "%.3f", unixState.otpRatePerSms - 0.005)}", Toast.LENGTH_SHORT).show()
+                            WithdrawalManager.refreshBalances()
+                            Toast.makeText(context, "Unix রেট কমানো হয়েছে: $${String.format(java.util.Locale.US, "%.3f", unixState.otpRatePerSms - 0.005)}", Toast.LENGTH_SHORT).show()
                         },
                         colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E293B)),
                         shape = RoundedCornerShape(8.dp),
@@ -515,7 +525,8 @@ fun AdminUnixSmsCard(
                     Button(
                         onClick = {
                             UnixSmsManager.adjustOtpRate(-0.001)
-                            Toast.makeText(context, "রেট কমানো হয়েছে: $${String.format(java.util.Locale.US, "%.3f", unixState.otpRatePerSms - 0.001)}", Toast.LENGTH_SHORT).show()
+                            WithdrawalManager.refreshBalances()
+                            Toast.makeText(context, "Unix রেট কমানো হয়েছে: $${String.format(java.util.Locale.US, "%.3f", unixState.otpRatePerSms - 0.001)}", Toast.LENGTH_SHORT).show()
                         },
                         colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E293B)),
                         shape = RoundedCornerShape(8.dp),
@@ -524,7 +535,6 @@ fun AdminUnixSmsCard(
                         Text("-0.001", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFFF87171))
                     }
 
-                    // Current Rate Box
                     Surface(
                         color = Color(0xFF090E17),
                         shape = RoundedCornerShape(8.dp),
@@ -542,11 +552,11 @@ fun AdminUnixSmsCard(
                         }
                     }
 
-                    // Increase buttons
                     Button(
                         onClick = {
                             UnixSmsManager.adjustOtpRate(+0.001)
-                            Toast.makeText(context, "রেট বাড়ানো হয়েছে: $${String.format(java.util.Locale.US, "%.3f", unixState.otpRatePerSms + 0.001)}", Toast.LENGTH_SHORT).show()
+                            WithdrawalManager.refreshBalances()
+                            Toast.makeText(context, "Unix রেট বাড়ানো হয়েছে: $${String.format(java.util.Locale.US, "%.3f", unixState.otpRatePerSms + 0.001)}", Toast.LENGTH_SHORT).show()
                         },
                         colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E293B)),
                         shape = RoundedCornerShape(8.dp),
@@ -558,7 +568,120 @@ fun AdminUnixSmsCard(
                     Button(
                         onClick = {
                             UnixSmsManager.adjustOtpRate(+0.005)
-                            Toast.makeText(context, "রেট বাড়ানো হয়েছে: $${String.format(java.util.Locale.US, "%.3f", unixState.otpRatePerSms + 0.005)}", Toast.LENGTH_SHORT).show()
+                            WithdrawalManager.refreshBalances()
+                            Toast.makeText(context, "Unix রেট বাড়ানো হয়েছে: $${String.format(java.util.Locale.US, "%.3f", unixState.otpRatePerSms + 0.005)}", Toast.LENGTH_SHORT).show()
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E293B)),
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text("+0.005", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFF34D399))
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(14.dp))
+                HorizontalDivider(color = Color(0xFF1E2D40))
+                Spacer(modifier = Modifier.height(14.dp))
+
+                // Zenex SMS Rate Header
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.Bolt, contentDescription = null, tint = Color(0xFF34D399), modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = "2. ZENEX SMS OTP RATE",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White
+                        )
+                    }
+
+                    Surface(
+                        color = Color(0xFF10B981).copy(alpha = 0.2f),
+                        shape = RoundedCornerShape(6.dp)
+                    ) {
+                        Text(
+                            text = "$${String.format(java.util.Locale.US, "%.3f", zenexRate)} (৳${String.format(java.util.Locale.US, "%.2f", zenexRate * 120.0)}) / OTP",
+                            color = Color(0xFF34D399),
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Button(
+                        onClick = {
+                            VirtualNumberManager.adjustZenexOtpRate(-0.005)
+                            WithdrawalManager.refreshBalances()
+                            Toast.makeText(context, "Zenex রেট কমানো হয়েছে: $${String.format(java.util.Locale.US, "%.3f", zenexRate - 0.005)}", Toast.LENGTH_SHORT).show()
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E293B)),
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text("-0.005", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFFF87171))
+                    }
+
+                    Button(
+                        onClick = {
+                            VirtualNumberManager.adjustZenexOtpRate(-0.001)
+                            WithdrawalManager.refreshBalances()
+                            Toast.makeText(context, "Zenex রেট কমানো হয়েছে: $${String.format(java.util.Locale.US, "%.3f", zenexRate - 0.001)}", Toast.LENGTH_SHORT).show()
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E293B)),
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text("-0.001", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFFF87171))
+                    }
+
+                    Surface(
+                        color = Color(0xFF090E17),
+                        shape = RoundedCornerShape(8.dp),
+                        border = BorderStroke(1.dp, Color(0xFF10B981)),
+                        modifier = Modifier.weight(1.3f)
+                    ) {
+                        Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(vertical = 8.dp)) {
+                            Text(
+                                text = "$${String.format(java.util.Locale.US, "%.3f", zenexRate)}",
+                                color = Color.White,
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.ExtraBold,
+                                fontFamily = FontFamily.Monospace
+                            )
+                        }
+                    }
+
+                    Button(
+                        onClick = {
+                            VirtualNumberManager.adjustZenexOtpRate(+0.001)
+                            WithdrawalManager.refreshBalances()
+                            Toast.makeText(context, "Zenex রেট বাড়ানো হয়েছে: $${String.format(java.util.Locale.US, "%.3f", zenexRate + 0.001)}", Toast.LENGTH_SHORT).show()
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E293B)),
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text("+0.001", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFF34D399))
+                    }
+
+                    Button(
+                        onClick = {
+                            VirtualNumberManager.adjustZenexOtpRate(+0.005)
+                            WithdrawalManager.refreshBalances()
+                            Toast.makeText(context, "Zenex রেট বাড়ানো হয়েছে: $${String.format(java.util.Locale.US, "%.3f", zenexRate + 0.005)}", Toast.LENGTH_SHORT).show()
                         },
                         colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E293B)),
                         shape = RoundedCornerShape(8.dp),
@@ -591,8 +714,26 @@ fun AdminUnixSmsCard(
 
                 Spacer(modifier = Modifier.height(12.dp))
 
-                // Country Selector Dropdown
-                Text(text = "1. দেশ নির্বাচন করুন (Select Country):", fontSize = 11.sp, color = Color(0xFF94A3B8), fontWeight = FontWeight.SemiBold)
+                // Country Selector Dropdown with Search Button
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(text = "1. দেশ নির্বাচন করুন (Select Country):", fontSize = 11.sp, color = Color(0xFF94A3B8), fontWeight = FontWeight.SemiBold)
+                    OutlinedButton(
+                        onClick = {
+                            countrySearchQuery = ""
+                            showCountrySearchDialog = true
+                        },
+                        shape = RoundedCornerShape(8.dp),
+                        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 4.dp)
+                    ) {
+                        Icon(Icons.Default.Search, contentDescription = null, modifier = Modifier.size(12.dp), tint = Color(0xFF38BDF8))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Search A-Z (${ADMIN_PRESET_COUNTRIES.size})", fontSize = 10.sp, color = Color(0xFF38BDF8), fontWeight = FontWeight.Bold)
+                    }
+                }
                 Spacer(modifier = Modifier.height(4.dp))
 
                 Box {
@@ -602,7 +743,7 @@ fun AdminUnixSmsCard(
                         border = BorderStroke(1.dp, Color(0xFF243B55)),
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clickable { countryDropdownExpanded = true }
+                            .clickable { showCountrySearchDialog = true }
                     ) {
                         Row(
                             modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
@@ -619,35 +760,80 @@ fun AdminUnixSmsCard(
                                     fontWeight = FontWeight.Bold
                                 )
                             }
-                            Text(text = "▼", color = Color(0xFF64748B), fontSize = 11.sp)
+                            Text(text = "Change 🔍", color = Color(0xFF38BDF8), fontSize = 11.sp, fontWeight = FontWeight.Bold)
                         }
+                    }
+                }
+
+                // Search All Countries Dialog
+                if (showCountrySearchDialog) {
+                    val filteredList = remember(countrySearchQuery) {
+                        AllCountriesProvider.search(countrySearchQuery)
                     }
 
-                    DropdownMenu(
-                        expanded = countryDropdownExpanded,
-                        onDismissRequest = { countryDropdownExpanded = false },
-                        modifier = Modifier.background(Color(0xFF0F1A28))
-                    ) {
-                        ADMIN_PRESET_COUNTRIES.forEach { country ->
-                            DropdownMenuItem(
-                                text = {
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Text(text = country.flag, fontSize = 16.sp)
-                                        Spacer(modifier = Modifier.width(8.dp))
-                                        Text(
-                                            text = "${country.name} (${country.dialCode})",
-                                            color = Color.White,
-                                            fontSize = 12.sp
-                                        )
+                    AlertDialog(
+                        onDismissRequest = { showCountrySearchDialog = false },
+                        containerColor = Color(0xFF0F1A28),
+                        title = {
+                            Text(text = "দেশ নির্বাচন করুন (All Countries)", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                        },
+                        text = {
+                            Column(modifier = Modifier.fillMaxWidth()) {
+                                OutlinedTextField(
+                                    value = countrySearchQuery,
+                                    onValueChange = { countrySearchQuery = it },
+                                    placeholder = { Text("Search by country name or dial code (+880, +1...)", fontSize = 11.sp, color = Color(0xFF64748B)) },
+                                    singleLine = true,
+                                    modifier = Modifier.fillMaxWidth(),
+                                    shape = RoundedCornerShape(10.dp),
+                                    colors = OutlinedTextFieldDefaults.colors(
+                                        focusedTextColor = Color.White,
+                                        unfocusedTextColor = Color.White,
+                                        focusedBorderColor = Color(0xFF38BDF8),
+                                        unfocusedBorderColor = Color(0xFF1E2D40),
+                                        focusedContainerColor = Color(0xFF090E17),
+                                        unfocusedContainerColor = Color(0xFF090E17)
+                                    )
+                                )
+                                Spacer(modifier = Modifier.height(10.dp))
+                                androidx.compose.foundation.lazy.LazyColumn(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(260.dp),
+                                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                                ) {
+                                    items(filteredList) { c ->
+                                        Surface(
+                                            color = if (selectedCountry.code == c.code) Color(0xFF0284C7).copy(alpha = 0.3f) else Color(0xFF0B1420),
+                                            shape = RoundedCornerShape(8.dp),
+                                            border = BorderStroke(1.dp, if (selectedCountry.code == c.code) Color(0xFF38BDF8) else Color(0xFF1C2C3E)),
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .clickable {
+                                                    selectedCountry = c
+                                                    showCountrySearchDialog = false
+                                                }
+                                        ) {
+                                            Row(
+                                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                Text(text = c.flag, fontSize = 18.sp)
+                                                Spacer(modifier = Modifier.width(8.dp))
+                                                Text(text = c.name, color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                                                Text(text = c.dialCode, color = Color(0xFF38BDF8), fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                                            }
+                                        }
                                     }
-                                },
-                                onClick = {
-                                    selectedCountry = country
-                                    countryDropdownExpanded = false
                                 }
-                            )
+                            }
+                        },
+                        confirmButton = {
+                            Button(onClick = { showCountrySearchDialog = false }, colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E293B))) {
+                                Text("Close", color = Color.White)
+                            }
                         }
-                    }
+                    )
                 }
 
                 Spacer(modifier = Modifier.height(12.dp))
@@ -1101,6 +1287,385 @@ fun UploadedNumberRowItem(
 }
 
 /**
+ * Tab 1: Withdraw Requests Management Card
+ */
+@Composable
+fun AdminWithdrawRequestsCard(
+    context: Context,
+    withdrawState: com.example.service.WithdrawalState
+) {
+    var filterStatus by remember { mutableStateOf("ALL") } // "ALL", "PENDING", "APPROVED", "REJECTED"
+    var searchQuery by remember { mutableStateOf("") }
+
+    val pendingCount = withdrawState.allRequests.count { it.status == "PENDING" }
+    val approvedCount = withdrawState.allRequests.count { it.status == "APPROVED" }
+    val rejectedCount = withdrawState.allRequests.count { it.status == "REJECTED" }
+    val totalPendingTk = withdrawState.allRequests.filter { it.status == "PENDING" }.sumOf { it.amount }
+
+    val filteredList = remember(withdrawState.allRequests, filterStatus, searchQuery) {
+        withdrawState.allRequests.filter { req ->
+            val matchesStatus = when (filterStatus) {
+                "PENDING" -> req.status == "PENDING"
+                "APPROVED" -> req.status == "APPROVED"
+                "REJECTED" -> req.status == "REJECTED"
+                else -> true
+            }
+            val matchesSearch = if (searchQuery.isBlank()) true else {
+                req.userEmail.contains(searchQuery, ignoreCase = true) ||
+                        req.accountNumber.contains(searchQuery, ignoreCase = true) ||
+                        req.method.contains(searchQuery, ignoreCase = true)
+            }
+            matchesStatus && matchesSearch
+        }
+    }
+
+    Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+        // Summary Pills
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            AdminStatPill(
+                title = "PENDING",
+                count = "$pendingCount (৳${String.format(java.util.Locale.US, "%.0f", totalPendingTk)})",
+                color = Color(0xFFFFD600),
+                modifier = Modifier.weight(1.3f)
+            )
+            AdminStatPill(
+                title = "APPROVED",
+                count = approvedCount.toString(),
+                color = Color(0xFF00E676),
+                modifier = Modifier.weight(1f)
+            )
+            AdminStatPill(
+                title = "REJECTED",
+                count = rejectedCount.toString(),
+                color = Color(0xFFEF4444),
+                modifier = Modifier.weight(1f)
+            )
+        }
+
+        // Main Card
+        Card(
+            colors = CardDefaults.cardColors(containerColor = Color(0xFF101C2B)),
+            shape = RoundedCornerShape(16.dp),
+            border = BorderStroke(1.dp, Color(0xFF1E354F)),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(modifier = Modifier.padding(14.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Default.AccountBalanceWallet,
+                            contentDescription = null,
+                            tint = Color(0xFFFFD600),
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = "USER WITHDRAW REQUESTS",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White
+                        )
+                    }
+
+                    Surface(
+                        color = Color(0xFFFFD600).copy(alpha = 0.2f),
+                        shape = RoundedCornerShape(6.dp)
+                    ) {
+                        Text(
+                            text = "${filteredList.size} REQUESTS",
+                            color = Color(0xFFFFD600),
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                // Search box
+                OutlinedTextField(
+                    value = searchQuery,
+                    onValueChange = { searchQuery = it },
+                    placeholder = { Text("ইউজার ইমেইল বা নাম্বার দিয়ে খুঁজুন...", fontSize = 11.sp, color = Color(0xFF64748B)) },
+                    leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = Color(0xFF64748B), modifier = Modifier.size(16.dp)) },
+                    trailingIcon = {
+                        if (searchQuery.isNotEmpty()) {
+                            IconButton(onClick = { searchQuery = "" }) {
+                                Icon(Icons.Default.Close, contentDescription = null, tint = Color(0xFF94A3B8), modifier = Modifier.size(14.dp))
+                            }
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedContainerColor = Color(0xFF090E17),
+                        unfocusedContainerColor = Color(0xFF090E17),
+                        focusedBorderColor = Color(0xFFFFD600),
+                        unfocusedBorderColor = Color(0xFF1E2D40),
+                        focusedTextColor = Color.White,
+                        unfocusedTextColor = Color.White
+                    ),
+                    shape = RoundedCornerShape(10.dp),
+                    singleLine = true
+                )
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                // Filter Buttons (ALL, PENDING, APPROVED, REJECTED)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    val tabs = listOf("ALL" to "সকল", "PENDING" to "পেন্ডিং ($pendingCount)", "APPROVED" to "অনুমোদিত", "REJECTED" to "বাতিল")
+                    tabs.forEach { (statusKey, label) ->
+                        val isSelected = filterStatus == statusKey
+                        val chipColor = when (statusKey) {
+                            "PENDING" -> Color(0xFFFFD600)
+                            "APPROVED" -> Color(0xFF00E676)
+                            "REJECTED" -> Color(0xFFEF4444)
+                            else -> Color(0xFF818CF8)
+                        }
+                        Surface(
+                            color = if (isSelected) chipColor.copy(alpha = 0.25f) else Color(0xFF162536),
+                            shape = RoundedCornerShape(8.dp),
+                            border = BorderStroke(1.dp, if (isSelected) chipColor else Color(0xFF23384D)),
+                            modifier = Modifier
+                                .weight(1f)
+                                .clickable { filterStatus = statusKey }
+                        ) {
+                            Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(vertical = 6.dp)) {
+                                Text(
+                                    text = label,
+                                    fontSize = 9.sp,
+                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                    color = if (isSelected) chipColor else Color(0xFF94A3B8)
+                                )
+                            }
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // List of requests
+                if (filteredList.isEmpty()) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(24.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = if (filterStatus == "PENDING") "কোন পেন্ডিং রিকোয়েস্ট নেই ✓" else "কোন উইথড্র হিস্ট্রি পাওয়া যায়নি",
+                            fontSize = 12.sp,
+                            color = Color(0xFF64748B)
+                        )
+                    }
+                } else {
+                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        filteredList.forEach { req ->
+                            AdminWithdrawalItemRow(
+                                context = context,
+                                request = req,
+                                onApprove = {
+                                    val success = WithdrawalManager.approveRequest(context, req.id)
+                                    if (success) {
+                                        Toast.makeText(context, "✓ রিকোয়েস্ট অনুমোদন করা হয়েছে এবং নোটিফিকেশন পাঠানো হয়েছে!", Toast.LENGTH_SHORT).show()
+                                    }
+                                },
+                                onReject = {
+                                    val success = WithdrawalManager.rejectRequest(context, req.id, "Admin canceled request")
+                                    if (success) {
+                                        Toast.makeText(context, "রিকোয়েস্ট বাতিল করা হয়েছে। ইউজারের ব্যালেন্স ফেরত দেওয়া হয়েছে।", Toast.LENGTH_SHORT).show()
+                                    }
+                                }
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun AdminWithdrawalItemRow(
+    context: Context,
+    request: WithdrawalRequest,
+    onApprove: () -> Unit,
+    onReject: () -> Unit
+) {
+    val methodColor = when (request.method.lowercase()) {
+        "binance" -> Color(0xFFF0B90B)
+        "bkash" -> Color(0xFFE2136E)
+        "nagad" -> Color(0xFFF7941D)
+        else -> Color(0xFF00B0FF)
+    }
+
+    val statusColor = when (request.status) {
+        "APPROVED" -> Color(0xFF00E676)
+        "REJECTED" -> Color(0xFFEF4444)
+        else -> Color(0xFFFFD600)
+    }
+
+    val sdf = remember { java.text.SimpleDateFormat("dd MMM, hh:mm a", java.util.Locale.getDefault()) }
+    val dateStr = remember(request.requestTimestamp) { sdf.format(java.util.Date(request.requestTimestamp)) }
+
+    Surface(
+        color = Color(0xFF090E17),
+        shape = RoundedCornerShape(12.dp),
+        border = BorderStroke(1.dp, if (request.status == "PENDING") Color(0xFFFFD600).copy(alpha = 0.5f) else Color(0xFF1C2C3D)),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(modifier = Modifier.padding(12.dp)) {
+            // User Email & Date
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.Person, contentDescription = null, tint = Color(0xFF64748B), modifier = Modifier.size(13.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(
+                        text = request.userEmail,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFFE2E8F0)
+                    )
+                }
+
+                Text(
+                    text = dateStr,
+                    fontSize = 9.sp,
+                    color = Color(0xFF64748B)
+                )
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // Method, Account & Amount
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Surface(
+                        color = methodColor.copy(alpha = 0.2f),
+                        shape = RoundedCornerShape(6.dp),
+                        border = BorderStroke(1.dp, methodColor.copy(alpha = 0.6f))
+                    ) {
+                        Text(
+                            text = request.method.uppercase(),
+                            color = methodColor,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.width(8.dp))
+
+                    Text(
+                        text = request.accountNumber,
+                        color = Color.White,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        fontFamily = FontFamily.Monospace
+                    )
+
+                    IconButton(
+                        onClick = {
+                            ClipboardHelper.copyToClipboard(context, request.accountNumber)
+                            Toast.makeText(context, "নাম্বার কপি করা হয়েছে: ${request.accountNumber}", Toast.LENGTH_SHORT).show()
+                        },
+                        modifier = Modifier.size(24.dp)
+                    ) {
+                        Icon(Icons.Default.ContentCopy, contentDescription = "Copy", tint = Color(0xFF38BDF8), modifier = Modifier.size(12.dp))
+                    }
+                }
+
+                // Amount
+                Text(
+                    text = "৳${String.format(java.util.Locale.US, "%.2f", request.amount)}",
+                    color = Color.White,
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.ExtraBold
+                )
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // Status or Action Buttons
+            if (request.status == "PENDING") {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Button(
+                        onClick = onApprove,
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00E676)),
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Icon(Icons.Default.Check, contentDescription = null, tint = Color.Black, modifier = Modifier.size(14.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("APPROVE (অনুমোদন)", fontSize = 10.sp, fontWeight = FontWeight.ExtraBold, color = Color.Black)
+                    }
+
+                    Button(
+                        onClick = onReject,
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFEF4444)),
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Icon(Icons.Default.Close, contentDescription = null, tint = Color.White, modifier = Modifier.size(14.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("REJECT (বাতিল)", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                    }
+                }
+            } else {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Surface(
+                        color = statusColor.copy(alpha = 0.15f),
+                        shape = RoundedCornerShape(6.dp),
+                        border = BorderStroke(1.dp, statusColor.copy(alpha = 0.5f))
+                    ) {
+                        Text(
+                            text = if (request.status == "APPROVED") "✓ APPROVED" else "✗ REJECTED",
+                            color = statusColor,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                        )
+                    }
+
+                    if (request.note.isNotBlank()) {
+                        Text(
+                            text = request.note,
+                            fontSize = 10.sp,
+                            color = Color(0xFF64748B)
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
  * Tab 1: User Accounts Manager Card
  */
 @Composable
@@ -1509,6 +2074,8 @@ fun AdminLiveCdrCard(
     unixState: com.example.service.UnixSmsState
 ) {
     var searchFilter by remember { mutableStateOf("") }
+    var selectedDlrCountry by remember { mutableStateOf("ALL") }
+    var dlrCountryDropdownExpanded by remember { mutableStateOf(false) }
 
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Card(
@@ -1555,6 +2122,76 @@ fun AdminLiveCdrCard(
 
                 Spacer(modifier = Modifier.height(10.dp))
 
+                // DLR Country Selector Filter
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "দেশ নির্বাচন (Select DLR Country):",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = Color(0xFF94A3B8)
+                    )
+                }
+                Spacer(modifier = Modifier.height(4.dp))
+
+                Box {
+                    Surface(
+                        color = Color(0xFF090E17),
+                        shape = RoundedCornerShape(10.dp),
+                        border = BorderStroke(1.dp, Color(0xFF243B55)),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { dlrCountryDropdownExpanded = true }
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            val displayName = if (selectedDlrCountry == "ALL") "🌐 সব দেশ (ALL COUNTRIES)" else {
+                                val c = ADMIN_PRESET_COUNTRIES.find { it.code == selectedDlrCountry }
+                                "${c?.flag ?: "🌐"} ${c?.name ?: selectedDlrCountry} (${c?.dialCode ?: ""})"
+                            }
+                            Text(text = displayName, color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            Text(text = "▼", color = Color(0xFF38BDF8), fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+
+                    DropdownMenu(
+                        expanded = dlrCountryDropdownExpanded,
+                        onDismissRequest = { dlrCountryDropdownExpanded = false },
+                        modifier = Modifier.background(Color(0xFF0F1A28))
+                    ) {
+                        DropdownMenuItem(
+                            text = { Text("🌐 সব দেশ (ALL COUNTRIES)", color = Color(0xFF38BDF8), fontWeight = FontWeight.Bold) },
+                            onClick = {
+                                selectedDlrCountry = "ALL"
+                                dlrCountryDropdownExpanded = false
+                            }
+                        )
+
+                        // Distinct countries from uploaded numbers or preset countries
+                        val distinctCountryCodes = (unixState.uploadedNumbers.map { it.countryCode } + listOf("US", "GB", "BD", "IN", "CA", "DE", "FR", "NL", "MY", "SG", "ID")).distinct()
+                        distinctCountryCodes.forEach { code ->
+                            val c = ADMIN_PRESET_COUNTRIES.find { it.code == code }
+                            if (c != null) {
+                                DropdownMenuItem(
+                                    text = { Text("${c.flag} ${c.name} (${c.dialCode})", color = Color.White, fontSize = 12.sp) },
+                                    onClick = {
+                                        selectedDlrCountry = c.code
+                                        dlrCountryDropdownExpanded = false
+                                    }
+                                )
+                            }
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+
                 OutlinedTextField(
                     value = searchFilter,
                     onValueChange = { searchFilter = it },
@@ -1574,11 +2211,24 @@ fun AdminLiveCdrCard(
             }
         }
 
-        val filteredRecords = unixState.liveCdrRecords.filter {
-            searchFilter.isBlank() ||
-                    it.num.contains(searchFilter) ||
-                    it.cli.contains(searchFilter, ignoreCase = true) ||
-                    it.message.contains(searchFilter, ignoreCase = true)
+        val filteredRecords = unixState.liveCdrRecords.filter { cdr ->
+            val matchesSearch = searchFilter.isBlank() ||
+                    cdr.num.contains(searchFilter) ||
+                    cdr.cli.contains(searchFilter, ignoreCase = true) ||
+                    cdr.message.contains(searchFilter, ignoreCase = true)
+
+            val matchesCountry = if (selectedDlrCountry == "ALL") true else {
+                val country = ADMIN_PRESET_COUNTRIES.find { it.code == selectedDlrCountry }
+                val dialCodeClean = country?.dialCode?.replace("+", "") ?: ""
+                val numClean = cdr.num.replace("+", "").trim()
+                val matchesDial = dialCodeClean.isNotEmpty() && numClean.startsWith(dialCodeClean)
+                val matchesUploaded = unixState.uploadedNumbers.any { up ->
+                    up.countryCode == selectedDlrCountry && (up.number.contains(numClean) || numClean.contains(up.number.replace("+", "")))
+                }
+                matchesDial || matchesUploaded
+            }
+
+            matchesSearch && matchesCountry
         }
 
         if (filteredRecords.isEmpty()) {

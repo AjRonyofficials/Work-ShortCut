@@ -225,11 +225,40 @@ object VirtualNumberManager {
     private val _state = MutableStateFlow(VirtualNumbersUiState(provisionedNumbers = createDefaultProvisionedList()))
     val state: StateFlow<VirtualNumbersUiState> = _state.asStateFlow()
 
+    private val _selectedPanel = MutableStateFlow(0) // 0: Unix SMS, 1: Zenex SMS
+    val selectedPanel: StateFlow<Int> = _selectedPanel.asStateFlow()
+
+    private val _zenexOtpRate = MutableStateFlow(0.014)
+    val zenexOtpRate: StateFlow<Double> = _zenexOtpRate.asStateFlow()
+
+    fun setSelectedPanel(panelIndex: Int) {
+        _selectedPanel.value = panelIndex
+        prefs?.edit()?.putInt("selected_panel_index", panelIndex)?.apply()
+    }
+
+    fun adjustZenexOtpRate(delta: Double) {
+        val current = _zenexOtpRate.value
+        val updated = maxOf(0.001, current + delta)
+        _zenexOtpRate.value = updated
+        prefs?.edit()?.putFloat("zenex_otp_rate_setting", updated.toFloat())?.apply()
+    }
+
+    fun setZenexOtpRate(rate: Double) {
+        val safe = maxOf(0.001, rate)
+        _zenexOtpRate.value = safe
+        prefs?.edit()?.putFloat("zenex_otp_rate_setting", safe.toFloat())?.apply()
+    }
+
     private val otpRegex = Pattern.compile("\\b\\d{4,8}\\b")
 
     fun init(context: Context) {
         if (prefs == null) {
             prefs = context.getSharedPreferences("virtual_numbers_prefs", Context.MODE_PRIVATE)
+            val savedPanel = prefs?.getInt("selected_panel_index", 0) ?: 0
+            _selectedPanel.value = savedPanel
+            val savedZenexRate = prefs?.getFloat("zenex_otp_rate_setting", 0.014f)?.toDouble() ?: 0.014
+            _zenexOtpRate.value = savedZenexRate
+
             val savedKey = prefs?.getString("api_key", "ZNX_SDY9RBKGG8DO84EWZOMWEH2S") ?: "ZNX_SDY9RBKGG8DO84EWZOMWEH2S"
             val savedRange = prefs?.getString("target_range", "237620XXX") ?: "237620XXX"
             val savedCount = prefs?.getInt("request_count", 1) ?: 1
@@ -607,7 +636,8 @@ object VirtualNumberManager {
                                         phoneNumber = prov.number,
                                         otpCode = code,
                                         service = prov.range.ifEmpty { "Zenex" },
-                                        platform = "Zenex"
+                                        platform = "Zenex",
+                                        rate = _zenexOtpRate.value
                                     )
                                 }
                             }

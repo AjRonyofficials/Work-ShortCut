@@ -105,7 +105,7 @@ fun VirtualNumbersSection(
     var filterTab by remember { mutableStateOf("ALL") } // "ALL", "SUCCESS", "PENDING", "FAILED"
     var consoleFilter by remember { mutableStateOf("") }
     var quantityDropdownExpanded by remember { mutableStateOf(false) }
-    var selectedPanel by remember { mutableIntStateOf(0) } // 0: Unix SMS, 1: Zenex SMS
+    val selectedPanel by VirtualNumberManager.selectedPanel.collectAsState()
     var panelDropdownExpanded by remember { mutableStateOf(false) }
     var showProfileHistoryDialog by remember { mutableStateOf(false) }
 
@@ -236,7 +236,7 @@ fun VirtualNumbersSection(
                                         }
                                     },
                                     onClick = {
-                                        selectedPanel = 0
+                                        VirtualNumberManager.setSelectedPanel(0)
                                         panelDropdownExpanded = false
                                     }
                                 )
@@ -254,7 +254,7 @@ fun VirtualNumbersSection(
                                         }
                                     },
                                     onClick = {
-                                        selectedPanel = 1
+                                        VirtualNumberManager.setSelectedPanel(1)
                                         panelDropdownExpanded = false
                                     }
                                 )

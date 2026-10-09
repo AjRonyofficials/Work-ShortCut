@@ -22,17 +22,22 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.AccessTime
+import androidx.compose.material.icons.filled.AccountBalanceWallet
+import androidx.compose.material.icons.filled.ArrowForward
 import androidx.compose.material.icons.filled.Bolt
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.DateRange
+import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.LockOpen
 import androidx.compose.material.icons.filled.Logout
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PieChart
-import androidx.compose.material.icons.filled.Security
-import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -42,6 +47,8 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -59,6 +66,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
@@ -67,6 +75,8 @@ import com.example.service.AuthManager
 import com.example.service.DailyOtpSummary
 import com.example.service.OtpHistoryManager
 import com.example.service.OtpHistoryRecord
+import com.example.service.WithdrawalManager
+import com.example.service.WithdrawalRequest
 import com.example.util.ClipboardHelper
 import com.example.util.VibrationHelper
 import kotlinx.coroutines.delay
@@ -84,17 +94,32 @@ fun UserProfileOtpHistoryDialog(
     val context = LocalContext.current
     val currentEmail by AuthManager.currentEmail.collectAsState()
     val otpState by OtpHistoryManager.state.collectAsState()
+    val withdrawState by WithdrawalManager.state.collectAsState()
 
     var dailyCountdownString by remember { mutableStateOf(OtpHistoryManager.getFormattedDailyResetCountdown()) }
-    var sevenDaysCountdownString by remember { mutableStateOf(OtpHistoryManager.getFormatted7DaysRemainingCountdown()) }
+    var monthlyCountdownString by remember { mutableStateOf(OtpHistoryManager.getFormatted1MonthRemainingCountdown()) }
+
+    // Withdrawal Form State
+    var selectedMethod by remember { mutableStateOf("Binance") } // "Binance", "bKash", "Nagad"
+    var accountInput by remember { mutableStateOf("") }
+    var amountInput by remember { mutableStateOf("") }
+    var isSubmittingWithdraw by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
         OtpHistoryManager.init(context)
+        WithdrawalManager.init(context)
         while (true) {
             delay(1000L)
             dailyCountdownString = OtpHistoryManager.getFormattedDailyResetCountdown()
-            sevenDaysCountdownString = OtpHistoryManager.getFormatted7DaysRemainingCountdown()
+            monthlyCountdownString = OtpHistoryManager.getFormatted1MonthRemainingCountdown()
         }
+    }
+
+    val minAmount = WithdrawalManager.getMinimumAmountForMethod(selectedMethod)
+    val isMethodUnlocked = withdrawState.availableBalanceTk >= minAmount
+
+    val userWithdrawals = remember(withdrawState.allRequests, currentEmail) {
+        WithdrawalManager.getUserRequests(currentEmail)
     }
 
     Dialog(
@@ -104,14 +129,14 @@ fun UserProfileOtpHistoryDialog(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .background(Color.Black.copy(alpha = 0.75f))
+                .background(Color.Black.copy(alpha = 0.8f))
                 .clickable { onDismiss() },
             contentAlignment = Alignment.Center
         ) {
             Surface(
                 modifier = Modifier
-                    .fillMaxWidth(0.95f)
-                    .fillMaxHeight(0.90f)
+                    .fillMaxWidth(0.96f)
+                    .fillMaxHeight(0.92f)
                     .clickable(enabled = false) {},
                 shape = RoundedCornerShape(24.dp),
                 color = Color(0xFF0C141F),
@@ -136,7 +161,7 @@ fun UserProfileOtpHistoryDialog(
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Box(
                                 modifier = Modifier
-                                    .size(36.dp)
+                                    .size(38.dp)
                                     .clip(CircleShape)
                                     .background(
                                         Brush.linearGradient(listOf(Color(0xFF00B0FF), Color(0xFF0066FF)))
@@ -147,13 +172,13 @@ fun UserProfileOtpHistoryDialog(
                                     imageVector = Icons.Default.Person,
                                     contentDescription = null,
                                     tint = Color.White,
-                                    modifier = Modifier.size(20.dp)
+                                    modifier = Modifier.size(22.dp)
                                 )
                             }
                             Spacer(modifier = Modifier.width(10.dp))
                             Column {
                                 Text(
-                                    text = "USER PROFILE & OTP STATS",
+                                    text = "PROFILE, OTP STATS & WALLET",
                                     fontSize = 13.sp,
                                     fontWeight = FontWeight.ExtraBold,
                                     color = Color.White,
@@ -218,7 +243,7 @@ fun UserProfileOtpHistoryDialog(
                                             }
                                         }
                                         Spacer(modifier = Modifier.height(2.dp))
-                                        Text(text = "Security: Device Locked Session", color = Color(0xFF78909C), fontSize = 10.sp)
+                                        Text(text = "Daily OTP Auto-Reset: 1 Month (30 Days)", color = Color(0xFF78909C), fontSize = 10.sp)
                                     }
 
                                     OutlinedButton(
@@ -239,7 +264,91 @@ fun UserProfileOtpHistoryDialog(
                             }
                         }
 
-                        // 2. Primary Metrics Row (Today, Total, 7D Remaining, Today Reset)
+                        // 2. Wallet & Balance Overview Card (Tk and OTP Balance)
+                        item {
+                            Card(
+                                colors = CardDefaults.cardColors(containerColor = Color(0xFF0B1929)),
+                                shape = RoundedCornerShape(16.dp),
+                                border = BorderStroke(1.5.dp, Brush.horizontalGradient(listOf(Color(0xFF00E676), Color(0xFF00B0FF)))),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Column(modifier = Modifier.padding(14.dp)) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Icon(
+                                                imageVector = Icons.Default.AccountBalanceWallet,
+                                                contentDescription = null,
+                                                tint = Color(0xFF00E676),
+                                                modifier = Modifier.size(20.dp)
+                                            )
+                                            Spacer(modifier = Modifier.width(6.dp))
+                                            Text(
+                                                text = "TOTAL OTP BALANCE (মোট ব্যালেন্স)",
+                                                fontSize = 11.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = Color.White
+                                            )
+                                        }
+
+                                        Surface(
+                                            color = Color(0xFF00E676).copy(alpha = 0.2f),
+                                            shape = RoundedCornerShape(6.dp)
+                                        ) {
+                                            Text(
+                                                text = "WITHDRAWABLE",
+                                                color = Color(0xFF00E676),
+                                                fontSize = 9.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                            )
+                                        }
+                                    }
+
+                                    Spacer(modifier = Modifier.height(8.dp))
+
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.Bottom
+                                    ) {
+                                        Column {
+                                            Text(
+                                                text = "৳ ${String.format(Locale.US, "%.2f", withdrawState.availableBalanceTk)}",
+                                                fontSize = 28.sp,
+                                                fontWeight = FontWeight.ExtraBold,
+                                                color = Color(0xFF00E676),
+                                                fontFamily = FontFamily.Monospace
+                                            )
+                                            Text(
+                                                text = "Total Earned: ৳${String.format(Locale.US, "%.2f", withdrawState.totalEarnedTk)} (Pending: ৳${String.format(Locale.US, "%.2f", withdrawState.pendingWithdrawTk)})",
+                                                fontSize = 10.sp,
+                                                color = Color(0xFF94A3B8)
+                                            )
+                                        }
+
+                                        // 30 Days Download / Export History Button
+                                        Button(
+                                            onClick = {
+                                                OtpHistoryManager.exportOtpHistory(context)
+                                            },
+                                            shape = RoundedCornerShape(10.dp),
+                                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0284C7)),
+                                            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp, vertical = 6.dp)
+                                        ) {
+                                            Icon(Icons.Default.Download, contentDescription = null, modifier = Modifier.size(14.dp))
+                                            Spacer(modifier = Modifier.width(4.dp))
+                                            Text("Download History", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        // 3. Primary Metrics Row (Today, Total, 30D Remaining, Today Reset)
                         item {
                             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                 Row(
@@ -267,9 +376,9 @@ fun UserProfileOtpHistoryDialog(
                                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                                 ) {
                                     ProfileMetricPill(
-                                        title = "7-DAY RESET LEFT",
-                                        value = sevenDaysCountdownString,
-                                        subtitle = "7 Days History Reset",
+                                        title = "1-MONTH RESET LEFT",
+                                        value = monthlyCountdownString,
+                                        subtitle = "30 Days History Reset",
                                         color = Color(0xFFA855F7),
                                         isSmallText = true,
                                         modifier = Modifier.weight(1f)
@@ -286,7 +395,291 @@ fun UserProfileOtpHistoryDialog(
                             }
                         }
 
-                        // 3. Panel Breakdown Card: Unix SMS vs Zenex SMS
+                        // 4. WITHDRAW OPTION CARD (Binance, bKash, Nagad)
+                        item {
+                            Card(
+                                colors = CardDefaults.cardColors(containerColor = Color(0xFF101C2B)),
+                                shape = RoundedCornerShape(16.dp),
+                                border = BorderStroke(1.dp, Color(0xFF1E354F)),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Column(modifier = Modifier.padding(14.dp)) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Icon(
+                                                imageVector = if (isMethodUnlocked) Icons.Default.LockOpen else Icons.Default.Lock,
+                                                contentDescription = null,
+                                                tint = if (isMethodUnlocked) Color(0xFF00E676) else Color(0xFFEF4444),
+                                                modifier = Modifier.size(18.dp)
+                                            )
+                                            Spacer(modifier = Modifier.width(6.dp))
+                                            Text(
+                                                text = "WITHDRAW OPTION (টাকা তুলুন)",
+                                                fontSize = 12.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = Color.White
+                                            )
+                                        }
+
+                                        Surface(
+                                            color = if (isMethodUnlocked) Color(0xFF00E676).copy(alpha = 0.2f) else Color(0xFFEF4444).copy(alpha = 0.2f),
+                                            shape = RoundedCornerShape(4.dp)
+                                        ) {
+                                            Text(
+                                                text = if (isMethodUnlocked) "UNLOCKED (উন্মুক্ত)" else "LOCKED (লক)",
+                                                color = if (isMethodUnlocked) Color(0xFF00E676) else Color(0xFFF87171),
+                                                fontSize = 9.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                            )
+                                        }
+                                    }
+
+                                    Spacer(modifier = Modifier.height(6.dp))
+                                    Text(
+                                        text = "পেমেন্ট মাধ্যম বেছে নিন: Binance (মিনিমাম ২০ টাকা), bKash/Nagad (মিনিমাম ৫০ টাকা)",
+                                        fontSize = 10.sp,
+                                        color = Color(0xFF94A3B8)
+                                    )
+
+                                    Spacer(modifier = Modifier.height(10.dp))
+
+                                    // Payment Method Buttons
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        listOf(
+                                            Triple("Binance", "Binance Pay", "Min: ৳20"),
+                                            Triple("bKash", "বিকাশ", "Min: ৳50"),
+                                            Triple("Nagad", "নগদ", "Min: ৳50")
+                                        ).forEach { (mKey, mTitle, minLabel) ->
+                                            val isSel = selectedMethod == mKey
+                                            val methodColor = when (mKey) {
+                                                "Binance" -> Color(0xFFF0B90B)
+                                                "bKash" -> Color(0xFFE2136E)
+                                                else -> Color(0xFFF7931A) // Nagad
+                                            }
+
+                                            Surface(
+                                                color = if (isSel) methodColor.copy(alpha = 0.25f) else Color(0xFF090E17),
+                                                shape = RoundedCornerShape(10.dp),
+                                                border = BorderStroke(1.2.dp, if (isSel) methodColor else Color(0xFF1E2D40)),
+                                                modifier = Modifier
+                                                    .weight(1f)
+                                                    .clickable {
+                                                        selectedMethod = mKey
+                                                    }
+                                            ) {
+                                                Column(
+                                                    modifier = Modifier.padding(vertical = 8.dp, horizontal = 4.dp),
+                                                    horizontalAlignment = Alignment.CenterHorizontally
+                                                ) {
+                                                    Text(
+                                                        text = mTitle,
+                                                        color = if (isSel) Color.White else Color(0xFF90A4AE),
+                                                        fontSize = 11.sp,
+                                                        fontWeight = if (isSel) FontWeight.Bold else FontWeight.Medium
+                                                    )
+                                                    Spacer(modifier = Modifier.height(2.dp))
+                                                    Text(
+                                                        text = minLabel,
+                                                        color = if (isSel) methodColor else Color(0xFF64748B),
+                                                        fontSize = 8.sp,
+                                                        fontWeight = FontWeight.SemiBold
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    }
+
+                                    Spacer(modifier = Modifier.height(12.dp))
+
+                                    // Account / Number Field
+                                    OutlinedTextField(
+                                        value = accountInput,
+                                        onValueChange = { accountInput = it },
+                                        label = {
+                                            Text(
+                                                text = if (selectedMethod == "Binance") "Binance Pay ID / USDT BEP-20" else "$selectedMethod নাম্বার (01XXXXXXXXX)"
+                                            )
+                                        },
+                                        singleLine = true,
+                                        modifier = Modifier.fillMaxWidth(),
+                                        shape = RoundedCornerShape(10.dp),
+                                        colors = OutlinedTextFieldDefaults.colors(
+                                            focusedTextColor = Color.White,
+                                            unfocusedTextColor = Color.White,
+                                            focusedBorderColor = Color(0xFF38BDF8),
+                                            unfocusedBorderColor = Color(0xFF1E2D40),
+                                            focusedContainerColor = Color(0xFF090E17),
+                                            unfocusedContainerColor = Color(0xFF090E17)
+                                        )
+                                    )
+
+                                    Spacer(modifier = Modifier.height(8.dp))
+
+                                    // Amount Field
+                                    OutlinedTextField(
+                                        value = amountInput,
+                                        onValueChange = { amountInput = it },
+                                        label = { Text("উইথড্র পরিমাণ টাকা (Amount in BDT)") },
+                                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                        singleLine = true,
+                                        modifier = Modifier.fillMaxWidth(),
+                                        shape = RoundedCornerShape(10.dp),
+                                        colors = OutlinedTextFieldDefaults.colors(
+                                            focusedTextColor = Color.White,
+                                            unfocusedTextColor = Color.White,
+                                            focusedBorderColor = Color(0xFF38BDF8),
+                                            unfocusedBorderColor = Color(0xFF1E2D40),
+                                            focusedContainerColor = Color(0xFF090E17),
+                                            unfocusedContainerColor = Color(0xFF090E17)
+                                        )
+                                    )
+
+                                    Spacer(modifier = Modifier.height(8.dp))
+
+                                    // Quick Amount Chips
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                    ) {
+                                        listOf("20", "50", "100", "All").forEach { chip ->
+                                            Surface(
+                                                color = Color(0xFF1E293B),
+                                                shape = RoundedCornerShape(6.dp),
+                                                border = BorderStroke(1.dp, Color(0xFF334155)),
+                                                modifier = Modifier
+                                                    .weight(1f)
+                                                    .clickable {
+                                                        if (chip == "All") {
+                                                            amountInput = String.format(Locale.US, "%.0f", withdrawState.availableBalanceTk)
+                                                        } else {
+                                                            amountInput = chip
+                                                        }
+                                                    }
+                                            ) {
+                                                Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(vertical = 5.dp)) {
+                                                    Text(text = if (chip == "All") "সব টাকা" else "৳$chip", color = Color(0xFFE2E8F0), fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                                }
+                                            }
+                                        }
+                                    }
+
+                                    Spacer(modifier = Modifier.height(14.dp))
+
+                                    // Submit / Withdraw Button
+                                    Button(
+                                        onClick = {
+                                            val amt = amountInput.toDoubleOrNull() ?: 0.0
+                                            if (accountInput.isBlank()) {
+                                                Toast.makeText(context, "একাউন্ট নাম্বার বা Binance ID দিন", Toast.LENGTH_SHORT).show()
+                                                return@Button
+                                            }
+                                            if (amt <= 0.0) {
+                                                Toast.makeText(context, "সঠিক টাকার পরিমাণ দিন", Toast.LENGTH_SHORT).show()
+                                                return@Button
+                                            }
+
+                                            isSubmittingWithdraw = true
+                                            val (success, msg) = WithdrawalManager.submitWithdrawal(
+                                                context = context,
+                                                userEmail = currentEmail,
+                                                method = selectedMethod,
+                                                accountNumber = accountInput,
+                                                amount = amt
+                                            )
+                                            isSubmittingWithdraw = false
+                                            Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
+                                            if (success) {
+                                                amountInput = ""
+                                                accountInput = ""
+                                            }
+                                        },
+                                        enabled = isMethodUnlocked && !isSubmittingWithdraw,
+                                        shape = RoundedCornerShape(10.dp),
+                                        colors = ButtonDefaults.buttonColors(
+                                            containerColor = Color(0xFF00E676),
+                                            disabledContainerColor = Color(0xFF1E293B)
+                                        ),
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .height(44.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = if (isMethodUnlocked) Icons.Default.ArrowForward else Icons.Default.Lock,
+                                            contentDescription = null,
+                                            tint = if (isMethodUnlocked) Color.Black else Color(0xFF64748B),
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text(
+                                            text = if (isMethodUnlocked) "SUBMIT WITHDRAW REQUEST (উইথড্র করুন)" else "লক করা (মিনিমাম ৳$minAmount প্রয়োজন)",
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.ExtraBold,
+                                            color = if (isMethodUnlocked) Color.Black else Color(0xFF94A3B8)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+
+                        // 5. WITHDRAW HISTORY LIST (User's requests)
+                        item {
+                            Card(
+                                colors = CardDefaults.cardColors(containerColor = Color(0xFF101C2B)),
+                                shape = RoundedCornerShape(16.dp),
+                                border = BorderStroke(1.dp, Color(0xFF1E354F)),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Column(modifier = Modifier.padding(14.dp)) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Icon(Icons.Default.History, contentDescription = null, tint = Color(0xFF38BDF8), modifier = Modifier.size(16.dp))
+                                            Spacer(modifier = Modifier.width(6.dp))
+                                            Text(
+                                                text = "WITHDRAW HISTORY (${userWithdrawals.size})",
+                                                fontSize = 11.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = Color.White
+                                            )
+                                        }
+
+                                        Text(text = "Status Alerts", color = Color(0xFF94A3B8), fontSize = 10.sp)
+                                    }
+
+                                    Spacer(modifier = Modifier.height(10.dp))
+
+                                    if (userWithdrawals.isEmpty()) {
+                                        Box(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(vertical = 12.dp),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Text(text = "এখনও কোনো উইথড্র রিকোয়েস্ট করেননি", color = Color(0xFF64748B), fontSize = 11.sp)
+                                        }
+                                    } else {
+                                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                            userWithdrawals.take(10).forEach { req ->
+                                                WithdrawalHistoryItemRow(req = req)
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        // 6. Panel Breakdown Card: Unix SMS vs Zenex SMS
                         item {
                             Card(
                                 colors = CardDefaults.cardColors(containerColor = Color(0xFF101C2B)),
@@ -304,7 +697,7 @@ fun UserProfileOtpHistoryDialog(
                                             Icon(Icons.Default.PieChart, contentDescription = null, tint = Color(0xFF00E676), modifier = Modifier.size(16.dp))
                                             Spacer(modifier = Modifier.width(6.dp))
                                             Text(
-                                                text = "PANEL BREAKDOWN (কোন প্যানেলে কত ওটিপি)",
+                                                text = "PANEL BREAKDOWN (প্যানেল ওটিপি)",
                                                 fontSize = 11.sp,
                                                 fontWeight = FontWeight.Bold,
                                                 color = Color.White
@@ -316,7 +709,7 @@ fun UserProfileOtpHistoryDialog(
                                             shape = RoundedCornerShape(4.dp)
                                         ) {
                                             Text(
-                                                text = "Rate: $${String.format(Locale.US, "%.3f", otpState.currentUnixRate)}/OTP",
+                                                text = "Unix: $${String.format(Locale.US, "%.3f", otpState.currentUnixRate)} • Zenex: $${String.format(Locale.US, "%.3f", otpState.currentZenexRate)}",
                                                 color = Color(0xFF38BDF8),
                                                 fontSize = 9.sp,
                                                 fontWeight = FontWeight.Bold,
@@ -393,7 +786,7 @@ fun UserProfileOtpHistoryDialog(
                             }
                         }
 
-                        // 4. Last 7 Days Daily OTP Breakdown with historical rate
+                        // 7. Last 30 Days Daily OTP Breakdown
                         item {
                             Card(
                                 colors = CardDefaults.cardColors(containerColor = Color(0xFF101C2B)),
@@ -411,16 +804,16 @@ fun UserProfileOtpHistoryDialog(
                                             Icon(Icons.Default.DateRange, contentDescription = null, tint = Color(0xFF40C4FF), modifier = Modifier.size(16.dp))
                                             Spacer(modifier = Modifier.width(6.dp))
                                             Text(
-                                                text = "7 DAYS DAILY OTP & RATES",
+                                                text = "30 DAYS DAILY OTP HISTORY (১ মাসের রেকর্ড)",
                                                 fontSize = 11.sp,
                                                 fontWeight = FontWeight.Bold,
                                                 color = Color.White
                                             )
                                         }
 
-                                        val sum7Days = otpState.last7DaysSummaries.sumOf { it.totalCount }
+                                        val sum30Days = otpState.last30DaysSummaries.sumOf { it.totalCount }
                                         Text(
-                                            text = "Total 7d: $sum7Days",
+                                            text = "Total 30d: $sum30Days",
                                             color = Color(0xFF81D4FA),
                                             fontSize = 10.sp,
                                             fontWeight = FontWeight.Bold
@@ -429,10 +822,10 @@ fun UserProfileOtpHistoryDialog(
 
                                     Spacer(modifier = Modifier.height(12.dp))
 
-                                    val maxDaily = maxOf(1, otpState.last7DaysSummaries.maxOfOrNull { it.totalCount } ?: 1)
+                                    val maxDaily = maxOf(1, otpState.last30DaysSummaries.maxOfOrNull { it.totalCount } ?: 1)
 
                                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                        otpState.last7DaysSummaries.forEachIndexed { index, day ->
+                                        otpState.last30DaysSummaries.take(10).forEachIndexed { index, day ->
                                             DailyOtpRowItem(
                                                 summary = day,
                                                 maxCount = maxDaily,
@@ -444,7 +837,7 @@ fun UserProfileOtpHistoryDialog(
                             }
                         }
 
-                        // 5. Recent OTP Records List
+                        // 8. Recent OTP Records List
                         item {
                             Card(
                                 colors = CardDefaults.cardColors(containerColor = Color(0xFF101C2B)),
@@ -499,6 +892,72 @@ fun UserProfileOtpHistoryDialog(
                         }
                     }
                 }
+            }
+        }
+    }
+}
+
+@Composable
+fun WithdrawalHistoryItemRow(req: WithdrawalRequest) {
+    val dateStr = SimpleDateFormat("dd MMM, hh:mm a", Locale.US).format(Date(req.requestTimestamp))
+    val statusColor = when (req.status) {
+        "APPROVED" -> Color(0xFF00E676)
+        "REJECTED" -> Color(0xFFEF4444)
+        else -> Color(0xFFFFD600) // PENDING
+    }
+
+    Surface(
+        color = Color(0xFF0B1420),
+        shape = RoundedCornerShape(8.dp),
+        border = BorderStroke(1.dp, Color(0xFF1C2C3E)),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 10.dp, vertical = 8.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = "৳${String.format(Locale.US, "%.2f", req.amount)}",
+                        color = Color.White,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                        fontFamily = FontFamily.Monospace
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = "• ${req.method}",
+                        color = Color(0xFF38BDF8),
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+                Text(
+                    text = "${req.accountNumber} • $dateStr",
+                    color = Color(0xFF94A3B8),
+                    fontSize = 9.sp
+                )
+            }
+
+            Surface(
+                color = statusColor.copy(alpha = 0.2f),
+                shape = RoundedCornerShape(4.dp)
+            ) {
+                Text(
+                    text = when (req.status) {
+                        "APPROVED" -> "✓ APPROVED"
+                        "REJECTED" -> "✕ REJECTED"
+                        else -> "⏳ PENDING"
+                    },
+                    color = statusColor,
+                    fontSize = 9.sp,
+                    fontWeight = FontWeight.ExtraBold,
+                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                )
             }
         }
     }
@@ -578,7 +1037,7 @@ fun DailyOtpRowItem(
                         fontWeight = if (isToday) FontWeight.Bold else FontWeight.Medium
                     )
                     Text(
-                        text = "Unix: ${summary.unixCount} nos ($${String.format(Locale.US, "%.3f", summary.unixRateOnDay)}) • Zenex: ${summary.zenexCount} nos",
+                        text = "Unix: ${summary.unixCount} • Zenex: ${summary.zenexCount}",
                         color = Color(0xFF94A3B8),
                         fontSize = 9.sp
                     )
@@ -649,7 +1108,7 @@ fun RecentOtpLogItem(
                         shape = RoundedCornerShape(3.dp)
                     ) {
                         Text(
-                            text = "${rec.service} (${if (isUnix) "$${String.format(Locale.US, "%.3f", rec.rate)}" else "Zenex"})",
+                            text = "${rec.service} (${rec.platform}: +৳${String.format(Locale.US, "%.2f", rec.rate * 120.0)})",
                             color = if (isUnix) Color(0xFF81D4FA) else Color(0xFF34D399),
                             fontSize = 8.sp,
                             fontWeight = FontWeight.Bold,
