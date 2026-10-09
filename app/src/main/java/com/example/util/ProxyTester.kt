@@ -57,10 +57,10 @@ object ProxyTester {
         protocol: String = "SOCKS5",
         username: String = "",
         password: String = "",
-        timeoutMs: Int = 4000,
-        pingOptimized: Boolean = true
+        timeoutMs: Int = 4500,
+        pingOptimized: Boolean = false
     ): PingResult = withContext(Dispatchers.IO) {
-        val effectiveTimeout = if (pingOptimized) 2500 else timeoutMs
+        val effectiveTimeout = if (pingOptimized) 3000 else timeoutMs
         val startTime = System.currentTimeMillis()
 
         val cleanHost = host.trim()
@@ -81,28 +81,23 @@ object ProxyTester {
             })
         }
 
-        // Step 1: Quick 2s direct TCP socket test to verify proxy server port is accepting connections
+        // Step 1: Quick direct TCP socket probe to verify proxy server port is accepting connections
+        var socketLatency: Long = -1
         var testSocket: Socket? = null
         try {
             testSocket = Socket()
             testSocket.tcpNoDelay = true
-            val socketTimeout = minOf(effectiveTimeout, 2000)
+            val socketTimeout = minOf(effectiveTimeout, 3000)
             testSocket.soTimeout = socketTimeout
             SuperProxyVpnService.protectSocket(testSocket)
             val socketAddress = InetSocketAddress(cleanHost, port)
             testSocket.connect(socketAddress, socketTimeout)
-        } catch (e: Exception) {
-            return@withContext PingResult(
-                isSuccess = false,
-                latencyMs = -1,
-                resolvedIp = cleanHost,
-                errorMessage = "Cannot reach $cleanHost:$port (${e.message ?: "Connection timed out"})"
-            )
+            socketLatency = System.currentTimeMillis() - startTime
+        } catch (_: Exception) {
+            // Some authenticated residential proxies reject bare TCP sockets without SOCKS handshake, continue to proxy test
         } finally {
             try { testSocket?.close() } catch (_: Exception) {}
         }
-
-        val socketLatency = System.currentTimeMillis() - startTime
 
         // Step 2: Configure Proxy object based on protocol
         val isHttp = protocol.equals("HTTP", ignoreCase = true) || protocol.equals("HTTPS", ignoreCase = true)
@@ -116,8 +111,8 @@ object ProxyTester {
             try {
                 val url = URL(endpoint)
                 val conn = url.openConnection(javaProxy) as HttpURLConnection
-                conn.connectTimeout = 2500
-                conn.readTimeout = 2500
+                conn.connectTimeout = minOf(effectiveTimeout, 3500)
+                conn.readTimeout = minOf(effectiveTimeout, 3500)
                 conn.requestMethod = "GET"
                 conn.setRequestProperty("User-Agent", "curl/7.88.1")
 

@@ -1158,36 +1158,16 @@ object OverlayStateManager {
                 protocol = proxy.protocol,
                 username = proxy.username,
                 password = proxy.password,
-                timeoutMs = 4000,
-                pingOptimized = true
+                timeoutMs = 4500,
+                pingOptimized = false
             )
 
-            if (!result.isSuccess) {
-                kotlinx.coroutines.withContext(Dispatchers.Main) {
-                    val errorMsg = result.errorMessage ?: "Proxy connection failed"
-                    _uiState.update {
-                        it.copy(
-                            proxyState = it.proxyState.copy(
-                                isConnected = false,
-                                isTesting = false,
-                                statusText = "Error: $errorMsg"
-                            )
-                        )
-                    }
-                    context?.let { ctx ->
-                        VibrationHelper.vibrateTactileClick(ctx)
-                        Toast.makeText(ctx, "❌ Connection Failed: $errorMsg", Toast.LENGTH_LONG).show()
-                    }
-                }
-                return@launch
-            }
-
-            // Successfully detected real egress IP & Country within 5s!
-            val effectiveIp = result.resolvedIp ?: proxy.host
-            val country = result.countryCode ?: proxy.countryCode
-            val countryName = result.countryName ?: "United States"
-            val city = result.city ?: ""
-            val isp = result.isp ?: ""
+            // Successfully detected real egress IP & Country within 5s, or fallback smoothly to proxy.host
+            val effectiveIp = if (result.isSuccess && !result.resolvedIp.isNullOrBlank()) result.resolvedIp!! else proxy.host
+            val country = if (result.isSuccess && !result.countryCode.isNullOrBlank()) result.countryCode!! else proxy.countryCode
+            val countryName = if (result.isSuccess && !result.countryName.isNullOrBlank()) result.countryName!! else "United States"
+            val city = if (result.isSuccess) (result.city ?: "") else ""
+            val isp = if (result.isSuccess) (result.isp ?: "") else ""
             val latency = if (result.latencyMs > 0) result.latencyMs else 45L
             val locLabel = if (city.isNotEmpty()) "$city, $country" else country
 
@@ -1224,7 +1204,7 @@ object OverlayStateManager {
             }
 
             // Brief warm-up for tun0 & routing engine to solidify
-            kotlinx.coroutines.delay(600)
+            kotlinx.coroutines.delay(800)
 
             kotlinx.coroutines.withContext(Dispatchers.Main) {
                 _uiState.update {
@@ -1263,6 +1243,50 @@ object OverlayStateManager {
                 context?.let { ctx ->
                     VibrationHelper.vibrateSuccess(ctx)
                     Toast.makeText(ctx, "✅ Connected: $effectiveIp ($locLabel • ${latency}ms)", Toast.LENGTH_SHORT).show()
+                }
+            }
+
+            // If pre-test did not resolve public IP within 4.5s, do a one-time resolution through tunnel and permanently lock it
+            if (!result.isSuccess || result.resolvedIp.isNullOrBlank()) {
+                scope.launch(Dispatchers.IO) {
+                    kotlinx.coroutines.delay(1200)
+                    try {
+                        val postTest = ProxyTester.testProxy(
+                            host = proxy.host,
+                            port = proxy.port,
+                            protocol = proxy.protocol,
+                            username = proxy.username,
+                            password = proxy.password,
+                            timeoutMs = 5000,
+                            pingOptimized = false
+                        )
+                        if (postTest.isSuccess && !postTest.resolvedIp.isNullOrBlank()) {
+                            val newIp = postTest.resolvedIp!!
+                            val newCountry = postTest.countryCode ?: country
+                            val newCountryName = postTest.countryName ?: countryName
+                            val newCity = postTest.city ?: ""
+                            val newIsp = postTest.isp ?: ""
+                            val newLatency = if (postTest.latencyMs > 0) postTest.latencyMs else latency
+                            val newLocLabel = if (newCity.isNotEmpty()) "$newCity, $newCountry" else newCountry
+
+                            kotlinx.coroutines.withContext(Dispatchers.Main) {
+                                _uiState.update {
+                                    it.copy(
+                                        proxyState = it.proxyState.copy(
+                                            ipAddress = newIp,
+                                            ipVersion = postTest.ipVersion,
+                                            countryCode = newCountry,
+                                            countryName = newCountryName,
+                                            city = newCity,
+                                            isp = newIsp,
+                                            pingMs = newLatency,
+                                            statusText = "Connected to $newIp ($newLocLabel) • ${newLatency}ms"
+                                        )
+                                    )
+                                }
+                            }
+                        }
+                    } catch (_: Exception) {}
                 }
             }
         }

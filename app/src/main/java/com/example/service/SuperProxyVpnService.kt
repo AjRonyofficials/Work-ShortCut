@@ -92,7 +92,7 @@ class SuperProxyVpnService : VpnService() {
 
             val builder = Builder()
                 .setSession("SuperProxy: $profileName")
-                .setMtu(1280) // 1280 bytes: Universal IPv6 & cellular MTU standard, prevents carrier packet fragmentation
+                .setMtu(1400) // Standard safe MTU prevents mobile carrier packet fragmentation
                 .addAddress("10.10.10.10", 24)
                 .addDnsServer("8.8.8.8") // Intercepted locally in-memory by mapdns on tun0
                 .addDnsServer("1.1.1.1")
@@ -177,15 +177,13 @@ class SuperProxyVpnService : VpnService() {
             val sb = java.lang.StringBuilder()
             sb.append("tunnel:\n")
             sb.append("  name: tun0\n")
-            sb.append("  mtu: 1280\n")
+            sb.append("  mtu: 1400\n")
             sb.append("  ipv4: 10.10.10.10\n")
-            sb.append("  ipv6: 'fd00:1::1'\n")
             sb.append("  icmp: true\n")
             sb.append("\n")
             sb.append("socks5:\n")
             sb.append("  port: ").append(finalPort).append("\n")
             sb.append("  address: '").append(finalServerIp).append("'\n")
-            sb.append("  udp: 'tcp'\n") // Translate UDP to TCP to prevent browser UDP DNS/QUIC stalls
             if (finalUser.isNotBlank() && finalPass.isNotBlank()) {
                 val safeUser = finalUser.replace("'", "''")
                 val safePass = finalPass.replace("'", "''")
@@ -202,12 +200,8 @@ class SuperProxyVpnService : VpnService() {
             sb.append("\n")
             sb.append("misc:\n")
             sb.append("  task-stack-size: 20480\n")
-            sb.append("  tcp-buffer-size: 32768\n")
-            sb.append("  limit-nofile: 65535\n")
-            sb.append("  max-session-count: 1024\n")
-            sb.append("  connect-timeout: 8000\n")
+            sb.append("  connect-timeout: 10000\n")
             sb.append("  tcp-read-write-timeout: 300000\n")
-            sb.append("  udp-read-write-timeout: 60000\n")
 
             FileOutputStream(configFile).use { it.write(sb.toString().toByteArray()) }
             configFile.setReadable(true, false)
