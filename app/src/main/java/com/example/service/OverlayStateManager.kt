@@ -1141,12 +1141,12 @@ object OverlayStateManager {
             }
         }
 
-        // Show connecting / handshake validation status in UI
+        // 1. PHASE 1: Fast IP & Country Detection (0 to 5 seconds)
         _uiState.update {
             it.copy(
                 proxyState = it.proxyState.copy(
                     isTesting = true,
-                    statusText = "Validating ${proxy.host}:${proxy.port}..."
+                    statusText = "Detecting IP & Country (⚡ <5s)..."
                 )
             )
         }
@@ -1158,69 +1158,12 @@ object OverlayStateManager {
                 protocol = proxy.protocol,
                 username = proxy.username,
                 password = proxy.password,
-                timeoutMs = 12000,
-                pingOptimized = false
+                timeoutMs = 4000,
+                pingOptimized = true
             )
 
-            kotlinx.coroutines.withContext(Dispatchers.Main) {
-                if (result.isSuccess) {
-                    val effectiveIp = result.resolvedIp ?: proxy.host
-                    val country = result.countryCode ?: proxy.countryCode
-                    val countryName = result.countryName ?: "United States"
-                    val city = result.city ?: ""
-                    val isp = result.isp ?: ""
-                    val latency = if (result.latencyMs > 0) result.latencyMs else 45L
-
-                    _uiState.update {
-                        it.copy(
-                            proxyState = it.proxyState.copy(
-                                isConnected = true,
-                                isTesting = false,
-                                connectedDurationSeconds = 0,
-                                ipAddress = effectiveIp,
-                                ipVersion = result.ipVersion,
-                                countryCode = country,
-                                countryName = countryName,
-                                city = city,
-                                isp = isp,
-                                pingMs = latency,
-                                statusText = "Connected to $effectiveIp [${result.ipVersion}] • ${latency}ms"
-                            )
-                        )
-                    }
-
-                    // Start live duration timer
-                    proxyDurationJob?.cancel()
-                    proxyDurationJob = scope.launch {
-                        while (isActive) {
-                            delay(1000)
-                            _uiState.update {
-                                it.copy(
-                                    proxyState = it.proxyState.copy(
-                                        connectedDurationSeconds = it.proxyState.connectedDurationSeconds + 1
-                                    )
-                                )
-                            }
-                        }
-                    }
-
-                    context?.let { ctx ->
-                        VibrationHelper.vibrateSuccess(ctx)
-                        SuperProxyVpnService.start(
-                            context = ctx,
-                            profileName = proxy.profileName,
-                            server = proxy.host,
-                            port = proxy.port,
-                            protocol = proxy.protocol,
-                            user = proxy.username,
-                            pass = proxy.password,
-                            allowedApps = proxy.allowedApps
-                        )
-                        val locLabel = if (city.isNotEmpty()) "$city, $country" else country
-                        Toast.makeText(ctx, "✅ Super Proxy Connected! ($locLabel • ${latency}ms)", Toast.LENGTH_SHORT).show()
-                    }
-                } else {
-                    // Revert switch and display exact error message
+            if (!result.isSuccess) {
+                kotlinx.coroutines.withContext(Dispatchers.Main) {
                     val errorMsg = result.errorMessage ?: "Proxy connection failed"
                     _uiState.update {
                         it.copy(
@@ -1233,8 +1176,93 @@ object OverlayStateManager {
                     }
                     context?.let { ctx ->
                         VibrationHelper.vibrateTactileClick(ctx)
-                        Toast.makeText(ctx, "❌ Handshake Failed: $errorMsg", Toast.LENGTH_LONG).show()
+                        Toast.makeText(ctx, "❌ Connection Failed: $errorMsg", Toast.LENGTH_LONG).show()
                     }
+                }
+                return@launch
+            }
+
+            // Successfully detected real egress IP & Country within 5s!
+            val effectiveIp = result.resolvedIp ?: proxy.host
+            val country = result.countryCode ?: proxy.countryCode
+            val countryName = result.countryName ?: "United States"
+            val city = result.city ?: ""
+            val isp = result.isp ?: ""
+            val latency = if (result.latencyMs > 0) result.latencyMs else 45L
+            val locLabel = if (city.isNotEmpty()) "$city, $country" else country
+
+            // Update UI with detected IP and indicate Phase 2 (Establishing connection)
+            kotlinx.coroutines.withContext(Dispatchers.Main) {
+                _uiState.update {
+                    it.copy(
+                        proxyState = it.proxyState.copy(
+                            ipAddress = effectiveIp,
+                            ipVersion = result.ipVersion,
+                            countryCode = country,
+                            countryName = countryName,
+                            city = city,
+                            isp = isp,
+                            pingMs = latency,
+                            statusText = "IP Detected: $effectiveIp ($locLabel) • Establishing VPN..."
+                        )
+                    )
+                }
+
+                // 2. PHASE 2: Establishing & Solidifying IP Connection (Total <= 10s)
+                context?.let { ctx ->
+                    SuperProxyVpnService.start(
+                        context = ctx,
+                        profileName = proxy.profileName,
+                        server = proxy.host,
+                        port = proxy.port,
+                        protocol = proxy.protocol,
+                        user = proxy.username,
+                        pass = proxy.password,
+                        allowedApps = proxy.allowedApps
+                    )
+                }
+            }
+
+            // Brief warm-up for tun0 & routing engine to solidify
+            kotlinx.coroutines.delay(600)
+
+            kotlinx.coroutines.withContext(Dispatchers.Main) {
+                _uiState.update {
+                    it.copy(
+                        proxyState = it.proxyState.copy(
+                            isConnected = true,
+                            isTesting = false,
+                            connectedDurationSeconds = 0,
+                            ipAddress = effectiveIp,
+                            ipVersion = result.ipVersion,
+                            countryCode = country,
+                            countryName = countryName,
+                            city = city,
+                            isp = isp,
+                            pingMs = latency,
+                            statusText = "Connected to $effectiveIp ($locLabel) • ${latency}ms"
+                        )
+                    )
+                }
+
+                // Start live duration timer
+                proxyDurationJob?.cancel()
+                proxyDurationJob = scope.launch {
+                    while (isActive) {
+                        delay(1000)
+                        _uiState.update {
+                            it.copy(
+                                proxyState = it.proxyState.copy(
+                                    connectedDurationSeconds = it.proxyState.connectedDurationSeconds + 1
+                                )
+                            )
+                        }
+                    }
+                }
+
+                context?.let { ctx ->
+                    VibrationHelper.vibrateSuccess(ctx)
+                    Toast.makeText(ctx, "✅ Connected: $effectiveIp ($locLabel • ${latency}ms)", Toast.LENGTH_SHORT).show()
                 }
             }
         }
@@ -1364,7 +1392,8 @@ object OverlayStateManager {
                 protocol = proxy.protocol,
                 username = proxy.username,
                 password = proxy.password,
-                pingOptimized = false
+                timeoutMs = 4000,
+                pingOptimized = true
             )
 
             val effectiveCountry = if (result.isSuccess && !result.countryCode.isNullOrBlank()) {
@@ -1564,40 +1593,8 @@ object OverlayStateManager {
 
     private fun startPeriodicPingTester() {
         pingTickerJob?.cancel()
-        pingTickerJob = scope.launch(Dispatchers.IO) {
-            while (isActive) {
-                val state = _uiState.value
-                val interval = if (state.lowPowerMode) 90_000L else 30_000L
-                delay(interval)
-
-                if (_uiState.value.proxyState.isConnected) {
-                    val p = _uiState.value.proxyState
-                    val test = ProxyTester.testProxy(
-                        host = p.host,
-                        port = p.port,
-                        protocol = p.protocol,
-                        username = p.username,
-                        password = p.password,
-                        pingOptimized = _uiState.value.pingOptimization
-                    )
-                    if (test.isSuccess) {
-                        _uiState.update {
-                            it.copy(
-                                proxyState = it.proxyState.copy(
-                                    ipAddress = test.resolvedIp ?: it.proxyState.ipAddress,
-                                    ipVersion = test.ipVersion,
-                                    countryCode = test.countryCode ?: it.proxyState.countryCode,
-                                    countryName = test.countryName ?: it.proxyState.countryName,
-                                    city = test.city ?: it.proxyState.city,
-                                    isp = test.isp ?: it.proxyState.isp,
-                                    pingMs = test.latencyMs,
-                                    statusText = "Connected (${test.latencyMs}ms)"
-                                )
-                            )
-                        }
-                    }
-                }
-            }
-        }
+        // Connected IP must remain 100% FIXED and locked during active connection.
+        // Never rotate or overwrite IP in the background while connected.
+        // IP only changes upon new connect/start or explicit reconnect.
     }
 }

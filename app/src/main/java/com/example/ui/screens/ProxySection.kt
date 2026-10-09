@@ -237,13 +237,19 @@ fun ProxySection(
                             Spacer(modifier = Modifier.width(12.dp))
                             Column {
                                 Text(
-                                    text = if (proxy.isConnected) "Super Proxy Connected ✓" else "Super Proxy Disconnected",
+                                    text = if (proxy.isTesting) "Detecting IP & Connecting..."
+                                           else if (proxy.isConnected) "Super Proxy Connected ✓"
+                                           else "Super Proxy Disconnected",
                                     style = MaterialTheme.typography.titleMedium,
                                     fontWeight = FontWeight.Bold,
-                                    color = if (proxy.isConnected) BrandGreen else MaterialTheme.colorScheme.onSurface
+                                    color = if (proxy.isTesting) Color(0xFF00B0FF)
+                                            else if (proxy.isConnected) BrandGreen
+                                            else MaterialTheme.colorScheme.onSurface
                                 )
                                 Text(
-                                    text = if (proxy.isConnected) "${proxy.profileName} • Real-time VPN active" else "Ready to connect (1-click fast routing)",
+                                    text = if (proxy.isTesting) proxy.statusText
+                                           else if (proxy.isConnected) "${proxy.profileName} • IP Locked: ${proxy.ipAddress}"
+                                           else "Ready to connect (⚡ 5s fast IP detect • 10s establish)",
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
@@ -256,16 +262,32 @@ fun ProxySection(
                     // Big Super Proxy START / STOP Button (1-Click Fast Connect)
                     Button(
                         onClick = triggerStartOrStop,
+                        enabled = !proxy.isTesting,
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(52.dp)
                             .testTag("super_proxy_start_stop_button"),
                         shape = RoundedCornerShape(12.dp),
                         colors = ButtonDefaults.buttonColors(
-                            containerColor = if (proxy.isConnected) AlertRed else Color(0xFF00C853)
+                            containerColor = if (proxy.isTesting) Color(0xFF0288D1)
+                                            else if (proxy.isConnected) AlertRed
+                                            else Color(0xFF00C853)
                         )
                     ) {
-                        if (proxy.isConnected) {
+                        if (proxy.isTesting) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(20.dp),
+                                color = Color.White,
+                                strokeWidth = 2.5.dp
+                            )
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Text(
+                                text = "CONNECTING (⚡ DETECTING IP)...",
+                                fontWeight = FontWeight.ExtraBold,
+                                fontSize = 14.sp,
+                                color = Color.White
+                            )
+                        } else if (proxy.isConnected) {
                             Icon(Icons.Default.Stop, contentDescription = null, modifier = Modifier.size(22.dp))
                             Spacer(modifier = Modifier.width(8.dp))
                             Text(
@@ -830,26 +852,35 @@ fun ProxySection(
                         if (isProfileSavedInList) {
                             Button(
                                 onClick = triggerStartOrStop,
+                                enabled = !proxy.isTesting,
                                 modifier = Modifier
                                     .weight(1f)
                                     .height(46.dp)
                                     .testTag("btn_start_proxy_from_form"),
                                 shape = RoundedCornerShape(10.dp),
                                 colors = ButtonDefaults.buttonColors(
-                                    containerColor = if (proxy.isConnected) AlertRed else Color(0xFF00C853)
+                                    containerColor = if (proxy.isTesting) Color(0xFF0288D1)
+                                                    else if (proxy.isConnected) AlertRed
+                                                    else Color(0xFF00C853)
                                 )
                             ) {
-                                Icon(
-                                    imageVector = if (proxy.isConnected) Icons.Default.Stop else Icons.Default.PlayArrow,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(16.dp)
-                                )
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text(
-                                    text = if (proxy.isConnected) "Stop" else "Start",
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 13.sp
-                                )
+                                if (proxy.isTesting) {
+                                    CircularProgressIndicator(modifier = Modifier.size(16.dp), color = Color.White, strokeWidth = 2.dp)
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text("Detecting...", fontSize = 12.sp, color = Color.White)
+                                } else {
+                                    Icon(
+                                        imageVector = if (proxy.isConnected) Icons.Default.Stop else Icons.Default.PlayArrow,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text(
+                                        text = if (proxy.isConnected) "Stop" else "Start",
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 13.sp
+                                    )
+                                }
                             }
                         }
 
