@@ -182,55 +182,8 @@ fun UnixSmsSectionContent(
                     UnixStatPill(label = "OTP RATE", value = "${String.format(java.util.Locale.US, "%.2f", currentCountryRate)} ৳", color = Color(0xFF38BDF8), modifier = Modifier.weight(1f))
                 }
 
-                Spacer(modifier = Modifier.height(10.dp))
-
-                // Single Clean Full-width Button: Country OTP Rates List
-                Surface(
-                    color = Color(0xFF0284C7).copy(alpha = 0.16f),
-                    shape = RoundedCornerShape(10.dp),
-                    border = BorderStroke(1.dp, Color(0xFF0284C7)),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { showCountryRatesDialog = true }
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 12.dp, vertical = 9.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Default.AccountBalanceWallet, contentDescription = null, tint = Color(0xFF38BDF8), modifier = Modifier.size(16.dp))
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(
-                                text = "🌐 কোন দেশের রেট কত (OTP RATES LIST)",
-                                color = Color.White,
-                                fontSize = 11.5.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                        }
-                        Text(
-                            text = "0.48৳ - 0.50৳ ➜",
-                            color = Color(0xFF38BDF8),
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.ExtraBold
-                        )
-                    }
-                }
             }
         }
-
-        UnixCountryRatesDialog(
-            isOpen = showCountryRatesDialog,
-            onDismiss = { showCountryRatesDialog = false },
-            onSelectCountry = { country ->
-                UnixSmsManager.setSelectedCountry(country)
-                selectedCountryCode = country
-                showCountryRatesDialog = false
-                Toast.makeText(context, "দেশ নির্বাচন করা হয়েছে: $country", Toast.LENGTH_SHORT).show()
-            }
-        )
 
         // Subtabs: Get Number vs Live Console
         TabRow(
@@ -495,133 +448,6 @@ fun UnixSmsSectionContent(
                         else -> {
                             val preset = ADMIN_PRESET_COUNTRIES.find { it.code.equals(selectedCountryCode, ignoreCase = true) }
                             if (preset != null) "${preset.flag} ${preset.name} (${preset.code})" else selectedCountryCode
-                        }
-                    }
-
-                    Surface(
-                        color = Color(0xFF0091EA).copy(alpha = 0.12f),
-                        shape = RoundedCornerShape(8.dp),
-                        border = BorderStroke(1.dp, Color(0xFF0091EA).copy(alpha = 0.35f)),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 10.dp, vertical = 7.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Box(modifier = Modifier.size(7.dp).clip(CircleShape).background(Color(0xFF00E676)))
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text(
-                                    text = selectedCountryDisplayName,
-                                    color = Color.White,
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.Bold
-                                )
-                            }
-                            Surface(
-                                color = Color(0xFF0284C7).copy(alpha = 0.3f),
-                                shape = RoundedCornerShape(6.dp),
-                                border = BorderStroke(1.dp, Color(0xFF38BDF8))
-                            ) {
-                                Text(
-                                    text = "প্রতি ওটিপি: ${String.format(java.util.Locale.US, "%.2f", activeSelectedRate)} ৳",
-                                    color = Color(0xFF38BDF8),
-                                    fontSize = 10.5.sp,
-                                    fontWeight = FontWeight.ExtraBold,
-                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                                )
-                            }
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(6.dp))
-
-                    // Quick OTP Rate Adjuster / Presets for Selected Country (0.48, 0.49, 0.50 ৳)
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Surface(
-                            color = Color(0xFF162332),
-                            shape = RoundedCornerShape(8.dp),
-                            border = BorderStroke(1.dp, Color(0xFF283E56)),
-                            modifier = Modifier
-                                .weight(1f)
-                                .clickable {
-                                    val newRate = Math.round(maxOf(0.01, activeSelectedRate - 0.01) * 100.0) / 100.0
-                                    if (selectedCountryCode == "ALL") {
-                                        UnixSmsManager.setOtpRate(newRate)
-                                    } else {
-                                        UnixSmsManager.setCountryRate(selectedCountryCode, newRate)
-                                    }
-                                    VibrationHelper.vibrateClick(context)
-                                }
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(vertical = 5.dp),
-                                horizontalArrangement = Arrangement.Center
-                            ) {
-                                Text("− 0.01", color = Color(0xFFF87171), fontSize = 10.5.sp, fontWeight = FontWeight.Bold)
-                            }
-                        }
-
-                        listOf(0.48, 0.49, 0.50).forEach { r ->
-                            val isSelected = Math.abs(activeSelectedRate - r) < 0.005
-                            Surface(
-                                color = if (isSelected) Color(0xFF0284C7) else Color(0xFF0A131F),
-                                shape = RoundedCornerShape(8.dp),
-                                border = BorderStroke(1.dp, if (isSelected) Color(0xFF38BDF8) else Color(0xFF1E2F42)),
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .clickable {
-                                        if (selectedCountryCode == "ALL") {
-                                            UnixSmsManager.setOtpRate(r)
-                                        } else {
-                                            UnixSmsManager.setCountryRate(selectedCountryCode, r)
-                                        }
-                                        VibrationHelper.vibrateClick(context)
-                                    }
-                            ) {
-                                Row(
-                                    modifier = Modifier.padding(vertical = 5.dp),
-                                    horizontalArrangement = Arrangement.Center
-                                ) {
-                                    Text(
-                                        text = "${String.format(java.util.Locale.US, "%.2f", r)} ৳",
-                                        color = if (isSelected) Color.White else Color(0xFF94A3B8),
-                                        fontSize = 10.5.sp,
-                                        fontWeight = if (isSelected) FontWeight.ExtraBold else FontWeight.Bold
-                                    )
-                                }
-                            }
-                        }
-
-                        Surface(
-                            color = Color(0xFF162332),
-                            shape = RoundedCornerShape(8.dp),
-                            border = BorderStroke(1.dp, Color(0xFF283E56)),
-                            modifier = Modifier
-                                .weight(1f)
-                                .clickable {
-                                    val newRate = Math.round((activeSelectedRate + 0.01) * 100.0) / 100.0
-                                    if (selectedCountryCode == "ALL") {
-                                        UnixSmsManager.setOtpRate(newRate)
-                                    } else {
-                                        UnixSmsManager.setCountryRate(selectedCountryCode, newRate)
-                                    }
-                                    VibrationHelper.vibrateClick(context)
-                                }
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(vertical = 5.dp),
-                                horizontalArrangement = Arrangement.Center
-                            ) {
-                                Text("+ 0.01", color = Color(0xFF34D399), fontSize = 10.5.sp, fontWeight = FontWeight.Bold)
-                            }
                         }
                     }
 
@@ -1056,6 +882,20 @@ fun UnixActiveNumberRow(
     }
 }
 
+/**
+ * Masks the middle 3 to 4 digits of a phone number with *** or ... to protect real number
+ */
+fun maskPhoneNumberMiddle(rawNumber: String): String {
+    val clean = rawNumber.trim()
+    if (clean.length <= 6) return clean
+    // e.g. +12025550193 -> +1202***0193
+    val midStart = (clean.length / 2) - 1
+    val midEnd = (midStart + 3).coerceAtMost(clean.length - 2)
+    val prefix = clean.substring(0, midStart)
+    val suffix = clean.substring(midEnd)
+    return "$prefix***$suffix"
+}
+
 @Composable
 fun UnixCdrMessageCard(
     cdr: UnixSmsCdrRecord,
@@ -1066,6 +906,7 @@ fun UnixCdrMessageCard(
         val matcher = pattern.matcher(cdr.message)
         if (matcher.find()) matcher.group() else null
     }
+    val maskedNumber = remember(cdr.num) { maskPhoneNumberMiddle(cdr.num) }
 
     Surface(
         color = Color(0xFF0D1724),
@@ -1108,8 +949,9 @@ fun UnixCdrMessageCard(
                         )
                     }
                     Spacer(modifier = Modifier.width(6.dp))
+                    val maskedNumber = remember(cdr.num) { maskPhoneNumberMiddle(cdr.num) }
                     Text(
-                        text = cdr.num,
+                        text = maskedNumber,
                         color = Color.White,
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Bold,
@@ -1245,8 +1087,8 @@ fun UnixCdrMessageCard(
                     shape = RoundedCornerShape(6.dp),
                     border = BorderStroke(1.dp, Color(0xFF334155)),
                     modifier = Modifier.clickable {
-                        ClipboardHelper.copyToClipboard(context, cdr.num, "Phone Number")
-                        Toast.makeText(context, "নাম্বার কপি হয়েছে", Toast.LENGTH_SHORT).show()
+                        ClipboardHelper.copyToClipboard(context, maskedNumber, "Masked Number")
+                        Toast.makeText(context, "মাস্কড নাম্বার কপি হয়েছে ($maskedNumber)", Toast.LENGTH_SHORT).show()
                     }
                 ) {
                     Text(

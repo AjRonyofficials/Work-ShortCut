@@ -2,6 +2,7 @@ package com.example.ui.screens
 
 import android.content.Context
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -1851,98 +1852,107 @@ private fun BroadcastTerminalCard(
 
             Spacer(modifier = Modifier.height(6.dp))
 
-            // Line 2: Phone Number | [Range 📋] | ➔ | Monospace SMS with green <#>
+            // Line 2: Phone Number, Range & OTP Extraction
             Row(
                 modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(
-                    text = feed.number,
-                    color = Color.White,
-                    fontSize = 12.5.sp,
-                    fontWeight = FontWeight.Bold,
-                    fontFamily = FontFamily.Monospace,
-                    modifier = Modifier.clickable {
-                        ClipboardHelper.copyToClipboard(context, feed.number, "Phone")
-                        Toast.makeText(context, "নম্বর কপি হয়েছে", Toast.LENGTH_SHORT).show()
-                    }
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = feed.number,
+                        color = Color.White,
+                        fontSize = 12.5.sp,
+                        fontWeight = FontWeight.Bold,
+                        fontFamily = FontFamily.Monospace,
+                        modifier = Modifier.clickable {
+                            ClipboardHelper.copyToClipboard(context, feed.number, "Phone")
+                            Toast.makeText(context, "নম্বর কপি হয়েছে", Toast.LENGTH_SHORT).show()
+                        }
+                    )
 
-                Spacer(modifier = Modifier.width(6.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
 
-                Surface(
-                    color = Color(0xFF112438),
-                    shape = RoundedCornerShape(4.dp),
-                    border = androidx.compose.foundation.BorderStroke(0.7.dp, Color(0xFF204266)),
-                    modifier = Modifier.clickable {
-                        VirtualNumberManager.setTargetRange(feed.range)
-                        ClipboardHelper.copyToClipboard(context, feed.range, "Range")
-                        Toast.makeText(context, "রেঞ্জ কপি ও সেট হয়েছে: ${feed.range}", Toast.LENGTH_SHORT).show()
-                    }
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp),
-                        verticalAlignment = Alignment.CenterVertically
+                    Surface(
+                        color = Color(0xFF112438),
+                        shape = RoundedCornerShape(4.dp),
+                        border = androidx.compose.foundation.BorderStroke(0.7.dp, Color(0xFF204266)),
+                        modifier = Modifier.clickable {
+                            VirtualNumberManager.setTargetRange(feed.range)
+                            ClipboardHelper.copyToClipboard(context, feed.range, "Range")
+                            Toast.makeText(context, "রেঞ্জ কপি ও সেট হয়েছে: ${feed.range}", Toast.LENGTH_SHORT).show()
+                        }
                     ) {
-                        Text(
-                            text = feed.range,
-                            color = Color(0xFF60A5FA),
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.Bold,
-                            fontFamily = FontFamily.Monospace
-                        )
-                        Spacer(modifier = Modifier.width(3.dp))
-                        Icon(
-                            Icons.Default.ContentCopy,
-                            contentDescription = "Copy Range",
-                            tint = Color(0xFF60A5FA),
-                            modifier = Modifier.size(10.dp)
-                        )
+                        Row(
+                            modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = feed.range,
+                                color = Color(0xFF60A5FA),
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                fontFamily = FontFamily.Monospace
+                            )
+                            Spacer(modifier = Modifier.width(3.dp))
+                            Icon(
+                                Icons.Default.ContentCopy,
+                                contentDescription = "Copy Range",
+                                tint = Color(0xFF60A5FA),
+                                modifier = Modifier.size(10.dp)
+                            )
+                        }
                     }
                 }
 
-                Spacer(modifier = Modifier.width(6.dp))
-
-                Text(
-                    text = "➔",
-                    color = Color(0xFF546E7A),
-                    fontSize = 11.sp
-                )
-
-                Spacer(modifier = Modifier.width(6.dp))
-
-                val otpText = feed.otp
-                if (otpText.startsWith("<#>")) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.weight(1f, fill = false)
+                // Extracted OTP Highlight Pill
+                val regex = Pattern.compile("\\b\\d{4,8}\\b")
+                val matcher = regex.matcher(feed.otp)
+                if (matcher.find()) {
+                    val code = matcher.group()
+                    Surface(
+                        color = Color(0xFF00E676).copy(alpha = 0.15f),
+                        shape = RoundedCornerShape(4.dp),
+                        border = BorderStroke(1.dp, Color(0xFF00E676)),
+                        modifier = Modifier.clickable {
+                            ClipboardHelper.copyToClipboard(context, code, "OTP Code")
+                            Toast.makeText(context, "✓ OTP কপি হয়েছে: $code", Toast.LENGTH_SHORT).show()
+                        }
                     ) {
-                        Text(
-                            text = "<#>",
-                            color = Color(0xFF00E676),
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold,
-                            fontFamily = FontFamily.Monospace
-                        )
-                        Spacer(modifier = Modifier.width(3.dp))
-                        Text(
-                            text = otpText.removePrefix("<#>").trim(),
-                            color = Color(0xFFE2E8F0),
-                            fontSize = 11.sp,
-                            fontFamily = FontFamily.Monospace,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
+                        Row(
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(Icons.Default.Bolt, contentDescription = null, tint = Color(0xFF00E676), modifier = Modifier.size(12.dp))
+                            Spacer(modifier = Modifier.width(2.dp))
+                            Text(
+                                text = "OTP: $code",
+                                color = Color(0xFF00E676),
+                                fontSize = 10.5.sp,
+                                fontWeight = FontWeight.ExtraBold,
+                                fontFamily = FontFamily.Monospace
+                            )
+                        }
                     }
-                } else {
+                }
+            }
+
+            Spacer(modifier = Modifier.height(6.dp))
+
+            // Line 3: FULL SMS Message (not truncated, complete readable message body)
+            Surface(
+                color = Color(0xFF070E16),
+                shape = RoundedCornerShape(6.dp),
+                border = BorderStroke(0.6.dp, Color(0xFF1E2F42)),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(modifier = Modifier.padding(8.dp)) {
                     Text(
-                        text = otpText,
+                        text = feed.otp,
                         color = Color(0xFFE2E8F0),
-                        fontSize = 11.sp,
+                        fontSize = 11.5.sp,
                         fontFamily = FontFamily.Monospace,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f, fill = false)
+                        lineHeight = 16.sp
                     )
                 }
             }

@@ -15,6 +15,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -73,6 +74,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Tab
@@ -499,7 +501,117 @@ fun AdminUnixSmsCard(
             AdminStatPill(title = "TODAY OTP", count = unixState.todayOtpCount.toString(), color = Color(0xFFF472B6), modifier = Modifier.weight(1f))
         }
 
-        // 1.5 USER OTP RATE CONTROL CARD: BOTH UNIX SMS & ZENEX SMS
+        // 1.5 USER OTP RATE CONTROL CARD: BOTH UNIX SMS & ZENEX SMS (IN TAKA ৳ WITH UNLIMITED CUSTOM ADJUSTER)
+        var showCustomUnixRateDialog by remember { mutableStateOf(false) }
+        var showCustomZenexRateDialog by remember { mutableStateOf(false) }
+        var customRateInputText by remember { mutableStateOf("") }
+
+        if (showCustomUnixRateDialog) {
+            AlertDialog(
+                onDismissRequest = { showCustomUnixRateDialog = false },
+                containerColor = Color(0xFF101C2B),
+                title = {
+                    Text("UNIX SMS রেট পরিবর্তন", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                },
+                text = {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text("যেকোনো ওটিপি রেট লিখুন (টাকা / ৳):", color = Color(0xFF94A3B8), fontSize = 12.sp)
+                        OutlinedTextField(
+                            value = customRateInputText,
+                            onValueChange = { customRateInputText = it },
+                            placeholder = { Text("যেমন: 0.50 বা 0.48 বা 1.00", color = Color(0xFF64748B)) },
+                            singleLine = true,
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedTextColor = Color.White,
+                                unfocusedTextColor = Color.White,
+                                focusedBorderColor = Color(0xFF38BDF8),
+                                unfocusedBorderColor = Color(0xFF1E2D40),
+                                focusedContainerColor = Color(0xFF090E17),
+                                unfocusedContainerColor = Color(0xFF090E17)
+                            ),
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+                },
+                confirmButton = {
+                    Button(
+                        onClick = {
+                            val r = customRateInputText.toDoubleOrNull()
+                            if (r != null && r >= 0.01) {
+                                UnixSmsManager.setOtpRate(r)
+                                Toast.makeText(context, "Unix ওটিপি রেট সেট হয়েছে: ${String.format(java.util.Locale.US, "%.2f", r)} ৳", Toast.LENGTH_SHORT).show()
+                                showCustomUnixRateDialog = false
+                            } else {
+                                Toast.makeText(context, "সঠিক রেট লিখুন (কমপক্ষে 0.01)", Toast.LENGTH_SHORT).show()
+                            }
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0284C7))
+                    ) {
+                        Text("সেভ করুন", fontWeight = FontWeight.Bold)
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showCustomUnixRateDialog = false }) {
+                        Text("বাতিল", color = Color(0xFF94A3B8))
+                    }
+                }
+            )
+        }
+
+        if (showCustomZenexRateDialog) {
+            AlertDialog(
+                onDismissRequest = { showCustomZenexRateDialog = false },
+                containerColor = Color(0xFF101C2B),
+                title = {
+                    Text("ZENEX SMS রেট পরিবর্তন", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                },
+                text = {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text("যেকোনো ওটিপি রেট লিখুন (টাকা / ৳):", color = Color(0xFF94A3B8), fontSize = 12.sp)
+                        OutlinedTextField(
+                            value = customRateInputText,
+                            onValueChange = { customRateInputText = it },
+                            placeholder = { Text("যেমন: 0.50 বা 0.48 বা 1.00", color = Color(0xFF64748B)) },
+                            singleLine = true,
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedTextColor = Color.White,
+                                unfocusedTextColor = Color.White,
+                                focusedBorderColor = Color(0xFF34D399),
+                                unfocusedBorderColor = Color(0xFF1E2D40),
+                                focusedContainerColor = Color(0xFF090E17),
+                                unfocusedContainerColor = Color(0xFF090E17)
+                            ),
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+                },
+                confirmButton = {
+                    Button(
+                        onClick = {
+                            val r = customRateInputText.toDoubleOrNull()
+                            if (r != null && r >= 0.01) {
+                                VirtualNumberManager.setZenexOtpRate(r)
+                                Toast.makeText(context, "Zenex ওটিপি রেট সেট হয়েছে: ${String.format(java.util.Locale.US, "%.2f", r)} ৳", Toast.LENGTH_SHORT).show()
+                                showCustomZenexRateDialog = false
+                            } else {
+                                Toast.makeText(context, "সঠিক রেট লিখুন (কমপক্ষে 0.01)", Toast.LENGTH_SHORT).show()
+                            }
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF10B981))
+                    ) {
+                        Text("সেভ করুন", fontWeight = FontWeight.Bold)
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showCustomZenexRateDialog = false }) {
+                        Text("বাতিল", color = Color(0xFF94A3B8))
+                    }
+                }
+            )
+        }
+
         Card(
             colors = CardDefaults.cardColors(containerColor = Color(0xFF101C2B)),
             shape = RoundedCornerShape(16.dp),
@@ -507,7 +619,7 @@ fun AdminUnixSmsCard(
             modifier = Modifier.fillMaxWidth()
         ) {
             Column(modifier = Modifier.padding(14.dp)) {
-                // Unix SMS Rate Header
+                // 1. UNIX SMS Rate Header
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -526,93 +638,153 @@ fun AdminUnixSmsCard(
 
                     Surface(
                         color = Color(0xFF0284C7).copy(alpha = 0.2f),
-                        shape = RoundedCornerShape(6.dp)
+                        shape = RoundedCornerShape(6.dp),
+                        border = BorderStroke(1.dp, Color(0xFF38BDF8).copy(alpha = 0.5f))
                     ) {
                         Text(
-                            text = "$${String.format(java.util.Locale.US, "%.3f", unixState.otpRatePerSms)} (৳${String.format(java.util.Locale.US, "%.2f", unixState.otpRatePerSms * 120.0)}) / OTP",
+                            text = "${String.format(java.util.Locale.US, "%.2f", unixState.otpRatePerSms)} ৳ / OTP",
                             color = Color(0xFF38BDF8),
-                            fontSize = 10.sp,
+                            fontSize = 11.sp,
                             fontWeight = FontWeight.ExtraBold,
                             modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
                         )
                     }
                 }
 
-                Spacer(modifier = Modifier.height(8.dp))
+                Spacer(modifier = Modifier.height(10.dp))
 
                 if (canUpdateOtpRate) {
+                    // Quick adjusters row (-0.10, -0.01, Display Box, +0.01, +0.10)
                     Row(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Button(
                             onClick = {
-                                UnixSmsManager.adjustOtpRate(-0.005)
+                                UnixSmsManager.adjustOtpRate(-0.10)
                                 WithdrawalManager.refreshBalances()
-                                Toast.makeText(context, "Unix রেট কমানো হয়েছে: $${String.format(java.util.Locale.US, "%.3f", unixState.otpRatePerSms - 0.005)}", Toast.LENGTH_SHORT).show()
                             },
                             colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E293B)),
                             shape = RoundedCornerShape(8.dp),
-                            modifier = Modifier.weight(1f)
+                            contentPadding = PaddingValues(horizontal = 4.dp),
+                            modifier = Modifier.weight(1f).height(38.dp)
                         ) {
-                            Text("-0.005", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFFF87171))
+                            Text("-0.10", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color(0xFFF87171))
                         }
 
                         Button(
                             onClick = {
-                                UnixSmsManager.adjustOtpRate(-0.001)
+                                UnixSmsManager.adjustOtpRate(-0.01)
                                 WithdrawalManager.refreshBalances()
-                                Toast.makeText(context, "Unix রেট কমানো হয়েছে: $${String.format(java.util.Locale.US, "%.3f", unixState.otpRatePerSms - 0.001)}", Toast.LENGTH_SHORT).show()
                             },
                             colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E293B)),
                             shape = RoundedCornerShape(8.dp),
-                            modifier = Modifier.weight(1f)
+                            contentPadding = PaddingValues(horizontal = 4.dp),
+                            modifier = Modifier.weight(1f).height(38.dp)
                         ) {
-                            Text("-0.001", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFFF87171))
+                            Text("-0.01", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color(0xFFF87171))
                         }
 
                         Surface(
                             color = Color(0xFF090E17),
                             shape = RoundedCornerShape(8.dp),
                             border = BorderStroke(1.dp, Color(0xFF0284C7)),
-                            modifier = Modifier.weight(1.3f)
+                            modifier = Modifier
+                                .weight(1.3f)
+                                .height(38.dp)
+                                .clickable {
+                                    customRateInputText = String.format(java.util.Locale.US, "%.2f", unixState.otpRatePerSms)
+                                    showCustomUnixRateDialog = true
+                                }
                         ) {
-                            Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(vertical = 8.dp)) {
+                            Box(contentAlignment = Alignment.Center) {
                                 Text(
-                                    text = "$${String.format(java.util.Locale.US, "%.3f", unixState.otpRatePerSms)}",
+                                    text = "${String.format(java.util.Locale.US, "%.2f", unixState.otpRatePerSms)} ৳",
                                     color = Color.White,
-                                    fontSize = 14.sp,
-                                    fontWeight = FontWeight.ExtraBold,
-                                    fontFamily = FontFamily.Monospace
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.ExtraBold
                                 )
                             }
                         }
 
                         Button(
                             onClick = {
-                                UnixSmsManager.adjustOtpRate(+0.001)
+                                UnixSmsManager.adjustOtpRate(+0.01)
                                 WithdrawalManager.refreshBalances()
-                                Toast.makeText(context, "Unix রেট বাড়ানো হয়েছে: $${String.format(java.util.Locale.US, "%.3f", unixState.otpRatePerSms + 0.001)}", Toast.LENGTH_SHORT).show()
                             },
                             colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E293B)),
                             shape = RoundedCornerShape(8.dp),
-                            modifier = Modifier.weight(1f)
+                            contentPadding = PaddingValues(horizontal = 4.dp),
+                            modifier = Modifier.weight(1f).height(38.dp)
                         ) {
-                            Text("+0.001", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFF34D399))
+                            Text("+0.01", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color(0xFF34D399))
                         }
 
                         Button(
                             onClick = {
-                                UnixSmsManager.adjustOtpRate(+0.005)
+                                UnixSmsManager.adjustOtpRate(+0.10)
                                 WithdrawalManager.refreshBalances()
-                                Toast.makeText(context, "Unix রেট বাড়ানো হয়েছে: $${String.format(java.util.Locale.US, "%.3f", unixState.otpRatePerSms + 0.005)}", Toast.LENGTH_SHORT).show()
                             },
                             colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E293B)),
                             shape = RoundedCornerShape(8.dp),
-                            modifier = Modifier.weight(1f)
+                            contentPadding = PaddingValues(horizontal = 4.dp),
+                            modifier = Modifier.weight(1f).height(38.dp)
                         ) {
-                            Text("+0.005", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFF34D399))
+                            Text("+0.10", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color(0xFF34D399))
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    // Preset Chips and Custom Edit Button
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(5.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        listOf(0.30, 0.40, 0.48, 0.49, 0.50, 1.00).forEach { presetRate ->
+                            val isSel = Math.abs(unixState.otpRatePerSms - presetRate) < 0.005
+                            Surface(
+                                color = if (isSel) Color(0xFF0284C7) else Color(0xFF0B141E),
+                                shape = RoundedCornerShape(6.dp),
+                                border = BorderStroke(1.dp, if (isSel) Color(0xFF38BDF8) else Color(0xFF1E2D40)),
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clickable {
+                                        UnixSmsManager.setOtpRate(presetRate)
+                                        WithdrawalManager.refreshBalances()
+                                    }
+                            ) {
+                                Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(vertical = 5.dp)) {
+                                    Text(
+                                        text = "${String.format(java.util.Locale.US, "%.2f", presetRate)}৳",
+                                        color = if (isSel) Color.White else Color(0xFF94A3B8),
+                                        fontSize = 9.5.sp,
+                                        fontWeight = if (isSel) FontWeight.ExtraBold else FontWeight.Medium
+                                    )
+                                }
+                            }
+                        }
+
+                        // Custom rate dialog launcher chip
+                        Surface(
+                            color = Color(0xFF1E293B),
+                            shape = RoundedCornerShape(6.dp),
+                            border = BorderStroke(1.dp, Color(0xFF38BDF8)),
+                            modifier = Modifier.clickable {
+                                customRateInputText = String.format(java.util.Locale.US, "%.2f", unixState.otpRatePerSms)
+                                showCustomUnixRateDialog = true
+                            }
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 5.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(Icons.Default.Edit, contentDescription = null, tint = Color(0xFF38BDF8), modifier = Modifier.size(11.dp))
+                                Spacer(modifier = Modifier.width(2.dp))
+                                Text("লিখুন", color = Color(0xFF38BDF8), fontSize = 9.5.sp, fontWeight = FontWeight.Bold)
+                            }
                         }
                     }
                 } else {
@@ -627,108 +799,8 @@ fun AdminUnixSmsCard(
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text(text = "Unix Rate: $${String.format(java.util.Locale.US, "%.3f", unixState.otpRatePerSms)}", color = Color.White, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
+                            Text(text = "Unix Rate: ${String.format(java.util.Locale.US, "%.2f", unixState.otpRatePerSms)} ৳", color = Color.White, fontWeight = FontWeight.Bold)
                             Text(text = "🔒 রেট পরিবর্তন লক", color = Color(0xFF94A3B8), fontSize = 11.sp)
-                        }
-                    }
-                }
-
-                // Country-wise OTP Rate Manager for Unix SMS
-                Spacer(modifier = Modifier.height(10.dp))
-                var showCountryRatesPanel by remember { mutableStateOf(false) }
-                Surface(
-                    color = Color(0xFF0F1A2A),
-                    shape = RoundedCornerShape(10.dp),
-                    border = BorderStroke(1.dp, Color(0xFF0284C7).copy(alpha = 0.5f)),
-                    modifier = Modifier.fillMaxWidth().clickable { showCountryRatesPanel = !showCountryRatesPanel }
-                ) {
-                    Row(
-                        modifier = Modifier.padding(10.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text("🌍", fontSize = 14.sp)
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text(
-                                text = "দেশ অনুযায়ী ওটিপি রেট (COUNTRY OTP RATES)",
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = Color(0xFF38BDF8)
-                            )
-                        }
-                        Text(
-                            text = if (showCountryRatesPanel) "▲ বন্ধ করুন" else "▼ দেখুন / পরিবর্তন",
-                            fontSize = 10.sp,
-                            color = Color(0xFF94A3B8),
-                            fontWeight = FontWeight.SemiBold
-                        )
-                    }
-                }
-
-                AnimatedVisibility(visible = showCountryRatesPanel) {
-                    Column(
-                        modifier = Modifier.padding(top = 8.dp),
-                        verticalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        unixState.countryRates.entries.sortedBy { it.key }.forEach { (cCode, cRate) ->
-                            val cPreset = ADMIN_PRESET_COUNTRIES.find { it.code.equals(cCode, ignoreCase = true) }
-                            val cName = "${cPreset?.flag ?: "🌐"} ${cPreset?.name ?: cCode} (${cCode})"
-                            Surface(
-                                color = Color(0xFF0B131E),
-                                shape = RoundedCornerShape(8.dp),
-                                border = BorderStroke(1.dp, Color(0xFF1E2D40)),
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                Row(
-                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Column {
-                                        Text(cName, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = Color.White)
-                                        Text(
-                                            text = "৳${String.format(java.util.Locale.US, "%.2f", cRate * 120.0)} / OTP",
-                                            fontSize = 9.5.sp,
-                                            color = Color(0xFF34D399)
-                                        )
-                                    }
-
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Text(
-                                            text = "$${String.format(java.util.Locale.US, "%.3f", cRate)}",
-                                            fontSize = 12.sp,
-                                            fontWeight = FontWeight.ExtraBold,
-                                            color = Color(0xFF38BDF8)
-                                        )
-
-                                        if (canUpdateOtpRate) {
-                                            Spacer(modifier = Modifier.width(8.dp))
-                                            Surface(
-                                                color = Color(0xFFEF4444).copy(alpha = 0.2f),
-                                                shape = RoundedCornerShape(4.dp),
-                                                modifier = Modifier.clickable {
-                                                    UnixSmsManager.setCountryRate(cCode, cRate - 0.001)
-                                                    Toast.makeText(context, "$cCode রেট কমানো হয়েছে", Toast.LENGTH_SHORT).show()
-                                                }
-                                            ) {
-                                                Text("-", color = Color(0xFFEF4444), fontSize = 14.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp))
-                                            }
-                                            Spacer(modifier = Modifier.width(4.dp))
-                                            Surface(
-                                                color = Color(0xFF10B981).copy(alpha = 0.2f),
-                                                shape = RoundedCornerShape(4.dp),
-                                                modifier = Modifier.clickable {
-                                                    UnixSmsManager.setCountryRate(cCode, cRate + 0.001)
-                                                    Toast.makeText(context, "$cCode রেট বাড়ানো হয়েছে", Toast.LENGTH_SHORT).show()
-                                                }
-                                            ) {
-                                                Text("+", color = Color(0xFF10B981), fontSize = 14.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp))
-                                            }
-                                        }
-                                    }
-                                }
-                            }
                         }
                     }
                 }
@@ -737,7 +809,7 @@ fun AdminUnixSmsCard(
                 HorizontalDivider(color = Color(0xFF1E2D40))
                 Spacer(modifier = Modifier.height(14.dp))
 
-                // Zenex SMS Rate Header
+                // 2. ZENEX SMS Rate Header
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -756,92 +828,151 @@ fun AdminUnixSmsCard(
 
                     Surface(
                         color = Color(0xFF10B981).copy(alpha = 0.2f),
-                        shape = RoundedCornerShape(6.dp)
+                        shape = RoundedCornerShape(6.dp),
+                        border = BorderStroke(1.dp, Color(0xFF34D399).copy(alpha = 0.5f))
                     ) {
                         Text(
-                            text = "$${String.format(java.util.Locale.US, "%.3f", zenexRate)} (৳${String.format(java.util.Locale.US, "%.2f", zenexRate * 120.0)}) / OTP",
+                            text = "${String.format(java.util.Locale.US, "%.2f", zenexRate)} ৳ / OTP",
                             color = Color(0xFF34D399),
-                            fontSize = 10.sp,
+                            fontSize = 11.sp,
                             fontWeight = FontWeight.ExtraBold,
                             modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
                         )
                     }
                 }
 
-                Spacer(modifier = Modifier.height(8.dp))
+                Spacer(modifier = Modifier.height(10.dp))
 
+                // Quick adjusters row for Zenex
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Button(
                         onClick = {
-                            VirtualNumberManager.adjustZenexOtpRate(-0.005)
+                            VirtualNumberManager.adjustZenexOtpRate(-0.10)
                             WithdrawalManager.refreshBalances()
-                            Toast.makeText(context, "Zenex রেট কমানো হয়েছে: $${String.format(java.util.Locale.US, "%.3f", zenexRate - 0.005)}", Toast.LENGTH_SHORT).show()
                         },
                         colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E293B)),
                         shape = RoundedCornerShape(8.dp),
-                        modifier = Modifier.weight(1f)
+                        contentPadding = PaddingValues(horizontal = 4.dp),
+                        modifier = Modifier.weight(1f).height(38.dp)
                     ) {
-                        Text("-0.005", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFFF87171))
+                        Text("-0.10", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color(0xFFF87171))
                     }
 
                     Button(
                         onClick = {
-                            VirtualNumberManager.adjustZenexOtpRate(-0.001)
+                            VirtualNumberManager.adjustZenexOtpRate(-0.01)
                             WithdrawalManager.refreshBalances()
-                            Toast.makeText(context, "Zenex রেট কমানো হয়েছে: $${String.format(java.util.Locale.US, "%.3f", zenexRate - 0.001)}", Toast.LENGTH_SHORT).show()
                         },
                         colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E293B)),
                         shape = RoundedCornerShape(8.dp),
-                        modifier = Modifier.weight(1f)
+                        contentPadding = PaddingValues(horizontal = 4.dp),
+                        modifier = Modifier.weight(1f).height(38.dp)
                     ) {
-                        Text("-0.001", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFFF87171))
+                        Text("-0.01", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color(0xFFF87171))
                     }
 
                     Surface(
                         color = Color(0xFF090E17),
                         shape = RoundedCornerShape(8.dp),
                         border = BorderStroke(1.dp, Color(0xFF10B981)),
-                        modifier = Modifier.weight(1.3f)
+                        modifier = Modifier
+                            .weight(1.3f)
+                            .height(38.dp)
+                            .clickable {
+                                customRateInputText = String.format(java.util.Locale.US, "%.2f", zenexRate)
+                                showCustomZenexRateDialog = true
+                            }
                     ) {
-                        Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(vertical = 8.dp)) {
+                        Box(contentAlignment = Alignment.Center) {
                             Text(
-                                text = "$${String.format(java.util.Locale.US, "%.3f", zenexRate)}",
+                                text = "${String.format(java.util.Locale.US, "%.2f", zenexRate)} ৳",
                                 color = Color.White,
-                                fontSize = 14.sp,
-                                fontWeight = FontWeight.ExtraBold,
-                                fontFamily = FontFamily.Monospace
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.ExtraBold
                             )
                         }
                     }
 
                     Button(
                         onClick = {
-                            VirtualNumberManager.adjustZenexOtpRate(+0.001)
+                            VirtualNumberManager.adjustZenexOtpRate(+0.01)
                             WithdrawalManager.refreshBalances()
-                            Toast.makeText(context, "Zenex রেট বাড়ানো হয়েছে: $${String.format(java.util.Locale.US, "%.3f", zenexRate + 0.001)}", Toast.LENGTH_SHORT).show()
                         },
                         colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E293B)),
                         shape = RoundedCornerShape(8.dp),
-                        modifier = Modifier.weight(1f)
+                        contentPadding = PaddingValues(horizontal = 4.dp),
+                        modifier = Modifier.weight(1f).height(38.dp)
                     ) {
-                        Text("+0.001", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFF34D399))
+                        Text("+0.01", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color(0xFF34D399))
                     }
 
                     Button(
                         onClick = {
-                            VirtualNumberManager.adjustZenexOtpRate(+0.005)
+                            VirtualNumberManager.adjustZenexOtpRate(+0.10)
                             WithdrawalManager.refreshBalances()
-                            Toast.makeText(context, "Zenex রেট বাড়ানো হয়েছে: $${String.format(java.util.Locale.US, "%.3f", zenexRate + 0.005)}", Toast.LENGTH_SHORT).show()
                         },
                         colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E293B)),
                         shape = RoundedCornerShape(8.dp),
-                        modifier = Modifier.weight(1f)
+                        contentPadding = PaddingValues(horizontal = 4.dp),
+                        modifier = Modifier.weight(1f).height(38.dp)
                     ) {
-                        Text("+0.005", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFF34D399))
+                        Text("+0.10", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color(0xFF34D399))
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                // Preset Chips and Custom Edit Button for Zenex
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(5.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    listOf(0.30, 0.40, 0.48, 0.49, 0.50, 1.00).forEach { presetRate ->
+                        val isSel = Math.abs(zenexRate - presetRate) < 0.005
+                        Surface(
+                            color = if (isSel) Color(0xFF059669) else Color(0xFF0B141E),
+                            shape = RoundedCornerShape(6.dp),
+                            border = BorderStroke(1.dp, if (isSel) Color(0xFF34D399) else Color(0xFF1E2D40)),
+                            modifier = Modifier
+                                .weight(1f)
+                                .clickable {
+                                    VirtualNumberManager.setZenexOtpRate(presetRate)
+                                    WithdrawalManager.refreshBalances()
+                                }
+                        ) {
+                            Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(vertical = 5.dp)) {
+                                Text(
+                                    text = "${String.format(java.util.Locale.US, "%.2f", presetRate)}৳",
+                                    color = if (isSel) Color.White else Color(0xFF94A3B8),
+                                    fontSize = 9.5.sp,
+                                    fontWeight = if (isSel) FontWeight.ExtraBold else FontWeight.Medium
+                                )
+                            }
+                        }
+                    }
+
+                    Surface(
+                        color = Color(0xFF1E293B),
+                        shape = RoundedCornerShape(6.dp),
+                        border = BorderStroke(1.dp, Color(0xFF34D399)),
+                        modifier = Modifier.clickable {
+                            customRateInputText = String.format(java.util.Locale.US, "%.2f", zenexRate)
+                            showCustomZenexRateDialog = true
+                        }
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 5.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(Icons.Default.Edit, contentDescription = null, tint = Color(0xFF34D399), modifier = Modifier.size(11.dp))
+                            Spacer(modifier = Modifier.width(2.dp))
+                            Text("লিখুন", color = Color(0xFF34D399), fontSize = 9.5.sp, fontWeight = FontWeight.Bold)
+                        }
                     }
                 }
             }
