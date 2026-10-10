@@ -311,13 +311,20 @@ object AuthManager {
             return Pair(true, "👑 প্রাইম এডমিন হিসেবে সফলভাবে লগইন হয়েছে")
         }
 
-        // 2. Check Managed Users created by Admin
-        var user = _managedUsers.value.firstOrNull { it.email.lowercase() == email }
+        // 2. Check Managed Users created by Admin (match email, username/name, or email prefix)
+        fun matchesUser(u: AuthUser, identifier: String): Boolean {
+            val id = identifier.lowercase()
+            return u.email.lowercase() == id ||
+                   u.name.trim().lowercase() == id ||
+                   u.email.substringBefore("@").lowercase() == id
+        }
+
+        var user = _managedUsers.value.firstOrNull { matchesUser(it, email) }
         if (user == null) {
             // Attempt fast cloud sync before rejecting
             try {
                 syncFromCloud()
-                user = _managedUsers.value.firstOrNull { it.email.lowercase() == email }
+                user = _managedUsers.value.firstOrNull { matchesUser(it, email) }
             } catch (_: Exception) {}
         }
 

@@ -104,12 +104,12 @@ object WithdrawalManager {
                 val rate = if (rec.rate > 0.0) rec.rate else {
                     if (rec.platform.contains("Unix", ignoreCase = true)) currentUnixRate else currentZenexRate
                 }
-                rate * 120.0
+                rate // Rate is directly in BDT (৳) e.g. 0.50৳ per OTP
             }
         } else {
             val unixCount = OtpHistoryManager.state.value.unixTotalAllTime
             val zenexCount = OtpHistoryManager.state.value.zenexTotalAllTime
-            (unixCount * currentUnixRate * 120.0) + (zenexCount * currentZenexRate * 120.0)
+            (unixCount * currentUnixRate) + (zenexCount * currentZenexRate)
         }
 
         val totalEarned = baseCredit + otpEarnedTk
@@ -130,7 +130,9 @@ object WithdrawalManager {
 
     private fun saveRequests(list: List<WithdrawalRequest>) {
         val arr = JSONArray()
-        for (r in list) {
+        // Keep recent 50 withdrawal requests to avoid storage bloat
+        val trimmed = list.take(50)
+        for (r in trimmed) {
             val o = JSONObject()
             o.put("id", r.id)
             o.put("userEmail", r.userEmail)

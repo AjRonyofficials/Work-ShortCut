@@ -146,8 +146,13 @@ object OtpHistoryManager {
     }
 
     private fun saveRecords(list: List<OtpHistoryRecord>, totalAllTime: Int) {
+        val now = System.currentTimeMillis()
+        val cutoff = now - ONE_MONTH_MS
+        // Automatically delete records older than 1 month (30 days) and keep recent 150 items
+        val validRecords = list.filter { it.timestamp >= cutoff }
+        val trimmed = validRecords.take(150)
+
         val arr = JSONArray()
-        val trimmed = list.take(150)
         for (item in trimmed) {
             val o = JSONObject()
             o.put("id", item.id)
