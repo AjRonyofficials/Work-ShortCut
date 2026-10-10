@@ -2439,8 +2439,14 @@ fun AdminUserManagerCard(
     var newUserEmail by remember { mutableStateOf("") }
     var newUserPass by remember { mutableStateOf("") }
     var newUserName by remember { mutableStateOf("") }
-    var createdSuccessCredentials by remember { mutableStateOf<Pair<String, String>?>(null) }
+    var newUserVerified by remember { mutableStateOf(true) }
+    var newUserApproved by remember { mutableStateOf(true) }
+    var isCreatingUser by remember { mutableStateOf(false) }
+    var isSyncingCloud by remember { mutableStateOf(false) }
+    var createdSuccessCredentials by remember { mutableStateOf<Triple<String, String, String>?>(null) }
     var broadcastMsg by remember { mutableStateOf("") }
+    val coroutineScope = rememberCoroutineScope()
+    val cloudStatus by AuthManager.cloudSyncStatus.collectAsState()
 
     Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
         // Broadcast Notification / Push Message Card
@@ -2511,34 +2517,89 @@ fun AdminUserManagerCard(
             }
         }
 
-        // Create User Card
+        // Create User + Admin Verify + Login Approval Card
         Card(
             colors = CardDefaults.cardColors(containerColor = Color(0xFF111B29)),
             shape = RoundedCornerShape(16.dp),
-            border = BorderStroke(1.dp, Color(0xFF1E324A)),
+            border = BorderStroke(1.dp, Color(0xFF4F46E5).copy(alpha = 0.6f)),
             modifier = Modifier.fillMaxWidth()
         ) {
             Column(modifier = Modifier.padding(14.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.PersonAdd, contentDescription = null, tint = Color(0xFF818CF8), modifier = Modifier.size(18.dp))
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(
-                        text = "CREATE USER LOGIN CREDENTIALS",
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Color.White
-                    )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.PersonAdd, contentDescription = null, tint = Color(0xFF818CF8), modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Column {
+                            Text(
+                                text = "VERIFY, GENERATE & APPROVE USER",
+                                fontSize = 12.5.sp,
+                                fontWeight = FontWeight.ExtraBold,
+                                color = Color.White
+                            )
+                            Text(
+                                text = "☁️ $cloudStatus",
+                                fontSize = 9.5.sp,
+                                color = Color(0xFF34D399),
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
+                    }
+
+                    // 1-Tap Auto Generate Gmail + Verified Pass Button
+                    Surface(
+                        color = Color(0xFF10B981).copy(alpha = 0.18f),
+                        shape = RoundedCornerShape(8.dp),
+                        border = BorderStroke(1.dp, Color(0xFF10B981)),
+                        modifier = Modifier.clickable {
+                            val baseName = newUserName.trim().ifEmpty {
+                                listOf("Rahim", "Karim", "Sakib", "Tanvir", "Hasan", "Fahim", "Rifat", "Siam").random()
+                            }
+                            if (newUserName.isBlank()) {
+                                newUserName = baseName
+                            }
+                            val cleanSlug = baseName.lowercase().filter { it.isLetterOrDigit() }.take(8).ifEmpty { "user" }
+                            val candidateEmail = if (newUserEmail.isNotBlank() && newUserEmail.contains("@")) {
+                                newUserEmail.trim().lowercase()
+                            } else {
+                                val baseCandidate = "${cleanSlug}2026@gmail.com"
+                                if (managedUsers.any { it.email.equals(baseCandidate, ignoreCase = true) }) {
+                                    "${cleanSlug}${(10..99).random()}@gmail.com"
+                                } else {
+                                    baseCandidate
+                                }
+                            }
+                            newUserEmail = candidateEmail
+                            newUserPass = AuthManager.generateVerifiedPasswordForEmail(candidateEmail, baseName)
+                            newUserVerified = true
+                            newUserApproved = true
+                            VibrationHelper.vibrateSuccess(context)
+                            Toast.makeText(context, "⚡ ভেরিফাইড জিমেইল ও পাসওয়ার্ড অটো-জেনারেট হয়েছে!", Toast.LENGTH_SHORT).show()
+                        }
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(Icons.Default.Bolt, contentDescription = null, tint = Color(0xFF34D399), modifier = Modifier.size(13.dp))
+                            Spacer(modifier = Modifier.width(3.dp))
+                            Text("Auto Generate", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color(0xFF34D399))
+                        }
+                    }
                 }
 
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    text = "ইউজাররা নিজে রেজিস্টার করতে পারবে না। আপনি এখান থেকে ইমেইল ও পাসওয়ার্ড তৈরি করে তাদের দিলে তারা লগইন করতে পারবে।",
-                    fontSize = 11.sp,
+                    text = "আপনার ভেরিফিকেশন + জেনারেট করা জিমেইল/পাসওয়ার্ড + লগইন Approval ছাড়া কেউ লগইন করতে পারবে না। নিচে ইউজার তৈরি করলে তা সাথে সাথে ক্লাউড সার্ভারে সিঙ্ক হয়ে যাবে:",
+                    fontSize = 10.5.sp,
                     color = Color(0xFF94A3B8),
-                    lineHeight = 16.sp
+                    lineHeight = 15.sp
                 )
 
-                Spacer(modifier = Modifier.height(12.dp))
+                Spacer(modifier = Modifier.height(10.dp))
 
                 OutlinedTextField(
                     value = newUserName,
@@ -2562,7 +2623,7 @@ fun AdminUserManagerCard(
                 OutlinedTextField(
                     value = newUserEmail,
                     onValueChange = { newUserEmail = it },
-                    label = { Text("ইমেইল (Email)") },
+                    label = { Text("জিমেইল (Gmail / Email)") },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(10.dp),
@@ -2578,61 +2639,185 @@ fun AdminUserManagerCard(
 
                 Spacer(modifier = Modifier.height(8.dp))
 
-                OutlinedTextField(
-                    value = newUserPass,
-                    onValueChange = { newUserPass = it },
-                    label = { Text("পাসওয়ার্ড (Password)") },
-                    singleLine = true,
+                Row(
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(10.dp),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedTextColor = Color.White,
-                        unfocusedTextColor = Color.White,
-                        focusedBorderColor = Color(0xFF818CF8),
-                        unfocusedBorderColor = Color(0xFF243B55),
-                        focusedContainerColor = Color(0xFF090E17),
-                        unfocusedContainerColor = Color(0xFF090E17)
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    OutlinedTextField(
+                        value = newUserPass,
+                        onValueChange = { newUserPass = it },
+                        label = { Text("পাসওয়ার্ড (Password)") },
+                        singleLine = true,
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(10.dp),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = Color.White,
+                            unfocusedTextColor = Color.White,
+                            focusedBorderColor = Color(0xFF818CF8),
+                            unfocusedBorderColor = Color(0xFF243B55),
+                            focusedContainerColor = Color(0xFF090E17),
+                            unfocusedContainerColor = Color(0xFF090E17)
+                        )
                     )
-                )
+
+                    OutlinedButton(
+                        onClick = {
+                            val em = newUserEmail.trim().let {
+                                if (it.isEmpty()) "user2026@gmail.com"
+                                else if (!it.contains("@")) "$it@gmail.com"
+                                else it
+                            }
+                            if (newUserEmail.isBlank()) newUserEmail = em
+                            newUserPass = AuthManager.generateVerifiedPasswordForEmail(em, newUserName)
+                            Toast.makeText(context, "🔐 ভেরিফাইড পাসওয়ার্ড জেনারেট হয়েছে", Toast.LENGTH_SHORT).show()
+                        },
+                        shape = RoundedCornerShape(10.dp),
+                        border = BorderStroke(1.dp, Color(0xFF818CF8)),
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 14.dp)
+                    ) {
+                        Text("⚡ Pass", fontSize = 10.5.sp, fontWeight = FontWeight.Bold, color = Color(0xFFA5B4FC))
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                // Admin Verification & Login Approval Gate Toggles
+                Surface(
+                    color = Color(0xFF09121E),
+                    shape = RoundedCornerShape(10.dp),
+                    border = BorderStroke(1.dp, Color(0xFF1E324A)),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "✅ 1. Admin Verification (এডমিন ভেরিফাইড)",
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (newUserVerified) Color(0xFF34D399) else Color(0xFFFBBF24)
+                                )
+                                Text(
+                                    text = "এডমিন ভেরিফিকেশন ছাড়া এই জিমেইল কাজ করবে না",
+                                    fontSize = 9.5.sp,
+                                    color = Color(0xFF94A3B8)
+                                )
+                            }
+                            Switch(
+                                checked = newUserVerified,
+                                onCheckedChange = { newUserVerified = it },
+                                colors = SwitchDefaults.colors(
+                                    checkedThumbColor = Color.White,
+                                    checkedTrackColor = Color(0xFF10B981)
+                                )
+                            )
+                        }
+
+                        HorizontalDivider(color = Color(0xFF1E293B), modifier = Modifier.padding(vertical = 4.dp))
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "🛡️ 2. Login Approval (লগইন অনুমোদন)",
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (newUserApproved) Color(0xFF38BDF8) else Color(0xFFFBBF24)
+                                )
+                                Text(
+                                    text = if (newUserApproved) "ইউজার সাথে সাথে লগইন করতে পারবে (Approved)" else "অনুমোদন পেন্ডিং থাকবে (আপনি Approve না দেওয়া পর্যন্ত লগইন বন্ধ)",
+                                    fontSize = 9.5.sp,
+                                    color = Color(0xFF94A3B8)
+                                )
+                            }
+                            Switch(
+                                checked = newUserApproved,
+                                onCheckedChange = { newUserApproved = it },
+                                colors = SwitchDefaults.colors(
+                                    checkedThumbColor = Color.White,
+                                    checkedTrackColor = Color(0xFF0284C7)
+                                )
+                            )
+                        }
+                    }
+                }
 
                 Spacer(modifier = Modifier.height(12.dp))
 
                 Button(
                     onClick = {
-                        val (success, msg) = AuthManager.createManagedUser(
-                            emailInput = newUserEmail,
-                            passInput = newUserPass,
-                            nameInput = newUserName
-                        )
-                        if (success) {
-                            createdSuccessCredentials = Pair(newUserEmail.trim().lowercase(), newUserPass.trim())
-                            Toast.makeText(context, "✓ $msg", Toast.LENGTH_SHORT).show()
-                            newUserEmail = ""
-                            newUserPass = ""
-                            newUserName = ""
-                            VibrationHelper.vibrateSuccess(context)
-                        } else {
-                            Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                        if (!isCreatingUser) {
+                            val emRaw = newUserEmail.trim().lowercase()
+                            val finalEmail = if (emRaw.isNotEmpty() && !emRaw.contains("@")) "$emRaw@gmail.com" else emRaw
+                            val finalPass = newUserPass.trim()
+                            val finalName = newUserName.trim()
+                            val ver = newUserVerified
+                            val app = newUserApproved
+
+                            if (finalEmail.isEmpty() || finalPass.isEmpty()) {
+                                Toast.makeText(context, "ইমেইল ও পাসওয়ার্ড প্রদান করুন অথবা Auto Generate চাপুন", Toast.LENGTH_SHORT).show()
+                                return@Button
+                            }
+
+                            isCreatingUser = true
+                            coroutineScope.launch {
+                                val (success, msg) = withContext(Dispatchers.IO) {
+                                    AuthManager.createManagedUser(
+                                        emailInput = finalEmail,
+                                        passInput = finalPass,
+                                        nameInput = finalName,
+                                        isVerified = ver,
+                                        isApproved = app
+                                    )
+                                }
+                                isCreatingUser = false
+                                if (success) {
+                                    val statusLabel = if (ver && app) "VERIFIED & APPROVED ✅" else "PENDING APPROVAL ⏳"
+                                    createdSuccessCredentials = Triple(finalEmail, finalPass, statusLabel)
+                                    Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
+                                    newUserEmail = ""
+                                    newUserPass = ""
+                                    newUserName = ""
+                                    VibrationHelper.vibrateSuccess(context)
+                                } else {
+                                    Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                                }
+                            }
                         }
                     },
+                    enabled = !isCreatingUser,
                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4F46E5)),
                     shape = RoundedCornerShape(10.dp),
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(44.dp)
+                        .height(46.dp)
                 ) {
-                    Icon(Icons.Default.PersonAdd, contentDescription = null, modifier = Modifier.size(16.dp))
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text("GENERATE & CREATE USER ACCOUNT", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    if (isCreatingUser) {
+                        CircularProgressIndicator(modifier = Modifier.size(16.dp), color = Color.White, strokeWidth = 2.dp)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("ক্লাউড সার্ভারে ভেরিফাই ও সিঙ্ক হচ্ছে...", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    } else {
+                        Icon(Icons.Default.PersonAdd, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("VERIFY, APPROVE & GENERATE USER", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    }
                 }
 
                 // Show Success Copy Box
-                createdSuccessCredentials?.let { (em, pw) ->
+                createdSuccessCredentials?.let { (em, pw, stLabel) ->
                     Spacer(modifier = Modifier.height(12.dp))
                     Surface(
-                        color = Color(0xFF064E3B).copy(alpha = 0.4f),
+                        color = Color(0xFF064E3B).copy(alpha = 0.45f),
                         shape = RoundedCornerShape(10.dp),
-                        border = BorderStroke(1.dp, Color(0xFF059669))
+                        border = BorderStroke(1.dp, Color(0xFF10B981))
                     ) {
                         Column(modifier = Modifier.padding(10.dp)) {
                             Row(
@@ -2640,10 +2825,13 @@ fun AdminUserManagerCard(
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Text(text = "✓ নতুন অ্যাকাউন্ট তৈরি সফল!", color = Color(0xFF34D399), fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                Column {
+                                    Text(text = "✓ অ্যাকাউন্ট তৈরি ও ক্লাউড সিঙ্ক সফল!", color = Color(0xFF34D399), fontWeight = FontWeight.Bold, fontSize = 11.5.sp)
+                                    Text(text = "Status: $stLabel", color = Color(0xFFA7F3D0), fontSize = 9.5.sp, fontWeight = FontWeight.SemiBold)
+                                }
                                 OutlinedButton(
                                     onClick = {
-                                        val text = "Work ShortCut Login Credentials:\nEmail: $em\nPassword: $pw"
+                                        val text = "Work ShortCut Login Credentials:\nEmail: $em\nPassword: $pw\nStatus: $stLabel"
                                         ClipboardHelper.copyToClipboard(context, text, "Login Credentials")
                                         Toast.makeText(context, "লগইন তথ্য কপি করা হয়েছে!", Toast.LENGTH_SHORT).show()
                                     },
@@ -2663,7 +2851,7 @@ fun AdminUserManagerCard(
             }
         }
 
-        // List of Created Users with ACTIVE vs INACTIVE Filter
+        // List of Created Users with ACTIVE / PENDING APPROVAL / INACTIVE / BANNED Filter
         Card(
             colors = CardDefaults.cardColors(containerColor = Color(0xFF101824)),
             shape = RoundedCornerShape(16.dp),
@@ -2676,40 +2864,78 @@ fun AdminUserManagerCard(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text(
-                        text = "MANAGED USER ACCOUNTS (${managedUsers.size})",
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Color.White
-                    )
+                    Column {
+                        Text(
+                            text = "MANAGED USER ACCOUNTS (${managedUsers.size})",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White
+                        )
+                        val approvedCount = managedUsers.count { it.isActive && it.isVerified && it.isApproved && !it.isBanned }
+                        val pendingCount = managedUsers.count { (!it.isVerified || !it.isApproved) && !it.isBanned }
+                        Text(
+                            text = "✅ $approvedCount Approved  |  ⏳ $pendingCount Pending Approval",
+                            fontSize = 10.sp,
+                            color = Color(0xFF81D4FA),
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
 
-                    val activeCount = managedUsers.count { it.isActive && !it.isBanned }
-                    val inactiveCount = managedUsers.count { !it.isActive && !it.isBanned }
-                    Text(
-                        text = "🟢 $activeCount Active  |  ⚪ $inactiveCount Inactive",
-                        fontSize = 10.sp,
-                        color = Color(0xFF81D4FA),
-                        fontWeight = FontWeight.SemiBold
-                    )
+                    // Force Cloud Sync Button for Admin
+                    OutlinedButton(
+                        onClick = {
+                            if (!isSyncingCloud) {
+                                isSyncingCloud = true
+                                coroutineScope.launch {
+                                    val ok = withContext(Dispatchers.IO) {
+                                        AuthManager.syncToCloudInternal(managedUsers)
+                                    }
+                                    isSyncingCloud = false
+                                    Toast.makeText(
+                                        context,
+                                        if (ok) "✓ সকল ইউজার ক্লাউড সার্ভারে সিঙ্ক সম্পন্ন হয়েছে!" else "⚠️ ক্লাউড সিঙ্ক পুনরায় চেষ্টা করুন",
+                                        Toast.LENGTH_SHORT
+                                    ).show()
+                                    VibrationHelper.vibrateSuccess(context)
+                                }
+                            }
+                        },
+                        shape = RoundedCornerShape(8.dp),
+                        border = BorderStroke(1.dp, Color(0xFF38BDF8)),
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                        modifier = Modifier.height(30.dp)
+                    ) {
+                        if (isSyncingCloud) {
+                            CircularProgressIndicator(modifier = Modifier.size(12.dp), color = Color(0xFF38BDF8), strokeWidth = 1.5.dp)
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Syncing...", fontSize = 9.5.sp, color = Color(0xFF38BDF8))
+                        } else {
+                            Icon(Icons.Default.Refresh, contentDescription = null, tint = Color(0xFF38BDF8), modifier = Modifier.size(13.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Cloud Sync", fontSize = 9.5.sp, fontWeight = FontWeight.Bold, color = Color(0xFF38BDF8))
+                        }
+                    }
                 }
 
                 Spacer(modifier = Modifier.height(10.dp))
 
-                var userFilterTab by remember { mutableStateOf("ALL") } // "ALL", "ACTIVE", "INACTIVE", "BANNED"
+                var userFilterTab by remember { mutableStateOf("ALL") }
 
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
-                    val activeCount = managedUsers.count { it.isActive && !it.isBanned }
+                    val activeCount = managedUsers.count { it.isActive && it.isVerified && it.isApproved && !it.isBanned }
+                    val pendingCount = managedUsers.count { (!it.isVerified || !it.isApproved) && !it.isBanned }
                     val inactiveCount = managedUsers.count { !it.isActive && !it.isBanned }
                     val bannedCount = managedUsers.count { it.isBanned }
 
                     listOf(
                         Triple("ALL", "ALL (${managedUsers.size})", Color(0xFF38BDF8)),
-                        Triple("ACTIVE", "🟢 ACTIVE ($activeCount)", Color(0xFF10B981)),
-                        Triple("INACTIVE", "⚪ INACTIVE ($inactiveCount)", Color(0xFFF59E0B)),
-                        Triple("BANNED", "🚫 BANNED ($bannedCount)", Color(0xFFEF4444))
+                        Triple("ACTIVE", "✅ OK ($activeCount)", Color(0xFF10B981)),
+                        Triple("PENDING", "⏳ WAIT ($pendingCount)", Color(0xFFA855F7)),
+                        Triple("INACTIVE", "⚪ OFF ($inactiveCount)", Color(0xFFF59E0B)),
+                        Triple("BANNED", "🚫 BAN ($bannedCount)", Color(0xFFEF4444))
                     ).forEach { (tabKey, tabLabel, tabColor) ->
                         val isTabSelected = userFilterTab == tabKey
                         Surface(
@@ -2723,7 +2949,7 @@ fun AdminUserManagerCard(
                             Text(
                                 text = tabLabel,
                                 color = if (isTabSelected) Color.White else Color(0xFF94A3B8),
-                                fontSize = 9.sp,
+                                fontSize = 8.5.sp,
                                 fontWeight = if (isTabSelected) FontWeight.Bold else FontWeight.Medium,
                                 textAlign = androidx.compose.ui.text.style.TextAlign.Center,
                                 modifier = Modifier.padding(vertical = 6.dp, horizontal = 2.dp)
@@ -2736,7 +2962,8 @@ fun AdminUserManagerCard(
 
                 val displayedUsers = remember(managedUsers, userFilterTab) {
                     when (userFilterTab) {
-                        "ACTIVE" -> managedUsers.filter { it.isActive && !it.isBanned }
+                        "ACTIVE" -> managedUsers.filter { it.isActive && it.isVerified && it.isApproved && !it.isBanned }
+                        "PENDING" -> managedUsers.filter { (!it.isVerified || !it.isApproved) && !it.isBanned }
                         "INACTIVE" -> managedUsers.filter { !it.isActive && !it.isBanned }
                         "BANNED" -> managedUsers.filter { it.isBanned }
                         else -> managedUsers
@@ -2763,6 +2990,18 @@ fun AdminUserManagerCard(
                             AdminUserItemRow(
                                 user = user,
                                 onToggleStatus = { AuthManager.toggleUserStatus(user.email) },
+                                onToggleApproval = {
+                                    AuthManager.toggleUserApproval(user.email)
+                                    val nowApproved = !(user.isVerified && user.isApproved)
+                                    val msg = if (nowApproved) "✅ ${user.name}-এর ভেরিফিকেশন ও লগইন অনুমোদন (Approval) দেওয়া হয়েছে!"
+                                    else "⏸️ ${user.name}-এর লগইন অনুমোদন স্থগিত করা হয়েছে!"
+                                    Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                                },
+                                onChangePassword = { newPass ->
+                                    if (AuthManager.changeUserPassword(user.email, newPass)) {
+                                        Toast.makeText(context, "✓ ${user.name}-এর নতুন পাসওয়ার্ড ক্লাউডে সেভ হয়েছে!", Toast.LENGTH_SHORT).show()
+                                    }
+                                },
                                 onToggleBan = { AuthManager.toggleUserBan(user.email) },
                                 onResetLogins = { AuthManager.resetUserLogins(user.email) },
                                 onDelete = { AuthManager.deleteManagedUser(user.email) },
@@ -2797,6 +3036,8 @@ fun AdminUserManagerCard(
 fun AdminUserItemRow(
     user: AuthUser,
     onToggleStatus: () -> Unit,
+    onToggleApproval: () -> Unit,
+    onChangePassword: (String) -> Unit,
     onToggleBan: () -> Unit,
     onResetLogins: () -> Unit,
     onDelete: () -> Unit,
@@ -2808,17 +3049,21 @@ fun AdminUserItemRow(
     var passwordVisible by remember { mutableStateOf(false) }
     var showPermissionsDialog by remember { mutableStateOf(false) }
     var showEditStatsDialog by remember { mutableStateOf(false) }
+    var showChangePassDialog by remember { mutableStateOf(false) }
 
     val isSubAdmin = user.role == "SUB_ADMIN"
+    val isFullyApproved = user.isVerified && user.isApproved
 
     Surface(
         color = if (user.isBanned) Color(0xFF180A0A)
+                else if (!isFullyApproved) Color(0xFF171124)
                 else if (user.isActive) Color(0xFF071B12)
                 else Color(0xFF161208),
         shape = RoundedCornerShape(10.dp),
         border = BorderStroke(
             1.dp,
             if (user.isBanned) Color(0xFFEF4444)
+            else if (!isFullyApproved) Color(0xFFA855F7)
             else if (isSubAdmin) Color(0xFF818CF8)
             else if (user.isActive) Color(0xFF10B981).copy(alpha = 0.6f)
             else Color(0xFFF59E0B).copy(alpha = 0.6f)
@@ -2890,6 +3135,20 @@ fun AdminUserItemRow(
                                 modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
                             )
                         }
+                    } else if (!isFullyApproved) {
+                        Surface(
+                            color = Color(0xFFA855F7).copy(alpha = 0.25f),
+                            shape = RoundedCornerShape(4.dp),
+                            border = BorderStroke(1.dp, Color(0xFFA855F7))
+                        ) {
+                            Text(
+                                text = "⏳ PENDING APPROVAL",
+                                color = Color(0xFFD8B4FE),
+                                fontSize = 8.sp,
+                                fontWeight = FontWeight.ExtraBold,
+                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                            )
+                        }
                     } else if (user.isActive) {
                         Surface(
                             color = Color(0xFF10B981).copy(alpha = 0.2f),
@@ -2903,7 +3162,7 @@ fun AdminUserItemRow(
                                 Box(modifier = Modifier.size(5.dp).clip(CircleShape).background(Color(0xFF00E676)))
                                 Spacer(modifier = Modifier.width(3.dp))
                                 Text(
-                                    text = "🟢 ACTIVE",
+                                    text = "✅ APPROVED",
                                     color = Color(0xFF34D399),
                                     fontSize = 8.5.sp,
                                     fontWeight = FontWeight.ExtraBold
@@ -2945,7 +3204,7 @@ fun AdminUserItemRow(
                             fontWeight = FontWeight.Bold
                         )
                     }
-                    // Status Toggle Button with Clear Bengali / English Label
+                    // Status Toggle Button
                     Surface(
                         color = if (user.isActive) Color(0xFFF59E0B).copy(alpha = 0.15f) else Color(0xFF10B981).copy(alpha = 0.15f),
                         shape = RoundedCornerShape(6.dp),
@@ -2978,16 +3237,21 @@ fun AdminUserItemRow(
                     fontSize = 11.sp
                 )
 
-                Text(
-                    text = if (user.isBanned) "🚫 অ্যাকাউন্ট ব্লকড"
-                           else if (user.isActive) "🟢 ইউজার সক্রিয় (লগইন সচল)"
-                           else "⚪ ইউজার নিষ্ক্রিয় (লগইন বন্ধ)",
-                    color = if (user.isBanned) Color(0xFFF87171)
-                            else if (user.isActive) Color(0xFF34D399)
-                            else Color(0xFFFBBF24),
-                    fontSize = 10.sp,
-                    fontWeight = FontWeight.SemiBold
-                )
+                // 1-Tap Admin Verify + Login Approval Toggle Button
+                Surface(
+                    color = if (isFullyApproved) Color(0xFF10B981).copy(alpha = 0.18f) else Color(0xFFA855F7).copy(alpha = 0.25f),
+                    shape = RoundedCornerShape(6.dp),
+                    border = BorderStroke(1.dp, if (isFullyApproved) Color(0xFF10B981) else Color(0xFFA855F7)),
+                    modifier = Modifier.clickable { onToggleApproval() }
+                ) {
+                    Text(
+                        text = if (isFullyApproved) "✅ ভেরিফাইড ও Approved (বাতিল করুন)" else "🔓 Approve & Verify করুন",
+                        color = if (isFullyApproved) Color(0xFF34D399) else Color(0xFFE9D5FF),
+                        fontSize = 9.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp)
+                    )
+                }
             }
 
             Spacer(modifier = Modifier.height(4.dp))
@@ -3009,6 +3273,21 @@ fun AdminUserItemRow(
                             contentDescription = null,
                             tint = Color(0xFF64748B),
                             modifier = Modifier.size(12.dp)
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Surface(
+                        color = Color(0xFF1E293B),
+                        shape = RoundedCornerShape(4.dp),
+                        border = BorderStroke(1.dp, Color(0xFF38BDF8).copy(alpha = 0.5f)),
+                        modifier = Modifier.clickable { showChangePassDialog = true }
+                    ) {
+                        Text(
+                            text = "🔑 নতুন পাসওয়ার্ড",
+                            fontSize = 8.5.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFF38BDF8),
+                            modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
                         )
                     }
                 }
@@ -3242,6 +3521,56 @@ fun AdminUserItemRow(
         }
     }
 
+    // Change Password Dialog
+    if (showChangePassDialog) {
+        var updatedPass by remember { mutableStateOf(user.passwordHash) }
+        AlertDialog(
+            onDismissRequest = { showChangePassDialog = false },
+            containerColor = Color(0xFF0F172A),
+            title = {
+                Text("🔑 পাসওয়ার্ড পরিবর্তন ও ভেরিফাই", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Color.White)
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("ইউজার: ${user.email}", fontSize = 11.sp, color = Color(0xFF38BDF8))
+                    OutlinedTextField(
+                        value = updatedPass,
+                        onValueChange = { updatedPass = it },
+                        label = { Text("নতুন পাসওয়ার্ড") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    OutlinedButton(
+                        onClick = {
+                            updatedPass = AuthManager.generateVerifiedPasswordForEmail(user.email, user.name)
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("⚡ অটো ভেরিফাইড পাসওয়ার্ড জেনারেট", fontSize = 11.sp, color = Color(0xFF34D399))
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        if (updatedPass.isNotBlank()) {
+                            onChangePassword(updatedPass.trim())
+                            showChangePassDialog = false
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF10B981))
+                ) {
+                    Text("সেভ ও সিঙ্ক করুন")
+                }
+            },
+            dismissButton = {
+                OutlinedButton(onClick = { showChangePassDialog = false }) {
+                    Text("বাতিল", color = Color.White)
+                }
+            }
+        )
+    }
+
     // Sub Admin Permissions Edit Dialog
     if (showPermissionsDialog) {
         var pUpload by remember { mutableStateOf(user.permissions.canUploadNumbers) }
@@ -3259,20 +3588,14 @@ fun AdminUserItemRow(
                     Icon(Icons.Default.Security, contentDescription = null, tint = Color(0xFF818CF8), modifier = Modifier.size(20.dp))
                     Spacer(modifier = Modifier.width(8.dp))
                     Column {
-                        Text("🛡️ সাব এডমিন অনুমতি নির্ধারণ", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Color.White)
-                        Text(user.name, fontSize = 11.sp, color = Color(0xFF94A3B8))
+                        Text("সাব এডমিন পারমিশন কন্ট্রোল", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                        Text(user.email, fontSize = 11.sp, color = Color(0xFF94A3B8))
                     }
                 }
             },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(
-                        text = "প্রাইম এডমিন হিসেবে আপনি যেকোনো সময় এই সাব এডমিনের কাজের অনুমতি অন/অফ করতে পারেন:",
-                        fontSize = 11.sp,
-                        color = Color(0xFFCBD5E1),
-                        lineHeight = 15.sp
-                    )
-
+                    Text("এই সাব এডমিন কোন কোন কাজ করতে পারবে তা নির্ধারণ করুন:", fontSize = 11.sp, color = Color(0xFFCBD5E1))
                     Spacer(modifier = Modifier.height(4.dp))
 
                     PermissionToggleRow(label = "নাম্বার আপলোড (Upload Numbers)", checked = pUpload, onCheckedChange = { pUpload = it })
@@ -3405,6 +3728,7 @@ fun AdminUserItemRow(
         )
     }
 }
+
 
 @Composable
 fun PermissionToggleRow(

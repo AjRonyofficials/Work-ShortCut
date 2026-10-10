@@ -2,7 +2,6 @@ package com.example.ui.screens
 
 import android.widget.Toast
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -35,21 +34,19 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
-import com.example.util.VibrationHelper
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -64,6 +61,10 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.service.AuthManager
+import com.example.util.VibrationHelper
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 @Composable
 fun LoginScreen(
@@ -75,6 +76,39 @@ fun LoginScreen(
     var password by remember { mutableStateOf("") }
     var passwordVisible by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
+    var isLoggingIn by remember { mutableStateOf(false) }
+    val coroutineScope = rememberCoroutineScope()
+    val cloudStatus by AuthManager.cloudSyncStatus.collectAsState()
+
+    // Automatically sync latest Admin-Verified & Approved accounts when LoginScreen opens
+    LaunchedEffect(Unit) {
+        withContext(Dispatchers.IO) {
+            AuthManager.syncFromCloudInternal()
+        }
+    }
+
+    val performLogin: () -> Unit = {
+        if (!isLoggingIn) {
+            isLoggingIn = true
+            errorMessage = null
+            coroutineScope.launch {
+                val normalizedEmail = email.trim().let {
+                    if (it.isNotEmpty() && !it.contains("@")) "$it@gmail.com" else it
+                }
+                val (success, msg) = withContext(Dispatchers.IO) {
+                    AuthManager.login(normalizedEmail, password)
+                }
+                isLoggingIn = false
+                if (success) {
+                    VibrationHelper.vibrateSuccess(context)
+                    Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                    onLoginSuccess()
+                } else {
+                    errorMessage = msg
+                }
+            }
+        }
+    }
 
     Box(
         modifier = modifier
@@ -132,7 +166,7 @@ fun LoginScreen(
                     )
                 }
 
-                Spacer(modifier = Modifier.height(16.dp))
+                Spacer(modifier = Modifier.height(14.dp))
 
                 Text(
                     text = "WORK SHORTCUT",
@@ -143,12 +177,29 @@ fun LoginScreen(
                 )
 
                 Text(
-                    text = "Authorized Access & Admin Panel",
-                    fontSize = 12.sp,
-                    color = Color(0xFF90A4AE)
+                    text = "Admin Verified & Approved Login System",
+                    fontSize = 11.5.sp,
+                    color = Color(0xFF80D8FF),
+                    fontWeight = FontWeight.SemiBold
                 )
 
-                Spacer(modifier = Modifier.height(24.dp))
+                Spacer(modifier = Modifier.height(6.dp))
+
+                Surface(
+                    color = Color(0xFF0A1929),
+                    shape = RoundedCornerShape(8.dp),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF1E3A5F))
+                ) {
+                    Text(
+                        text = "☁️ $cloudStatus",
+                        fontSize = 10.sp,
+                        color = Color(0xFF4ADE80),
+                        fontWeight = FontWeight.Medium,
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(18.dp))
 
                 // Email field
                 OutlinedTextField(
@@ -157,7 +208,7 @@ fun LoginScreen(
                         email = it
                         errorMessage = null
                     },
-                    label = { Text("Email Address") },
+                    label = { Text("Email Address (Gmail)") },
                     leadingIcon = {
                         Icon(Icons.Default.Email, contentDescription = null, tint = Color(0xFF00B0FF))
                     },
@@ -208,15 +259,7 @@ fun LoginScreen(
                         keyboardType = KeyboardType.Password,
                         imeAction = ImeAction.Done
                     ),
-                    keyboardActions = KeyboardActions(onDone = {
-                        val (success, msg) = AuthManager.login(email, password)
-                        if (success) {
-                            Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
-                            onLoginSuccess()
-                        } else {
-                            errorMessage = msg
-                        }
-                    }),
+                    keyboardActions = KeyboardActions(onDone = { performLogin() }),
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedTextColor = Color.White,
                         unfocusedTextColor = Color.White,
@@ -233,39 +276,27 @@ fun LoginScreen(
 
                 if (errorMessage != null) {
                     Spacer(modifier = Modifier.height(10.dp))
-                    Text(
-                        text = errorMessage!!,
-                        color = Color(0xFFFF5252),
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Medium
-                    )
+                    Surface(
+                        color = Color(0xFF3B1219),
+                        shape = RoundedCornerShape(10.dp),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFFF5252).copy(alpha = 0.5f)),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            text = errorMessage!!,
+                            color = Color(0xFFFF8A80),
+                            fontSize = 11.5.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            modifier = Modifier.padding(10.dp)
+                        )
+                    }
                 }
 
-                Spacer(modifier = Modifier.height(20.dp))
-
-                var isLoggingIn by remember { mutableStateOf(false) }
-                val coroutineScope = rememberCoroutineScope()
+                Spacer(modifier = Modifier.height(18.dp))
 
                 // Login Button
                 Button(
-                    onClick = {
-                        if (!isLoggingIn) {
-                            isLoggingIn = true
-                            errorMessage = null
-                            coroutineScope.launch {
-                                val (success, msg) = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                                    AuthManager.login(email, password)
-                                }
-                                isLoggingIn = false
-                                if (success) {
-                                    Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
-                                    onLoginSuccess()
-                                } else {
-                                    errorMessage = msg
-                                }
-                            }
-                        }
-                    },
+                    onClick = { performLogin() },
                     enabled = !isLoggingIn,
                     colors = ButtonDefaults.buttonColors(
                         containerColor = Color(0xFF0091EA),
@@ -284,8 +315,8 @@ fun LoginScreen(
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            text = "লগইন যাচাই করা হচ্ছে...",
-                            fontSize = 13.sp,
+                            text = "এডমিন ভেরিফিকেশন ও অনুমোদন যাচাই হচ্ছে...",
+                            fontSize = 12.sp,
                             fontWeight = FontWeight.Bold,
                             color = Color.White
                         )
@@ -309,11 +340,16 @@ fun LoginScreen(
                     onClick = {
                         isSyncing = true
                         coroutineScope.launch {
-                            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                                AuthManager.syncFromCloud()
+                            val ok = withContext(Dispatchers.IO) {
+                                AuthManager.syncFromCloudInternal()
                             }
                             isSyncing = false
-                            Toast.makeText(context, "✓ অ্যাকাউন্ট তালিকা সার্ভার থেকে সিঙ্ক সম্পন্ন!", Toast.LENGTH_SHORT).show()
+                            val toastMsg = if (ok) {
+                                "✓ এডমিন সার্ভার থেকে নতুন আইডি/পাস ও Approval সিঙ্ক সম্পন্ন!"
+                            } else {
+                                "⚠️ সার্ভার কানেকশন চেক করুন"
+                            }
+                            Toast.makeText(context, toastMsg, Toast.LENGTH_SHORT).show()
                             errorMessage = null
                             VibrationHelper.vibrateSuccess(context)
                         }
@@ -325,7 +361,7 @@ fun LoginScreen(
                     if (isSyncing) {
                         CircularProgressIndicator(modifier = Modifier.size(16.dp), color = Color(0xFF00B0FF), strokeWidth = 2.dp)
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text("সার্ভার থেকে চেক করা হচ্ছে...", fontSize = 11.sp, color = Color(0xFF00B0FF))
+                        Text("সার্ভার থেকে সিঙ্ক করা হচ্ছে...", fontSize = 11.sp, color = Color(0xFF00B0FF))
                     } else {
                         Icon(Icons.Default.Refresh, contentDescription = null, tint = Color(0xFF00B0FF), modifier = Modifier.size(16.dp))
                         Spacer(modifier = Modifier.width(6.dp))
@@ -335,7 +371,7 @@ fun LoginScreen(
 
                 Spacer(modifier = Modifier.height(16.dp))
 
-                // To get ID Pass or Forget Password Contact Developer (@ismailislamrony1)
+                // Contact Developer (@ismailislamrony1)
                 Surface(
                     color = Color(0xFF0088CC).copy(alpha = 0.18f),
                     shape = RoundedCornerShape(14.dp),
@@ -385,7 +421,7 @@ fun LoginScreen(
                         Spacer(modifier = Modifier.width(10.dp))
                         Column {
                             Text(
-                                text = "To get ID / Pass or Forget Password",
+                                text = "To get Verified ID / Pass or Login Approval",
                                 color = Color(0xFF80D8FF),
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.Bold
@@ -412,13 +448,13 @@ fun LoginScreen(
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
                         Text(
-                            text = "🔒 সুরক্ষিত সিস্টেম",
+                            text = "🔒 এডমিন ভেরিফাইড ও অ্যাপ্রুভাল সিস্টেম",
                             color = Color(0xFF81D4FA),
                             fontSize = 11.sp,
                             fontWeight = FontWeight.Bold
                         )
                         Text(
-                            text = "এডমিনের অনুমোদন ও দেওয়া ইমেইল-পাসওয়ার্ড ছাড়া কেউ এক্সেস করতে পারবে না।",
+                            text = "এডমিনের ভেরিফিকেশন + জেনারেট করা জিমেইল/পাসওয়ার্ড + লগইন Approval ছাড়া কেউ প্রবেশ করতে পারবে না।",
                             color = Color(0xFF90A4AE),
                             fontSize = 10.sp
                         )
