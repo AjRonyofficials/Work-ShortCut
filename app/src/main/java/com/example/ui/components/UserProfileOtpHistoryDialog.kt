@@ -925,7 +925,7 @@ fun UserProfileOtpHistoryDialog(
                                         ) {
                                             Column(modifier = Modifier.padding(10.dp)) {
                                                 Text(
-                                                    text = "1. Unix SMS Panel",
+                                                    text = "1. Premium Numbers",
                                                     color = Color(0xFF38BDF8),
                                                     fontSize = 11.sp,
                                                     fontWeight = FontWeight.Bold
@@ -945,7 +945,7 @@ fun UserProfileOtpHistoryDialog(
                                             }
                                         }
 
-                                        // Zenex SMS Box
+                                        // Kop Engine Box
                                         Surface(
                                             color = Color(0xFF10B981).copy(alpha = 0.12f),
                                             shape = RoundedCornerShape(10.dp),
@@ -953,12 +953,19 @@ fun UserProfileOtpHistoryDialog(
                                             modifier = Modifier.weight(1f)
                                         ) {
                                             Column(modifier = Modifier.padding(10.dp)) {
-                                                Text(
-                                                    text = "2. Zenex SMS Panel",
-                                                    color = Color(0xFF34D399),
-                                                    fontSize = 11.sp,
-                                                    fontWeight = FontWeight.Bold
-                                                )
+                                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                                    Text(
+                                                        text = "2. Kop Engine ",
+                                                        color = Color(0xFF34D399),
+                                                        fontSize = 11.sp,
+                                                        fontWeight = FontWeight.Bold
+                                                    )
+                                                    Text(
+                                                        text = "(Api)",
+                                                        color = Color(0xFF6EE7B7),
+                                                        fontSize = 9.sp
+                                                    )
+                                                }
                                                 Spacer(modifier = Modifier.height(4.dp))
                                                 Text(
                                                     text = "Today: ${otpState.zenexTodayOtps} OTPs",

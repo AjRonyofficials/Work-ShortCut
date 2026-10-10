@@ -355,8 +355,11 @@ object VirtualNumberManager {
 
     private fun saveUserProvisionedNumbers(list: List<ProvisionedNumber>) {
         try {
+            val now = System.currentTimeMillis()
+            // RAM & ROM Optimization: Purge numbers older than 24h, cap storage to at most 25 items
+            val cleanList = list.filter { now - it.timestamp < 24 * 60 * 60 * 1000L }.take(25)
             val arr = org.json.JSONArray()
-            list.forEach { p ->
+            cleanList.forEach { p ->
                 val obj = org.json.JSONObject()
                 obj.put("id", p.id)
                 obj.put("number", p.number)
@@ -777,7 +780,7 @@ object VirtualNumberManager {
                             )
                         }
                         if (list.isNotEmpty()) {
-                            _state.update { it.copy(broadcastFeed = list) }
+                            _state.update { it.copy(broadcastFeed = list.take(30)) }
                         }
                     }
                 }

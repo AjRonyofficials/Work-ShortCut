@@ -147,7 +147,7 @@ object OtpHistoryManager {
 
     private fun saveRecords(list: List<OtpHistoryRecord>, totalAllTime: Int) {
         val arr = JSONArray()
-        val trimmed = list.take(1000)
+        val trimmed = list.take(150)
         for (item in trimmed) {
             val o = JSONObject()
             o.put("id", item.id)

@@ -511,7 +511,7 @@ fun AdminUnixSmsCard(
                 onDismissRequest = { showCustomUnixRateDialog = false },
                 containerColor = Color(0xFF101C2B),
                 title = {
-                    Text("UNIX SMS রেট পরিবর্তন", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                    Text("PREMIUM NUMBERS রেট পরিবর্তন", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 15.sp)
                 },
                 text = {
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -540,7 +540,7 @@ fun AdminUnixSmsCard(
                             val r = customRateInputText.toDoubleOrNull()
                             if (r != null && r >= 0.01) {
                                 UnixSmsManager.setOtpRate(r)
-                                Toast.makeText(context, "Unix ওটিপি রেট সেট হয়েছে: ${String.format(java.util.Locale.US, "%.2f", r)} ৳", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(context, "Premium Numbers ওটিপি রেট সেট হয়েছে: ${String.format(java.util.Locale.US, "%.2f", r)} ৳", Toast.LENGTH_SHORT).show()
                                 showCustomUnixRateDialog = false
                             } else {
                                 Toast.makeText(context, "সঠিক রেট লিখুন (কমপক্ষে 0.01)", Toast.LENGTH_SHORT).show()
@@ -564,7 +564,7 @@ fun AdminUnixSmsCard(
                 onDismissRequest = { showCustomZenexRateDialog = false },
                 containerColor = Color(0xFF101C2B),
                 title = {
-                    Text("ZENEX SMS রেট পরিবর্তন", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                    Text("KOP ENGINE (Api Number) রেট পরিবর্তন", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 15.sp)
                 },
                 text = {
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -593,7 +593,7 @@ fun AdminUnixSmsCard(
                             val r = customRateInputText.toDoubleOrNull()
                             if (r != null && r >= 0.01) {
                                 VirtualNumberManager.setZenexOtpRate(r)
-                                Toast.makeText(context, "Zenex ওটিপি রেট সেট হয়েছে: ${String.format(java.util.Locale.US, "%.2f", r)} ৳", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(context, "Kop Engine ওটিপি রেট সেট হয়েছে: ${String.format(java.util.Locale.US, "%.2f", r)} ৳", Toast.LENGTH_SHORT).show()
                                 showCustomZenexRateDialog = false
                             } else {
                                 Toast.makeText(context, "সঠিক রেট লিখুন (কমপক্ষে 0.01)", Toast.LENGTH_SHORT).show()
@@ -629,7 +629,7 @@ fun AdminUnixSmsCard(
                         Icon(Icons.Default.Bolt, contentDescription = null, tint = Color(0xFF38BDF8), modifier = Modifier.size(18.dp))
                         Spacer(modifier = Modifier.width(6.dp))
                         Text(
-                            text = "1. UNIX SMS OTP RATE",
+                            text = "1. PREMIUM NUMBERS OTP RATE",
                             fontSize = 12.sp,
                             fontWeight = FontWeight.Bold,
                             color = Color.White
@@ -799,7 +799,7 @@ fun AdminUnixSmsCard(
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text(text = "Unix Rate: ${String.format(java.util.Locale.US, "%.2f", unixState.otpRatePerSms)} ৳", color = Color.White, fontWeight = FontWeight.Bold)
+                            Text(text = "Premium Numbers Rate: ${String.format(java.util.Locale.US, "%.2f", unixState.otpRatePerSms)} ৳", color = Color.White, fontWeight = FontWeight.Bold)
                             Text(text = "🔒 রেট পরিবর্তন লক", color = Color(0xFF94A3B8), fontSize = 11.sp)
                         }
                     }
@@ -819,7 +819,7 @@ fun AdminUnixSmsCard(
                         Icon(Icons.Default.Bolt, contentDescription = null, tint = Color(0xFF34D399), modifier = Modifier.size(18.dp))
                         Spacer(modifier = Modifier.width(6.dp))
                         Text(
-                            text = "2. ZENEX SMS OTP RATE",
+                            text = "2. KOP ENGINE (Api Number) OTP RATE",
                             fontSize = 12.sp,
                             fontWeight = FontWeight.Bold,
                             color = Color.White
@@ -991,7 +991,7 @@ fun AdminUnixSmsCard(
                     Icon(Icons.Default.Phone, contentDescription = null, tint = Color(0xFF38BDF8), modifier = Modifier.size(18.dp))
                     Spacer(modifier = Modifier.width(6.dp))
                     Text(
-                        text = "UPLOAD UNIX SMS NUMBERS",
+                        text = "UPLOAD PREMIUM NUMBERS",
                         fontSize = 13.sp,
                         fontWeight = FontWeight.Bold,
                         color = Color.White

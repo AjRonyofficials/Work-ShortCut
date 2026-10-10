@@ -448,7 +448,8 @@ object UnixSmsManager {
                 val dataArr = root.optJSONArray("data") ?: JSONArray()
                 val cdrList = mutableListOf<UnixSmsCdrRecord>()
 
-                for (i in 0 until dataArr.length()) {
+                val maxCdrToParse = minOf(dataArr.length(), 40)
+                for (i in 0 until maxCdrToParse) {
                     val o = dataArr.optJSONObject(i) ?: continue
                     cdrList.add(
                         UnixSmsCdrRecord(
@@ -461,9 +462,13 @@ object UnixSmsManager {
                     )
                 }
 
-                // Check active numbers against incoming CDRs
+                // Check active numbers against incoming CDRs & Auto-prune expired numbers (> 20 mins without OTP)
+                val nowTime = System.currentTimeMillis()
                 val newlyArrivedOtps = mutableListOf<Pair<ProvisionedNumber, String>>()
-                val currentActive = _state.value.activeNumbers
+                // Auto-cleanup: remove unfulfilled numbers older than 20 mins to save RAM/ROM
+                val currentActive = _state.value.activeNumbers.filter { prov ->
+                    prov.otpCode != null || (nowTime - prov.timestamp < 20 * 60 * 1000L)
+                }
 
                 val updatedActive = currentActive.map { prov ->
                     val cleanDigits = prov.number.replace("[^0-9]".toRegex(), "")
@@ -576,7 +581,7 @@ object UnixSmsManager {
 
                 _state.update {
                     it.copy(
-                        liveCdrRecords = cdrList,
+                        liveCdrRecords = cdrList.take(35),
                         activeNumbers = updatedActive,
                         uploadedNumbers = if (uploadedModified) updatedUploaded else it.uploadedNumbers,
                         todayOtpCount = newTodayOtpCount,

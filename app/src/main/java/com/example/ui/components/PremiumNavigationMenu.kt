@@ -176,7 +176,7 @@ enum class AppNavTab(
     ),
     ADMIN_PANEL(
         title = "Admin Panel",
-        subtitle = "Unix SMS & User Accounts",
+        subtitle = "Premium Numbers & User Accounts",
         category = "ADMIN",
         selectedIcon = Icons.Filled.Security,
         unselectedIcon = Icons.Outlined.Security,

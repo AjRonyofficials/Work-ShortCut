@@ -88,6 +88,7 @@ class MainActivity : ComponentActivity() {
         }
         checkVpnPermissionRequest(intent)
         checkNotificationPermission()
+        com.example.util.AppMemoryOptimizer.autoOptimize(this)
 
         setContent {
             val state by OverlayStateManager.uiState.collectAsStateWithLifecycle()
