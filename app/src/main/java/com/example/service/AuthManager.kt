@@ -67,7 +67,8 @@ object AuthManager {
     private val _managedUsers = MutableStateFlow<List<AuthUser>>(emptyList())
     val managedUsers: StateFlow<List<AuthUser>> = _managedUsers.asStateFlow()
 
-    private const val CLOUD_OBJECT_URL = "https://api.restful-api.dev/objects/ff808181a09d98f701a121d19e7c3002"
+    private const val SUPABASE_BASE_URL = "https://fbtqjpuclmnsiqehalow.supabase.co/rest/v1"
+    private const val SUPABASE_KEY = "sb_publishable_zBqxIMDPy4yHEuAdJJUlxg_wSCRF9u5"
     private val httpClient = okhttp3.OkHttpClient.Builder()
         .connectTimeout(5, java.util.concurrent.TimeUnit.SECONDS)
         .readTimeout(5, java.util.concurrent.TimeUnit.SECONDS)
@@ -152,69 +153,67 @@ object AuthManager {
     private fun syncFromCloudInternal() {
         try {
             val req = okhttp3.Request.Builder()
-                .url(CLOUD_OBJECT_URL)
+                .url("$SUPABASE_BASE_URL/app_users?select=*")
+                .header("apikey", SUPABASE_KEY)
                 .get()
                 .build()
             val resp = httpClient.newCall(req).execute()
             if (resp.isSuccessful) {
                 val bodyStr = resp.body?.string() ?: ""
-                val rootObj = JSONObject(bodyStr)
-                val dataObj = rootObj.optJSONObject("data")
-                val usersJsonStr = dataObj?.optString("users_json", "") ?: ""
-                if (usersJsonStr.isNotEmpty() && usersJsonStr != "[]") {
-                    val arr = JSONArray(usersJsonStr)
-                    val cloudUsers = mutableListOf<AuthUser>()
-                    for (i in 0 until arr.length()) {
-                        val obj = arr.getJSONObject(i)
-                        val permObj = obj.optJSONObject("permissions")
-                        val perms = if (permObj != null) {
-                            SubAdminPermissions(
-                                canUploadNumbers = permObj.optBoolean("canUploadNumbers", true),
-                                canDeleteNumbers = permObj.optBoolean("canDeleteNumbers", true),
-                                canUpdateOtpRate = permObj.optBoolean("canUpdateOtpRate", true),
-                                canManageWithdrawals = permObj.optBoolean("canManageWithdrawals", false),
-                                canViewLiveCdr = permObj.optBoolean("canViewLiveCdr", false),
-                                canBroadcastNotify = permObj.optBoolean("canBroadcastNotify", false)
-                            )
-                        } else SubAdminPermissions()
+                val arr = JSONArray(bodyStr)
+                val cloudUsers = mutableListOf<AuthUser>()
+                for (i in 0 until arr.length()) {
+                    val obj = arr.getJSONObject(i)
+                    val permObj = try {
+                        val pStr = obj.optString("permissions_json", "{}")
+                        JSONObject(pStr)
+                    } catch (_: Exception) { JSONObject() }
 
-                        cloudUsers.add(
-                            AuthUser(
-                                email = obj.getString("email"),
-                                passwordHash = obj.getString("password"),
-                                name = obj.optString("name", "User"),
-                                role = obj.optString("role", "USER"),
-                                createdAt = obj.optLong("createdAt", System.currentTimeMillis()),
-                                isActive = obj.optBoolean("isActive", true),
-                                isBanned = obj.optBoolean("isBanned", false),
-                                loginCount = obj.optInt("loginCount", 0),
-                                activeDevicesCount = obj.optInt("activeDevicesCount", 0),
-                                lastLoginAt = obj.optLong("lastLoginAt", 0L),
-                                lastDeviceName = obj.optString("lastDeviceName", ""),
-                                totalOtps = obj.optInt("totalOtps", 0),
-                                balanceTk = obj.optDouble("balanceTk", 0.0),
-                                todayOtps = obj.optInt("todayOtps", 0),
-                                last7DaysOtps = obj.optInt("last7DaysOtps", 0),
-                                last30DaysOtps = obj.optInt("last30DaysOtps", 0),
-                                permissions = perms
-                            )
+                    val perms = SubAdminPermissions(
+                        canUploadNumbers = permObj.optBoolean("canUploadNumbers", true),
+                        canDeleteNumbers = permObj.optBoolean("canDeleteNumbers", true),
+                        canUpdateOtpRate = permObj.optBoolean("canUpdateOtpRate", true),
+                        canManageWithdrawals = permObj.optBoolean("canManageWithdrawals", false),
+                        canViewLiveCdr = permObj.optBoolean("canViewLiveCdr", false),
+                        canBroadcastNotify = permObj.optBoolean("canBroadcastNotify", false)
+                    )
+
+                    val statusStr = obj.optString("status", "ACTIVE")
+                    cloudUsers.add(
+                        AuthUser(
+                            email = obj.getString("email"),
+                            passwordHash = obj.getString("password"),
+                            name = obj.optString("username", "User"),
+                            role = obj.optString("role", "USER"),
+                            createdAt = System.currentTimeMillis(),
+                            isActive = statusStr != "INACTIVE" && statusStr != "BANNED",
+                            isBanned = statusStr == "BANNED",
+                            loginCount = 0,
+                            activeDevicesCount = 0,
+                            lastLoginAt = 0L,
+                            lastDeviceName = "",
+                            totalOtps = obj.optInt("total_otps", 0),
+                            balanceTk = obj.optDouble("balance", 0.0),
+                            todayOtps = 0,
+                            last7DaysOtps = 0,
+                            last30DaysOtps = 0,
+                            permissions = perms
                         )
-                    }
-
-                    // Merge cloud users with local users
-                    val currentList = _managedUsers.value.toMutableList()
-                    for (cu in cloudUsers) {
-                        val idx = currentList.indexOfFirst { it.email.equals(cu.email, ignoreCase = true) }
-                        if (idx >= 0) {
-                            // Update existing with cloud if newer or merge
-                            currentList[idx] = cu
-                        } else {
-                            currentList.add(cu)
-                        }
-                    }
-                    _managedUsers.value = currentList
-                    saveUsersLocallyOnly(currentList)
+                    )
                 }
+
+                // Merge cloud users with local users
+                val currentList = _managedUsers.value.toMutableList()
+                for (cu in cloudUsers) {
+                    val idx = currentList.indexOfFirst { it.email.equals(cu.email, ignoreCase = true) }
+                    if (idx >= 0) {
+                        currentList[idx] = cu
+                    } else {
+                        currentList.add(cu)
+                    }
+                }
+                _managedUsers.value = currentList
+                saveUsersLocallyOnly(currentList)
             }
         } catch (_: Exception) {}
     }
@@ -262,17 +261,36 @@ object AuthManager {
     private fun syncToCloud(list: List<AuthUser>) {
         authScope.launch {
             try {
-                val arr = serializeUsersToJson(list)
-                val putPayload = JSONObject().apply {
-                    put("name", "work_shortcut_authorized_users")
-                    put("data", JSONObject().apply {
-                        put("users_json", arr.toString())
-                    })
+                val arr = JSONArray()
+                for (u in list) {
+                    val obj = JSONObject()
+                    obj.put("email", u.email)
+                    obj.put("username", u.name)
+                    obj.put("password", u.passwordHash)
+                    obj.put("role", u.role)
+                    obj.put("status", if (u.isBanned) "BANNED" else if (u.isActive) "ACTIVE" else "INACTIVE")
+                    obj.put("balance", u.balanceTk)
+                    obj.put("total_otps", u.totalOtps)
+
+                    val permObj = JSONObject().apply {
+                        put("canUploadNumbers", u.permissions.canUploadNumbers)
+                        put("canDeleteNumbers", u.permissions.canDeleteNumbers)
+                        put("canUpdateOtpRate", u.permissions.canUpdateOtpRate)
+                        put("canManageWithdrawals", u.permissions.canManageWithdrawals)
+                        put("canViewLiveCdr", u.permissions.canViewLiveCdr)
+                        put("canBroadcastNotify", u.permissions.canBroadcastNotify)
+                    }
+                    obj.put("permissions_json", permObj.toString())
+                    arr.put(obj)
                 }
-                val body = putPayload.toString().toRequestBody("application/json; charset=utf-8".toMediaTypeOrNull())
+
+                val body = arr.toString().toRequestBody("application/json; charset=utf-8".toMediaTypeOrNull())
                 val req = okhttp3.Request.Builder()
-                    .url(CLOUD_OBJECT_URL)
-                    .put(body)
+                    .url("$SUPABASE_BASE_URL/app_users?on_conflict=email")
+                    .header("apikey", SUPABASE_KEY)
+                    .header("Content-Type", "application/json")
+                    .header("Prefer", "resolution=merge-duplicates,return=minimal")
+                    .post(body)
                     .build()
                 httpClient.newCall(req).execute()
             } catch (_: Exception) {}

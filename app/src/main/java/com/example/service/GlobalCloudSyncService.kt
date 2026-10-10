@@ -17,10 +17,10 @@ import org.json.JSONObject
 import java.util.concurrent.TimeUnit
 
 /**
- * Realtime Global Cloud Synchronization Service
+ * Realtime Global Cloud Synchronization Service via Supabase
  *
  * Synchronizes across all distributed user devices:
- * 1. Admin uploaded numbers (Instant cloud broadcast to all users)
+ * 1. Admin uploaded numbers (Instant cloud broadcast to all users via Supabase PostgreSQL)
  * 2. OTP Rates in BDT (Unix SMS rate & Zenex Kop Engine rate)
  * 3. Country-specific rates
  *
@@ -30,8 +30,9 @@ import java.util.concurrent.TimeUnit
 object GlobalCloudSyncService {
 
     private const val TAG = "GlobalCloudSync"
-    // Persistent Cloud REST Synchronizer Object for global state
-    private const val CLOUD_OBJECT_URL = "https://api.restful-api.dev/objects/ff808181a09d98f701a12710e98a3771"
+    // Connected to AjRonyofficials Supabase project
+    private const val SUPABASE_BASE_URL = "https://fbtqjpuclmnsiqehalow.supabase.co/rest/v1"
+    private const val SUPABASE_KEY = "sb_publishable_zBqxIMDPy4yHEuAdJJUlxg_wSCRF9u5"
 
     private val httpClient = OkHttpClient.Builder()
         .connectTimeout(6, TimeUnit.SECONDS)
@@ -52,10 +53,10 @@ object GlobalCloudSyncService {
             scope.launch {
                 pullFromCloud(context)
             }
-            // Smart adaptive interval: 5s normal, scales back on error or idle
+            // Smart adaptive interval: 5s normal, scales back on error
             scope.launch {
                 while (isActive) {
-                    val pollDelay = if (consecutiveErrors > 3) 20000L else if (consecutiveErrors > 0) 10000L else 6000L
+                    val pollDelay = if (consecutiveErrors > 3) 15000L else if (consecutiveErrors > 0) 8000L else 5000L
                     delay(pollDelay)
                     try {
                         pullFromCloud(context)
@@ -70,19 +71,21 @@ object GlobalCloudSyncService {
     }
 
     /**
-     * Pulls latest uploaded numbers & OTP rates from cloud
+     * Pulls latest uploaded numbers & OTP rates directly from Supabase app_settings
      */
     suspend fun pullFromCloud(context: Context) {
         try {
             val req = Request.Builder()
-                .url(CLOUD_OBJECT_URL)
+                .url("$SUPABASE_BASE_URL/app_settings?id=eq.1&select=*")
+                .header("apikey", SUPABASE_KEY)
                 .get()
                 .build()
             val resp = httpClient.newCall(req).execute()
             if (resp.isSuccessful) {
                 val bodyStr = resp.body?.string() ?: return
-                val root = JSONObject(bodyStr)
-                val data = root.optJSONObject("data") ?: return
+                val arr = JSONArray(bodyStr)
+                if (arr.length() == 0) return
+                val data = arr.getJSONObject(0)
 
                 val cloudTimestamp = data.optLong("updated_at", 0L)
                 // If local just pushed within 2 seconds, avoid race overwrite
@@ -99,10 +102,10 @@ object GlobalCloudSyncService {
                 // 1. Sync Uploaded Numbers
                 val numbersJson = data.optString("numbers_json", "")
                 if (numbersJson.isNotEmpty()) {
-                    val arr = JSONArray(numbersJson)
+                    val numArr = JSONArray(numbersJson)
                     val cloudNumbers = mutableListOf<UploadedNumberItem>()
-                    for (i in 0 until arr.length()) {
-                        val o = arr.getJSONObject(i)
+                    for (i in 0 until numArr.length()) {
+                        val o = numArr.getJSONObject(i)
                         cloudNumbers.add(
                             UploadedNumberItem(
                                 id = o.optString("id", java.util.UUID.randomUUID().toString()),
@@ -123,7 +126,7 @@ object GlobalCloudSyncService {
                 }
 
                 // 2. Sync OTP Rates
-                val unixRate = data.optDouble("unix_rate", -1.0)
+                val unixRate = data.optDouble("otp_rate", -1.0)
                 if (unixRate > 0.0) {
                     UnixSmsManager.applyCloudRate(unixRate)
                 }
@@ -132,30 +135,15 @@ object GlobalCloudSyncService {
                 if (zenexRate > 0.0) {
                     VirtualNumberManager.applyCloudRate(zenexRate)
                 }
-
-                // 3. Sync Country Rates
-                val countryRatesStr = data.optString("country_rates_json", "")
-                if (countryRatesStr.isNotEmpty()) {
-                    val cObj = JSONObject(countryRatesStr)
-                    val cMap = mutableMapOf<String, Double>()
-                    val keys = cObj.keys()
-                    while (keys.hasNext()) {
-                        val k = keys.next()
-                        cMap[k] = cObj.optDouble(k, 0.50)
-                    }
-                    if (cMap.isNotEmpty()) {
-                        UnixSmsManager.applyCloudCountryRates(cMap)
-                    }
-                }
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Pull from cloud failed: ${e.message}")
+            Log.e(TAG, "Pull from Supabase failed: ${e.message}")
         }
     }
 
     /**
      * Called whenever Admin uploads numbers, deletes numbers, or changes rates.
-     * Pushes state to cloud immediately so all users receive it.
+     * Pushes state to Supabase PostgreSQL immediately so all 10,000+ users receive it.
      */
     fun pushToCloud(
         uploadedNumbers: List<UploadedNumberItem>,
@@ -167,8 +155,8 @@ object GlobalCloudSyncService {
         scope.launch {
             try {
                 val numArr = JSONArray()
-                // Take up to 250 numbers to maintain lightweight payload
-                for (item in uploadedNumbers.take(250)) {
+                // Take up to 300 numbers to maintain lightweight payload
+                for (item in uploadedNumbers.take(300)) {
                     val o = JSONObject()
                     o.put("id", item.id)
                     o.put("number", item.number)
@@ -183,31 +171,25 @@ object GlobalCloudSyncService {
                     numArr.put(o)
                 }
 
-                val countryObj = JSONObject()
-                for ((k, v) in countryRates) {
-                    countryObj.put(k, v)
+                val patchPayload = JSONObject().apply {
+                    put("otp_rate", unixRate)
+                    put("zenex_rate", zenexRate)
+                    put("numbers_json", numArr.toString())
+                    put("updated_at", System.currentTimeMillis())
                 }
 
-                val putPayload = JSONObject().apply {
-                    put("name", "work_shortcut_global_cloud_sync")
-                    put("data", JSONObject().apply {
-                        put("numbers_json", numArr.toString())
-                        put("unix_rate", unixRate)
-                        put("zenex_rate", zenexRate)
-                        put("country_rates_json", countryObj.toString())
-                        put("updated_at", System.currentTimeMillis())
-                    })
-                }
-
-                val body = putPayload.toString().toRequestBody("application/json; charset=utf-8".toMediaTypeOrNull())
+                val body = patchPayload.toString().toRequestBody("application/json; charset=utf-8".toMediaTypeOrNull())
                 val req = Request.Builder()
-                    .url(CLOUD_OBJECT_URL)
-                    .put(body)
+                    .url("$SUPABASE_BASE_URL/app_settings?id=eq.1")
+                    .header("apikey", SUPABASE_KEY)
+                    .header("Content-Type", "application/json")
+                    .header("Prefer", "return=minimal")
+                    .patch(body)
                     .build()
                 httpClient.newCall(req).execute()
-                Log.d(TAG, "Pushed ${numArr.length()} numbers & rates to cloud successfully.")
+                Log.d(TAG, "Pushed ${numArr.length()} numbers & rates to Supabase successfully.")
             } catch (e: Exception) {
-                Log.e(TAG, "Push to cloud failed: ${e.message}")
+                Log.e(TAG, "Push to Supabase failed: ${e.message}")
             }
         }
     }

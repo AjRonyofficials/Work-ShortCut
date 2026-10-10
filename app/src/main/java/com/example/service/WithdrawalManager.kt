@@ -195,7 +195,7 @@ object WithdrawalManager {
 
         val updated = listOf(newRequest) + _state.value.allRequests
         saveRequests(updated)
-        val baseCredit = prefs?.getFloat(KEY_BASE_CREDIT, 60.0f)?.toDouble() ?: 60.0
+        val baseCredit = prefs?.getFloat(KEY_BASE_CREDIT, 0.0f)?.toDouble() ?: 0.0
         recomputeBalances(updated, baseCredit)
 
         VibrationHelper.vibrateSuccess(context)
@@ -216,7 +216,7 @@ object WithdrawalManager {
         currentList[index] = updatedReq
         saveRequests(currentList)
 
-        val baseCredit = prefs?.getFloat(KEY_BASE_CREDIT, 60.0f)?.toDouble() ?: 60.0
+        val baseCredit = prefs?.getFloat(KEY_BASE_CREDIT, 0.0f)?.toDouble() ?: 0.0
         recomputeBalances(currentList, baseCredit)
 
         // Dispatch real Android notification to user
@@ -243,7 +243,7 @@ object WithdrawalManager {
         currentList[index] = updatedReq
         saveRequests(currentList)
 
-        val baseCredit = prefs?.getFloat(KEY_BASE_CREDIT, 60.0f)?.toDouble() ?: 60.0
+        val baseCredit = prefs?.getFloat(KEY_BASE_CREDIT, 0.0f)?.toDouble() ?: 0.0
         recomputeBalances(currentList, baseCredit)
 
         // Dispatch notification
