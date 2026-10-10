@@ -42,6 +42,8 @@ object GlobalCloudSyncService {
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private var isPolling = false
     private var lastLocalPushTimestamp = 0L
+    private var lastObservedServerTimestamp = 0L
+    private var consecutiveErrors = 0
 
     fun init(context: Context) {
         if (!isPolling) {
@@ -50,13 +52,16 @@ object GlobalCloudSyncService {
             scope.launch {
                 pullFromCloud(context)
             }
-            // Continuous polling every 4 seconds for instant real-time sync across all users
+            // Smart adaptive interval: 5s normal, scales back on error or idle
             scope.launch {
                 while (isActive) {
-                    delay(4000L)
+                    val pollDelay = if (consecutiveErrors > 3) 20000L else if (consecutiveErrors > 0) 10000L else 6000L
+                    delay(pollDelay)
                     try {
                         pullFromCloud(context)
+                        consecutiveErrors = 0
                     } catch (e: Exception) {
+                        consecutiveErrors++
                         Log.e(TAG, "Pull error: ${e.message}")
                     }
                 }
@@ -84,6 +89,12 @@ object GlobalCloudSyncService {
                 if (System.currentTimeMillis() - lastLocalPushTimestamp < 2000L) {
                     return
                 }
+
+                // If nothing changed on server since last check, avoid re-parsing to save CPU/battery
+                if (cloudTimestamp != 0L && cloudTimestamp == lastObservedServerTimestamp) {
+                    return
+                }
+                lastObservedServerTimestamp = cloudTimestamp
 
                 // 1. Sync Uploaded Numbers
                 val numbersJson = data.optString("numbers_json", "")
