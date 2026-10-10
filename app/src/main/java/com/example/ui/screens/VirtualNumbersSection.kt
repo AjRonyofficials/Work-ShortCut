@@ -113,6 +113,7 @@ fun VirtualNumbersSection(
     var consoleFilter by remember { mutableStateOf("") }
     var quantityDropdownExpanded by remember { mutableStateOf(false) }
     val selectedPanel by VirtualNumberManager.selectedPanel.collectAsState()
+    val zenexOtpRate by VirtualNumberManager.zenexOtpRate.collectAsState()
     var panelDropdownExpanded by remember { mutableStateOf(false) }
     var showProfileHistoryDialog by remember { mutableStateOf(false) }
 
@@ -905,7 +906,7 @@ fun VirtualNumbersSection(
                                 Icon(Icons.Default.Phone, contentDescription = null, tint = Color.White)
                                 Spacer(modifier = Modifier.width(8.dp))
                                 Text(
-                                    text = if (state.requestCount > 1) "GET ${state.requestCount} NUMBERS" else "GET NUMBER",
+                                    text = if (state.requestCount > 1) "GET ${state.requestCount} NUMBERS (${String.format(Locale.US, "%.2f", zenexOtpRate * state.requestCount)} ৳)" else "GET NUMBER (${String.format(Locale.US, "%.2f", zenexOtpRate)} ৳ / OTP)",
                                     fontWeight = FontWeight.Bold,
                                     fontSize = 13.sp,
                                     color = Color.White
