@@ -54,7 +54,25 @@ data class UnixSmsState(
     val selectedCountry: String = "ALL",
     val selectedService: String = "Facebook",
     val todayOtpCount: Int = 0,
-    val otpRatePerSms: Double = 0.014, // Configurable user OTP rate
+    val otpRatePerSms: Double = 0.50, // Default 0.50 ৳
+    val countryRates: Map<String, Double> = mapOf(
+        "BD" to 0.50,
+        "US" to 0.50,
+        "GB" to 0.50,
+        "CA" to 0.49,
+        "IN" to 0.49,
+        "NG" to 0.48,
+        "CM" to 0.48,
+        "KE" to 0.48,
+        "ID" to 0.49,
+        "PH" to 0.49,
+        "FR" to 0.50,
+        "DE" to 0.50,
+        "PK" to 0.48,
+        "BR" to 0.49,
+        "VN" to 0.49,
+        "RU" to 0.50
+    ),
     val lastSyncTime: Long = 0L,
     val lastError: String? = null
 )
@@ -67,6 +85,8 @@ object UnixSmsManager {
     private const val KEY_ACTIVE_NUMBERS = "active_numbers_json"
     private const val KEY_TODAY_OTP = "today_otp_unix"
     private const val KEY_OTP_RATE = "unix_otp_rate_setting"
+    private const val KEY_SAVED_COUNTRY = "unix_saved_country"
+    private const val KEY_COUNTRY_RATES = "unix_country_rates_json"
     const val DEFAULT_TOKEN = "simple_v2_fQxnBh-RLx8BIZS2Zjx8TGVLYLv6aqPkATsrIqEKFbxIaowb"
 
     private val scope = CoroutineScope(Dispatchers.IO + Job())
@@ -89,22 +109,65 @@ object UnixSmsManager {
             prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
             val token = prefs?.getString(KEY_API_TOKEN, DEFAULT_TOKEN) ?: DEFAULT_TOKEN
             val todayOtp = prefs?.getInt(KEY_TODAY_OTP, 0) ?: 0
-            val savedRate = prefs?.getFloat(KEY_OTP_RATE, 0.014f)?.toDouble() ?: 0.014
+            val rawSavedRate = prefs?.getFloat(KEY_OTP_RATE, 0.50f)?.toDouble() ?: 0.50
+            val savedRate = if (rawSavedRate < 0.1) 0.50 else rawSavedRate
             val uploaded = loadUploadedNumbers()
             val active = loadActiveNumbers()
+            val savedCountry = prefs?.getString(KEY_SAVED_COUNTRY, "ALL") ?: "ALL"
+            val loadedCountryRates = loadCountryRates()
 
             _state.update {
                 it.copy(
                     apiToken = token,
                     uploadedNumbers = uploaded,
                     activeNumbers = active,
+                    selectedCountry = savedCountry,
                     todayOtpCount = todayOtp,
-                    otpRatePerSms = savedRate
+                    otpRatePerSms = savedRate,
+                    countryRates = loadedCountryRates
                 )
             }
 
             startFastOtpPolling(context)
         }
+    }
+
+    fun getRateForCountry(countryCode: String): Double {
+        val upper = countryCode.uppercase().trim()
+        return _state.value.countryRates[upper] ?: _state.value.otpRatePerSms
+    }
+
+    fun setCountryRate(countryCode: String, rate: Double) {
+        val upper = countryCode.uppercase().trim()
+        val cleanRate = (Math.round(rate.coerceAtLeast(0.01) * 100.0) / 100.0)
+        val updated = _state.value.countryRates.toMutableMap()
+        updated[upper] = cleanRate
+        _state.update { it.copy(countryRates = updated) }
+        saveCountryRates(updated)
+    }
+
+    private fun loadCountryRates(): Map<String, Double> {
+        val json = prefs?.getString(KEY_COUNTRY_RATES, "") ?: ""
+        if (json.isEmpty()) return _state.value.countryRates
+        val map = mutableMapOf<String, Double>()
+        try {
+            val obj = org.json.JSONObject(json)
+            val keys = obj.keys()
+            while (keys.hasNext()) {
+                val k = keys.next()
+                val r = obj.optDouble(k, 0.50)
+                map[k] = if (r < 0.1) 0.50 else r
+            }
+        } catch (_: Exception) {}
+        return if (map.isEmpty()) _state.value.countryRates else map
+    }
+
+    private fun saveCountryRates(rates: Map<String, Double>) {
+        val obj = org.json.JSONObject()
+        for ((k, v) in rates) {
+            obj.put(k, v)
+        }
+        prefs?.edit()?.putString(KEY_COUNTRY_RATES, obj.toString())?.apply()
     }
 
     private fun loadUploadedNumbers(): List<UploadedNumberItem> {
@@ -209,14 +272,14 @@ object UnixSmsManager {
      * Admin Panel: Adjust User OTP Rate (e.g. $0.014, increase or decrease)
      */
     fun setOtpRate(rate: Double) {
-        val cleanRate = (Math.round(rate.coerceAtLeast(0.001) * 1000.0) / 1000.0)
+        val cleanRate = (Math.round(rate.coerceAtLeast(0.01) * 100.0) / 100.0)
         _state.update { it.copy(otpRatePerSms = cleanRate) }
         prefs?.edit()?.putFloat(KEY_OTP_RATE, cleanRate.toFloat())?.apply()
     }
 
     fun adjustOtpRate(delta: Double) {
         val current = _state.value.otpRatePerSms
-        setOtpRate(current + delta)
+        setOtpRate((Math.round((current + delta) * 100.0) / 100.0))
     }
 
     /**
@@ -277,6 +340,11 @@ object UnixSmsManager {
         val updated = _state.value.uploadedNumbers.filterNot { it.id == id }
         _state.update { it.copy(uploadedNumbers = updated) }
         saveUploadedNumbers(updated)
+    }
+
+    fun setSelectedCountry(countryCode: String) {
+        prefs?.edit()?.putString(KEY_SAVED_COUNTRY, countryCode)?.apply()
+        _state.update { it.copy(selectedCountry = countryCode) }
     }
 
     /**
@@ -425,6 +493,53 @@ object UnixSmsManager {
                 }
 
                 var newTodayOtpCount = _state.value.todayOtpCount
+                val currentUploaded = _state.value.uploadedNumbers
+                var uploadedModified = false
+
+                val updatedUploaded = currentUploaded.map { up ->
+                    val upClean = up.number.replace("[^0-9]".toRegex(), "")
+                    // Check if an OTP arrived for this uploaded number
+                    val matchedFromNew = newlyArrivedOtps.firstOrNull { (p, _) ->
+                        val pClean = p.number.replace("[^0-9]".toRegex(), "")
+                        pClean.isNotEmpty() && (pClean.endsWith(upClean) || upClean.endsWith(pClean))
+                    }
+                    if (matchedFromNew != null) {
+                        uploadedModified = true
+                        up.copy(
+                            isUsed = true,
+                            otpCode = matchedFromNew.second,
+                            otpMessage = matchedFromNew.first.otpMessage
+                        )
+                    } else if (up.otpCode.isNullOrEmpty()) {
+                        // Direct CDR check for uploaded number
+                        var directCdr: UnixSmsCdrRecord? = null
+                        for (cdr in cdrList) {
+                            val cClean = cdr.num.replace("[^0-9]".toRegex(), "")
+                            if (upClean.isNotEmpty() && (upClean.endsWith(cClean) || cClean.endsWith(upClean))) {
+                                directCdr = cdr
+                                break
+                            }
+                        }
+                        if (directCdr != null) {
+                            val extracted = extractOtp(directCdr.message, upClean)
+                            uploadedModified = true
+                            up.copy(
+                                isUsed = true,
+                                otpCode = extracted,
+                                otpMessage = directCdr.message
+                            )
+                        } else {
+                            up
+                        }
+                    } else {
+                        up
+                    }
+                }
+
+                if (uploadedModified) {
+                    saveUploadedNumbers(updatedUploaded)
+                }
+
                 if (newlyArrivedOtps.isNotEmpty()) {
                     newTodayOtpCount += newlyArrivedOtps.size
                     prefs?.edit()?.putInt(KEY_TODAY_OTP, newTodayOtpCount)?.apply()
@@ -463,6 +578,7 @@ object UnixSmsManager {
                     it.copy(
                         liveCdrRecords = cdrList,
                         activeNumbers = updatedActive,
+                        uploadedNumbers = if (uploadedModified) updatedUploaded else it.uploadedNumbers,
                         todayOtpCount = newTodayOtpCount,
                         lastSyncTime = System.currentTimeMillis()
                     )

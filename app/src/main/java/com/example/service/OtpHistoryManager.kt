@@ -23,7 +23,7 @@ data class OtpHistoryRecord(
     val otpCode: String,
     val service: String, // e.g. Facebook, Instagram, WhatsApp, Zenex
     val platform: String, // "Unix SMS" or "Zenex"
-    val rate: Double = 0.014, // Rate active at time of OTP
+    val rate: Double = 0.50, // Rate active at time of OTP
     val timestamp: Long = System.currentTimeMillis(),
     val dateKey: String = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date(timestamp))
 )
@@ -45,10 +45,16 @@ data class OtpHistoryState(
     val todayOtps: Int = 0,
     val unixTodayOtps: Int = 0,
     val zenexTodayOtps: Int = 0,
-    val currentUnixRate: Double = 0.014,
-    val currentZenexRate: Double = 0.014,
+    val currentUnixRate: Double = 0.50,
+    val currentZenexRate: Double = 0.50,
     val last7DaysSummaries: List<DailyOtpSummary> = emptyList(),
     val last30DaysSummaries: List<DailyOtpSummary> = emptyList(),
+    val last7DaysOtps: Int = 0,
+    val last30DaysOtps: Int = 0,
+    val lastMonthOtps: Int = 0,
+    val twoMonthsAgoOtps: Int = 0,
+    val lastMonthLabel: String = "Previous Month",
+    val twoMonthsAgoLabel: String = "2 Months Ago",
     val recentRecords: List<OtpHistoryRecord> = emptyList(),
     val resetCountdownSeconds: Long = 0L,
     val resetTargetEpoch: Long = 0L,
@@ -62,6 +68,7 @@ object OtpHistoryManager {
     private const val KEY_RECORDS_JSON = "otp_records_json"
     private const val KEY_TOTAL_COUNT = "total_otp_all_time"
     private const val KEY_MONTHLY_CYCLE_START = "monthly_cycle_start_time"
+    private const val KEY_CLEANED_DUMMY_V2 = "cleaned_dummy_records_v2"
 
     // 1 Month = 30 Days in Milliseconds
     private const val ONE_MONTH_MS = 30L * 24L * 60L * 60L * 1000L
@@ -96,7 +103,10 @@ object OtpHistoryManager {
                         otpCode = o.optString("otpCode", ""),
                         service = o.optString("service", "SMS"),
                         platform = o.optString("platform", "Unix SMS"),
-                        rate = o.optDouble("rate", 0.014),
+                        rate = let {
+                            val r = o.optDouble("rate", 0.50)
+                            if (r < 0.1) 0.50 else r
+                        },
                         timestamp = ts,
                         dateKey = o.optString("dateKey", dateFormat.format(Date(ts)))
                     )
@@ -104,34 +114,21 @@ object OtpHistoryManager {
             }
         } catch (_: Exception) {}
 
-        if (list.isEmpty()) {
-            val now = System.currentTimeMillis()
-            val uRate = UnixSmsManager.state.value.otpRatePerSms
-            val zRate = VirtualNumberManager.zenexOtpRate.value
-            val sampleServices = listOf("WhatsApp", "Facebook", "Telegram", "Instagram", "Google")
-            for (i in 0 until 6) {
-                val isUnix = (i % 2 == 0)
-                val platformName = if (isUnix) "Unix SMS" else "Zenex"
-                val rate = if (isUnix) uRate else zRate
-                val phone = if (isUnix) "+120255501${10 + i}" else "+2376991122${30 + i}"
-                val code = (100000 + i * 11111).toString()
-                val ts = now - (i * 3600_000L)
-                list.add(
-                    OtpHistoryRecord(
-                        phoneNumber = phone,
-                        otpCode = code,
-                        service = sampleServices[i % sampleServices.size],
-                        platform = platformName,
-                        rate = rate,
-                        timestamp = ts,
-                        dateKey = dateFormat.format(Date(ts))
-                    )
-                )
-            }
-            saveRecords(list, list.size)
+        // One-time cleanup of legacy dummy sample records (+120255501...)
+        val hasCleaned = prefs?.getBoolean(KEY_CLEANED_DUMMY_V2, false) ?: false
+        val sanitizedList = if (!hasCleaned) {
+            val filtered = list.filterNot { it.phoneNumber.startsWith("+120255501") || it.phoneNumber.startsWith("+2376991122") }
+            prefs?.edit()
+                ?.putBoolean(KEY_CLEANED_DUMMY_V2, true)
+                ?.putInt(KEY_TOTAL_COUNT, filtered.size)
+                ?.apply()
+            saveRecords(filtered, filtered.size)
+            filtered
+        } else {
+            list
         }
 
-        val total = prefs?.getInt(KEY_TOTAL_COUNT, list.size) ?: list.size
+        val total = prefs?.getInt(KEY_TOTAL_COUNT, sanitizedList.size) ?: sanitizedList.size
 
         var cycleStart = prefs?.getLong(KEY_MONTHLY_CYCLE_START, 0L) ?: 0L
         val now = System.currentTimeMillis()
@@ -143,7 +140,7 @@ object OtpHistoryManager {
 
         // Keep records within 30 days
         val cutoff = now - ONE_MONTH_MS
-        val validRecords = list.filter { it.timestamp >= cutoff }
+        val validRecords = sanitizedList.filter { it.timestamp >= cutoff }
 
         recalculateSummaries(validRecords, total, cycleStart)
     }
@@ -177,7 +174,7 @@ object OtpHistoryManager {
         otpCode: String,
         service: String,
         platform: String,
-        rate: Double = 0.014
+        rate: Double = 0.50
     ) {
         val now = System.currentTimeMillis()
         val record = OtpHistoryRecord(
@@ -264,6 +261,22 @@ object OtpHistoryManager {
         val unixTotal = records.count { it.platform.contains("Unix", ignoreCase = true) }
         val zenexTotal = records.count { !it.platform.contains("Unix", ignoreCase = true) }
 
+        val sum7Days = days7List.sumOf { it.totalCount }
+        val sum30Days = days30List.sumOf { it.totalCount }
+
+        val thirtyDaysAgo = now - (30L * 24 * 60 * 60 * 1000L)
+        val sixtyDaysAgo = now - (60L * 24 * 60 * 60 * 1000L)
+        val ninetyDaysAgo = now - (90L * 24 * 60 * 60 * 1000L)
+
+        val lastMonthCount = records.count { it.timestamp in (sixtyDaysAgo until thirtyDaysAgo) }
+        val twoMonthsAgoCount = records.count { it.timestamp in (ninetyDaysAgo until sixtyDaysAgo) }
+
+        val m1Cal = Calendar.getInstance().apply { add(Calendar.MONTH, -1) }
+        val m2Cal = Calendar.getInstance().apply { add(Calendar.MONTH, -2) }
+        val monthNameFormat = SimpleDateFormat("MMMM yyyy", Locale.US)
+        val m1Label = monthNameFormat.format(m1Cal.time)
+        val m2Label = monthNameFormat.format(m2Cal.time)
+
         _state.update {
             it.copy(
                 totalOtpsAllTime = totalAllTime,
@@ -276,6 +289,12 @@ object OtpHistoryManager {
                 currentZenexRate = currentZenexRate,
                 last7DaysSummaries = days7List,
                 last30DaysSummaries = days30List,
+                last7DaysOtps = sum7Days,
+                last30DaysOtps = sum30Days,
+                lastMonthOtps = lastMonthCount,
+                twoMonthsAgoOtps = twoMonthsAgoCount,
+                lastMonthLabel = m1Label,
+                twoMonthsAgoLabel = m2Label,
                 recentRecords = records,
                 resetCountdownSeconds = secondsUntilReset,
                 resetTargetEpoch = midnightEpoch,

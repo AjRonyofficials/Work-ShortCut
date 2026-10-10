@@ -24,8 +24,8 @@ data class WithdrawalRequest(
 )
 
 data class WithdrawalState(
-    val totalEarnedTk: Double = 60.0,
-    val availableBalanceTk: Double = 60.0,
+    val totalEarnedTk: Double = 0.0,
+    val availableBalanceTk: Double = 0.0,
     val pendingWithdrawTk: Double = 0.0,
     val approvedWithdrawTk: Double = 0.0,
     val allRequests: List<WithdrawalRequest> = emptyList()
@@ -36,6 +36,7 @@ object WithdrawalManager {
     private const val PREFS_NAME = "work_shortcut_withdrawals_prefs"
     private const val KEY_REQUESTS_JSON = "withdrawals_requests_json"
     private const val KEY_BASE_CREDIT = "base_earned_credit_tk"
+    private const val KEY_CREDIT_RESET_V2 = "credit_cleaned_v2"
 
     const val MIN_BINANCE_TK = 20.0
     const val MIN_BKASH_TK = 50.0
@@ -76,14 +77,19 @@ object WithdrawalManager {
             }
         } catch (_: Exception) {}
 
-        // Base starter credit (starts at 60 Tk to allow immediate testing of 20 Tk / 50 Tk withdraw)
-        val baseCredit = prefs?.getFloat(KEY_BASE_CREDIT, 60.0f)?.toDouble() ?: 60.0
+        // One-time cleanup of legacy test 60 Tk credit
+        val hasReset = prefs?.getBoolean(KEY_CREDIT_RESET_V2, false) ?: false
+        if (!hasReset) {
+            prefs?.edit()?.putFloat(KEY_BASE_CREDIT, 0.0f)?.putBoolean(KEY_CREDIT_RESET_V2, true)?.apply()
+        }
+
+        val baseCredit = prefs?.getFloat(KEY_BASE_CREDIT, 0.0f)?.toDouble() ?: 0.0
 
         recomputeBalances(requests, baseCredit)
     }
 
     fun refreshBalances() {
-        val baseCredit = prefs?.getFloat(KEY_BASE_CREDIT, 60.0f)?.toDouble() ?: 60.0
+        val baseCredit = prefs?.getFloat(KEY_BASE_CREDIT, 0.0f)?.toDouble() ?: 0.0
         recomputeBalances(_state.value.allRequests, baseCredit)
     }
 

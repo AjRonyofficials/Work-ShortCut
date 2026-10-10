@@ -24,6 +24,7 @@ import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Login
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
@@ -31,9 +32,11 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
@@ -42,7 +45,11 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import com.example.util.VibrationHelper
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -236,33 +243,94 @@ fun LoginScreen(
 
                 Spacer(modifier = Modifier.height(20.dp))
 
+                var isLoggingIn by remember { mutableStateOf(false) }
+                val coroutineScope = rememberCoroutineScope()
+
                 // Login Button
                 Button(
                     onClick = {
-                        val (success, msg) = AuthManager.login(email, password)
-                        if (success) {
-                            Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
-                            onLoginSuccess()
-                        } else {
-                            errorMessage = msg
+                        if (!isLoggingIn) {
+                            isLoggingIn = true
+                            errorMessage = null
+                            coroutineScope.launch {
+                                val (success, msg) = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                                    AuthManager.login(email, password)
+                                }
+                                isLoggingIn = false
+                                if (success) {
+                                    Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                                    onLoginSuccess()
+                                } else {
+                                    errorMessage = msg
+                                }
+                            }
                         }
                     },
+                    enabled = !isLoggingIn,
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = Color(0xFF0091EA)
+                        containerColor = Color(0xFF0091EA),
+                        disabledContainerColor = Color(0xFF0091EA).copy(alpha = 0.5f)
                     ),
                     shape = RoundedCornerShape(12.dp),
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(50.dp)
                 ) {
-                    Icon(Icons.Default.Login, contentDescription = null, tint = Color.White)
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = "LOGIN (লগইন করুন)",
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Color.White
-                    )
+                    if (isLoggingIn) {
+                        CircularProgressIndicator(
+                            color = Color.White,
+                            strokeWidth = 2.dp,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "লগইন যাচাই করা হচ্ছে...",
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White
+                        )
+                    } else {
+                        Icon(Icons.Default.Login, contentDescription = null, tint = Color.White)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "LOGIN (লগইন করুন)",
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                // Quick Cloud Refresh Button
+                var isSyncing by remember { mutableStateOf(false) }
+                OutlinedButton(
+                    onClick = {
+                        isSyncing = true
+                        coroutineScope.launch {
+                            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                                AuthManager.syncFromCloud()
+                            }
+                            isSyncing = false
+                            Toast.makeText(context, "✓ অ্যাকাউন্ট তালিকা সার্ভার থেকে সিঙ্ক সম্পন্ন!", Toast.LENGTH_SHORT).show()
+                            errorMessage = null
+                            VibrationHelper.vibrateSuccess(context)
+                        }
+                    },
+                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF00B0FF).copy(alpha = 0.4f)),
+                    shape = RoundedCornerShape(10.dp),
+                    modifier = Modifier.fillMaxWidth().height(38.dp)
+                ) {
+                    if (isSyncing) {
+                        CircularProgressIndicator(modifier = Modifier.size(16.dp), color = Color(0xFF00B0FF), strokeWidth = 2.dp)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("সার্ভার থেকে চেক করা হচ্ছে...", fontSize = 11.sp, color = Color(0xFF00B0FF))
+                    } else {
+                        Icon(Icons.Default.Refresh, contentDescription = null, tint = Color(0xFF00B0FF), modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("নতুন আইডি/পাস সিঙ্ক করুন (SYNC ACCOUNTS)", fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = Color(0xFF00B0FF))
+                    }
                 }
 
                 Spacer(modifier = Modifier.height(16.dp))

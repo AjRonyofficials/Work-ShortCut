@@ -24,16 +24,22 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccessTime
+import androidx.compose.material.icons.filled.AccountBalanceWallet
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Key
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import com.example.ui.components.UserProfileOtpHistoryDialog
+import com.example.util.VibrationHelper
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Phone
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
@@ -262,24 +268,24 @@ fun VirtualNumbersSection(
                         }
                     }
 
-                    // User Profile / 7-Day History Button
+                    // User Profile & History Button
                     Surface(
-                        color = Color(0xFF1E293B),
+                        color = Color(0xFF0284C7).copy(alpha = 0.25f),
                         shape = RoundedCornerShape(8.dp),
-                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF38BDF8).copy(alpha = 0.5f)),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF38BDF8)),
                         modifier = Modifier.clickable { showProfileHistoryDialog = true }
                     ) {
                         Row(
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp),
+                            modifier = Modifier.padding(horizontal = 9.dp, vertical = 6.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Icon(Icons.Default.DateRange, contentDescription = null, tint = Color(0xFF38BDF8), modifier = Modifier.size(14.dp))
-                            Spacer(modifier = Modifier.width(4.dp))
+                            Icon(Icons.Default.Person, contentDescription = null, tint = Color(0xFF38BDF8), modifier = Modifier.size(15.dp))
+                            Spacer(modifier = Modifier.width(5.dp))
                             Text(
-                                text = "7d History",
+                                text = "👤 প্রোফাইল (PROFILE)",
                                 color = Color.White,
-                                fontSize = 10.sp,
-                                fontWeight = FontWeight.Bold
+                                fontSize = 10.5.sp,
+                                fontWeight = FontWeight.ExtraBold
                             )
                         }
                     }
@@ -418,6 +424,138 @@ fun VirtualNumbersSection(
                         color = Color(0xFF00E676),
                         trackColor = Color(0xFF1E2E3E)
                     )
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    // Zenex OTP Rates Button & Rate Indicator
+                    // ZENEX FIXED OTP RATE CARD (0.50 ৳ - ALL COUNTRIES FIXED WITH ADJUSTMENT)
+                    val zenexRate by VirtualNumberManager.zenexOtpRate.collectAsState()
+                    Surface(
+                        color = Color(0xFF0F1A28),
+                        shape = RoundedCornerShape(12.dp),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF1E3A56)),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(modifier = Modifier.padding(10.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(7.dp)
+                                            .clip(CircleShape)
+                                            .background(Color(0xFF00E676))
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text(
+                                        text = "ZENEX ওটিপি রেট (সব দেশের জন্য ফিক্সড):",
+                                        color = Color(0xFF81D4FA),
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                                Surface(
+                                    color = Color(0xFF0284C7).copy(alpha = 0.25f),
+                                    shape = RoundedCornerShape(6.dp),
+                                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF38BDF8))
+                                ) {
+                                    Text(
+                                        text = "${String.format(Locale.US, "%.2f", zenexRate)} ৳ / OTP",
+                                        color = Color(0xFF38BDF8),
+                                        fontSize = 11.5.sp,
+                                        fontWeight = FontWeight.ExtraBold,
+                                        modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp)
+                                    )
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.height(8.dp))
+
+                            // Rate Adjusters: [- 0.01 ৳], Presets [0.48 ৳] [0.49 ৳] [0.50 ৳], [+ 0.01 ৳]
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                // Decrease button
+                                Surface(
+                                    color = Color(0xFF1E293B),
+                                    shape = RoundedCornerShape(8.dp),
+                                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF334155)),
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .clickable {
+                                            VirtualNumberManager.adjustZenexOtpRate(-0.01)
+                                            VibrationHelper.vibrateClick(context)
+                                        }
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(vertical = 6.dp),
+                                        horizontalArrangement = Arrangement.Center,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text("− 0.01", color = Color(0xFFF87171), fontSize = 11.sp, fontWeight = FontWeight.ExtraBold)
+                                    }
+                                }
+
+                                // Quick presets
+                                listOf(0.48, 0.49, 0.50).forEach { preset ->
+                                    val isCurrent = Math.abs(zenexRate - preset) < 0.005
+                                    Surface(
+                                        color = if (isCurrent) Color(0xFF0284C7) else Color(0xFF131D2A),
+                                        shape = RoundedCornerShape(8.dp),
+                                        border = androidx.compose.foundation.BorderStroke(
+                                            1.dp,
+                                            if (isCurrent) Color(0xFF38BDF8) else Color(0xFF1E3246)
+                                        ),
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .clickable {
+                                                VirtualNumberManager.setZenexOtpRate(preset)
+                                                VibrationHelper.vibrateClick(context)
+                                            }
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.padding(vertical = 6.dp),
+                                            horizontalArrangement = Arrangement.Center,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Text(
+                                                text = "${String.format(Locale.US, "%.2f", preset)} ৳",
+                                                color = if (isCurrent) Color.White else Color(0xFF94A3B8),
+                                                fontSize = 11.sp,
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                        }
+                                    }
+                                }
+
+                                // Increase button
+                                Surface(
+                                    color = Color(0xFF1E293B),
+                                    shape = RoundedCornerShape(8.dp),
+                                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF334155)),
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .clickable {
+                                            VirtualNumberManager.adjustZenexOtpRate(0.01)
+                                            VibrationHelper.vibrateClick(context)
+                                        }
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(vertical = 6.dp),
+                                        horizontalArrangement = Arrangement.Center,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text("+ 0.01", color = Color(0xFF34D399), fontSize = 11.sp, fontWeight = FontWeight.ExtraBold)
+                                    }
+                                }
+                            }
+                        }
+                    }
 
                     // 24H DATA AUTO-RESET COUNTDOWN BANNER
                     Spacer(modifier = Modifier.height(12.dp))
@@ -1811,3 +1949,4 @@ private fun BroadcastTerminalCard(
         }
     }
 }
+

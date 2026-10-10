@@ -230,14 +230,40 @@ fun UserProfileOtpHistoryDialog(
                                         Row(verticalAlignment = Alignment.CenterVertically) {
                                             Text(text = "Status: ", fontSize = 11.sp, color = Color(0xFF90A4AE))
                                             Surface(
-                                                color = Color(0xFF00E676).copy(alpha = 0.2f),
+                                                color = when {
+                                                    AuthManager.isPrimeAdmin() -> Color(0xFFFFB300).copy(alpha = 0.2f)
+                                                    AuthManager.isSubAdmin() -> Color(0xFF818CF8).copy(alpha = 0.2f)
+                                                    else -> Color(0xFF00E676).copy(alpha = 0.2f)
+                                                },
                                                 shape = RoundedCornerShape(4.dp)
                                             ) {
                                                 Text(
-                                                    text = if (AuthManager.isAdmin()) "ADMIN MASTER" else "AUTHENTICATED USER",
-                                                    color = Color(0xFF00E676),
+                                                    text = when {
+                                                        AuthManager.isPrimeAdmin() -> "👑 PRIME ADMIN"
+                                                        AuthManager.isSubAdmin() -> "🛡️ SUB ADMIN"
+                                                        else -> "👤 USER"
+                                                    },
+                                                    color = when {
+                                                        AuthManager.isPrimeAdmin() -> Color(0xFFFFB300)
+                                                        AuthManager.isSubAdmin() -> Color(0xFF818CF8)
+                                                        else -> Color(0xFF00E676)
+                                                    },
                                                     fontSize = 9.sp,
                                                     fontWeight = FontWeight.Bold,
+                                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                                )
+                                            }
+                                            Spacer(modifier = Modifier.width(6.dp))
+                                            Surface(
+                                                color = Color(0xFF10B981).copy(alpha = 0.2f),
+                                                shape = RoundedCornerShape(4.dp),
+                                                border = BorderStroke(1.dp, Color(0xFF10B981))
+                                            ) {
+                                                Text(
+                                                    text = "🟢 ACTIVE (সক্রিয়)",
+                                                    color = Color(0xFF34D399),
+                                                    fontSize = 9.sp,
+                                                    fontWeight = FontWeight.ExtraBold,
                                                     modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                                                 )
                                             }
@@ -348,25 +374,39 @@ fun UserProfileOtpHistoryDialog(
                             }
                         }
 
-                        // 3. Primary Metrics Row (Today, Total, 30D Remaining, Today Reset)
+                        // 3. Primary Metrics (Today, 7-Day, 30-Day, Total, Reset Countdowns)
                         item {
                             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
                                 ) {
                                     ProfileMetricPill(
-                                        title = "TODAY OTP",
+                                        title = "TODAY",
                                         value = otpState.todayOtps.toString(),
-                                        subtitle = "All Panels Today",
+                                        subtitle = "Today OTP",
                                         color = Color(0xFF00E676),
                                         modifier = Modifier.weight(1f)
                                     )
                                     ProfileMetricPill(
-                                        title = "TOTAL OTP",
+                                        title = "7 DAYS",
+                                        value = otpState.last7DaysOtps.toString(),
+                                        subtitle = "Last 7 Days",
+                                        color = Color(0xFF38BDF8),
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    ProfileMetricPill(
+                                        title = "30 DAYS",
+                                        value = otpState.last30DaysOtps.toString(),
+                                        subtitle = "This Month",
+                                        color = Color(0xFFFBBF24),
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    ProfileMetricPill(
+                                        title = "TOTAL",
                                         value = otpState.totalOtpsAllTime.toString(),
-                                        subtitle = "All-Time Total",
-                                        color = Color(0xFF00B0FF),
+                                        subtitle = "All-Time",
+                                        color = Color(0xFFA855F7),
                                         modifier = Modifier.weight(1f)
                                     )
                                 }
@@ -391,6 +431,158 @@ fun UserProfileOtpHistoryDialog(
                                         isSmallText = true,
                                         modifier = Modifier.weight(1f)
                                     )
+                                }
+                            }
+                        }
+
+                        // 3.5. PAST 2 MONTHS HISTORY CARD (গত বা আগের ২ মাসের ওটিপি হিস্টোরি)
+                        item {
+                            var showPastMonthsDetails by remember { mutableStateOf(false) }
+
+                            Card(
+                                colors = CardDefaults.cardColors(containerColor = Color(0xFF0D1927)),
+                                shape = RoundedCornerShape(16.dp),
+                                border = BorderStroke(1.dp, Color(0xFF1E3A5A)),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(14.dp)
+                                ) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Icon(
+                                                imageVector = Icons.Default.History,
+                                                contentDescription = null,
+                                                tint = Color(0xFF38BDF8),
+                                                modifier = Modifier.size(18.dp)
+                                            )
+                                            Spacer(modifier = Modifier.width(6.dp))
+                                            Column {
+                                                Text(
+                                                    text = "PAST 2 MONTHS OTP HISTORY",
+                                                    fontSize = 11.sp,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = Color.White
+                                                )
+                                                Text(
+                                                    text = "আগের ২ মাসের ওটিপি হিস্টোরি ও রেকর্ড",
+                                                    fontSize = 9.sp,
+                                                    color = Color(0xFF94A3B8)
+                                                )
+                                            }
+                                        }
+
+                                        Surface(
+                                            color = Color(0xFF0284C7).copy(alpha = 0.2f),
+                                            shape = RoundedCornerShape(6.dp),
+                                            border = BorderStroke(1.dp, Color(0xFF0284C7).copy(alpha = 0.5f)),
+                                            modifier = Modifier.clickable { showPastMonthsDetails = !showPastMonthsDetails }
+                                        ) {
+                                            Text(
+                                                text = if (showPastMonthsDetails) "সংকুচিত করুন ▲" else "হিস্ট্রি দেখুন ▼",
+                                                color = Color(0xFF38BDF8),
+                                                fontSize = 10.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                            )
+                                        }
+                                    }
+
+                                    Spacer(modifier = Modifier.height(10.dp))
+
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        // Previous Month (গত মাস)
+                                        Surface(
+                                            color = Color(0xFF0284C7).copy(alpha = 0.15f),
+                                            shape = RoundedCornerShape(10.dp),
+                                            border = BorderStroke(1.dp, Color(0xFF0284C7).copy(alpha = 0.4f)),
+                                            modifier = Modifier.weight(1f)
+                                        ) {
+                                            Column(modifier = Modifier.padding(10.dp)) {
+                                                Text(
+                                                    text = "১ মাস আগে (Last Month)",
+                                                    fontSize = 9.sp,
+                                                    color = Color(0xFF94A3B8)
+                                                )
+                                                Text(
+                                                    text = otpState.lastMonthLabel,
+                                                    fontSize = 10.sp,
+                                                    color = Color(0xFF38BDF8),
+                                                    fontWeight = FontWeight.Bold
+                                                )
+                                                Spacer(modifier = Modifier.height(4.dp))
+                                                Text(
+                                                    text = "${otpState.lastMonthOtps} OTP",
+                                                    fontSize = 15.sp,
+                                                    fontWeight = FontWeight.ExtraBold,
+                                                    color = Color.White
+                                                )
+                                            }
+                                        }
+
+                                        // 2 Months Ago (২ মাস আগে)
+                                        Surface(
+                                            color = Color(0xFF6366F1).copy(alpha = 0.15f),
+                                            shape = RoundedCornerShape(10.dp),
+                                            border = BorderStroke(1.dp, Color(0xFF6366F1).copy(alpha = 0.4f)),
+                                            modifier = Modifier.weight(1f)
+                                        ) {
+                                            Column(modifier = Modifier.padding(10.dp)) {
+                                                Text(
+                                                    text = "২ মাস আগে (2 Mo Ago)",
+                                                    fontSize = 9.sp,
+                                                    color = Color(0xFF94A3B8)
+                                                )
+                                                Text(
+                                                    text = otpState.twoMonthsAgoLabel,
+                                                    fontSize = 10.sp,
+                                                    color = Color(0xFF818CF8),
+                                                    fontWeight = FontWeight.Bold
+                                                )
+                                                Spacer(modifier = Modifier.height(4.dp))
+                                                Text(
+                                                    text = "${otpState.twoMonthsAgoOtps} OTP",
+                                                    fontSize = 15.sp,
+                                                    fontWeight = FontWeight.ExtraBold,
+                                                    color = Color.White
+                                                )
+                                            }
+                                        }
+                                    }
+
+                                    if (showPastMonthsDetails) {
+                                        Spacer(modifier = Modifier.height(10.dp))
+                                        Surface(
+                                            color = Color(0xFF070E18),
+                                            shape = RoundedCornerShape(8.dp),
+                                            modifier = Modifier.fillMaxWidth()
+                                        ) {
+                                            Column(modifier = Modifier.padding(10.dp)) {
+                                                Text(
+                                                    text = "📊 মাসিক সাইকেল ও অটো-রিসেট বিবরণ:",
+                                                    fontSize = 10.sp,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = Color(0xFF38BDF8)
+                                                )
+                                                Spacer(modifier = Modifier.height(4.dp))
+                                                Text(
+                                                    text = "• প্রতি ৩০ দিন পর পর মাসিক ওটিপি সাইকেল স্বয়ংক্রিয়ভাবে আপডেট হয়।\n• বর্তমান চলতি মাস: ${otpState.last30DaysOtps} টি OTP রিসিভ হয়েছে।\n• গত মাস (${otpState.lastMonthLabel}): ${otpState.lastMonthOtps} টি OTP।\n• তার আগের মাস (${otpState.twoMonthsAgoLabel}): ${otpState.twoMonthsAgoOtps} টি OTP।\n• মোট সর্বমোট (All-Time): ${otpState.totalOtpsAllTime} টি OTP।",
+                                                    fontSize = 10.sp,
+                                                    color = Color(0xFFCBD5E1),
+                                                    lineHeight = 15.sp
+                                                )
+                                            }
+                                        }
+                                    }
                                 }
                             }
                         }

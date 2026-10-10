@@ -65,8 +65,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.service.OverlayStateManager
 import com.example.service.OverlayUiState
+import com.example.service.UnixSmsManager
 import com.example.service.VirtualNumberManager
 import com.example.util.ClipboardHelper
+import android.widget.Toast
 
 /**
  * Ultra-Premium, Glassmorphic Floating Overlay UI:
@@ -1267,8 +1269,13 @@ fun VirtualNumbersOverlaySection(
     context: android.content.Context,
     modifier: Modifier = Modifier
 ) {
+    val selectedPanel by VirtualNumberManager.selectedPanel.collectAsState()
+    val unixState by UnixSmsManager.state.collectAsState()
     val vnState by VirtualNumberManager.state.collectAsState()
     var dropdownExpanded by remember { mutableStateOf(false) }
+
+    val activeCount = if (selectedPanel == 0) unixState.activeNumbers.size else vnState.provisionedNumbers.size
+    val panelName = if (selectedPanel == 0) "Unix" else "Zenex"
 
     Column(
         modifier = modifier.fillMaxWidth(),
@@ -1276,7 +1283,7 @@ fun VirtualNumbersOverlaySection(
     ) {
         // Main Button
         GlossyTactileButton(
-            title = if (isExpanded) "Virtual # ▲" else if (vnState.provisionedNumbers.isNotEmpty()) "VN (${vnState.provisionedNumbers.size})" else "Virtual #",
+            title = if (isExpanded) "$panelName # ▲" else if (activeCount > 0) "$panelName ($activeCount)" else "$panelName #",
             icon = Icons.Default.Phone,
             brush = brush,
             shape = tabShape,
@@ -1299,7 +1306,10 @@ fun VirtualNumbersOverlaySection(
                     .border(
                         1.dp,
                         Brush.verticalGradient(
-                            listOf(Color(0xFF00E5FF).copy(alpha = 0.8f), Color(0xFF0288D1).copy(alpha = 0.4f))
+                            if (selectedPanel == 0)
+                                listOf(Color(0xFF00E5FF).copy(alpha = 0.8f), Color(0xFF0288D1).copy(alpha = 0.4f))
+                            else
+                                listOf(Color(0xFF00E676).copy(alpha = 0.8f), Color(0xFF00897B).copy(alpha = 0.4f))
                         ),
                         RoundedCornerShape(8.dp)
                     )
@@ -1310,106 +1320,134 @@ fun VirtualNumbersOverlaySection(
                     verticalArrangement = Arrangement.spacedBy(4.dp),
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    // Header label
+                    // Header label with Panel Switcher
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.clickable {
+                                // Quick toggle panel 0 <-> 1
+                                VirtualNumberManager.setSelectedPanel(if (selectedPanel == 0) 1 else 0)
+                            }
+                        ) {
+                            Text(
+                                text = if (selectedPanel == 0) "⚡ 1. UNIX SMS" else "⚡ 2. ZENEX SMS",
+                                fontSize = 8.5.sp,
+                                fontWeight = FontWeight.Black,
+                                color = if (selectedPanel == 0) Color(0xFF00E5FF) else Color(0xFF00E676)
+                            )
+                            Spacer(modifier = Modifier.width(3.dp))
+                            Icon(
+                                imageVector = Icons.Default.SwapHoriz,
+                                contentDescription = "Switch Panel",
+                                tint = Color(0xFF80DEEA),
+                                modifier = Modifier.size(10.dp)
+                            )
+                        }
+
                         Text(
-                            text = "⚡ GET NUMBER",
-                            fontSize = 8.5.sp,
-                            fontWeight = FontWeight.Black,
-                            color = Color(0xFF00E5FF)
-                        )
-                        Text(
-                            text = "OTP: ${vnState.todayOtpCount}",
+                            text = if (selectedPanel == 0) "OTP: ${unixState.todayOtpCount}" else "OTP: ${vnState.todayOtpCount}",
                             fontSize = 8.sp,
                             fontWeight = FontWeight.Bold,
                             color = Color(0xFF80DEEA)
                         )
                     }
 
-                    // Compact Range input & count selector row
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(3.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        // Compact Range TextField
-                        Box(
-                            modifier = Modifier
-                                .weight(1f)
-                                .height(26.dp)
-                                .clip(RoundedCornerShape(4.dp))
-                                .background(Color(0xFF060B12))
-                                .border(0.8.dp, Color(0xFF1E3A56), RoundedCornerShape(4.dp))
-                                .padding(horizontal = 4.dp),
-                            contentAlignment = Alignment.CenterStart
+                    // Panel Specific Input & Get Button
+                    if (selectedPanel == 0) {
+                        // UNIX SMS: Shows Saved Country & Service with 1-Tap Get Number
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(3.dp),
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            androidx.compose.foundation.text.BasicTextField(
-                                value = vnState.targetRange,
-                                onValueChange = { VirtualNumberManager.setTargetRange(it) },
-                                singleLine = true,
-                                textStyle = androidx.compose.ui.text.TextStyle(
-                                    color = Color.White,
-                                    fontSize = 9.5.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    fontFamily = FontFamily.Monospace
-                                ),
-                                modifier = Modifier.fillMaxWidth()
-                            )
-                            if (vnState.targetRange.isEmpty()) {
-                                Text("237620XXX", color = Color(0xFF546E7A), fontSize = 9.sp)
+                            // Saved Country Selector Chip
+                            val availableCountries = remember(unixState.uploadedNumbers) {
+                                listOf("ALL") + unixState.uploadedNumbers.map { it.countryCode }.distinct()
                             }
-                        }
 
-                        // Quantity Selector (Inline cycling 1..10, zero pop-up window overhead in overlay service)
-                        Surface(
-                            color = Color(0xFF0B141E),
-                            shape = RoundedCornerShape(4.dp),
-                            border = androidx.compose.foundation.BorderStroke(0.8.dp, Color(0xFF1E3A56)),
-                            modifier = Modifier
-                                .height(26.dp)
-                                .clickable {
-                                    val next = if (vnState.requestCount >= 10) 1 else vnState.requestCount + 1
-                                    VirtualNumberManager.setRequestCount(next)
+                            Box(modifier = Modifier.weight(1f)) {
+                                Surface(
+                                    color = Color(0xFF0A1420),
+                                    shape = RoundedCornerShape(4.dp),
+                                    border = androidx.compose.foundation.BorderStroke(0.8.dp, Color(0xFF0284C7)),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(26.dp)
+                                        .clickable { dropdownExpanded = true }
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(horizontal = 6.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.SpaceBetween
+                                    ) {
+                                        Text(
+                                            text = "🌐 ${unixState.selectedCountry}",
+                                            color = Color.White,
+                                            fontSize = 9.sp,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                        Text(text = "▼", color = Color(0xFF38BDF8), fontSize = 7.5.sp)
+                                    }
                                 }
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(horizontal = 6.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text(
-                                    text = "Qty: ${vnState.requestCount}",
-                                    color = Color(0xFF40C4FF),
-                                    fontSize = 9.5.sp,
-                                    fontWeight = FontWeight.ExtraBold
-                                )
+
+                                DropdownMenu(
+                                    expanded = dropdownExpanded,
+                                    onDismissRequest = { dropdownExpanded = false },
+                                    modifier = Modifier.background(Color(0xFF0A1420))
+                                ) {
+                                    availableCountries.forEach { code ->
+                                        DropdownMenuItem(
+                                            text = { Text(code, color = Color.White, fontSize = 10.sp) },
+                                            onClick = {
+                                                UnixSmsManager.setSelectedCountry(code)
+                                                dropdownExpanded = false
+                                            }
+                                        )
+                                    }
+                                }
                             }
-                        }
 
-                        // GET Action Button
-                        Surface(
-                            shape = RoundedCornerShape(4.dp),
-                            color = Color(0xFF0091EA),
-                            modifier = Modifier
-                                .height(26.dp)
-                                .clickable(enabled = !vnState.isLoading) {
-                                    VirtualNumberManager.provisionNumbers(context)
-                                }
-                        ) {
-                            Box(
-                                modifier = Modifier.padding(horizontal = 6.dp),
-                                contentAlignment = Alignment.Center
+                            // Service Badge
+                            Surface(
+                                color = Color(0xFF0B141E),
+                                shape = RoundedCornerShape(4.dp),
+                                border = androidx.compose.foundation.BorderStroke(0.8.dp, Color(0xFF1E3A56)),
+                                modifier = Modifier.height(26.dp)
                             ) {
-                                if (vnState.isLoading) {
-                                    CircularProgressIndicator(
-                                        color = Color.White,
-                                        strokeWidth = 1.5.dp,
-                                        modifier = Modifier.size(12.dp)
+                                Box(modifier = Modifier.padding(horizontal = 5.dp), contentAlignment = Alignment.Center) {
+                                    Text(
+                                        text = unixState.selectedService,
+                                        color = Color(0xFF38BDF8),
+                                        fontSize = 8.5.sp,
+                                        fontWeight = FontWeight.Bold
                                     )
-                                } else {
+                                }
+                            }
+
+                            // GET Action Button for Unix SMS
+                            Surface(
+                                shape = RoundedCornerShape(4.dp),
+                                color = Color(0xFF0284C7),
+                                modifier = Modifier
+                                    .height(26.dp)
+                                    .clickable {
+                                        UnixSmsManager.getNumberForUser(
+                                            context = context,
+                                            countryCode = unixState.selectedCountry,
+                                            service = unixState.selectedService
+                                        ) { success, msg ->
+                                            Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                                        }
+                                    }
+                            ) {
+                                Box(
+                                    modifier = Modifier.padding(horizontal = 8.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
                                     Text(
                                         text = "GET",
                                         color = Color.White,
@@ -1419,13 +1457,104 @@ fun VirtualNumbersOverlaySection(
                                 }
                             }
                         }
+                    } else {
+                        // ZENEX SMS: Auto-Populates Range Selected in App with Qty and Get Button
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(3.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            // Compact Range TextField
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(26.dp)
+                                    .clip(RoundedCornerShape(4.dp))
+                                    .background(Color(0xFF060B12))
+                                    .border(0.8.dp, Color(0xFF1E3A56), RoundedCornerShape(4.dp))
+                                    .padding(horizontal = 4.dp),
+                                contentAlignment = Alignment.CenterStart
+                            ) {
+                                androidx.compose.foundation.text.BasicTextField(
+                                    value = vnState.targetRange,
+                                    onValueChange = { VirtualNumberManager.setTargetRange(it) },
+                                    singleLine = true,
+                                    textStyle = androidx.compose.ui.text.TextStyle(
+                                        color = Color.White,
+                                        fontSize = 9.5.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        fontFamily = FontFamily.Monospace
+                                    ),
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                                if (vnState.targetRange.isEmpty()) {
+                                    Text("237620XXX", color = Color(0xFF546E7A), fontSize = 9.sp)
+                                }
+                            }
+
+                            // Quantity Selector
+                            Surface(
+                                color = Color(0xFF0B141E),
+                                shape = RoundedCornerShape(4.dp),
+                                border = androidx.compose.foundation.BorderStroke(0.8.dp, Color(0xFF1E3A56)),
+                                modifier = Modifier
+                                    .height(26.dp)
+                                    .clickable {
+                                        val next = if (vnState.requestCount >= 10) 1 else vnState.requestCount + 1
+                                        VirtualNumberManager.setRequestCount(next)
+                                    }
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 6.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = "Qty: ${vnState.requestCount}",
+                                        color = Color(0xFF40C4FF),
+                                        fontSize = 9.5.sp,
+                                        fontWeight = FontWeight.ExtraBold
+                                    )
+                                }
+                            }
+
+                            // GET Action Button for Zenex
+                            Surface(
+                                shape = RoundedCornerShape(4.dp),
+                                color = Color(0xFF0091EA),
+                                modifier = Modifier
+                                    .height(26.dp)
+                                    .clickable(enabled = !vnState.isLoading) {
+                                        VirtualNumberManager.provisionNumbers(context)
+                                    }
+                            ) {
+                                Box(
+                                    modifier = Modifier.padding(horizontal = 6.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    if (vnState.isLoading) {
+                                        CircularProgressIndicator(
+                                            color = Color.White,
+                                            strokeWidth = 1.5.dp,
+                                            modifier = Modifier.size(12.dp)
+                                        )
+                                    } else {
+                                        Text(
+                                            text = "GET",
+                                            color = Color.White,
+                                            fontWeight = FontWeight.Black,
+                                            fontSize = 10.sp
+                                        )
+                                    }
+                                }
+                            }
+                        }
                     }
 
-                    // Numbers & Live OTP List
-                    val numbers = vnState.provisionedNumbers.take(4)
+                    // Numbers & Live OTP List (Unix active or Zenex provisioned)
+                    val numbers = if (selectedPanel == 0) unixState.activeNumbers.take(4) else vnState.provisionedNumbers.take(4)
                     if (numbers.isEmpty()) {
                         Text(
-                            text = "রেঞ্জ দিয়ে GET চাপুন",
+                            text = if (selectedPanel == 0) "দেশ [${unixState.selectedCountry}] সংরক্ষিত • GET চাপুন" else "রেঞ্জ দিয়ে GET চাপুন",
                             color = Color(0xFF546E7A),
                             fontSize = 8.5.sp,
                             modifier = Modifier.align(Alignment.CenterHorizontally)

@@ -228,7 +228,7 @@ object VirtualNumberManager {
     private val _selectedPanel = MutableStateFlow(0) // 0: Unix SMS, 1: Zenex SMS
     val selectedPanel: StateFlow<Int> = _selectedPanel.asStateFlow()
 
-    private val _zenexOtpRate = MutableStateFlow(0.014)
+    private val _zenexOtpRate = MutableStateFlow(0.50)
     val zenexOtpRate: StateFlow<Double> = _zenexOtpRate.asStateFlow()
 
     fun setSelectedPanel(panelIndex: Int) {
@@ -238,13 +238,13 @@ object VirtualNumberManager {
 
     fun adjustZenexOtpRate(delta: Double) {
         val current = _zenexOtpRate.value
-        val updated = maxOf(0.001, current + delta)
+        val updated = (Math.round(maxOf(0.01, current + delta) * 100.0) / 100.0)
         _zenexOtpRate.value = updated
         prefs?.edit()?.putFloat("zenex_otp_rate_setting", updated.toFloat())?.apply()
     }
 
     fun setZenexOtpRate(rate: Double) {
-        val safe = maxOf(0.001, rate)
+        val safe = (Math.round(maxOf(0.01, rate) * 100.0) / 100.0)
         _zenexOtpRate.value = safe
         prefs?.edit()?.putFloat("zenex_otp_rate_setting", safe.toFloat())?.apply()
     }
@@ -256,8 +256,9 @@ object VirtualNumberManager {
             prefs = context.getSharedPreferences("virtual_numbers_prefs", Context.MODE_PRIVATE)
             val savedPanel = prefs?.getInt("selected_panel_index", 0) ?: 0
             _selectedPanel.value = savedPanel
-            val savedZenexRate = prefs?.getFloat("zenex_otp_rate_setting", 0.014f)?.toDouble() ?: 0.014
-            _zenexOtpRate.value = savedZenexRate
+            val rawZenexRate = prefs?.getFloat("zenex_otp_rate_setting", 0.50f)?.toDouble() ?: 0.50
+            val savedZenexRate = if (rawZenexRate < 0.1) 0.50 else rawZenexRate
+            _zenexOtpRate.value = (Math.round(savedZenexRate * 100.0) / 100.0)
 
             val savedKey = prefs?.getString("api_key", "ZNX_SDY9RBKGG8DO84EWZOMWEH2S") ?: "ZNX_SDY9RBKGG8DO84EWZOMWEH2S"
             val savedRange = prefs?.getString("target_range", "237620XXX") ?: "237620XXX"
