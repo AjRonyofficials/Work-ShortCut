@@ -1,0 +1,118 @@
+package com.example
+
+import android.os.Bundle
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.Surface
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.compose.ui.Modifier
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.example.data.local.AppDatabase
+import com.example.data.local.WorkShortcutRepository
+import com.example.service.OverlayStateManager
+import com.example.ui.screens.MainScreen
+import com.example.ui.theme.WorkShortcutTheme
+
+class MainActivity : ComponentActivity() {
+
+    private val notificationPermissionLauncher = registerForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        if (isGranted) {
+            android.widget.Toast.makeText(this, "✓ নোটিফিকেশন পারমিশন চালু হয়েছে! ওটিপি আসলে নোটিফিকেশনে পাবেন।", android.widget.Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun checkNotificationPermission() {
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+            if (androidx.core.content.ContextCompat.checkSelfPermission(
+                    this,
+                    android.Manifest.permission.POST_NOTIFICATIONS
+                ) != android.content.pm.PackageManager.PERMISSION_GRANTED
+            ) {
+                notificationPermissionLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+            }
+        }
+    }
+
+    private val vpnPermissionLauncher = registerForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode == RESULT_OK) {
+            OverlayStateManager.startProxyConnection(this)
+        } else {
+            android.widget.Toast.makeText(this, "ভিপিএন পারমিশন ছাড়া প্রক্সি ট্র্যাফিক রুট করা সম্ভব নয়!", android.widget.Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun checkVpnPermissionRequest(intent: android.content.Intent?) {
+        if (intent?.getBooleanExtra("REQUEST_VPN_PERMISSION", false) == true) {
+            val vpnIntent = android.net.VpnService.prepare(this)
+            if (vpnIntent != null) {
+                vpnPermissionLauncher.launch(vpnIntent)
+            } else {
+                OverlayStateManager.startProxyConnection(this)
+            }
+        }
+    }
+
+    override fun onNewIntent(intent: android.content.Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        if (intent.getBooleanExtra("NAVIGATE_TO_SHEET", false)) {
+            OverlayStateManager.requestTab("EXCEL")
+        }
+        checkVpnPermissionRequest(intent)
+    }
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        enableEdgeToEdge()
+
+        OverlayStateManager.init(this)
+        com.example.service.AuthManager.init(this)
+
+        val database = AppDatabase.getDatabase(this)
+        val repository = WorkShortcutRepository(
+            excelRowDao = database.excelRowDao(),
+            proxyProfileDao = database.proxyProfileDao(),
+            twoFactorDao = database.twoFactorDao()
+        )
+
+        if (intent?.getBooleanExtra("NAVIGATE_TO_SHEET", false) == true) {
+            OverlayStateManager.requestTab("EXCEL")
+        }
+        checkVpnPermissionRequest(intent)
+        checkNotificationPermission()
+
+        setContent {
+            val state by OverlayStateManager.uiState.collectAsStateWithLifecycle()
+            val isLoggedIn by com.example.service.AuthManager.isLoggedIn.collectAsStateWithLifecycle()
+            val savedExcelRows by repository.allExcelRows.collectAsStateWithLifecycle(initialValue = emptyList())
+            val savedProxies by repository.allProxies.collectAsStateWithLifecycle(initialValue = emptyList())
+            val savedTwoFactorKeys by repository.allTwoFactorKeys.collectAsStateWithLifecycle(initialValue = emptyList())
+
+            WorkShortcutTheme(themeMode = state.appTheme) {
+                Surface(modifier = Modifier.fillMaxSize()) {
+                    if (!isLoggedIn) {
+                        com.example.ui.screens.LoginScreen(
+                            onLoginSuccess = { /* Automatically refreshes state */ }
+                        )
+                    } else {
+                        MainScreen(
+                            state = state,
+                            savedExcelRows = savedExcelRows,
+                            savedProxies = savedProxies,
+                            savedTwoFactorKeys = savedTwoFactorKeys,
+                            repository = repository
+                        )
+                    }
+                }
+            }
+        }
+    }
+}

@@ -1,0 +1,151 @@
+name: Build Work ShortCut APK
+
+on:
+  push:
+    branches: [ "**" ]
+    tags: [ "v*" ]
+  pull_request:
+    branches: [ "**" ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  build:
+    name: Build & Export APK
+    runs-on: ubuntu-latest
+    env:
+      JAVA_TOOL_OPTIONS: "-Djava.awt.headless=true -Dfile.encoding=UTF-8"
+      GRADLE_OPTS: "-Djava.awt.headless=true"
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v5
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+
+      - name: Setup Android SDK Licenses
+        run: |
+          yes | sdkmanager --licenses || true
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '9.3.1'
+          cache-disabled: true
+
+      - name: Prepare Environment Files
+        run: |
+          if [ ! -f ".env" ] && [ -f ".env.example" ]; then
+            cp .env.example .env
+          fi
+          touch .env
+
+      - name: Ensure Debug Keystore
+        run: |
+          if [ ! -f "debug.keystore" ]; then
+            if [ -f "debug.keystore.base64" ]; then
+              echo "Decoding debug.keystore from base64..."
+              base64 -d debug.keystore.base64 > debug.keystore
+            else
+              echo "Generating fresh debug.keystore..."
+              keytool -genkey -v -keystore debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
+            fi
+          fi
+          test -f debug.keystore
+          echo "debug.keystore is ready ($(wc -c < debug.keystore) bytes)"
+
+      - name: Verify and Auto-Repair Critical Resource Configurations
+        run: |
+          mkdir -p app/src/main/res/xml
+          if [ ! -f "app/src/main/res/xml/accessibility_service_config.xml" ]; then
+            echo "Auto-repairing missing accessibility_service_config.xml..."
+            printf '%s\n' \
+              '<?xml version="1.0" encoding="utf-8"?>' \
+              '<accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"' \
+              '    android:accessibilityEventTypes="typeWindowStateChanged|typeWindowContentChanged"' \
+              '    android:accessibilityFeedbackType="feedbackGeneric"' \
+              '    android:accessibilityFlags="flagDefault|flagRetrieveInteractiveWindows|flagReportViewIds"' \
+              '    android:canRetrieveWindowContent="true"' \
+              '    android:canPerformGestures="true"' \
+              '    android:description="@string/accessibility_service_description"' \
+              '    android:notificationTimeout="50" />' > app/src/main/res/xml/accessibility_service_config.xml
+          fi
+          test -f app/src/main/res/xml/accessibility_service_config.xml
+          echo "accessibility_service_config.xml verified."
+
+      - name: Ensure Gradle Wrapper and Executable Permissions
+        run: |
+          if [ ! -f "gradlew" ] || [ ! -f "gradle/wrapper/gradle-wrapper.jar" ]; then
+            echo "Generating Gradle wrapper with Gradle 9.3.1..."
+            gradle wrapper --gradle-version 9.3.1 || true
+          fi
+          if [ -f "gradlew" ]; then
+            chmod +x gradlew
+            echo "gradlew found and marked executable."
+          else
+            echo "gradlew not present, will use installed Gradle 9.3.1 CLI directly."
+          fi
+
+      - name: Build Debug APK
+        run: |
+          export JAVA_TOOL_OPTIONS="-Djava.awt.headless=true -Dfile.encoding=UTF-8 -Dsun.awt.noerasebackground=true"
+          if [ -f "./gradlew" ] && [ -f "gradle/wrapper/gradle-wrapper.jar" ]; then
+            echo "Building with ./gradlew (Gradle 9.3.1)..."
+            ./gradlew assembleDebug --no-daemon --no-configuration-cache --no-parallel -Djava.awt.headless=true -Dksp.incremental=false || gradle assembleDebug --no-daemon --no-configuration-cache --no-parallel -Djava.awt.headless=true -Dksp.incremental=false
+          else
+            echo "Building directly with gradle CLI (Gradle 9.3.1)..."
+            gradle assembleDebug --no-daemon --no-configuration-cache --no-parallel -Djava.awt.headless=true -Dksp.incremental=false
+          fi
+
+      - name: Verify Generated APK
+        run: |
+          ls -la app/build/outputs/apk/debug/
+          find app/build/outputs/apk/ -name "*.apk"
+
+      - name: Prepare APK Release Assets
+        run: |
+          mkdir -p release-assets
+          cp app/build/outputs/apk/debug/app-debug.apk release-assets/WorkShortCut-latest.apk
+          cp app/build/outputs/apk/debug/app-debug.apk "release-assets/WorkShortCut-v1.0.${{ github.run_number }}.apk"
+          echo "Release assets prepared:"
+          ls -la release-assets/
+
+      - name: Upload APK as Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: WorkShortCut-Debug-APK
+          path: release-assets/*.apk
+          retention-days: 30
+
+      - name: Auto Deploy GitHub Release
+        if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' || github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        continue-on-error: true
+        with:
+          tag_name: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || format('v1.0.{0}', github.run_number) }}
+          name: Work ShortCut ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || format('v1.0.{0}', github.run_number) }}
+          files: release-assets/*.apk
+          draft: false
+          prerelease: false
+          make_latest: true
+          body: |
+            ## 🚀 Work ShortCut - Automated Deployment Build
+
+            This release was automatically built, signed, and deployed by GitHub Actions.
+
+            - **Application**: Work ShortCut
+            - **Build Number**: `${{ github.run_number }}`
+            - **Commit**: `${{ github.sha }}`
+            - **Triggered By**: `${{ github.event_name }}` (${{ github.actor }})
+
+            ### 📥 Direct APK Downloads:
+            - **`WorkShortCut-latest.apk`**: Always contains the latest build.
+            - **`WorkShortCut-v1.0.${{ github.run_number }}.apk`**: Version-tagged build for archiving.
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
