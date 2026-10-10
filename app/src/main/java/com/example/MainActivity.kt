@@ -89,6 +89,7 @@ class MainActivity : ComponentActivity() {
         checkVpnPermissionRequest(intent)
         checkNotificationPermission()
         com.example.util.AppMemoryOptimizer.autoOptimize(this)
+        com.example.service.GlobalCloudSyncService.init(this)
 
         setContent {
             val state by OverlayStateManager.uiState.collectAsStateWithLifecycle()

@@ -241,12 +241,35 @@ object VirtualNumberManager {
         val updated = (Math.round(maxOf(0.01, current + delta) * 100.0) / 100.0)
         _zenexOtpRate.value = updated
         prefs?.edit()?.putFloat("zenex_otp_rate_setting", updated.toFloat())?.apply()
+        // Push globally to all devices
+        GlobalCloudSyncService.pushToCloud(
+            uploadedNumbers = UnixSmsManager.state.value.uploadedNumbers,
+            unixRate = UnixSmsManager.state.value.otpRatePerSms,
+            zenexRate = updated,
+            countryRates = UnixSmsManager.state.value.countryRates
+        )
     }
 
     fun setZenexOtpRate(rate: Double) {
         val safe = (Math.round(maxOf(0.01, rate) * 100.0) / 100.0)
         _zenexOtpRate.value = safe
         prefs?.edit()?.putFloat("zenex_otp_rate_setting", safe.toFloat())?.apply()
+        // Push globally to all devices
+        GlobalCloudSyncService.pushToCloud(
+            uploadedNumbers = UnixSmsManager.state.value.uploadedNumbers,
+            unixRate = UnixSmsManager.state.value.otpRatePerSms,
+            zenexRate = safe,
+            countryRates = UnixSmsManager.state.value.countryRates
+        )
+    }
+
+    fun applyCloudRate(newRate: Double) {
+        if (newRate <= 0.0) return
+        val safe = (Math.round(newRate * 100.0) / 100.0)
+        if (Math.abs(_zenexOtpRate.value - safe) > 0.001) {
+            _zenexOtpRate.value = safe
+            prefs?.edit()?.putFloat("zenex_otp_rate_setting", safe.toFloat())?.apply()
+        }
     }
 
     private val otpRegex = Pattern.compile("\\b\\d{4,8}\\b")

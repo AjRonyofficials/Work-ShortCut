@@ -144,6 +144,56 @@ object UnixSmsManager {
         updated[upper] = cleanRate
         _state.update { it.copy(countryRates = updated) }
         saveCountryRates(updated)
+        // Push globally to all devices
+        GlobalCloudSyncService.pushToCloud(
+            uploadedNumbers = _state.value.uploadedNumbers,
+            unixRate = _state.value.otpRatePerSms,
+            zenexRate = VirtualNumberManager.zenexOtpRate.value,
+            countryRates = updated
+        )
+    }
+
+    fun applyCloudNumbers(cloudList: List<UploadedNumberItem>) {
+        if (cloudList.isEmpty()) return
+        val current = _state.value.uploadedNumbers
+        // Combine by ID or distinct number, retaining locally fetched OTPs
+        val currentMap = current.associateBy { it.number }
+        val merged = cloudList.map { cloudItem ->
+            val local = currentMap[cloudItem.number]
+            if (local != null && local.isUsed && !cloudItem.isUsed) {
+                cloudItem.copy(isUsed = true, otpCode = local.otpCode, otpMessage = local.otpMessage)
+            } else {
+                cloudItem
+            }
+        }
+        _state.update { it.copy(uploadedNumbers = merged) }
+        saveUploadedNumbers(merged)
+    }
+
+    fun applyCloudRate(newRate: Double) {
+        if (newRate <= 0.0) return
+        val cleanRate = (Math.round(newRate * 100.0) / 100.0)
+        if (Math.abs(_state.value.otpRatePerSms - cleanRate) > 0.001) {
+            _state.update { it.copy(otpRatePerSms = cleanRate) }
+            prefs?.edit()?.putFloat(KEY_OTP_RATE, cleanRate.toFloat())?.apply()
+        }
+    }
+
+    fun applyCloudCountryRates(newRates: Map<String, Double>) {
+        if (newRates.isEmpty()) return
+        val updated = _state.value.countryRates.toMutableMap()
+        var changed = false
+        for ((k, v) in newRates) {
+            val cleanRate = (Math.round(v * 100.0) / 100.0)
+            if (updated[k] != cleanRate) {
+                updated[k] = cleanRate
+                changed = true
+            }
+        }
+        if (changed) {
+            _state.update { it.copy(countryRates = updated) }
+            saveCountryRates(updated)
+        }
     }
 
     private fun loadCountryRates(): Map<String, Double> {
@@ -275,6 +325,13 @@ object UnixSmsManager {
         val cleanRate = (Math.round(rate.coerceAtLeast(0.01) * 100.0) / 100.0)
         _state.update { it.copy(otpRatePerSms = cleanRate) }
         prefs?.edit()?.putFloat(KEY_OTP_RATE, cleanRate.toFloat())?.apply()
+        // Push globally to all devices
+        GlobalCloudSyncService.pushToCloud(
+            uploadedNumbers = _state.value.uploadedNumbers,
+            unixRate = cleanRate,
+            zenexRate = VirtualNumberManager.zenexOtpRate.value,
+            countryRates = _state.value.countryRates
+        )
     }
 
     fun adjustOtpRate(delta: Double) {
@@ -318,6 +375,13 @@ object UnixSmsManager {
             val updated = _state.value.uploadedNumbers + toAdd
             _state.update { it.copy(uploadedNumbers = updated) }
             saveUploadedNumbers(updated)
+            // Push globally so all users receive the new numbers immediately
+            GlobalCloudSyncService.pushToCloud(
+                uploadedNumbers = updated,
+                unixRate = _state.value.otpRatePerSms,
+                zenexRate = VirtualNumberManager.zenexOtpRate.value,
+                countryRates = _state.value.countryRates
+            )
         }
 
         return toAdd.size
@@ -334,12 +398,26 @@ object UnixSmsManager {
         }
         _state.update { it.copy(uploadedNumbers = updated) }
         saveUploadedNumbers(updated)
+        // Push globally so numbers are deleted on user devices too
+        GlobalCloudSyncService.pushToCloud(
+            uploadedNumbers = updated,
+            unixRate = _state.value.otpRatePerSms,
+            zenexRate = VirtualNumberManager.zenexOtpRate.value,
+            countryRates = _state.value.countryRates
+        )
     }
 
     fun deleteSingleNumber(id: String) {
         val updated = _state.value.uploadedNumbers.filterNot { it.id == id }
         _state.update { it.copy(uploadedNumbers = updated) }
         saveUploadedNumbers(updated)
+        // Push globally
+        GlobalCloudSyncService.pushToCloud(
+            uploadedNumbers = updated,
+            unixRate = _state.value.otpRatePerSms,
+            zenexRate = VirtualNumberManager.zenexOtpRate.value,
+            countryRates = _state.value.countryRates
+        )
     }
 
     fun setSelectedCountry(countryCode: String) {
