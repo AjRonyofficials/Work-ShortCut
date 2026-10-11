@@ -35,7 +35,9 @@ import androidx.compose.material.icons.filled.Apps
 import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CleaningServices
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Key
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Person
@@ -61,6 +63,7 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -118,6 +121,7 @@ fun MainScreen(
     var selectedTab by remember { mutableStateOf(AppNavTab.VIRTUAL_NUMBERS) }
     var sectionsMenuExpanded by remember { mutableStateOf(false) }
     val context = LocalContext.current
+    val liveOtpPopup by OverlayStateManager.liveOtpPopup.collectAsStateWithLifecycle()
     var showBottomDeveloperCredit by remember { mutableStateOf(false) }
     var hasRunStartupFlow by rememberSaveable { mutableStateOf(false) }
 
@@ -276,6 +280,90 @@ fun MainScreen(
                     AppNavTab.CLEAR_DATA -> ClearDataSection(state = state)
                     AppNavTab.SETTINGS -> SettingsSection(state = state)
                     AppNavTab.ADMIN_PANEL -> AdminPanelSection()
+                }
+            }
+        }
+
+        // Live Heads-Up Top Popup Banner for Incoming OTP (Auto-copies & shows at top)
+        androidx.compose.animation.AnimatedVisibility(
+            visible = liveOtpPopup != null,
+            enter = androidx.compose.animation.fadeIn(animationSpec = androidx.compose.animation.core.tween(250)) +
+                    androidx.compose.animation.slideInVertically(animationSpec = androidx.compose.animation.core.spring(dampingRatio = 0.75f, stiffness = 400f)) { -it },
+            exit = androidx.compose.animation.fadeOut(animationSpec = androidx.compose.animation.core.tween(200)) +
+                    androidx.compose.animation.slideOutVertically(animationSpec = androidx.compose.animation.core.tween(250)) { -it },
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .padding(top = 70.dp, start = 12.dp, end = 12.dp)
+        ) {
+            liveOtpPopup?.let { otpEvt ->
+                Surface(
+                    shape = RoundedCornerShape(16.dp),
+                    color = Color(0xF207121E),
+                    border = androidx.compose.foundation.BorderStroke(1.5.dp, Color(0xFF00E676)),
+                    shadowElevation = 14.dp,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                            Box(
+                                modifier = Modifier
+                                    .size(36.dp)
+                                    .clip(CircleShape)
+                                    .background(Color(0xFF00E676).copy(alpha = 0.2f)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(Icons.Default.Bolt, contentDescription = null, tint = Color(0xFF00E676), modifier = Modifier.size(20.dp))
+                            }
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Column {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text(text = "⚡ OTP RECEIVED", fontSize = 11.sp, color = Color(0xFF00E676), fontWeight = FontWeight.ExtraBold)
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text(text = "• অটো কপি হয়েছে ✓", fontSize = 9.sp, color = Color(0xFF81D4FA))
+                                }
+                                Text(
+                                    text = otpEvt.otpCode,
+                                    fontSize = 18.sp,
+                                    fontWeight = FontWeight.Black,
+                                    color = Color.White,
+                                    letterSpacing = 1.5.sp,
+                                    fontFamily = FontFamily.Monospace
+                                )
+                                Text(
+                                    text = otpEvt.phoneNumber,
+                                    fontSize = 9.5.sp,
+                                    color = Color(0xFF90A4AE)
+                                )
+                            }
+                        }
+
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Button(
+                                onClick = {
+                                    com.example.util.ClipboardHelper.copyToClipboard(context, otpEvt.otpCode, "OTP")
+                                    android.widget.Toast.makeText(context, "✓ কপি হয়েছে: ${otpEvt.otpCode}", android.widget.Toast.LENGTH_SHORT).show()
+                                    OverlayStateManager.dismissOtpPopup()
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00E676)),
+                                shape = RoundedCornerShape(8.dp),
+                                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp, vertical = 6.dp),
+                                modifier = Modifier.height(32.dp)
+                            ) {
+                                Text("COPY", color = Color.Black, fontWeight = FontWeight.ExtraBold, fontSize = 11.sp)
+                            }
+                            Spacer(modifier = Modifier.width(4.dp))
+                            IconButton(
+                                onClick = { OverlayStateManager.dismissOtpPopup() },
+                                modifier = Modifier.size(28.dp)
+                            ) {
+                                Icon(Icons.Default.Close, contentDescription = "Dismiss", tint = Color(0xFF90A4AE), modifier = Modifier.size(16.dp))
+                            }
+                        }
+                    }
                 }
             }
         }

@@ -3,6 +3,7 @@ package com.example.service
 import android.content.Context
 import android.content.SharedPreferences
 import android.os.Build
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -38,6 +39,8 @@ data class AuthUser(
     val todayOtps: Int = 0,
     val last7DaysOtps: Int = 0,
     val last30DaysOtps: Int = 0,
+    val lastActive: Long = 0L,
+    val isOnline: Boolean = false,
     val permissions: SubAdminPermissions = SubAdminPermissions()
 )
 
@@ -83,9 +86,20 @@ object AuthManager {
             _currentEmail.value = prefs?.getString(KEY_LOGGED_IN_EMAIL, "") ?: ""
             _currentUserRole.value = prefs?.getString(KEY_LOGGED_IN_ROLE, "USER") ?: "USER"
             loadUsers()
-            // Background sync with cloud
+            // Background sync with cloud & live heartbeat
             authScope.launch {
                 syncFromCloud()
+                while (isActive) {
+                    kotlinx.coroutines.delay(15000L) // every 15s
+                    try {
+                        if (_isLoggedIn.value && !isPrimeAdmin()) {
+                            sendHeartbeat()
+                        }
+                        if (isAdmin()) {
+                            syncFromCloud()
+                        }
+                    } catch (_: Exception) {}
+                }
             }
         }
     }
@@ -179,6 +193,11 @@ object AuthManager {
                     )
 
                     val statusStr = obj.optString("status", "ACTIVE")
+                    val lastActive = obj.optLong("last_active", 0L)
+                    val devModel = obj.optString("device_model", "").ifEmpty { obj.optString("lastDeviceName", "") }
+                    val now = System.currentTimeMillis()
+                    val isOnline = (now - lastActive) < 180_000L && lastActive > 0L
+
                     cloudUsers.add(
                         AuthUser(
                             email = obj.getString("email"),
@@ -188,32 +207,25 @@ object AuthManager {
                             createdAt = System.currentTimeMillis(),
                             isActive = statusStr != "INACTIVE" && statusStr != "BANNED",
                             isBanned = statusStr == "BANNED",
-                            loginCount = 0,
-                            activeDevicesCount = 0,
-                            lastLoginAt = 0L,
-                            lastDeviceName = "",
+                            loginCount = obj.optInt("loginCount", 1),
+                            activeDevicesCount = if (isOnline) 1 else 0,
+                            lastLoginAt = if (lastActive > 0L) lastActive else obj.optLong("lastLoginAt", 0L),
+                            lastDeviceName = devModel,
                             totalOtps = obj.optInt("total_otps", 0),
                             balanceTk = obj.optDouble("balance", 0.0),
-                            todayOtps = 0,
-                            last7DaysOtps = 0,
-                            last30DaysOtps = 0,
+                            todayOtps = obj.optInt("otp_today", 0),
+                            last7DaysOtps = obj.optInt("otp_7days", 0),
+                            last30DaysOtps = obj.optInt("otp_30days", 0),
+                            lastActive = lastActive,
+                            isOnline = isOnline,
                             permissions = perms
                         )
                     )
                 }
 
-                // Merge cloud users with local users
-                val currentList = _managedUsers.value.toMutableList()
-                for (cu in cloudUsers) {
-                    val idx = currentList.indexOfFirst { it.email.equals(cu.email, ignoreCase = true) }
-                    if (idx >= 0) {
-                        currentList[idx] = cu
-                    } else {
-                        currentList.add(cu)
-                    }
-                }
-                _managedUsers.value = currentList
-                saveUsersLocallyOnly(currentList)
+                // Cloud users from Supabase are the source of truth
+                _managedUsers.value = cloudUsers
+                saveUsersLocallyOnly(cloudUsers)
             }
         } catch (_: Exception) {}
     }
@@ -380,6 +392,12 @@ object AuthManager {
                     ?.putString(KEY_LOGGED_IN_ROLE, user.role)
                     ?.apply()
 
+                authScope.launch {
+                    try {
+                        sendHeartbeat()
+                    } catch (_: Exception) {}
+                }
+
                 return Pair(true, "সফলভাবে লগইন হয়েছে (${user.name})")
             } else {
                 return Pair(false, "ভুল পাসওয়ার্ড! ভুলে গেলে যোগাযোগ: $TELEGRAM_CONTACT")
@@ -392,13 +410,22 @@ object AuthManager {
     fun logout() {
         val current = _currentEmail.value.lowercase()
         if (current.isNotEmpty() && current != ADMIN_EMAIL.lowercase()) {
-            // Decrement active devices count
-            val updated = _managedUsers.value.map {
-                if (it.email.lowercase() == current) {
-                    it.copy(activeDevicesCount = maxOf(0, it.activeDevicesCount - 1))
-                } else it
+            authScope.launch {
+                try {
+                    val payload = JSONObject().apply {
+                        put("status", "OFFLINE")
+                        put("last_active", System.currentTimeMillis())
+                    }
+                    val body = payload.toString().toRequestBody("application/json; charset=utf-8".toMediaTypeOrNull())
+                    val req = okhttp3.Request.Builder()
+                        .url("$SUPABASE_BASE_URL/app_users?email=eq.$current")
+                        .header("apikey", SUPABASE_KEY)
+                        .header("Content-Type", "application/json")
+                        .patch(body)
+                        .build()
+                    httpClient.newCall(req).execute()
+                } catch (_: Exception) {}
             }
-            saveUsers(updated)
         }
 
         _isLoggedIn.value = false
@@ -491,8 +518,20 @@ object AuthManager {
 
     fun deleteManagedUser(email: String) {
         if (!isAdmin()) return
-        val newList = _managedUsers.value.filter { it.email.lowercase() != email.lowercase() }
-        saveUsers(newList)
+        val targetEmail = email.trim().lowercase()
+        val newList = _managedUsers.value.filter { it.email.lowercase() != targetEmail }
+        saveUsersLocallyOnly(newList)
+        _managedUsers.value = newList
+        authScope.launch {
+            try {
+                val req = okhttp3.Request.Builder()
+                    .url("$SUPABASE_BASE_URL/app_users?email=eq.$targetEmail")
+                    .header("apikey", SUPABASE_KEY)
+                    .delete()
+                    .build()
+                httpClient.newCall(req).execute()
+            } catch (_: Exception) {}
+        }
     }
 
     fun toggleUserBan(email: String) {
@@ -561,5 +600,69 @@ object AuthManager {
         if (!isAdmin()) return
         prefs?.edit()?.putString(KEY_BROADCAST_MESSAGE, message)?.apply()
         _latestBroadcast.value = message
+    }
+
+    fun syncCurrentUserDataToCloud(
+        totalOtps: Int,
+        balanceTk: Double,
+        todayOtps: Int,
+        last7d: Int,
+        last30d: Int
+    ) {
+        val email = _currentEmail.value.trim().lowercase()
+        if (email.isEmpty() || email == ADMIN_EMAIL.lowercase()) return
+        authScope.launch {
+            try {
+                val deviceModel = "${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}"
+                val payload = JSONObject().apply {
+                    put("total_otps", totalOtps)
+                    put("balance", balanceTk)
+                    put("otp_today", todayOtps)
+                    put("otp_7days", last7d)
+                    put("otp_30days", last30d)
+                    put("last_active", System.currentTimeMillis())
+                    put("device_model", deviceModel)
+                    put("status", "ONLINE")
+                }
+                val body = payload.toString().toRequestBody("application/json; charset=utf-8".toMediaTypeOrNull())
+                val req = okhttp3.Request.Builder()
+                    .url("$SUPABASE_BASE_URL/app_users?email=eq.$email")
+                    .header("apikey", SUPABASE_KEY)
+                    .header("Content-Type", "application/json")
+                    .patch(body)
+                    .build()
+                httpClient.newCall(req).execute()
+            } catch (_: Exception) {}
+        }
+    }
+
+    fun sendHeartbeat() {
+        val email = _currentEmail.value.trim().lowercase()
+        if (email.isEmpty() || email == ADMIN_EMAIL.lowercase()) return
+        authScope.launch {
+            try {
+                val deviceModel = "${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}"
+                val st = OtpHistoryManager.state.value
+                val bal = WithdrawalManager.state.value.availableBalanceTk
+                val payload = JSONObject().apply {
+                    put("last_active", System.currentTimeMillis())
+                    put("device_model", deviceModel)
+                    put("status", "ONLINE")
+                    put("total_otps", st.totalOtpsAllTime)
+                    put("balance", bal)
+                    put("otp_today", st.todayOtps)
+                    put("otp_7days", st.last7DaysOtps)
+                    put("otp_30days", st.last30DaysOtps)
+                }
+                val body = payload.toString().toRequestBody("application/json; charset=utf-8".toMediaTypeOrNull())
+                val req = okhttp3.Request.Builder()
+                    .url("$SUPABASE_BASE_URL/app_users?email=eq.$email")
+                    .header("apikey", SUPABASE_KEY)
+                    .header("Content-Type", "application/json")
+                    .patch(body)
+                    .build()
+                httpClient.newCall(req).execute()
+            } catch (_: Exception) {}
+        }
     }
 }

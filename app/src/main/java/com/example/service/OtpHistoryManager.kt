@@ -34,6 +34,7 @@ data class DailyOtpSummary(
     val totalCount: Int,
     val unixCount: Int,
     val zenexCount: Int,
+    val kop2Count: Int = 0,
     val unixRateOnDay: Double,
     val records: List<OtpHistoryRecord>
 )
@@ -42,11 +43,14 @@ data class OtpHistoryState(
     val totalOtpsAllTime: Int = 0,
     val unixTotalAllTime: Int = 0,
     val zenexTotalAllTime: Int = 0,
+    val kop2TotalAllTime: Int = 0,
     val todayOtps: Int = 0,
     val unixTodayOtps: Int = 0,
     val zenexTodayOtps: Int = 0,
+    val kop2TodayOtps: Int = 0,
     val currentUnixRate: Double = 0.50,
     val currentZenexRate: Double = 0.50,
+    val currentKop2Rate: Double = 0.50,
     val last7DaysSummaries: List<DailyOtpSummary> = emptyList(),
     val last30DaysSummaries: List<DailyOtpSummary> = emptyList(),
     val last7DaysOtps: Int = 0,
@@ -202,6 +206,15 @@ object OtpHistoryManager {
         recalculateSummaries(updatedRecords, newTotal, cycleStart)
         saveRecords(updatedRecords, newTotal)
         WithdrawalManager.refreshBalances()
+        val st = _state.value
+        val bal = WithdrawalManager.state.value.availableBalanceTk
+        AuthManager.syncCurrentUserDataToCloud(
+            totalOtps = st.totalOtpsAllTime,
+            balanceTk = bal,
+            todayOtps = st.todayOtps,
+            last7d = st.last7DaysOtps,
+            last30d = st.last30DaysOtps
+        )
     }
 
     fun recalculateSummaries(
@@ -224,6 +237,7 @@ object OtpHistoryManager {
 
         val currentUnixRate = UnixSmsManager.state.value.otpRatePerSms
         val currentZenexRate = VirtualNumberManager.zenexOtpRate.value
+        val currentKop2Rate = KopEngine2Manager.kop2OtpRate.value
 
         // Compute 30 days breakdown (Today = Day 0, ..., Day -29)
         val days30List = mutableListOf<DailyOtpSummary>()
@@ -238,7 +252,8 @@ object OtpHistoryManager {
             }
             val matched = records.filter { it.dateKey == dKey }
             val unixCount = matched.count { it.platform.contains("Unix", ignoreCase = true) }
-            val zenexCount = matched.count { !it.platform.contains("Unix", ignoreCase = true) }
+            val kop2Count = matched.count { it.platform.contains("Kop Engine 2", ignoreCase = true) || it.platform.contains("Kop2", ignoreCase = true) }
+            val zenexCount = matched.count { !it.platform.contains("Unix", ignoreCase = true) && !it.platform.contains("Kop Engine 2", ignoreCase = true) && !it.platform.contains("Kop2", ignoreCase = true) }
 
             val dayRate = matched.firstOrNull { it.platform.contains("Unix", ignoreCase = true) }?.rate ?: currentUnixRate
 
@@ -249,6 +264,7 @@ object OtpHistoryManager {
                     totalCount = matched.size,
                     unixCount = unixCount,
                     zenexCount = zenexCount,
+                    kop2Count = kop2Count,
                     unixRateOnDay = dayRate,
                     records = matched
                 )
@@ -262,9 +278,11 @@ object OtpHistoryManager {
         val todayTotal = todaySummary?.totalCount ?: 0
         val todayUnix = todaySummary?.unixCount ?: 0
         val todayZenex = todaySummary?.zenexCount ?: 0
+        val todayKop2 = todaySummary?.kop2Count ?: 0
 
         val unixTotal = records.count { it.platform.contains("Unix", ignoreCase = true) }
-        val zenexTotal = records.count { !it.platform.contains("Unix", ignoreCase = true) }
+        val kop2Total = records.count { it.platform.contains("Kop Engine 2", ignoreCase = true) || it.platform.contains("Kop2", ignoreCase = true) }
+        val zenexTotal = records.count { !it.platform.contains("Unix", ignoreCase = true) && !it.platform.contains("Kop Engine 2", ignoreCase = true) && !it.platform.contains("Kop2", ignoreCase = true) }
 
         val sum7Days = days7List.sumOf { it.totalCount }
         val sum30Days = days30List.sumOf { it.totalCount }
@@ -287,11 +305,14 @@ object OtpHistoryManager {
                 totalOtpsAllTime = totalAllTime,
                 unixTotalAllTime = unixTotal,
                 zenexTotalAllTime = zenexTotal,
+                kop2TotalAllTime = kop2Total,
                 todayOtps = todayTotal,
                 unixTodayOtps = todayUnix,
                 zenexTodayOtps = todayZenex,
+                kop2TodayOtps = todayKop2,
                 currentUnixRate = currentUnixRate,
                 currentZenexRate = currentZenexRate,
+                currentKop2Rate = currentKop2Rate,
                 last7DaysSummaries = days7List,
                 last30DaysSummaries = days30List,
                 last7DaysOtps = sum7Days,

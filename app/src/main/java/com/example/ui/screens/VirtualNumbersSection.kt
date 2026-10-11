@@ -221,6 +221,21 @@ fun VirtualNumbersSection(
                                             fontSize = 12.sp,
                                             fontWeight = FontWeight.ExtraBold
                                         )
+                                    } else if (selectedPanel == 2) {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Text(
+                                                text = "Kop Engine 2 ",
+                                                color = Color.White,
+                                                fontSize = 12.sp,
+                                                fontWeight = FontWeight.ExtraBold
+                                            )
+                                            Text(
+                                                text = "(Api Number)",
+                                                color = Color(0xFFC4B5FD),
+                                                fontSize = 9.5.sp,
+                                                fontWeight = FontWeight.Medium
+                                            )
+                                        }
                                     } else {
                                         Row(verticalAlignment = Alignment.CenterVertically) {
                                             Text(
@@ -284,6 +299,25 @@ fun VirtualNumbersSection(
                                         panelDropdownExpanded = false
                                     }
                                 )
+                                DropdownMenuItem(
+                                    text = {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Text(text = "Kop Engine 2 ", color = Color(0xFFA78BFA), fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                                            Text(text = "(Api Number)", color = Color(0xFFC4B5FD), fontSize = 10.sp, fontWeight = FontWeight.Normal)
+                                            Spacer(modifier = Modifier.width(6.dp))
+                                            Surface(
+                                                color = Color(0xFF8B5CF6).copy(alpha = 0.2f),
+                                                shape = RoundedCornerShape(4.dp)
+                                            ) {
+                                                Text(text = "NEW API", color = Color(0xFFC4B5FD), fontSize = 9.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp))
+                                            }
+                                        }
+                                    },
+                                    onClick = {
+                                        VirtualNumberManager.setSelectedPanel(2)
+                                        panelDropdownExpanded = false
+                                    }
+                                )
                             }
                         }
                     }
@@ -316,6 +350,10 @@ fun VirtualNumbersSection(
         if (selectedPanel == 0) {
             item {
                 UnixSmsSectionContent()
+            }
+        } else if (selectedPanel == 2) {
+            item {
+                KopEngine2SectionContent()
             }
         } else {
         item {

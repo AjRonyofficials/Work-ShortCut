@@ -98,18 +98,24 @@ object WithdrawalManager {
         val records = OtpHistoryManager.state.value.recentRecords
         val currentUnixRate = UnixSmsManager.state.value.otpRatePerSms
         val currentZenexRate = VirtualNumberManager.zenexOtpRate.value
+        val currentKop2Rate = KopEngine2Manager.kop2OtpRate.value
 
         val otpEarnedTk = if (records.isNotEmpty()) {
             records.sumOf { rec ->
                 val rate = if (rec.rate > 0.0) rec.rate else {
-                    if (rec.platform.contains("Unix", ignoreCase = true)) currentUnixRate else currentZenexRate
+                    when {
+                        rec.platform.contains("Unix", ignoreCase = true) -> currentUnixRate
+                        rec.platform.contains("Kop Engine 2", ignoreCase = true) || rec.platform.contains("Kop2", ignoreCase = true) -> currentKop2Rate
+                        else -> currentZenexRate
+                    }
                 }
                 rate // Rate is directly in BDT (৳) e.g. 0.50৳ per OTP
             }
         } else {
             val unixCount = OtpHistoryManager.state.value.unixTotalAllTime
             val zenexCount = OtpHistoryManager.state.value.zenexTotalAllTime
-            (unixCount * currentUnixRate) + (zenexCount * currentZenexRate)
+            val kop2Count = OtpHistoryManager.state.value.kop2TotalAllTime
+            (unixCount * currentUnixRate) + (zenexCount * currentZenexRate) + (kop2Count * currentKop2Rate)
         }
 
         val totalEarned = baseCredit + otpEarnedTk

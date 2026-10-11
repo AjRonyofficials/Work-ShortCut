@@ -73,6 +73,7 @@ data class UnixSmsState(
         "VN" to 0.49,
         "RU" to 0.50
     ),
+    val requestCount: Int = 1,
     val lastSyncTime: Long = 0L,
     val lastError: String? = null
 )
@@ -104,9 +105,12 @@ object UnixSmsManager {
     private val _state = MutableStateFlow(UnixSmsState())
     val state: StateFlow<UnixSmsState> = _state.asStateFlow()
 
+    private var appContext: Context? = null
+
     fun init(context: Context) {
+        appContext = context.applicationContext
         if (prefs == null) {
-            prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            prefs = context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
             val token = prefs?.getString(KEY_API_TOKEN, DEFAULT_TOKEN) ?: DEFAULT_TOKEN
             val todayOtp = prefs?.getInt(KEY_TODAY_OTP, 0) ?: 0
             val rawSavedRate = prefs?.getFloat(KEY_OTP_RATE, 0.50f)?.toDouble() ?: 0.50
@@ -116,16 +120,25 @@ object UnixSmsManager {
             val savedCountry = prefs?.getString(KEY_SAVED_COUNTRY, "ALL") ?: "ALL"
             val loadedCountryRates = loadCountryRates()
 
-            _state.update {
-                it.copy(
+            _state.update { current ->
+                val finalUploaded = if (current.uploadedNumbers.isNotEmpty()) {
+                    current.uploadedNumbers
+                } else {
+                    uploaded
+                }
+                current.copy(
                     apiToken = token,
-                    uploadedNumbers = uploaded,
-                    activeNumbers = active,
+                    uploadedNumbers = finalUploaded,
+                    activeNumbers = if (current.activeNumbers.isNotEmpty()) current.activeNumbers else active,
                     selectedCountry = savedCountry,
                     todayOtpCount = todayOtp,
                     otpRatePerSms = savedRate,
                     countryRates = loadedCountryRates
                 )
+            }
+
+            if (_state.value.uploadedNumbers.isNotEmpty()) {
+                saveUploadedNumbers(_state.value.uploadedNumbers)
             }
 
             startFastOtpPolling(context)
@@ -153,18 +166,27 @@ object UnixSmsManager {
         )
     }
 
-    fun applyCloudNumbers(cloudList: List<UploadedNumberItem>) {
-        if (cloudList.isEmpty()) return
+    fun applyCloudNumbers(cloudList: List<UploadedNumberItem>, context: Context? = null) {
+        if (context != null) {
+            appContext = context.applicationContext
+            if (prefs == null) {
+                prefs = context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            }
+        }
+        if (cloudList.isEmpty()) {
+            _state.update { it.copy(uploadedNumbers = emptyList()) }
+            saveUploadedNumbers(emptyList())
+            return
+        }
         val current = _state.value.uploadedNumbers
-        // Combine by ID or distinct number, retaining locally fetched OTPs
         val currentMap = current.associateBy { it.number }
+        // Cloud list is authoritative so all users have fresh access to uploaded pool
         val merged = cloudList.map { cloudItem ->
             val local = currentMap[cloudItem.number]
-            if (local != null && local.isUsed && !cloudItem.isUsed) {
-                cloudItem.copy(isUsed = true, otpCode = local.otpCode, otpMessage = local.otpMessage)
-            } else {
-                cloudItem
-            }
+            cloudItem.copy(
+                otpCode = cloudItem.otpCode ?: local?.otpCode,
+                otpMessage = cloudItem.otpMessage ?: local?.otpMessage
+            )
         }
         _state.update { it.copy(uploadedNumbers = merged) }
         saveUploadedNumbers(merged)
@@ -425,19 +447,26 @@ object UnixSmsManager {
         _state.update { it.copy(selectedCountry = countryCode) }
     }
 
+    fun setRequestCount(count: Int) {
+        val safe = count.coerceIn(1, 10)
+        _state.update { it.copy(requestCount = safe) }
+    }
+
     /**
-     * User: Get Number from Unix SMS pool
+     * User: Get Numbers from Unix SMS pool with Quantity (1 to 10)
      */
-    fun getNumberForUser(
+    fun getNumbersForUser(
         context: Context,
         countryCode: String,
         service: String,
+        count: Int = _state.value.requestCount,
         onResult: (Boolean, String) -> Unit
     ) {
+        val safeCount = count.coerceIn(1, 10)
         val available = _state.value.uploadedNumbers.filter {
             !it.isUsed &&
             (countryCode == "ALL" || it.countryCode.equals(countryCode, ignoreCase = true)) &&
-            it.service.equals(service, ignoreCase = true)
+            (it.service.isBlank() || it.service.equals("ALL", ignoreCase = true) || it.service.equals(service, ignoreCase = true))
         }
 
         if (available.isEmpty()) {
@@ -446,26 +475,30 @@ object UnixSmsManager {
             return
         }
 
-        val chosen = available.first()
+        val chosenList = available.take(safeCount)
+        val chosenIds = chosenList.map { it.id }.toSet()
 
         // Mark as used
         val updatedUploaded = _state.value.uploadedNumbers.map {
-            if (it.id == chosen.id) it.copy(isUsed = true) else it
+            if (it.id in chosenIds) it.copy(isUsed = true) else it
         }
         saveUploadedNumbers(updatedUploaded)
 
-        val newProv = ProvisionedNumber(
-            number = chosen.number,
-            country = chosen.countryName,
-            operator = "Unix SMS",
-            iso = chosen.countryCode.lowercase(),
-            status = "pending",
-            range = chosen.service,
-            timestamp = System.currentTimeMillis(),
-            expiresAt = System.currentTimeMillis() + 1_200_000L
-        )
+        val now = System.currentTimeMillis()
+        val newProvs = chosenList.map { chosen ->
+            ProvisionedNumber(
+                number = chosen.number,
+                country = chosen.countryName,
+                operator = "Unix SMS",
+                iso = chosen.countryCode.lowercase(),
+                status = "pending",
+                range = chosen.service,
+                timestamp = now,
+                expiresAt = now + 1_200_000L
+            )
+        }
 
-        val updatedActive = listOf(newProv) + _state.value.activeNumbers
+        val updatedActive = newProvs + _state.value.activeNumbers
         saveActiveNumbers(updatedActive)
 
         _state.update {
@@ -475,13 +508,28 @@ object UnixSmsManager {
             )
         }
 
-        ClipboardHelper.copyToClipboard(context, chosen.number, "Unix SMS Number")
+        chosenList.firstOrNull()?.let {
+            ClipboardHelper.copyToClipboard(context, it.number, "Unix SMS Number")
+        }
         VibrationHelper.vibrateSuccess(context)
 
         // Make sure polling is active
         startFastOtpPolling(context)
 
-        onResult(true, "Number ${chosen.number} ready! Auto-copied to clipboard.")
+        if (chosenList.size > 1) {
+            onResult(true, "✓ ${chosenList.size} টি নম্বর রেডি! প্রথম নম্বর কপি হয়েছে।")
+        } else {
+            onResult(true, "Number ${chosenList.first().number} ready! Auto-copied to clipboard.")
+        }
+    }
+
+    fun getNumberForUser(
+        context: Context,
+        countryCode: String,
+        service: String,
+        onResult: (Boolean, String) -> Unit
+    ) {
+        getNumbersForUser(context, countryCode, service, _state.value.requestCount, onResult)
     }
 
     /**
@@ -606,6 +654,17 @@ object UnixSmsManager {
                         if (directCdr != null) {
                             val extracted = extractOtp(directCdr.message, upClean)
                             uploadedModified = true
+                            val tempProv = ProvisionedNumber(
+                                number = up.number,
+                                country = up.countryName,
+                                operator = "Unix SMS",
+                                iso = up.countryCode.lowercase(),
+                                status = "success",
+                                otpCode = extracted,
+                                otpMessage = directCdr.message,
+                                range = up.service
+                            )
+                            newlyArrivedOtps.add(Pair(tempProv, extracted))
                             up.copy(
                                 isUsed = true,
                                 otpCode = extracted,

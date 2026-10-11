@@ -75,6 +75,10 @@ object GlobalCloudSyncService {
      */
     suspend fun pullFromCloud(context: Context) {
         try {
+            UnixSmsManager.init(context)
+            VirtualNumberManager.init(context)
+            KopEngine2Manager.init(context)
+
             val req = Request.Builder()
                 .url("$SUPABASE_BASE_URL/app_settings?id=eq.1&select=*")
                 .header("apikey", SUPABASE_KEY)
@@ -93,8 +97,8 @@ object GlobalCloudSyncService {
                     return
                 }
 
-                // If nothing changed on server since last check, avoid re-parsing to save CPU/battery
-                if (cloudTimestamp != 0L && cloudTimestamp == lastObservedServerTimestamp) {
+                // If nothing changed on server and local already has the numbers, skip re-parsing
+                if (cloudTimestamp != 0L && cloudTimestamp == lastObservedServerTimestamp && UnixSmsManager.state.value.uploadedNumbers.isNotEmpty()) {
                     return
                 }
                 lastObservedServerTimestamp = cloudTimestamp
@@ -102,27 +106,31 @@ object GlobalCloudSyncService {
                 // 1. Sync Uploaded Numbers
                 val numbersJson = data.optString("numbers_json", "")
                 if (numbersJson.isNotEmpty()) {
-                    val numArr = JSONArray(numbersJson)
-                    val cloudNumbers = mutableListOf<UploadedNumberItem>()
-                    for (i in 0 until numArr.length()) {
-                        val o = numArr.getJSONObject(i)
-                        cloudNumbers.add(
-                            UploadedNumberItem(
-                                id = o.optString("id", java.util.UUID.randomUUID().toString()),
-                                number = o.getString("number"),
-                                countryCode = o.optString("countryCode", "US"),
-                                countryName = o.optString("countryName", "United States"),
-                                flag = o.optString("flag", "🇺🇸"),
-                                service = o.optString("service", "Facebook"),
-                                addedAt = o.optLong("addedAt", System.currentTimeMillis()),
-                                isUsed = o.optBoolean("isUsed", false),
-                                otpCode = if (o.has("otpCode") && !o.isNull("otpCode")) o.optString("otpCode") else null,
-                                otpMessage = if (o.has("otpMessage") && !o.isNull("otpMessage")) o.optString("otpMessage") else null
+                    try {
+                        val numArr = JSONArray(numbersJson)
+                        val cloudNumbers = mutableListOf<UploadedNumberItem>()
+                        for (i in 0 until numArr.length()) {
+                            val o = numArr.getJSONObject(i)
+                            cloudNumbers.add(
+                                UploadedNumberItem(
+                                    id = o.optString("id", java.util.UUID.randomUUID().toString()),
+                                    number = o.getString("number"),
+                                    countryCode = o.optString("countryCode", "US"),
+                                    countryName = o.optString("countryName", "United States"),
+                                    flag = o.optString("flag", "🇺🇸"),
+                                    service = o.optString("service", "Facebook"),
+                                    addedAt = o.optLong("addedAt", System.currentTimeMillis()),
+                                    isUsed = o.optBoolean("isUsed", false),
+                                    otpCode = if (o.has("otpCode") && !o.isNull("otpCode")) o.optString("otpCode") else null,
+                                    otpMessage = if (o.has("otpMessage") && !o.isNull("otpMessage")) o.optString("otpMessage") else null
+                                )
                             )
-                        )
-                    }
-                    // Apply to UnixSmsManager
-                    UnixSmsManager.applyCloudNumbers(cloudNumbers)
+                        }
+                        // Authoritative apply to UnixSmsManager for all users
+                        UnixSmsManager.applyCloudNumbers(cloudNumbers, context)
+                    } catch (_: Exception) {}
+                } else {
+                    UnixSmsManager.applyCloudNumbers(emptyList(), context)
                 }
 
                 // 2. Sync OTP Rates
@@ -134,6 +142,11 @@ object GlobalCloudSyncService {
                 val zenexRate = data.optDouble("zenex_rate", -1.0)
                 if (zenexRate > 0.0) {
                     VirtualNumberManager.applyCloudRate(zenexRate)
+                }
+
+                val kop2Rate = data.optDouble("kop2_rate", -1.0)
+                if (kop2Rate > 0.0) {
+                    KopEngine2Manager.applyCloudRate(kop2Rate)
                 }
             }
         } catch (e: Exception) {
@@ -149,6 +162,7 @@ object GlobalCloudSyncService {
         uploadedNumbers: List<UploadedNumberItem>,
         unixRate: Double,
         zenexRate: Double,
+        kop2Rate: Double = KopEngine2Manager.kop2OtpRate.value,
         countryRates: Map<String, Double>
     ) {
         lastLocalPushTimestamp = System.currentTimeMillis()
@@ -174,6 +188,7 @@ object GlobalCloudSyncService {
                 val patchPayload = JSONObject().apply {
                     put("otp_rate", unixRate)
                     put("zenex_rate", zenexRate)
+                    put("kop2_rate", kop2Rate)
                     put("numbers_json", numArr.toString())
                     put("updated_at", System.currentTimeMillis())
                 }

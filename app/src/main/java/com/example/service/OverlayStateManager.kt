@@ -138,6 +138,32 @@ object OverlayStateManager {
     private val _requestedAppTab = MutableStateFlow<String?>(null)
     val requestedAppTab: StateFlow<String?> = _requestedAppTab.asStateFlow()
 
+    data class OtpPopupEvent(
+        val phoneNumber: String,
+        val otpCode: String,
+        val timestamp: Long = System.currentTimeMillis()
+    )
+
+    private val _liveOtpPopup = MutableStateFlow<OtpPopupEvent?>(null)
+    val liveOtpPopup: StateFlow<OtpPopupEvent?> = _liveOtpPopup.asStateFlow()
+    private var otpDismissJob: Job? = null
+
+    fun showOtpPopup(phoneNumber: String, otpCode: String) {
+        otpDismissJob?.cancel()
+        _liveOtpPopup.value = OtpPopupEvent(phoneNumber, otpCode)
+        otpDismissJob = scope.launch {
+            kotlinx.coroutines.delay(8000L)
+            if (_liveOtpPopup.value?.otpCode == otpCode) {
+                _liveOtpPopup.value = null
+            }
+        }
+    }
+
+    fun dismissOtpPopup() {
+        otpDismissJob?.cancel()
+        _liveOtpPopup.value = null
+    }
+
     fun requestTabNavigation(tabName: String) {
         _requestedAppTab.value = tabName
     }

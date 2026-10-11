@@ -74,8 +74,12 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
 
         OverlayStateManager.init(this)
+        com.example.service.UnixSmsManager.init(this)
+        com.example.service.VirtualNumberManager.init(this)
+        com.example.service.KopEngine2Manager.init(this)
         com.example.service.AuthManager.init(this)
-
+        com.example.service.WithdrawalManager.init(this)
+        com.example.service.OtpHistoryManager.init(this)
         val database = AppDatabase.getDatabase(this)
         val repository = WorkShortcutRepository(
             excelRowDao = database.excelRowDao(),

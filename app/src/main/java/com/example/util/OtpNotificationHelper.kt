@@ -24,8 +24,8 @@ class CopyOtpReceiver : BroadcastReceiver() {
 
 object OtpNotificationHelper {
 
-    private const val CHANNEL_ID = "otp_alerts_channel"
-    private const val CHANNEL_NAME = "OTP Notifications"
+    private const val CHANNEL_ID = "otp_heads_up_channel_v5"
+    private const val CHANNEL_NAME = "OTP Incoming Alerts"
 
     fun showOtpNotification(
         context: Context,
@@ -33,21 +33,21 @@ object OtpNotificationHelper {
         otpCode: String,
         fullMessage: String
     ) {
-        // Guarantee immediate auto-copy to keyboard clipboard
+        // 1. Immediate Auto-Copy to Clipboard
         ClipboardHelper.copyToClipboard(context, otpCode, "OTP Code")
 
+        // 2. Immediate Toast & In-App Top Popup Banner
+        android.os.Handler(android.os.Looper.getMainLooper()).post {
+            try {
+                Toast.makeText(context.applicationContext, "⚡ OTP কপি হয়েছে: $otpCode", Toast.LENGTH_LONG).show()
+                VibrationHelper.vibrateSuccess(context)
+            } catch (_: Exception) {}
+        }
+        com.example.service.OverlayStateManager.showOtpPopup(phoneNumber, otpCode)
+
+        // 3. System Heads-Up Notification Popup
         val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
             ?: return
-
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            if (androidx.core.content.ContextCompat.checkSelfPermission(
-                    context,
-                    android.Manifest.permission.POST_NOTIFICATIONS
-                ) != android.content.pm.PackageManager.PERMISSION_GRANTED
-            ) {
-                return
-            }
-        }
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
@@ -60,8 +60,19 @@ object OtpNotificationHelper {
                 enableLights(true)
                 vibrationPattern = longArrayOf(0, 250, 100, 250)
                 lockscreenVisibility = NotificationCompat.VISIBILITY_PUBLIC
+                setShowBadge(true)
             }
             notificationManager.createNotificationChannel(channel)
+        }
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            if (androidx.core.content.ContextCompat.checkSelfPermission(
+                    context,
+                    android.Manifest.permission.POST_NOTIFICATIONS
+                ) != android.content.pm.PackageManager.PERMISSION_GRANTED
+            ) {
+                return
+            }
         }
 
         // Tap notification to open main app
@@ -98,6 +109,7 @@ object OtpNotificationHelper {
                     .bigText("Phone: $phoneNumber\nOTP: $otpCode\nMessage: $fullMessage")
             )
             .setPriority(NotificationCompat.PRIORITY_MAX)
+            .setDefaults(NotificationCompat.DEFAULT_ALL)
             .setCategory(NotificationCompat.CATEGORY_MESSAGE)
             .setSound(soundUri)
             .setVibrate(longArrayOf(0, 250, 100, 250))

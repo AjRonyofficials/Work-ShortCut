@@ -504,6 +504,7 @@ fun AdminUnixSmsCard(
         // 1.5 USER OTP RATE CONTROL CARD: BOTH UNIX SMS & ZENEX SMS (IN TAKA ৳ WITH UNLIMITED CUSTOM ADJUSTER)
         var showCustomUnixRateDialog by remember { mutableStateOf(false) }
         var showCustomZenexRateDialog by remember { mutableStateOf(false) }
+        var showCustomKop2RateDialog by remember { mutableStateOf(false) }
         var customRateInputText by remember { mutableStateOf("") }
 
         if (showCustomUnixRateDialog) {
@@ -606,6 +607,60 @@ fun AdminUnixSmsCard(
                 },
                 dismissButton = {
                     TextButton(onClick = { showCustomZenexRateDialog = false }) {
+                        Text("বাতিল", color = Color(0xFF94A3B8))
+                    }
+                }
+            )
+        }
+
+        if (showCustomKop2RateDialog) {
+            AlertDialog(
+                onDismissRequest = { showCustomKop2RateDialog = false },
+                containerColor = Color(0xFF101C2B),
+                title = {
+                    Text("KOP ENGINE 2 (Api Number) রেট পরিবর্তন", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                },
+                text = {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text("যেকোনো ওটিপি রেট লিখুন (টাকা / ৳):", color = Color(0xFF94A3B8), fontSize = 12.sp)
+                        OutlinedTextField(
+                            value = customRateInputText,
+                            onValueChange = { customRateInputText = it },
+                            placeholder = { Text("যেমন: 0.50 বা 0.40 বা 1.00", color = Color(0xFF64748B)) },
+                            singleLine = true,
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedTextColor = Color.White,
+                                unfocusedTextColor = Color.White,
+                                focusedBorderColor = Color(0xFFA78BFA),
+                                unfocusedBorderColor = Color(0xFF1E2D40),
+                                focusedContainerColor = Color(0xFF090E17),
+                                unfocusedContainerColor = Color(0xFF090E17)
+                            ),
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+                },
+                confirmButton = {
+                    Button(
+                        onClick = {
+                            val r = customRateInputText.toDoubleOrNull()
+                            if (r != null && r >= 0.01) {
+                                com.example.service.KopEngine2Manager.setKop2OtpRate(r)
+                                com.example.service.WithdrawalManager.refreshBalances()
+                                Toast.makeText(context, "Kop Engine 2 ওটিপি রেট সেট হয়েছে: ${String.format(java.util.Locale.US, "%.2f", r)} ৳", Toast.LENGTH_SHORT).show()
+                                showCustomKop2RateDialog = false
+                            } else {
+                                Toast.makeText(context, "সঠিক রেট লিখুন (কমপক্ষে 0.01)", Toast.LENGTH_SHORT).show()
+                            }
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF7C3AED))
+                    ) {
+                        Text("সেভ করুন", fontWeight = FontWeight.Bold)
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showCustomKop2RateDialog = false }) {
                         Text("বাতিল", color = Color(0xFF94A3B8))
                     }
                 }
@@ -3224,20 +3279,51 @@ fun AdminUserItemRow(
                 }
             }
 
-            if (user.lastLoginAt > 0L) {
-                Spacer(modifier = Modifier.height(4.dp))
-                val timeDiff = (System.currentTimeMillis() - user.lastLoginAt) / 1000
-                val timeStr = when {
-                    timeDiff < 60 -> "Just now"
-                    timeDiff < 3600 -> "${timeDiff / 60}m ago"
-                    timeDiff < 86400 -> "${timeDiff / 3600}h ago"
-                    else -> "${timeDiff / 86400}d ago"
+            Spacer(modifier = Modifier.height(4.dp))
+            Surface(
+                color = if (user.isOnline) Color(0xFF064E3B).copy(alpha = 0.35f) else Color(0xFF1E293B).copy(alpha = 0.5f),
+                shape = RoundedCornerShape(6.dp),
+                border = BorderStroke(1.dp, if (user.isOnline) Color(0xFF10B981) else Color(0xFF334155)),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 8.dp, vertical = 4.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Box(
+                            modifier = Modifier
+                                .size(7.dp)
+                                .clip(CircleShape)
+                                .background(if (user.isOnline) Color(0xFF00E676) else Color(0xFF94A3B8))
+                        )
+                        Spacer(modifier = Modifier.width(5.dp))
+                        Text(
+                            text = if (user.isOnline) "🟢 লাইভ অনলাইন (সক্রিয়)" else "⚪ অফলাইন",
+                            color = if (user.isOnline) Color(0xFF34D399) else Color(0xFF94A3B8),
+                            fontSize = 9.sp,
+                            fontWeight = FontWeight.ExtraBold
+                        )
+                    }
+
+                    val dev = user.lastDeviceName.ifEmpty { "Mobile" }
+                    val timeDiff = (System.currentTimeMillis() - if (user.lastActive > 0L) user.lastActive else user.lastLoginAt) / 1000
+                    val timeStr = when {
+                        timeDiff < 60 -> "Just now"
+                        timeDiff < 3600 -> "${timeDiff / 60}m ago"
+                        timeDiff < 86400 -> "${timeDiff / 3600}h ago"
+                        else -> "${timeDiff / 86400}d ago"
+                    }
+                    Text(
+                        text = "📱 $dev • $timeStr",
+                        color = Color(0xFFCBD5E1),
+                        fontSize = 8.5.sp,
+                        fontWeight = FontWeight.Medium
+                    )
                 }
-                Text(
-                    text = "Last login: $timeStr ${if (user.lastDeviceName.isNotEmpty()) "• ${user.lastDeviceName}" else ""}",
-                    color = Color(0xFF64748B),
-                    fontSize = 9.sp
-                )
             }
         }
     }

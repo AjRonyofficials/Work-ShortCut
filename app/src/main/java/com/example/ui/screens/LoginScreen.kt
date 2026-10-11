@@ -259,6 +259,11 @@ fun LoginScreen(
                                 isLoggingIn = false
                                 if (success) {
                                     Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                                    kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+                                        try {
+                                            com.example.service.GlobalCloudSyncService.pullFromCloud(context)
+                                        } catch (_: Exception) {}
+                                    }
                                     onLoginSuccess()
                                 } else {
                                     errorMessage = msg

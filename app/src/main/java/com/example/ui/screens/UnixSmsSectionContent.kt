@@ -25,7 +25,10 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccessTime
 import androidx.compose.material.icons.filled.AccountBalanceWallet
+import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Bolt
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
@@ -272,7 +275,7 @@ fun UnixSmsSectionContent(
                                     )
                                     Spacer(modifier = Modifier.height(2.dp))
                                     val count = unixState.uploadedNumbers.count {
-                                        !it.isUsed && it.service.equals(sName, ignoreCase = true)
+                                        !it.isUsed && (it.service.isBlank() || it.service.equals("ALL", ignoreCase = true) || it.service.equals(sName, ignoreCase = true))
                                     }
                                     Text(
                                         text = "$count available",
@@ -288,7 +291,7 @@ fun UnixSmsSectionContent(
 
             // 2. Country Picker with Flags
             val availableNumbersForService = unixState.uploadedNumbers.filter {
-                !it.isUsed && it.service.equals(selectedService, ignoreCase = true)
+                !it.isUsed && (it.service.isBlank() || it.service.equals("ALL", ignoreCase = true) || it.service.equals(selectedService, ignoreCase = true))
             }
 
             val availableCountries = availableNumbersForService
@@ -452,14 +455,84 @@ fun UnixSmsSectionContent(
 
                     Spacer(modifier = Modifier.height(10.dp))
 
-                    // GET NUMBER BUTTON with rate
+                    // QUANTITY SELECTOR (1 to 10 numbers)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "পরিমাণ (QUANTITY):",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFF81D4FA)
+                        )
+
+                        var unixQtyExpanded by remember { mutableStateOf(false) }
+                        Box {
+                            Surface(
+                                color = Color(0xFF0B141E),
+                                shape = RoundedCornerShape(8.dp),
+                                border = BorderStroke(1.dp, Color(0xFF26415E)),
+                                modifier = Modifier.clickable { unixQtyExpanded = true }
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = "${unixState.requestCount} nos",
+                                        color = Color(0xFF40C4FF),
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Icon(
+                                        Icons.Default.ArrowDropDown,
+                                        contentDescription = null,
+                                        tint = Color(0xFF40C4FF),
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                }
+                            }
+
+                            DropdownMenu(
+                                expanded = unixQtyExpanded,
+                                onDismissRequest = { unixQtyExpanded = false },
+                                modifier = Modifier.background(Color(0xFF13202E))
+                            ) {
+                                for (count in 1..10) {
+                                    DropdownMenuItem(
+                                        text = {
+                                            Text(
+                                                text = "$count টি নম্বর",
+                                                color = if (unixState.requestCount == count) Color(0xFF00E676) else Color.White,
+                                                fontSize = 13.sp,
+                                                fontWeight = if (unixState.requestCount == count) FontWeight.Bold else FontWeight.Normal
+                                            )
+                                        },
+                                        onClick = {
+                                            unixQtyExpanded = false
+                                            UnixSmsManager.setRequestCount(count)
+                                        }
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    // GET NUMBER BUTTON with rate & quantity
+                    val totalCost = activeSelectedRate * unixState.requestCount
                     Button(
                         onClick = {
                             isRequestingNumber = true
-                            UnixSmsManager.getNumberForUser(
+                            UnixSmsManager.getNumbersForUser(
                                 context = context,
                                 countryCode = selectedCountryCode,
-                                service = selectedService
+                                service = selectedService,
+                                count = unixState.requestCount
                             ) { success, msg ->
                                 isRequestingNumber = false
                                 Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
@@ -478,10 +551,11 @@ fun UnixSmsSectionContent(
                             CircularProgressIndicator(color = Color.White, modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
                         } else {
                             Icon(Icons.Default.Bolt, contentDescription = null, tint = Color.White)
-                            Spacer(modifier = Modifier.width(6.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
                             Text(
-                                text = "GET NUMBER (${String.format(java.util.Locale.US, "%.2f", activeSelectedRate)} ৳ / OTP)",
-                                fontSize = 13.sp,
+                                text = if (unixState.requestCount > 1) "GET ${unixState.requestCount} NUMBERS (${String.format(java.util.Locale.US, "%.2f", totalCost)} ৳)"
+                                       else "GET PREMIUM NUMBER (${String.format(java.util.Locale.US, "%.2f", activeSelectedRate)} ৳ / OTP)",
+                                fontSize = 12.5.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = Color.White
                             )

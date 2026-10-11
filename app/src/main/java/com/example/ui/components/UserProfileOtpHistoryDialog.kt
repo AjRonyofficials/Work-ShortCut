@@ -961,31 +961,67 @@ fun UserProfileOtpHistoryDialog(
                                             border = BorderStroke(1.dp, Color(0xFF10B981).copy(alpha = 0.4f)),
                                             modifier = Modifier.weight(1f)
                                         ) {
-                                            Column(modifier = Modifier.padding(10.dp)) {
+                                            Column(modifier = Modifier.padding(8.dp)) {
                                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                                     Text(
-                                                        text = "2. Kop Engine ",
+                                                        text = "2. Kop 1 ",
                                                         color = Color(0xFF34D399),
-                                                        fontSize = 11.sp,
+                                                        fontSize = 10.sp,
                                                         fontWeight = FontWeight.Bold
                                                     )
                                                     Text(
                                                         text = "(Api)",
                                                         color = Color(0xFF6EE7B7),
-                                                        fontSize = 9.sp
+                                                        fontSize = 8.5.sp
                                                     )
                                                 }
                                                 Spacer(modifier = Modifier.height(4.dp))
                                                 Text(
-                                                    text = "Today: ${otpState.zenexTodayOtps} OTPs",
+                                                    text = "Today: ${otpState.zenexTodayOtps}",
                                                     color = Color.White,
-                                                    fontSize = 12.sp,
+                                                    fontSize = 11.sp,
                                                     fontWeight = FontWeight.ExtraBold
                                                 )
                                                 Text(
-                                                    text = "Total: ${otpState.zenexTotalAllTime} OTPs",
+                                                    text = "Total: ${otpState.zenexTotalAllTime}",
                                                     color = Color(0xFF94A3B8),
-                                                    fontSize = 10.sp
+                                                    fontSize = 9.sp
+                                                )
+                                            }
+                                        }
+
+                                        // Kop Engine 2 Box
+                                        Surface(
+                                            color = Color(0xFF8B5CF6).copy(alpha = 0.12f),
+                                            shape = RoundedCornerShape(10.dp),
+                                            border = BorderStroke(1.dp, Color(0xFF8B5CF6).copy(alpha = 0.4f)),
+                                            modifier = Modifier.weight(1f)
+                                        ) {
+                                            Column(modifier = Modifier.padding(8.dp)) {
+                                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                                    Text(
+                                                        text = "3. Kop 2 ",
+                                                        color = Color(0xFFA78BFA),
+                                                        fontSize = 10.sp,
+                                                        fontWeight = FontWeight.Bold
+                                                    )
+                                                    Text(
+                                                        text = "(Api)",
+                                                        color = Color(0xFFC4B5FD),
+                                                        fontSize = 8.5.sp
+                                                    )
+                                                }
+                                                Spacer(modifier = Modifier.height(4.dp))
+                                                Text(
+                                                    text = "Today: ${otpState.kop2TodayOtps}",
+                                                    color = Color.White,
+                                                    fontSize = 11.sp,
+                                                    fontWeight = FontWeight.ExtraBold
+                                                )
+                                                Text(
+                                                    text = "Total: ${otpState.kop2TotalAllTime}",
+                                                    color = Color(0xFF94A3B8),
+                                                    fontSize = 9.sp
                                                 )
                                             }
                                         }

@@ -89,6 +89,7 @@ fun FloatingOverlayWindowContent(
 ) {
     val context = LocalContext.current
     val isLeft = state.isDockedLeft
+    val liveOtpPopup by OverlayStateManager.liveOtpPopup.collectAsState()
 
     // Dock chassis shape (curved outer corners)
     val dockChassisShape = if (isLeft) {
@@ -248,6 +249,35 @@ fun FloatingOverlayWindowContent(
                             .clip(RoundedCornerShape(2.dp))
                             .background(Color.White.copy(alpha = 0.35f))
                     )
+
+                    // Live Heads-Up OTP Alert in Floating Overlay
+                    if (liveOtpPopup != null) {
+                        val otpEvt = liveOtpPopup!!
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = Color(0xF2062E19),
+                            border = androidx.compose.foundation.BorderStroke(1.2.dp, Color(0xFF00E676)),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    com.example.util.ClipboardHelper.copyToClipboard(context, otpEvt.otpCode, "OTP")
+                                    android.widget.Toast.makeText(context, "✓ OTP কপি হয়েছে: ${otpEvt.otpCode}", android.widget.Toast.LENGTH_SHORT).show()
+                                    OverlayStateManager.dismissOtpPopup()
+                                }
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 5.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(Icons.Default.Bolt, contentDescription = null, tint = Color(0xFF00E676), modifier = Modifier.size(13.dp))
+                                    Spacer(modifier = Modifier.width(3.dp))
+                                    Text("⚡ ${otpEvt.otpCode}", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Black)
+                                }
+                                Text("• অটো কপি হয়েছে ✓", color = Color(0xFF81D4FA), fontSize = 8.5.sp)
+                            }
+                        }
+                    }
 
                     Spacer(modifier = Modifier.height(2.dp))
 
