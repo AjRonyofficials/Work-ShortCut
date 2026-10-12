@@ -27,23 +27,45 @@ object OtpNotificationHelper {
     private const val CHANNEL_ID = "otp_heads_up_channel_v5"
     private const val CHANNEL_NAME = "OTP Incoming Alerts"
 
+    // Deduplication cache: Prevents the same phone + OTP from firing multiple notifications
+    private val recentlyNotifiedSignatures = java.util.Collections.synchronizedMap(
+        object : java.util.LinkedHashMap<String, Long>(50, 0.75f, true) {
+            override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Long>?): Boolean {
+                return size > 150
+            }
+        }
+    )
+
     fun showOtpNotification(
         context: Context,
         phoneNumber: String,
         otpCode: String,
         fullMessage: String
     ) {
-        // 1. Immediate Auto-Copy to Clipboard
-        ClipboardHelper.copyToClipboard(context, otpCode, "OTP Code")
+        val cleanOtp = otpCode.trim()
+        if (cleanOtp.isBlank()) return
 
-        // 2. Immediate Toast & In-App Top Popup Banner
+        // 0. Deduplication guard: ignore repeated calls for same number + OTP within 5 minutes
+        val cleanPhone = phoneNumber.replace("[^0-9]".toRegex(), "")
+        val signature = "${cleanPhone}_$cleanOtp"
+        val now = System.currentTimeMillis()
+        val lastNotified = recentlyNotifiedSignatures[signature]
+        if (lastNotified != null && (now - lastNotified) < 300_000L) {
+            return
+        }
+        recentlyNotifiedSignatures[signature] = now
+
+        // 1. Immediate Auto-Copy to Clipboard
+        ClipboardHelper.copyToClipboard(context, cleanOtp, "OTP Code")
+
+        // 2. Immediate Toast & In-App Top Popup Banner (safely posted to Main Thread)
         android.os.Handler(android.os.Looper.getMainLooper()).post {
             try {
-                Toast.makeText(context.applicationContext, "⚡ OTP কপি হয়েছে: $otpCode", Toast.LENGTH_LONG).show()
+                Toast.makeText(context.applicationContext, "⚡ OTP কপি হয়েছে: $cleanOtp", Toast.LENGTH_SHORT).show()
                 VibrationHelper.vibrateSuccess(context)
             } catch (_: Exception) {}
         }
-        com.example.service.OverlayStateManager.showOtpPopup(phoneNumber, otpCode)
+        com.example.service.OverlayStateManager.showOtpPopup(phoneNumber, cleanOtp)
 
         // 3. System Heads-Up Notification Popup
         val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager

@@ -611,13 +611,17 @@ object UnixSmsManager {
                     if (matchedCdr != null && prov.otpMessage != matchedCdr.message) {
                         // Extract 5-8 digit OTP
                         val extracted = extractOtp(matchedCdr.message, cleanDigits)
-                        val updatedProv = prov.copy(
-                            status = "success",
-                            otpCode = extracted,
-                            otpMessage = matchedCdr.message
-                        )
-                        newlyArrivedOtps.add(Pair(updatedProv, extracted))
-                        updatedProv
+                        if (extracted.isNotEmpty() && prov.otpCode != extracted) {
+                            val updatedProv = prov.copy(
+                                status = "success",
+                                otpCode = extracted,
+                                otpMessage = matchedCdr.message
+                            )
+                            newlyArrivedOtps.add(Pair(updatedProv, extracted))
+                            updatedProv
+                        } else {
+                            prov
+                        }
                     } else {
                         prov
                     }
@@ -642,7 +646,7 @@ object UnixSmsManager {
                             otpMessage = matchedFromNew.first.otpMessage
                         )
                     } else if (up.otpCode.isNullOrEmpty()) {
-                        // Direct CDR check for uploaded number
+                        // Direct CDR check for uploaded number (only updates data state, NO notifications/popups)
                         var directCdr: UnixSmsCdrRecord? = null
                         for (cdr in cdrList) {
                             val cClean = cdr.num.replace("[^0-9]".toRegex(), "")
@@ -654,17 +658,6 @@ object UnixSmsManager {
                         if (directCdr != null) {
                             val extracted = extractOtp(directCdr.message, upClean)
                             uploadedModified = true
-                            val tempProv = ProvisionedNumber(
-                                number = up.number,
-                                country = up.countryName,
-                                operator = "Unix SMS",
-                                iso = up.countryCode.lowercase(),
-                                status = "success",
-                                otpCode = extracted,
-                                otpMessage = directCdr.message,
-                                range = up.service
-                            )
-                            newlyArrivedOtps.add(Pair(tempProv, extracted))
                             up.copy(
                                 isUsed = true,
                                 otpCode = extracted,
