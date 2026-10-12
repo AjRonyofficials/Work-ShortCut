@@ -347,6 +347,69 @@ fun VirtualNumbersSection(
             }
         }
 
+        if (!hasNotificationPermission) {
+            item {
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFF281E0F)),
+                    shape = RoundedCornerShape(12.dp),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFFFB300)),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier.padding(12.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(modifier = Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
+                            Box(
+                                modifier = Modifier
+                                    .size(34.dp)
+                                    .clip(CircleShape)
+                                    .background(Color(0xFFFFB300).copy(alpha = 0.2f)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Notifications,
+                                    contentDescription = null,
+                                    tint = Color(0xFFFFB300),
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Column {
+                                Text(
+                                    text = "নোটিফিকেশন পারমিশন অন করুন",
+                                    color = Color(0xFFFFE082),
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 12.sp
+                                )
+                                Text(
+                                    text = "ওটিপি আসলে নোটিফিকেশনে দেখতে ও কী-বোর্ডে অটো-কপি হতে পারমিশন চালু করুন",
+                                    color = Color(0xFFCFD8DC),
+                                    fontSize = 10.sp
+                                )
+                            }
+                        }
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Button(
+                            onClick = {
+                                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+                                    notificationLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+                                }
+                            },
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = Color(0xFFFFB300),
+                                contentColor = Color.Black
+                            ),
+                            shape = RoundedCornerShape(8.dp)
+                        ) {
+                            Text("অন করুন", fontWeight = FontWeight.Bold, fontSize = 11.5.sp)
+                        }
+                    }
+                }
+            }
+        }
+
         if (selectedPanel == 0) {
             item {
                 UnixSmsSectionContent()
@@ -568,132 +631,6 @@ fun VirtualNumbersSection(
                                     fontWeight = FontWeight.Bold
                                 )
                             }
-                        }
-                    }
-                }
-            }
-        }
-
-        if (!hasNotificationPermission) {
-            item {
-                Card(
-                    colors = CardDefaults.cardColors(containerColor = Color(0xFF281E0F)),
-                    shape = RoundedCornerShape(12.dp),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFFFB300)),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Row(
-                        modifier = Modifier.padding(12.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Row(modifier = Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
-                            Box(
-                                modifier = Modifier
-                                    .size(34.dp)
-                                    .clip(CircleShape)
-                                    .background(Color(0xFFFFB300).copy(alpha = 0.2f)),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Notifications,
-                                    contentDescription = null,
-                                    tint = Color(0xFFFFB300),
-                                    modifier = Modifier.size(18.dp)
-                                )
-                            }
-                            Spacer(modifier = Modifier.width(10.dp))
-                            Column {
-                                Text(
-                                    text = "নোটিফিকেশন পারমিশন অন করুন",
-                                    color = Color(0xFFFFE082),
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 12.sp
-                                )
-                                Text(
-                                    text = "ওটিপি আসলে নোটিফিকেশনে দেখতে ও কী-বোর্ডে অটো-কপি হতে পারমিশন চালু করুন",
-                                    color = Color(0xFFCFD8DC),
-                                    fontSize = 10.sp
-                                )
-                            }
-                        }
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Button(
-                            onClick = {
-                                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
-                                    notificationLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS)
-                                }
-                            },
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = Color(0xFFFFB300),
-                                contentColor = Color.Black
-                            ),
-                            shape = RoundedCornerShape(8.dp)
-                        ) {
-                            Text("অন করুন", fontWeight = FontWeight.Bold, fontSize = 11.5.sp)
-                        }
-                    }
-                }
-            }
-        }
-
-        if (!hasNotificationPermission) {
-            item {
-                Card(
-                    colors = CardDefaults.cardColors(containerColor = Color(0xFF281E0F)),
-                    shape = RoundedCornerShape(12.dp),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFFFB300)),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Row(
-                        modifier = Modifier.padding(12.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Row(modifier = Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
-                            Box(
-                                modifier = Modifier
-                                    .size(34.dp)
-                                    .clip(CircleShape)
-                                    .background(Color(0xFFFFB300).copy(alpha = 0.2f)),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Notifications,
-                                    contentDescription = null,
-                                    tint = Color(0xFFFFB300),
-                                    modifier = Modifier.size(18.dp)
-                                )
-                            }
-                            Spacer(modifier = Modifier.width(10.dp))
-                            Column {
-                                Text(
-                                    text = "নোটিফিকেশন পারমিশন অন করুন",
-                                    color = Color(0xFFFFE082),
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 12.sp
-                                )
-                                Text(
-                                    text = "ওটিপি আসলে নোটিফিকেশনে দেখতে ও কী-বোর্ডে অটো-কপি হতে পারমিশন চালু করুন",
-                                    color = Color(0xFFCFD8DC),
-                                    fontSize = 10.sp
-                                )
-                            }
-                        }
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Button(
-                            onClick = {
-                                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
-                                    notificationLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS)
-                                }
-                            },
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = Color(0xFFFFB300),
-                                contentColor = Color.Black
-                            ),
-                            shape = RoundedCornerShape(8.dp)
-                        ) {
-                            Text("অন করুন", fontWeight = FontWeight.Bold, fontSize = 11.5.sp)
                         }
                     }
                 }

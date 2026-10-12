@@ -18,19 +18,18 @@ object AppMemoryOptimizer {
     fun autoOptimize(context: Context) {
         CoroutineScope(Dispatchers.IO).launch {
             try {
-                // 1. Clean app internal cache directory
-                cleanDirectory(context.cacheDir)
-
-                // 2. Clean external cache directory if available
-                context.externalCacheDir?.let { cleanDirectory(it) }
-
-                // 3. Clean temporary files in code_cache older than 1 day
-                val codeCache = File(context.applicationInfo.dataDir, "code_cache")
-                if (codeCache.exists() && codeCache.isDirectory) {
-                    cleanOldFiles(codeCache, maxAgeMs = 24 * 60 * 60 * 1000L)
+                // 1. Clean temporary files in cache directory older than 2 days (never touch code_cache!)
+                val cacheDir = context.cacheDir
+                if (cacheDir != null && cacheDir.exists()) {
+                    cleanOldFiles(cacheDir, maxAgeMs = 48 * 60 * 60 * 1000L)
                 }
 
-                Log.d(TAG, "Cache and temporary storage successfully optimized.")
+                // 2. Clean external cache directory if available
+                context.externalCacheDir?.let {
+                    if (it.exists()) cleanOldFiles(it, maxAgeMs = 48 * 60 * 60 * 1000L)
+                }
+
+                Log.d(TAG, "Cache and temporary storage safely checked.")
             } catch (e: Exception) {
                 Log.w(TAG, "Optimization exception: ${e.message}")
             }

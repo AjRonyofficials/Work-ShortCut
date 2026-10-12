@@ -15,6 +15,7 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONArray
 import org.json.JSONObject
 import java.util.concurrent.TimeUnit
+import com.example.util.AppLifecycleTracker
 
 /**
  * Realtime Global Cloud Synchronization Service via Supabase
@@ -53,9 +54,15 @@ object GlobalCloudSyncService {
             scope.launch {
                 pullFromCloud(context)
             }
-            // Smart adaptive interval: 5s normal, scales back on error
+            // Smart adaptive interval with strict battery protection:
+            // When app is in background and overlay is inactive, loop sleeps
             scope.launch {
                 while (isActive) {
+                    if (!AppLifecycleTracker.canRunBackgroundWork()) {
+                        // User is not using app - preserve 100% battery & zero network
+                        delay(20000L)
+                        continue
+                    }
                     val pollDelay = if (consecutiveErrors > 3) 15000L else if (consecutiveErrors > 0) 8000L else 5000L
                     delay(pollDelay)
                     try {
@@ -148,6 +155,19 @@ object GlobalCloudSyncService {
                 if (kop2Rate > 0.0) {
                     KopEngine2Manager.applyCloudRate(kop2Rate)
                 }
+
+                // 3. Check for published App Updates (1-Click in-app OTA)
+                val notifTitle = data.optString("notification_title", "")
+                val notifMsg = data.optString("notification_message", "")
+                if (notifTitle.equals("APP_UPDATE", ignoreCase = true) && notifMsg.isNotBlank()) {
+                    try {
+                        val updObj = JSONObject(notifMsg)
+                        val rCode = updObj.optInt("versionCode", 1)
+                        if (rCode > com.example.BuildConfig.VERSION_CODE) {
+                            AppUpdateManager.checkForUpdate(context, silent = true)
+                        }
+                    } catch (_: Exception) {}
+                }
             }
         } catch (e: Exception) {
             Log.e(TAG, "Pull from Supabase failed: ${e.message}")
@@ -188,7 +208,6 @@ object GlobalCloudSyncService {
                 val patchPayload = JSONObject().apply {
                     put("otp_rate", unixRate)
                     put("zenex_rate", zenexRate)
-                    put("kop2_rate", kop2Rate)
                     put("numbers_json", numArr.toString())
                     put("updated_at", System.currentTimeMillis())
                 }

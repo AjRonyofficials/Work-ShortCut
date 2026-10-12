@@ -542,6 +542,10 @@ object UnixSmsManager {
 
         pollingJob = scope.launch {
             while (isActive) {
+                if (!com.example.util.AppLifecycleTracker.canRunBackgroundWork()) {
+                    delay(10000L)
+                    continue
+                }
                 try {
                     pollUnixSmsCdr(context)
                 } catch (_: Exception) {}
@@ -597,19 +601,25 @@ object UnixSmsManager {
                 }
 
                 val updatedActive = currentActive.map { prov ->
-                    val cleanDigits = prov.number.replace("[^0-9]".toRegex(), "")
-                    var matchedCdr: UnixSmsCdrRecord? = null
+                    // If prov already has received an OTP, DO NOT re-match or re-notify!
+                    if (!prov.otpCode.isNullOrEmpty() && prov.status == "success") {
+                        return@map prov
+                    }
 
+                    val cleanDigits = prov.number.replace("[^0-9]".toRegex(), "")
+                    if (cleanDigits.length < 7) {
+                        return@map prov
+                    }
+
+                    var matchedCdr: UnixSmsCdrRecord? = null
                     for (cdr in cdrList) {
-                        val cdrDigits = cdr.num.replace("[^0-9]".toRegex(), "")
-                        if (cleanDigits.isNotEmpty() && (cleanDigits.endsWith(cdrDigits) || cdrDigits.endsWith(cleanDigits))) {
+                        if (isPhoneNumberMatch(cleanDigits, cdr.num)) {
                             matchedCdr = cdr
                             break
                         }
                     }
 
-                    if (matchedCdr != null && prov.otpMessage != matchedCdr.message) {
-                        // Extract 5-8 digit OTP
+                    if (matchedCdr != null) {
                         val extracted = extractOtp(matchedCdr.message, cleanDigits)
                         if (extracted.isNotEmpty() && prov.otpCode != extracted) {
                             val updatedProv = prov.copy(
@@ -633,10 +643,11 @@ object UnixSmsManager {
 
                 val updatedUploaded = currentUploaded.map { up ->
                     val upClean = up.number.replace("[^0-9]".toRegex(), "")
+                    if (upClean.length < 7) return@map up
+
                     // Check if an OTP arrived for this uploaded number
                     val matchedFromNew = newlyArrivedOtps.firstOrNull { (p, _) ->
-                        val pClean = p.number.replace("[^0-9]".toRegex(), "")
-                        pClean.isNotEmpty() && (pClean.endsWith(upClean) || upClean.endsWith(pClean))
+                        isPhoneNumberMatch(p.number, up.number)
                     }
                     if (matchedFromNew != null) {
                         uploadedModified = true
@@ -649,20 +660,23 @@ object UnixSmsManager {
                         // Direct CDR check for uploaded number (only updates data state, NO notifications/popups)
                         var directCdr: UnixSmsCdrRecord? = null
                         for (cdr in cdrList) {
-                            val cClean = cdr.num.replace("[^0-9]".toRegex(), "")
-                            if (upClean.isNotEmpty() && (upClean.endsWith(cClean) || cClean.endsWith(upClean))) {
+                            if (isPhoneNumberMatch(upClean, cdr.num)) {
                                 directCdr = cdr
                                 break
                             }
                         }
                         if (directCdr != null) {
                             val extracted = extractOtp(directCdr.message, upClean)
-                            uploadedModified = true
-                            up.copy(
-                                isUsed = true,
-                                otpCode = extracted,
-                                otpMessage = directCdr.message
-                            )
+                            if (extracted.isNotEmpty()) {
+                                uploadedModified = true
+                                up.copy(
+                                    isUsed = true,
+                                    otpCode = extracted,
+                                    otpMessage = directCdr.message
+                                )
+                            } else {
+                                up
+                            }
                         } else {
                             up
                         }
@@ -733,6 +747,15 @@ object UnixSmsManager {
             ?: candidates.firstOrNull { cand -> !phoneDigits.contains(cand) && cand.length in 4..8 }
             ?: candidates.firstOrNull { it.length in 5..8 }
             ?: candidates.firstOrNull() ?: ""
+    }
+
+    fun isPhoneNumberMatch(num1: String, num2: String): Boolean {
+        val d1 = num1.replace("[^0-9]".toRegex(), "")
+        val d2 = num2.replace("[^0-9]".toRegex(), "")
+        if (d1.length < 7 || d2.length < 7) return false
+        val len = minOf(d1.length, d2.length, 9)
+        if (len < 7) return false
+        return d1.takeLast(len) == d2.takeLast(len)
     }
 
     private fun launchMain(block: () -> Unit) {

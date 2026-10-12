@@ -73,13 +73,13 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
-        OverlayStateManager.init(this)
-        com.example.service.UnixSmsManager.init(this)
-        com.example.service.VirtualNumberManager.init(this)
-        com.example.service.KopEngine2Manager.init(this)
-        com.example.service.AuthManager.init(this)
-        com.example.service.WithdrawalManager.init(this)
-        com.example.service.OtpHistoryManager.init(this)
+        try { OverlayStateManager.init(this) } catch (e: Throwable) { e.printStackTrace() }
+        try { com.example.service.UnixSmsManager.init(this) } catch (e: Throwable) { e.printStackTrace() }
+        try { com.example.service.VirtualNumberManager.init(this) } catch (e: Throwable) { e.printStackTrace() }
+        try { com.example.service.KopEngine2Manager.init(this) } catch (e: Throwable) { e.printStackTrace() }
+        try { com.example.service.AuthManager.init(this) } catch (e: Throwable) { e.printStackTrace() }
+        try { com.example.service.WithdrawalManager.init(this) } catch (e: Throwable) { e.printStackTrace() }
+        try { com.example.service.OtpHistoryManager.init(this) } catch (e: Throwable) { e.printStackTrace() }
         val database = AppDatabase.getDatabase(this)
         val repository = WorkShortcutRepository(
             excelRowDao = database.excelRowDao(),
@@ -87,13 +87,18 @@ class MainActivity : ComponentActivity() {
             twoFactorDao = database.twoFactorDao()
         )
 
-        if (intent?.getBooleanExtra("NAVIGATE_TO_SHEET", false) == true) {
-            OverlayStateManager.requestTab("EXCEL")
+        try {
+            if (intent?.getBooleanExtra("NAVIGATE_TO_SHEET", false) == true) {
+                OverlayStateManager.requestTab("EXCEL")
+            }
+            checkVpnPermissionRequest(intent)
+            checkNotificationPermission()
+        } catch (e: Throwable) {
+            e.printStackTrace()
         }
-        checkVpnPermissionRequest(intent)
-        checkNotificationPermission()
-        com.example.util.AppMemoryOptimizer.autoOptimize(this)
-        com.example.service.GlobalCloudSyncService.init(this)
+        try { com.example.util.AppMemoryOptimizer.autoOptimize(this) } catch (e: Throwable) { e.printStackTrace() }
+        try { com.example.service.GlobalCloudSyncService.init(this) } catch (e: Throwable) { e.printStackTrace() }
+        try { com.example.service.AppUpdateManager.init(this) } catch (e: Throwable) { e.printStackTrace() }
 
         setContent {
             val state by OverlayStateManager.uiState.collectAsStateWithLifecycle()
@@ -101,6 +106,8 @@ class MainActivity : ComponentActivity() {
             val savedExcelRows by repository.allExcelRows.collectAsStateWithLifecycle(initialValue = emptyList())
             val savedProxies by repository.allProxies.collectAsStateWithLifecycle(initialValue = emptyList())
             val savedTwoFactorKeys by repository.allTwoFactorKeys.collectAsStateWithLifecycle(initialValue = emptyList())
+            val updateState by com.example.service.AppUpdateManager.state.collectAsStateWithLifecycle()
+            val isUpdateDismissed by com.example.service.AppUpdateManager.isDismissedForSession.collectAsStateWithLifecycle()
 
             WorkShortcutTheme(themeMode = state.appTheme) {
                 Surface(modifier = Modifier.fillMaxSize()) {
@@ -117,8 +124,25 @@ class MainActivity : ComponentActivity() {
                             repository = repository
                         )
                     }
+
+                    // Global 1-Click In-App Remote Update Dialog
+                    com.example.ui.components.InAppUpdateDialog(
+                        state = updateState,
+                        isDismissed = isUpdateDismissed,
+                        onDismiss = { com.example.service.AppUpdateManager.dismissDialog() }
+                    )
                 }
             }
         }
+    }
+
+    override fun onStart() {
+        super.onStart()
+        com.example.util.AppLifecycleTracker.onActivityStarted()
+    }
+
+    override fun onStop() {
+        super.onStop()
+        com.example.util.AppLifecycleTracker.onActivityStopped()
     }
 }

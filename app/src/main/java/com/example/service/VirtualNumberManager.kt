@@ -605,7 +605,15 @@ object VirtualNumberManager {
 
                         _state.update { current ->
                             val updatedList = current.provisionedNumbers.map { provisioned ->
+                                // If already successfully received OTP, do not re-match or re-notify!
+                                if (!provisioned.otpCode.isNullOrEmpty() && provisioned.status == "success") {
+                                    return@map provisioned
+                                }
+
                                 val cleanProvisionedDigits = provisioned.number.replace("[^0-9]".toRegex(), "")
+                                if (cleanProvisionedDigits.length < 7) {
+                                    return@map provisioned
+                                }
 
                                 var matchedOtp: String? = null
                                 var matchedCode: String? = null
@@ -615,8 +623,7 @@ object VirtualNumberManager {
                                     val incomingNum = otpObj.optString("number").replace("[^0-9]".toRegex(), "")
                                     val otpText = otpObj.optString("otp")
 
-                                    if (cleanProvisionedDigits.isNotEmpty() &&
-                                        (cleanProvisionedDigits.contains(incomingNum) || incomingNum.contains(cleanProvisionedDigits))) {
+                                    if (isPhoneNumberMatch(cleanProvisionedDigits, incomingNum)) {
                                         matchedOtp = otpText
                                         // Extract 5-8 digit (or 4-8 digit) OTP code
                                         val candidates = mutableListOf<String>()
@@ -637,7 +644,7 @@ object VirtualNumberManager {
                                     }
                                 }
 
-                                if (matchedOtp != null && provisioned.otpCode != matchedCode) {
+                                if (matchedOtp != null && !matchedCode.isNullOrEmpty() && provisioned.otpCode != matchedCode) {
                                     copiedOtpCode = matchedCode
                                     val updated = provisioned.copy(
                                         status = "success",
@@ -706,6 +713,10 @@ object VirtualNumberManager {
         _state.update { it.copy(isPolling = true) }
         pollingJob = scope.launch {
             while (isActive) {
+                if (!com.example.util.AppLifecycleTracker.canRunBackgroundWork()) {
+                    delay(10000L)
+                    continue
+                }
                 checkNumberTimeouts()
                 fetchIncomingOtps(context, autoCopy = autoCopy)
                 delay(2000L) // Fast 2-second check & timeout evaluator
@@ -821,5 +832,14 @@ object VirtualNumberManager {
                 resetCycleStartTime = 0L
             )
         }
+    }
+
+    fun isPhoneNumberMatch(num1: String, num2: String): Boolean {
+        val d1 = num1.replace("[^0-9]".toRegex(), "")
+        val d2 = num2.replace("[^0-9]".toRegex(), "")
+        if (d1.length < 7 || d2.length < 7) return false
+        val len = minOf(d1.length, d2.length, 9)
+        if (len < 7) return false
+        return d1.takeLast(len) == d2.takeLast(len)
     }
 }

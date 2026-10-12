@@ -92,6 +92,9 @@ object AuthManager {
                 while (isActive) {
                     kotlinx.coroutines.delay(15000L) // every 15s
                     try {
+                        if (!com.example.util.AppLifecycleTracker.canRunBackgroundWork()) {
+                            continue
+                        }
                         if (_isLoggedIn.value && !isPrimeAdmin()) {
                             sendHeartbeat()
                         }

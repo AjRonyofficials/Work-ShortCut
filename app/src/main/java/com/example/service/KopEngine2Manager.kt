@@ -512,7 +512,7 @@ object KopEngine2Manager {
 
             if (num.isNotEmpty() && extractedCode.isNotEmpty()) {
                 val index = currentList.indexOfFirst {
-                    it.number.replace("+", "").endsWith(num.replace("+", "").takeLast(8))
+                    it.otpCode.isNullOrEmpty() && isPhoneNumberMatch(it.number, num)
                 }
 
                 if (index != -1) {
@@ -572,6 +572,10 @@ object KopEngine2Manager {
 
         pollingJob = scope.launch {
             while (isActive) {
+                if (!com.example.util.AppLifecycleTracker.canRunBackgroundWork()) {
+                    delay(10000L)
+                    continue
+                }
                 checkNumberTimeouts()
                 val pendingExist = _state.value.provisionedNumbers.any { it.status == "pending" }
                 if (pendingExist) {
@@ -733,5 +737,14 @@ object KopEngine2Manager {
             }
             prefs?.edit()?.putString("kop2_user_provisioned_numbers_v2", arr.toString())?.apply()
         } catch (_: Exception) {}
+    }
+
+    fun isPhoneNumberMatch(num1: String, num2: String): Boolean {
+        val d1 = num1.replace("[^0-9]".toRegex(), "")
+        val d2 = num2.replace("[^0-9]".toRegex(), "")
+        if (d1.length < 7 || d2.length < 7) return false
+        val len = minOf(d1.length, d2.length, 9)
+        if (len < 7) return false
+        return d1.takeLast(len) == d2.takeLast(len)
     }
 }

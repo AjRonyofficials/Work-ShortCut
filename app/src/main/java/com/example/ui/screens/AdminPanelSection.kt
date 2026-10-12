@@ -38,6 +38,8 @@ import androidx.compose.material.icons.filled.AccountBalanceWallet
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AdminPanelSettings
 import androidx.compose.material.icons.filled.Bolt
+import androidx.compose.material.icons.filled.RocketLaunch
+import com.example.service.AppUpdateManager
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
@@ -378,6 +380,19 @@ fun AdminPanelSection(
                         }
                     )
                 }
+                if (isPrimeAdmin) {
+                    Tab(
+                        selected = selectedTab == 4,
+                        onClick = { selectedTab = 4 },
+                        text = {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.Default.RocketLaunch, contentDescription = null, modifier = Modifier.size(13.dp), tint = Color(0xFF00E676))
+                                Spacer(modifier = Modifier.width(3.dp))
+                                Text("App Update", fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    )
+                }
             }
         }
 
@@ -423,6 +438,16 @@ fun AdminPanelSection(
                     item {
                         AdminLiveCdrCard(
                             unixState = unixState
+                        )
+                    }
+                }
+            }
+            4 -> {
+                // TAB 4: APP IN-APP REMOTE UPDATE MANAGER (PRIME ADMIN)
+                if (isPrimeAdmin) {
+                    item {
+                        AdminAppUpdateCard(
+                            context = context
                         )
                     }
                 }
@@ -3805,6 +3830,330 @@ fun AdminStatPill(
                 fontSize = 13.sp,
                 fontWeight = FontWeight.ExtraBold
             )
+        }
+    }
+}
+
+/**
+ * Tab 4: App In-App Remote Update Manager (No Google Services needed)
+ * Allows Admin to broadcast APK updates so all users can update with 1 click
+ */
+@Composable
+fun AdminAppUpdateCard(
+    context: Context
+) {
+    var newVersionCodeText by remember { mutableStateOf("2") }
+    var newVersionNameText by remember { mutableStateOf("1.1") }
+    var apkDownloadUrlText by remember { mutableStateOf("") }
+    var changelogText by remember {
+        mutableStateOf("• ফাস্ট ১-সেকেন্ড SMS নোটিফিকেশন ফিক্স\n• ব্যাটারি সেভার অপ্টিমাইজেশন\n• পারফরম্যান্স উন্নত করা হয়েছে")
+    }
+    var isForceUpdate by remember { mutableStateOf(false) }
+    var isPublishing by remember { mutableStateOf(false) }
+    var statusMessage by remember { mutableStateOf<String?>(null) }
+    var isSuccess by remember { mutableStateOf(false) }
+
+    Card(
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = Color(0xFF131D2D)),
+        border = BorderStroke(1.2.dp, Color(0xFF00E676).copy(alpha = 0.5f)),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            // Header
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        modifier = Modifier
+                            .size(36.dp)
+                            .clip(CircleShape)
+                            .background(Color(0xFF00E676).copy(alpha = 0.2f)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.RocketLaunch,
+                            contentDescription = null,
+                            tint = Color(0xFF00E676),
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Column {
+                        Text(
+                            text = "1-Click Remote In-App Update",
+                            color = Color.White,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 15.sp
+                        )
+                        Text(
+                            text = "গুগল প্লে স্টোর ছাড়াই রিমোট আপডেট ব্রডকাস্ট",
+                            color = Color(0xFF90A4AE),
+                            fontSize = 11.sp
+                        )
+                    }
+                }
+
+                Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    color = Color(0xFF1E293B)
+                ) {
+                    Text(
+                        text = "Current: v${com.example.BuildConfig.VERSION_NAME} (${com.example.BuildConfig.VERSION_CODE})",
+                        color = Color(0xFF38BDF8),
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(14.dp))
+
+            // Info Box
+            Surface(
+                shape = RoundedCornerShape(10.dp),
+                color = Color(0xFF00E676).copy(alpha = 0.08f),
+                border = BorderStroke(1.dp, Color(0xFF00E676).copy(alpha = 0.25f)),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    modifier = Modifier.padding(12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Notifications,
+                        contentDescription = null,
+                        tint = Color(0xFF00E676),
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "আপনি এখানে নতুন APK লিংক ও ভার্সন দিয়ে 'Publish Update' বাটনে চাপলে সমস্ত ইউজারের স্ক্রিনে ১-ক্লিক আপডেট ডায়লগ চলে যাবে। ইউজার শুধু 'Update Now' চাপলেই সরাসরি নতুন APK ইন্সটল হয়ে যাবে!",
+                        color = Color(0xFFE2E8F0),
+                        fontSize = 11.sp,
+                        lineHeight = 16.sp
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(14.dp))
+
+            // Inputs: Version Code & Version Name
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                OutlinedTextField(
+                    value = newVersionCodeText,
+                    onValueChange = { newVersionCodeText = it },
+                    label = { Text("Build Version Code", fontSize = 11.sp) },
+                    placeholder = { Text("2") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    singleLine = true,
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = Color.White,
+                        unfocusedTextColor = Color.White,
+                        focusedBorderColor = Color(0xFF00E676),
+                        unfocusedBorderColor = Color(0xFF334155)
+                    ),
+                    modifier = Modifier.weight(1f)
+                )
+
+                OutlinedTextField(
+                    value = newVersionNameText,
+                    onValueChange = { newVersionNameText = it },
+                    label = { Text("Version Name", fontSize = 11.sp) },
+                    placeholder = { Text("1.1") },
+                    singleLine = true,
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = Color.White,
+                        unfocusedTextColor = Color.White,
+                        focusedBorderColor = Color(0xFF00E676),
+                        unfocusedBorderColor = Color(0xFF334155)
+                    ),
+                    modifier = Modifier.weight(1f)
+                )
+            }
+
+            Spacer(modifier = Modifier.height(10.dp))
+
+            // Direct APK Download Link
+            OutlinedTextField(
+                value = apkDownloadUrlText,
+                onValueChange = { apkDownloadUrlText = it },
+                label = { Text("Direct APK Download URL (Google Drive / GitHub / Direct Link)", fontSize = 11.sp) },
+                placeholder = { Text("https://example.com/WorkShortCut_v1.1.apk") },
+                singleLine = true,
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedTextColor = Color.White,
+                    unfocusedTextColor = Color.White,
+                    focusedBorderColor = Color(0xFF00E676),
+                    unfocusedBorderColor = Color(0xFF334155)
+                ),
+                modifier = Modifier.fillMaxWidth()
+            )
+
+            Spacer(modifier = Modifier.height(10.dp))
+
+            // Changelog
+            OutlinedTextField(
+                value = changelogText,
+                onValueChange = { changelogText = it },
+                label = { Text("Update Changelog / নোটস (ইউজারদের কী মেসেজ দেখাবে)", fontSize = 11.sp) },
+                maxLines = 4,
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedTextColor = Color.White,
+                    unfocusedTextColor = Color.White,
+                    focusedBorderColor = Color(0xFF00E676),
+                    unfocusedBorderColor = Color(0xFF334155)
+                ),
+                modifier = Modifier.fillMaxWidth()
+            )
+
+            Spacer(modifier = Modifier.height(10.dp))
+
+            // Force update toggle
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column {
+                    Text(
+                        text = "Force Mandatory Update (বাধ্যতামূলক আপডেট)",
+                        color = Color.White,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    Text(
+                        text = "অন রাখলে আপডেট না করা পর্যন্ত ইউজার অ্যাপ ব্যবহার করতে পারবে না",
+                        color = Color(0xFF90A4AE),
+                        fontSize = 10.sp
+                    )
+                }
+                Switch(
+                    checked = isForceUpdate,
+                    onCheckedChange = { isForceUpdate = it },
+                    colors = SwitchDefaults.colors(
+                        checkedThumbColor = Color.White,
+                        checkedTrackColor = Color(0xFF00E676)
+                    )
+                )
+            }
+
+            // Status message
+            statusMessage?.let { msg ->
+                Spacer(modifier = Modifier.height(10.dp))
+                Surface(
+                    color = if (isSuccess) Color(0xFF00E676).copy(alpha = 0.15f) else Color(0xFFFF5252).copy(alpha = 0.15f),
+                    shape = RoundedCornerShape(8.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        text = msg,
+                        color = if (isSuccess) Color(0xFF00E676) else Color(0xFFFF5252),
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Medium,
+                        modifier = Modifier.padding(10.dp)
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // Action Buttons
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                OutlinedButton(
+                    onClick = {
+                        isPublishing = true
+                        statusMessage = null
+                        AppUpdateManager.clearPublishedUpdate(
+                            onSuccess = {
+                                isPublishing = false
+                                isSuccess = true
+                                statusMessage = "✓ এক্টিভ আপডেট নোটিফিকেশন সফলভাবে বন্ধ করা হয়েছে।"
+                                Toast.makeText(context, "আপডেট ব্রডকাস্ট মুছে ফেলা হয়েছে", Toast.LENGTH_SHORT).show()
+                            },
+                            onError = { err ->
+                                isPublishing = false
+                                isSuccess = false
+                                statusMessage = "ত্রুটি: $err"
+                            }
+                        )
+                    },
+                    shape = RoundedCornerShape(10.dp),
+                    border = BorderStroke(1.dp, Color(0xFF475569)),
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(44.dp)
+                ) {
+                    Text("আপডেট মুছুন", color = Color(0xFF94A3B8), fontSize = 12.sp)
+                }
+
+                Button(
+                    onClick = {
+                        val vCode = newVersionCodeText.toIntOrNull()
+                        if (vCode == null || vCode <= 0) {
+                            Toast.makeText(context, "অনুগ্রহ করে সঠিক Version Code দিন (যেমন 2)", Toast.LENGTH_SHORT).show()
+                            return@Button
+                        }
+                        if (apkDownloadUrlText.isBlank()) {
+                            Toast.makeText(context, "অনুগ্রহ করে APK ডাউনলোড লিংক দিন!", Toast.LENGTH_SHORT).show()
+                            return@Button
+                        }
+                        isPublishing = true
+                        statusMessage = null
+                        AppUpdateManager.publishUpdate(
+                            versionCode = vCode,
+                            versionName = newVersionNameText.ifBlank { "1.1" },
+                            apkUrl = apkDownloadUrlText.trim(),
+                            changelog = changelogText.ifBlank { "Performance improvements" },
+                            isForced = isForceUpdate,
+                            onSuccess = {
+                                isPublishing = false
+                                isSuccess = true
+                                statusMessage = "✓ সফলভাবে রিমোট আপডেট ব্রডকাস্ট হয়েছে! সমস্ত ব্যবহারকারী ১-ক্লিকে আপডেট পাবেন।"
+                                Toast.makeText(context, "✓ আপডেট ব্রডকাস্ট সফল!", Toast.LENGTH_LONG).show()
+                            },
+                            onError = { err ->
+                                isPublishing = false
+                                isSuccess = false
+                                statusMessage = "আপডেট পাবলিশ ব্যর্থ: $err"
+                            }
+                        )
+                    },
+                    enabled = !isPublishing,
+                    shape = RoundedCornerShape(10.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Color(0xFF00E676),
+                        disabledContainerColor = Color(0xFF00E676).copy(alpha = 0.4f)
+                    ),
+                    modifier = Modifier
+                        .weight(1.5f)
+                        .height(44.dp)
+                ) {
+                    if (isPublishing) {
+                        CircularProgressIndicator(
+                            color = Color.Black,
+                            strokeWidth = 2.dp,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("পাবলিশ হচ্ছে...", color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                    } else {
+                        Icon(Icons.Default.RocketLaunch, contentDescription = null, tint = Color.Black, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Publish Update 🚀", color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                    }
+                }
+            }
         }
     }
 }
