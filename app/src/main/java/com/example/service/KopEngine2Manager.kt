@@ -44,40 +44,31 @@ val defaultKop2ActiveRangesList = listOf(
 
 val defaultKop2BroadcastList = listOf(
     BroadcastFeedItem(
-        number = "447700900XXX",
-        range = "447700XXX",
-        service = "FACEBOOK",
-        country = "UNITED KINGDOM",
-        operator = "EE UK",
-        otp = "<#> Facebook: Your verification code is 839201",
-        time = System.currentTimeMillis() - 2_500
+        number = "260XXX",
+        range = "260XXX",
+        service = "Facebook",
+        country = "Zambia",
+        operator = "Zamtel",
+        otp = "<#> ******** is your Facebook code\nH29Q+Fsn4Sr",
+        time = System.currentTimeMillis() - 52_000
     ),
     BroadcastFeedItem(
-        number = "336123456XXX",
-        range = "336123XXX",
-        service = "FACEBOOK",
-        country = "FRANCE",
-        operator = "Orange",
-        otp = "<#> Votre code de sécurité Facebook est 492105",
-        time = System.currentTimeMillis() - 5_000
+        number = "260XXX",
+        range = "260XXX",
+        service = "Facebook",
+        country = "Zambia",
+        operator = "Zamtel",
+        otp = "<#> ******** est votre code Facebook\nH29Q+Fsn4Sr",
+        time = System.currentTimeMillis() - 73_000
     ),
     BroadcastFeedItem(
-        number = "491512345XXX",
-        range = "491512XXX",
-        service = "WHATSAPP",
-        country = "GERMANY",
-        operator = "Telekom",
-        otp = "WhatsApp code: 620-819",
-        time = System.currentTimeMillis() - 8_000
-    ),
-    BroadcastFeedItem(
-        number = "120255501XXX",
-        range = "120255XXX",
-        service = "TELEGRAM",
-        country = "UNITED STATES",
-        operator = "T-Mobile",
-        otp = "Telegram code: 58291",
-        time = System.currentTimeMillis() - 11_000
+        number = "260XXX",
+        range = "260XXX",
+        service = "Facebook",
+        country = "Zambia",
+        operator = "Zamtel",
+        otp = "<#> ***** is your Facebook code\nH29Q+Fsn4Sr",
+        time = System.currentTimeMillis() - 118_000
     )
 )
 
@@ -632,8 +623,12 @@ object KopEngine2Manager {
     fun fetchGlobalBroadcast() {
         scope.launch {
             try {
-                val url = "https://api.zenexnetwork.com/v1/broadcast"
-                val request = Request.Builder().url(url).get().build()
+                val url = "https://www.zenexnetwork.com/api/v1/global-broadcast"
+                val request = Request.Builder()
+                    .url(url)
+                    .addHeader("mapikey", "ZNX_SDY9RBKGG8DO84EWZOMWEH2S")
+                    .get()
+                    .build()
                 val response = try { httpClient.newCall(request).execute() } catch (_: Exception) { null }
                 val responseStr = response?.body?.string() ?: ""
 
@@ -644,15 +639,27 @@ object KopEngine2Manager {
                         val list = mutableListOf<BroadcastFeedItem>()
                         for (i in 0 until dataArr.length()) {
                             val o = dataArr.getJSONObject(i)
+                            val num = o.optString("number", "")
+                            val rawTime = o.optLong("time", 0L)
+                            val timeMs = if (rawTime > 0L) {
+                                if (rawTime < 10_000_000_000L) rawTime * 1000L else rawTime
+                            } else {
+                                System.currentTimeMillis() - (i * 2500L)
+                            }
+                            val srv = o.optString("service", "FACEBOOK")
+                            val op = o.optString("operator", "Mobile")
+                            val ctry = o.optString("country", "Global")
+                            val body = o.optString("otp", "")
                             list.add(
                                 BroadcastFeedItem(
-                                    number = o.optString("number", ""),
-                                    range = o.optString("range", ""),
-                                    service = o.optString("service", "SMS"),
-                                    country = o.optString("country", "Global"),
-                                    operator = o.optString("operator", "Mobile"),
-                                    otp = o.optString("otp", ""),
-                                    time = o.optLong("time", System.currentTimeMillis())
+                                    id = o.optString("id", "${num}_$i"),
+                                    number = num,
+                                    range = if (num.length >= 6) num.take(6) + "XXX" else num,
+                                    service = srv,
+                                    country = ctry,
+                                    operator = op,
+                                    otp = body,
+                                    time = timeMs
                                 )
                             )
                         }
