@@ -31,6 +31,7 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.TableChart
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
@@ -501,6 +502,20 @@ fun ExcelCollectorSection(
                             Icon(Icons.Default.TableChart, contentDescription = null, modifier = Modifier.size(16.dp))
                             Spacer(modifier = Modifier.width(6.dp))
                             Text("Copy All (Excel Table)", fontWeight = FontWeight.Bold)
+                        }
+
+                        // Option 2: 1-Click Export & Share CSV
+                        Button(
+                            onClick = {
+                                OverlayStateManager.shareAllRowsAsCsv(context, sortedRows)
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00C853)),
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier.testTag("share_csv_button")
+                        ) {
+                            Icon(Icons.Default.Share, contentDescription = null, tint = Color.Black, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Export & Share CSV (${sortedRows.size})", fontWeight = FontWeight.Bold, color = Color.Black)
                         }
 
                         // Purge/Clear All Data

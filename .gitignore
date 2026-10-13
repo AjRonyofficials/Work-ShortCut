@@ -23,5 +23,6 @@ debug.keystore
 !gradle/wrapper/gradle-wrapper.jar
 !gradlew
 !gradlew.bat
-
-
+.aistudio/
+release-assets/
+*.apk

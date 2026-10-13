@@ -394,6 +394,15 @@ object AuthManager {
                     ?.putString(KEY_LOGGED_IN_EMAIL, user.email)
                     ?.putString(KEY_LOGGED_IN_ROLE, user.role)
                     ?.apply()
+                if (user.totalOtps > 0 || user.balanceTk > 0.0) {
+                    OtpHistoryManager.restoreUserHistoryIfEmpty(
+                        totalOtps = user.totalOtps,
+                        todayOtps = user.todayOtps,
+                        last7d = user.last7DaysOtps,
+                        last30d = user.last30DaysOtps
+                    )
+                    WithdrawalManager.restoreUserBalanceIfEmpty(user.balanceTk)
+                }
 
                 authScope.launch {
                     try {

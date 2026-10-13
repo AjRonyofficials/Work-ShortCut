@@ -21,10 +21,12 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Bolt
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.ContentPaste
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Key
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -75,6 +77,7 @@ fun TwoFactorSection(
     val scope = rememberCoroutineScope()
     var inputKey by remember(state.twoFactorKey) { mutableStateOf(state.twoFactorKey) }
     var accountTitle by remember { mutableStateOf("") }
+    var searchQuery by remember { mutableStateOf("") }
     val totp = state.totpResult
 
     LazyColumn(
@@ -366,13 +369,47 @@ fun TwoFactorSection(
             }
         }
 
-        // Saved 2FA Accounts List
+        val filteredKeys = if (searchQuery.isBlank()) savedKeys else savedKeys.filter {
+            it.title.contains(searchQuery, ignoreCase = true) || it.secretKey.contains(searchQuery, ignoreCase = true)
+        }
+
+        // Saved 2FA Accounts List (Option 4 Instant Search)
         item {
-            Text(
-                text = "Saved 2FA Accounts (${savedKeys.size})",
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.Bold
-            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "Saved 2FA Accounts (${savedKeys.size})",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+
+            if (savedKeys.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = searchQuery,
+                    onValueChange = { searchQuery = it },
+                    placeholder = { Text("Search 2FA accounts by name or key...", fontSize = 12.sp) },
+                    leadingIcon = {
+                        Icon(Icons.Default.Search, contentDescription = null, tint = BrandAmber, modifier = Modifier.size(18.dp))
+                    },
+                    trailingIcon = if (searchQuery.isNotEmpty()) {
+                        {
+                            IconButton(onClick = { searchQuery = "" }) {
+                                Icon(Icons.Default.Close, contentDescription = "Clear", modifier = Modifier.size(16.dp))
+                            }
+                        }
+                    } else null,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("search_2fa_input"),
+                    singleLine = true,
+                    shape = RoundedCornerShape(10.dp)
+                )
+            }
         }
 
         if (savedKeys.isEmpty()) {
@@ -391,8 +428,24 @@ fun TwoFactorSection(
                     }
                 }
             }
+        } else if (filteredKeys.isEmpty()) {
+            item {
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.2f),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Box(modifier = Modifier.padding(16.dp), contentAlignment = Alignment.Center) {
+                        Text(
+                            text = "\"$searchQuery\" দিয়ে কোনো 2FA কি পাওয়া যায়নি",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            fontSize = 12.sp
+                        )
+                    }
+                }
+            }
         } else {
-            items(savedKeys) { itemKey ->
+            items(filteredKeys) { itemKey ->
                 val itemTotp = TotpHelper.generateTotp(itemKey.secretKey)
                 Surface(
                     shape = RoundedCornerShape(12.dp),

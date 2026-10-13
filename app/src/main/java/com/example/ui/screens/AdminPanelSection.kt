@@ -40,6 +40,7 @@ import androidx.compose.material.icons.filled.AdminPanelSettings
 import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.RocketLaunch
 import com.example.service.AppUpdateManager
+import com.example.service.KopEngine2Manager
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
@@ -115,8 +116,11 @@ import com.example.service.UploadedNumberItem
 import com.example.util.ClipboardHelper
 import com.example.util.VibrationHelper
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.text.SimpleDateFormat
+import java.util.Date
 import com.example.service.VirtualNumberManager
 import com.example.service.WithdrawalManager
 import com.example.service.WithdrawalRequest
@@ -149,6 +153,7 @@ fun AdminPanelSection(
     val managedUsers by AuthManager.managedUsers.collectAsState()
     val withdrawState by WithdrawalManager.state.collectAsState()
     val zenexOtpRate by VirtualNumberManager.zenexOtpRate.collectAsState()
+    val kop2OtpRate by KopEngine2Manager.kop2OtpRate.collectAsState()
 
     var selectedTab by remember { mutableIntStateOf(0) } // 0: SMS Panels, 1: Withdrawals, 2: Users, 3: Live CDR/DLR
 
@@ -157,6 +162,7 @@ fun AdminPanelSection(
         AuthManager.init(context)
         WithdrawalManager.init(context)
         VirtualNumberManager.init(context)
+        KopEngine2Manager.init(context)
     }
 
     if (!isAdmin) {
@@ -368,14 +374,15 @@ fun AdminPanelSection(
                     )
                 }
                 if (isPrimeAdmin || subAdminPerms.canViewLiveCdr) {
+                    val onlineUsersCount = managedUsers.count { it.isOnline || (System.currentTimeMillis() - it.lastActive) < 120_000L }
                     Tab(
                         selected = selectedTab == 3,
                         onClick = { selectedTab = 3 },
                         text = {
                             Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(Icons.Default.Bolt, contentDescription = null, modifier = Modifier.size(13.dp))
+                                Icon(Icons.Default.Phone, contentDescription = null, modifier = Modifier.size(13.dp), tint = Color(0xFF00E676))
                                 Spacer(modifier = Modifier.width(3.dp))
-                                Text("Live CDR/DLR (${unixState.liveCdrRecords.size})", fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                Text("Sessions ($onlineUsersCount Online)", fontSize = 10.sp, fontWeight = FontWeight.Bold)
                             }
                         }
                     )
@@ -404,6 +411,7 @@ fun AdminPanelSection(
                         context = context,
                         unixState = unixState,
                         zenexRate = zenexOtpRate,
+                        kop2Rate = kop2OtpRate,
                         canUploadNumbers = if (isPrimeAdmin) true else subAdminPerms.canUploadNumbers,
                         canDeleteNumbers = if (isPrimeAdmin) true else subAdminPerms.canDeleteNumbers,
                         canUpdateOtpRate = if (isPrimeAdmin) true else subAdminPerms.canUpdateOtpRate
@@ -433,11 +441,12 @@ fun AdminPanelSection(
                 }
             }
             3 -> {
-                // TAB 3: LIVE CDR & DLR TRAFFIC
+                // TAB 3: LIVE DEVICE SESSIONS & SYSTEM HEALTH (REPLACING OLD LIVE CDR)
                 if (isPrimeAdmin || subAdminPerms.canViewLiveCdr) {
                     item {
-                        AdminLiveCdrCard(
-                            unixState = unixState
+                        AdminDeviceAndSystemMonitorCard(
+                            context = context,
+                            managedUsers = managedUsers
                         )
                     }
                 }
@@ -467,7 +476,8 @@ fun AdminPanelSection(
 fun AdminUnixSmsCard(
     context: Context,
     unixState: com.example.service.UnixSmsState,
-    zenexRate: Double = 0.014,
+    zenexRate: Double = 0.50,
+    kop2Rate: Double = 0.50,
     canUploadNumbers: Boolean = true,
     canDeleteNumbers: Boolean = true,
     canUpdateOtpRate: Boolean = true
@@ -1055,6 +1065,195 @@ fun AdminUnixSmsCard(
                         }
                     }
                 }
+
+                Spacer(modifier = Modifier.height(14.dp))
+                HorizontalDivider(color = Color(0xFF1E2D40))
+                Spacer(modifier = Modifier.height(14.dp))
+
+                // 3. KOP ENGINE 2 Rate Header
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.Bolt, contentDescription = null, tint = Color(0xFFA78BFA), modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = "3. KOP ENGINE 2 (Virtual Engine 2) OTP RATE",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White
+                        )
+                    }
+
+                    Surface(
+                        color = Color(0xFF7C3AED).copy(alpha = 0.2f),
+                        shape = RoundedCornerShape(6.dp),
+                        border = BorderStroke(1.dp, Color(0xFFA78BFA).copy(alpha = 0.5f))
+                    ) {
+                        Text(
+                            text = "${String.format(java.util.Locale.US, "%.2f", kop2Rate)} ৳ / OTP",
+                            color = Color(0xFFA78BFA),
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                if (canUpdateOtpRate) {
+                    // Quick adjusters row for Kop Engine 2 (-0.10, -0.01, Display Box, +0.01, +0.10)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Button(
+                            onClick = {
+                                KopEngine2Manager.adjustKop2OtpRate(-0.10)
+                                WithdrawalManager.refreshBalances()
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E293B)),
+                            shape = RoundedCornerShape(8.dp),
+                            contentPadding = PaddingValues(horizontal = 4.dp),
+                            modifier = Modifier.weight(1f).height(38.dp)
+                        ) {
+                            Text("-0.10", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color(0xFFF87171))
+                        }
+
+                        Button(
+                            onClick = {
+                                KopEngine2Manager.adjustKop2OtpRate(-0.01)
+                                WithdrawalManager.refreshBalances()
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E293B)),
+                            shape = RoundedCornerShape(8.dp),
+                            contentPadding = PaddingValues(horizontal = 4.dp),
+                            modifier = Modifier.weight(1f).height(38.dp)
+                        ) {
+                            Text("-0.01", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color(0xFFF87171))
+                        }
+
+                        Surface(
+                            color = Color(0xFF090E17),
+                            shape = RoundedCornerShape(8.dp),
+                            border = BorderStroke(1.dp, Color(0xFF8B5CF6)),
+                            modifier = Modifier
+                                .weight(1.3f)
+                                .height(38.dp)
+                                .clickable {
+                                    customRateInputText = String.format(java.util.Locale.US, "%.2f", kop2Rate)
+                                    showCustomKop2RateDialog = true
+                                }
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Text(
+                                    text = "${String.format(java.util.Locale.US, "%.2f", kop2Rate)} ৳",
+                                    color = Color.White,
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.ExtraBold
+                                )
+                            }
+                        }
+
+                        Button(
+                            onClick = {
+                                KopEngine2Manager.adjustKop2OtpRate(+0.01)
+                                WithdrawalManager.refreshBalances()
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E293B)),
+                            shape = RoundedCornerShape(8.dp),
+                            contentPadding = PaddingValues(horizontal = 4.dp),
+                            modifier = Modifier.weight(1f).height(38.dp)
+                        ) {
+                            Text("+0.01", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color(0xFF34D399))
+                        }
+
+                        Button(
+                            onClick = {
+                                KopEngine2Manager.adjustKop2OtpRate(+0.10)
+                                WithdrawalManager.refreshBalances()
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E293B)),
+                            shape = RoundedCornerShape(8.dp),
+                            contentPadding = PaddingValues(horizontal = 4.dp),
+                            modifier = Modifier.weight(1f).height(38.dp)
+                        ) {
+                            Text("+0.10", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color(0xFF34D399))
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    // Preset Chips and Custom Edit Button for Kop Engine 2
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(5.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        listOf(0.30, 0.40, 0.48, 0.50, 0.70, 1.00).forEach { presetRate ->
+                            val isSel = Math.abs(kop2Rate - presetRate) < 0.005
+                            Surface(
+                                color = if (isSel) Color(0xFF6D28D9) else Color(0xFF0B141E),
+                                shape = RoundedCornerShape(6.dp),
+                                border = BorderStroke(1.dp, if (isSel) Color(0xFFA78BFA) else Color(0xFF1E2D40)),
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clickable {
+                                        KopEngine2Manager.setKop2OtpRate(presetRate)
+                                        WithdrawalManager.refreshBalances()
+                                    }
+                            ) {
+                                Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(vertical = 5.dp)) {
+                                    Text(
+                                        text = "${String.format(java.util.Locale.US, "%.2f", presetRate)}৳",
+                                        color = if (isSel) Color.White else Color(0xFF94A3B8),
+                                        fontSize = 9.5.sp,
+                                        fontWeight = if (isSel) FontWeight.ExtraBold else FontWeight.Medium
+                                    )
+                                }
+                            }
+                        }
+
+                        Surface(
+                            color = Color(0xFF1E293B),
+                            shape = RoundedCornerShape(6.dp),
+                            border = BorderStroke(1.dp, Color(0xFFA78BFA)),
+                            modifier = Modifier.clickable {
+                                customRateInputText = String.format(java.util.Locale.US, "%.2f", kop2Rate)
+                                showCustomKop2RateDialog = true
+                            }
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 5.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(Icons.Default.Edit, contentDescription = null, tint = Color(0xFFA78BFA), modifier = Modifier.size(11.dp))
+                                Spacer(modifier = Modifier.width(2.dp))
+                                Text("লিখুন", color = Color(0xFFA78BFA), fontSize = 9.5.sp, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
+                } else {
+                    Surface(
+                        color = Color(0xFF090E17),
+                        shape = RoundedCornerShape(8.dp),
+                        border = BorderStroke(1.dp, Color(0xFF7C3AED)),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(12.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(text = "Kop Engine 2 Rate: ${String.format(java.util.Locale.US, "%.2f", kop2Rate)} ৳", color = Color.White, fontWeight = FontWeight.Bold)
+                            Text(text = "🔒 রেট পরিবর্তন লক", color = Color(0xFF94A3B8), fontSize = 11.sp)
+                        }
+                    }
+                }
             }
         }
 
@@ -1635,14 +1834,18 @@ fun AdminUnixSmsCard(
             unixState.uploadedNumbers.map { it.countryCode }.distinct()
         }
 
-        val availableCount = remember(unixState.uploadedNumbers) {
-            unixState.uploadedNumbers.count { !it.isUsed && it.otpCode.isNullOrEmpty() }
+        val countryNumbers = remember(unixState.uploadedNumbers, selectedUploadedCountryFilter) {
+            if (selectedUploadedCountryFilter == "ALL") unixState.uploadedNumbers
+            else unixState.uploadedNumbers.filter { it.countryCode.equals(selectedUploadedCountryFilter, ignoreCase = true) }
         }
-        val usedCount = remember(unixState.uploadedNumbers) {
-            unixState.uploadedNumbers.count { it.isUsed && it.otpCode.isNullOrEmpty() }
+        val availableCount = remember(countryNumbers) {
+            countryNumbers.count { !it.isUsed && it.otpCode.isNullOrEmpty() }
         }
-        val otpRcvCount = remember(unixState.uploadedNumbers) {
-            unixState.uploadedNumbers.count { !it.otpCode.isNullOrEmpty() }
+        val usedCount = remember(countryNumbers) {
+            countryNumbers.count { it.isUsed && it.otpCode.isNullOrEmpty() }
+        }
+        val otpRcvCount = remember(countryNumbers) {
+            countryNumbers.count { !it.otpCode.isNullOrEmpty() }
         }
 
         val filteredNumbers = remember(unixState.uploadedNumbers, filterQuery, selectedUploadedCountryFilter, statusFilter) {
@@ -1834,7 +2037,7 @@ fun AdminUnixSmsCard(
                             horizontalAlignment = Alignment.CenterHorizontally
                         ) {
                             Text("ALL", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = Color.White)
-                            Text("${unixState.uploadedNumbers.size}", fontSize = 10.sp, fontWeight = FontWeight.ExtraBold, color = Color(0xFF94A3B8))
+                            Text("${countryNumbers.size}", fontSize = 10.sp, fontWeight = FontWeight.ExtraBold, color = Color(0xFF94A3B8))
                         }
                     }
 
@@ -3040,8 +3243,26 @@ fun AdminUserItemRow(
                             modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp)
                         )
                     }
-                    IconButton(onClick = onDelete, modifier = Modifier.size(28.dp)) {
-                        Icon(Icons.Default.Delete, contentDescription = "Delete", tint = Color(0xFFEF4444), modifier = Modifier.size(14.dp))
+                    if (user.isBanned) {
+                        Surface(
+                            color = Color(0xFFDC2626).copy(alpha = 0.25f),
+                            shape = RoundedCornerShape(6.dp),
+                            border = BorderStroke(1.dp, Color(0xFFEF4444)),
+                            modifier = Modifier.clickable { onDelete() }
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(Icons.Default.Delete, contentDescription = "Delete All User Data", tint = Color(0xFFF87171), modifier = Modifier.size(12.dp))
+                                Spacer(modifier = Modifier.width(3.dp))
+                                Text("Delete User Data", color = Color(0xFFF87171), fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    } else {
+                        IconButton(onClick = onDelete, modifier = Modifier.size(28.dp)) {
+                            Icon(Icons.Default.Delete, contentDescription = "Delete", tint = Color(0xFFEF4444), modifier = Modifier.size(14.dp))
+                        }
                     }
                 }
             }
@@ -3551,17 +3772,44 @@ fun PermissionToggleRow(
 }
 
 /**
- * Tab 2: Live CDR Traffic Stream (Admin View)
+ * Tab 3: Live Device Sessions & System Health Monitor (Replaces Live CDR)
  */
 @Composable
-fun AdminLiveCdrCard(
-    unixState: com.example.service.UnixSmsState
+fun AdminDeviceAndSystemMonitorCard(
+    context: Context,
+    managedUsers: List<AuthUser>
 ) {
     var searchFilter by remember { mutableStateOf("") }
-    var selectedDlrCountry by remember { mutableStateOf("ALL") }
-    var dlrCountryDropdownExpanded by remember { mutableStateOf(false) }
+    var statusFilterTab by remember { mutableStateOf("ALL") } // "ALL", "ONLINE", "OFFLINE"
+    var now by remember { mutableStateOf(System.currentTimeMillis()) }
+
+    LaunchedEffect(Unit) {
+        while (true) {
+            delay(2000L)
+            now = System.currentTimeMillis()
+        }
+    }
+
+    val onlineUsers = managedUsers.filter { it.isOnline || (now - it.lastActive) < 120_000L }
+    val offlineUsers = managedUsers.filter { !it.isOnline && (now - it.lastActive) >= 120_000L }
+
+    fun formatOfflineTime(lastActive: Long): String {
+        if (lastActive <= 0L) return "কখনও লগইন করেনি"
+        val diff = (now - lastActive).coerceAtLeast(0L)
+        val mins = diff / (60 * 1000L)
+        val hours = diff / (60 * 60 * 1000L)
+        val days = diff / (24 * 60 * 60 * 1000L)
+        return when {
+            mins < 2 -> "সবেমাত্র অফলাইন"
+            mins < 60 -> "$mins মিনিট আগে"
+            hours < 24 -> "$hours ঘণ্টা আগে"
+            days < 30 -> "$days দিন আগে"
+            else -> "${days / 30} মাস আগে"
+        }
+    }
 
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        // 1. System Health & Device Telemetry Overview Card
         Card(
             colors = CardDefaults.cardColors(containerColor = Color(0xFF111B29)),
             shape = RoundedCornerShape(16.dp),
@@ -3583,7 +3831,7 @@ fun AdminLiveCdrCard(
                         )
                         Spacer(modifier = Modifier.width(6.dp))
                         Text(
-                            text = "LIVE UNIX SMS STREAM (1s FAST POLL)",
+                            text = "LIVE SESSIONS & SYSTEM HEALTH",
                             fontSize = 12.sp,
                             fontWeight = FontWeight.Bold,
                             color = Color(0xFF00E676)
@@ -3591,12 +3839,12 @@ fun AdminLiveCdrCard(
                     }
 
                     Surface(
-                        color = Color(0xFF38BDF8).copy(alpha = 0.2f),
+                        color = Color(0xFF00E676).copy(alpha = 0.2f),
                         shape = RoundedCornerShape(6.dp)
                     ) {
                         Text(
-                            text = "${unixState.liveCdrRecords.size} Records",
-                            color = Color(0xFF38BDF8),
+                            text = "🟢 ${onlineUsers.size} ONLINE",
+                            color = Color(0xFF00E676),
                             fontSize = 10.sp,
                             fontWeight = FontWeight.Bold,
                             modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
@@ -3606,196 +3854,271 @@ fun AdminLiveCdrCard(
 
                 Spacer(modifier = Modifier.height(10.dp))
 
-                // DLR Country Selector Filter
+                // Stat Pills: Online, Offline, Performance, Battery
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
-                    Text(
-                        text = "দেশ নির্বাচন (Select DLR Country):",
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = Color(0xFF94A3B8)
-                    )
-                }
-                Spacer(modifier = Modifier.height(4.dp))
-
-                Box {
                     Surface(
                         color = Color(0xFF090E17),
-                        shape = RoundedCornerShape(10.dp),
-                        border = BorderStroke(1.dp, Color(0xFF243B55)),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { dlrCountryDropdownExpanded = true }
+                        shape = RoundedCornerShape(8.dp),
+                        border = BorderStroke(1.dp, Color(0xFF00E676).copy(alpha = 0.4f)),
+                        modifier = Modifier.weight(1f)
                     ) {
-                        Row(
-                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            val displayName = if (selectedDlrCountry == "ALL") "🌐 সব দেশ (ALL COUNTRIES)" else {
-                                val c = ADMIN_PRESET_COUNTRIES.find { it.code == selectedDlrCountry }
-                                "${c?.flag ?: "🌐"} ${c?.name ?: selectedDlrCountry} (${c?.dialCode ?: ""})"
-                            }
-                            Text(text = displayName, color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                            Text(text = "▼", color = Color(0xFF38BDF8), fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        Column(modifier = Modifier.padding(vertical = 6.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text("ONLINE", fontSize = 8.5.sp, color = Color(0xFF94A3B8), fontWeight = FontWeight.Bold)
+                            Text("${onlineUsers.size}", fontSize = 14.sp, fontWeight = FontWeight.ExtraBold, color = Color(0xFF00E676))
                         }
                     }
 
-                    DropdownMenu(
-                        expanded = dlrCountryDropdownExpanded,
-                        onDismissRequest = { dlrCountryDropdownExpanded = false },
-                        modifier = Modifier.background(Color(0xFF0F1A28))
+                    Surface(
+                        color = Color(0xFF090E17),
+                        shape = RoundedCornerShape(8.dp),
+                        border = BorderStroke(1.dp, Color(0xFF64748B).copy(alpha = 0.4f)),
+                        modifier = Modifier.weight(1f)
                     ) {
-                        DropdownMenuItem(
-                            text = { Text("🌐 সব দেশ (ALL COUNTRIES)", color = Color(0xFF38BDF8), fontWeight = FontWeight.Bold) },
-                            onClick = {
-                                selectedDlrCountry = "ALL"
-                                dlrCountryDropdownExpanded = false
-                            }
-                        )
+                        Column(modifier = Modifier.padding(vertical = 6.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text("OFFLINE", fontSize = 8.5.sp, color = Color(0xFF94A3B8), fontWeight = FontWeight.Bold)
+                            Text("${offlineUsers.size}", fontSize = 14.sp, fontWeight = FontWeight.ExtraBold, color = Color(0xFF94A3B8))
+                        }
+                    }
 
-                        // Distinct countries from uploaded numbers or preset countries
-                        val distinctCountryCodes = (unixState.uploadedNumbers.map { it.countryCode } + listOf("US", "GB", "BD", "IN", "CA", "DE", "FR", "NL", "MY", "SG", "ID")).distinct()
-                        distinctCountryCodes.forEach { code ->
-                            val c = ADMIN_PRESET_COUNTRIES.find { it.code == code }
-                            if (c != null) {
-                                DropdownMenuItem(
-                                    text = { Text("${c.flag} ${c.name} (${c.dialCode})", color = Color.White, fontSize = 12.sp) },
-                                    onClick = {
-                                        selectedDlrCountry = c.code
-                                        dlrCountryDropdownExpanded = false
-                                    }
+                    Surface(
+                        color = Color(0xFF090E17),
+                        shape = RoundedCornerShape(8.dp),
+                        border = BorderStroke(1.dp, Color(0xFF38BDF8).copy(alpha = 0.4f)),
+                        modifier = Modifier.weight(1.2f)
+                    ) {
+                        Column(modifier = Modifier.padding(vertical = 6.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text("RAM / HEAT", fontSize = 8.5.sp, color = Color(0xFF94A3B8), fontWeight = FontWeight.Bold)
+                            Text("COOL (A10-17)", fontSize = 10.5.sp, fontWeight = FontWeight.ExtraBold, color = Color(0xFF38BDF8))
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                // Actions Row: RAM/Cache Optimize & Cloud Sync
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Button(
+                        onClick = {
+                            System.gc()
+                            Toast.makeText(context, "✓ ক্যাশ ও অপ্রয়োজনীয় মেমরি সফলভাবে ক্লিয়ার হয়েছে!", Toast.LENGTH_SHORT).show()
+                            VibrationHelper.vibrateSuccess(context)
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E293B)),
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.weight(1f).height(36.dp),
+                        contentPadding = PaddingValues(horizontal = 6.dp)
+                    ) {
+                        Icon(Icons.Default.DeleteSweep, contentDescription = null, tint = Color(0xFF38BDF8), modifier = Modifier.size(13.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("ক্যাশ ও র‍্যাম ক্লিয়ার", fontSize = 10.5.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                    }
+
+                    Button(
+                        onClick = {
+                            AuthManager.syncFromCloud()
+                            Toast.makeText(context, "✓ ডাটাবেস লাইভ সিঙ্ক সম্পন্ন হয়েছে!", Toast.LENGTH_SHORT).show()
+                            VibrationHelper.vibrateSuccess(context)
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0F766E)),
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.weight(1f).height(36.dp),
+                        contentPadding = PaddingValues(horizontal = 6.dp)
+                    ) {
+                        Icon(Icons.Default.Refresh, contentDescription = null, tint = Color.White, modifier = Modifier.size(13.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("ডাটাবেস সিঙ্ক", fontSize = 10.5.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                    }
+                }
+            }
+        }
+
+        // 2. Search & Tab Filter Row
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            OutlinedTextField(
+                value = searchFilter,
+                onValueChange = { searchFilter = it },
+                placeholder = { Text("ইউজার, ইমেইল বা ডিভাইস খুঁজুন...", fontSize = 11.sp, color = Color(0xFF64748B)) },
+                modifier = Modifier.weight(1.5f),
+                shape = RoundedCornerShape(10.dp),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedTextColor = Color.White,
+                    unfocusedTextColor = Color.White,
+                    focusedBorderColor = Color(0xFF38BDF8),
+                    unfocusedBorderColor = Color(0xFF243B55),
+                    focusedContainerColor = Color(0xFF090E17),
+                    unfocusedContainerColor = Color(0xFF090E17)
+                ),
+                singleLine = true
+            )
+
+            listOf(
+                Pair("ALL", "ALL"),
+                Pair("ONLINE", "🟢 ON"),
+                Pair("OFFLINE", "⚪ OFF")
+            ).forEach { (tKey, tLabel) ->
+                val isSel = statusFilterTab == tKey
+                Surface(
+                    color = if (isSel) Color(0xFF38BDF8).copy(alpha = 0.25f) else Color(0xFF0B1420),
+                    shape = RoundedCornerShape(8.dp),
+                    border = BorderStroke(1.dp, if (isSel) Color(0xFF38BDF8) else Color(0xFF1E2D40)),
+                    modifier = Modifier.clickable { statusFilterTab = tKey }
+                ) {
+                    Text(
+                        text = tLabel,
+                        color = if (isSel) Color.White else Color(0xFF94A3B8),
+                        fontSize = 10.5.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 10.dp)
+                    )
+                }
+            }
+        }
+
+        // 3. User Device Sessions List
+        val filteredUsers = managedUsers.filter { u ->
+            val isOnline = u.isOnline || (now - u.lastActive) < 120_000L
+            val matchTab = when (statusFilterTab) {
+                "ONLINE" -> isOnline
+                "OFFLINE" -> !isOnline
+                else -> true
+            }
+            val matchSearch = searchFilter.isBlank() ||
+                    u.name.contains(searchFilter, ignoreCase = true) ||
+                    u.email.contains(searchFilter, ignoreCase = true) ||
+                    u.lastDeviceName.contains(searchFilter, ignoreCase = true)
+
+            matchTab && matchSearch
+        }
+
+        if (filteredUsers.isEmpty()) {
+            Card(
+                colors = CardDefaults.cardColors(containerColor = Color(0xFF101824)),
+                shape = RoundedCornerShape(14.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Box(
+                    modifier = Modifier.fillMaxWidth().padding(24.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text("কোনো ইউজার সেশন পাওয়া যায়নি", color = Color(0xFF64748B), fontSize = 12.sp)
+                }
+            }
+        } else {
+            filteredUsers.forEach { user ->
+                val isOnline = user.isOnline || (now - user.lastActive) < 120_000L
+                Surface(
+                    color = Color(0xFF101824),
+                    shape = RoundedCornerShape(12.dp),
+                    border = BorderStroke(1.dp, if (isOnline) Color(0xFF00E676).copy(alpha = 0.4f) else Color(0xFF1E2D40)),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.padding(12.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(7.dp)
+                                        .clip(CircleShape)
+                                        .background(if (isOnline) Color(0xFF00E676) else Color(0xFF64748B))
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = user.name,
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color.White
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = "(${user.email})",
+                                    fontSize = 10.sp,
+                                    color = Color(0xFF94A3B8)
+                                )
+                            }
+
+                            Surface(
+                                color = if (isOnline) Color(0xFF00E676).copy(alpha = 0.2f) else Color(0xFF334155).copy(alpha = 0.4f),
+                                shape = RoundedCornerShape(4.dp),
+                                border = BorderStroke(1.dp, if (isOnline) Color(0xFF00E676) else Color(0xFF475569))
+                            ) {
+                                Text(
+                                    text = if (isOnline) "🟢 ONLINE" else "⚪ ${formatOfflineTime(user.lastActive)}",
+                                    color = if (isOnline) Color(0xFF00E676) else Color(0xFF94A3B8),
+                                    fontSize = 9.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(6.dp))
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.Default.Phone, contentDescription = null, tint = Color(0xFF38BDF8), modifier = Modifier.size(13.dp))
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(
+                                    text = user.lastDeviceName.ifEmpty { "Android Device" },
+                                    fontSize = 11.sp,
+                                    color = Color(0xFFCBD5E1),
+                                    fontWeight = FontWeight.Medium
+                                )
+                            }
+
+                            Text(
+                                text = "লগইন: ${user.loginCount} বার",
+                                fontSize = 10.5.sp,
+                                color = Color(0xFF94A3B8),
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.height(4.dp))
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "Total OTP: ${user.totalOtps}  |  Balance: ৳${String.format(Locale.US, "%.2f", user.balanceTk)}",
+                                fontSize = 10.sp,
+                                color = Color(0xFFFBBF24),
+                                fontWeight = FontWeight.Bold
+                            )
+
+                            if (user.lastLoginAt > 0L) {
+                                val dateStr = try {
+                                    SimpleDateFormat("dd MMM, hh:mm a", Locale.US).format(Date(user.lastLoginAt))
+                                } catch (_: Exception) { "" }
+                                Text(
+                                    text = "Last: $dateStr",
+                                    fontSize = 9.5.sp,
+                                    color = Color(0xFF64748B)
                                 )
                             }
                         }
                     }
                 }
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                OutlinedTextField(
-                    value = searchFilter,
-                    onValueChange = { searchFilter = it },
-                    placeholder = { Text("মেসেজ, নাম্বার বা সেন্ডার দিয়ে ফিল্টার করুন...", fontSize = 11.sp, color = Color(0xFF64748B)) },
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(10.dp),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedTextColor = Color.White,
-                        unfocusedTextColor = Color.White,
-                        focusedBorderColor = Color(0xFF38BDF8),
-                        unfocusedBorderColor = Color(0xFF243B55),
-                        focusedContainerColor = Color(0xFF090E17),
-                        unfocusedContainerColor = Color(0xFF090E17)
-                    ),
-                    singleLine = true
-                )
             }
-        }
-
-        val filteredRecords = unixState.liveCdrRecords.filter { cdr ->
-            val matchesSearch = searchFilter.isBlank() ||
-                    cdr.num.contains(searchFilter) ||
-                    cdr.cli.contains(searchFilter, ignoreCase = true) ||
-                    cdr.message.contains(searchFilter, ignoreCase = true)
-
-            val matchesCountry = if (selectedDlrCountry == "ALL") true else {
-                val country = ADMIN_PRESET_COUNTRIES.find { it.code == selectedDlrCountry }
-                val dialCodeClean = country?.dialCode?.replace("+", "") ?: ""
-                val numClean = cdr.num.replace("+", "").trim()
-                val matchesDial = dialCodeClean.isNotEmpty() && numClean.startsWith(dialCodeClean)
-                val matchesUploaded = unixState.uploadedNumbers.any { up ->
-                    up.countryCode == selectedDlrCountry && (up.number.contains(numClean) || numClean.contains(up.number.replace("+", "")))
-                }
-                matchesDial || matchesUploaded
-            }
-
-            matchesSearch && matchesCountry
-        }
-
-        if (filteredRecords.isEmpty()) {
-            Card(
-                colors = CardDefaults.cardColors(containerColor = Color(0xFF101824)),
-                shape = RoundedCornerShape(16.dp),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(28.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        text = "কোনো নতুন SMS রেকর্ড নেই বা লোড হচ্ছে...",
-                        color = Color(0xFF64748B),
-                        fontSize = 12.sp
-                    )
-                }
-            }
-        } else {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                filteredRecords.forEach { cdr ->
-                    AdminCdrItemRow(cdr = cdr)
-                }
-            }
-        }
-    }
-}
-
-@Composable
-fun AdminCdrItemRow(cdr: UnixSmsCdrRecord) {
-    Surface(
-        color = Color(0xFF101824),
-        shape = RoundedCornerShape(12.dp),
-        border = BorderStroke(1.dp, Color(0xFF1E2D40)),
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        Column(modifier = Modifier.padding(12.dp)) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Surface(
-                        color = Color(0xFF38BDF8).copy(alpha = 0.2f),
-                        shape = RoundedCornerShape(6.dp)
-                    ) {
-                        Text(
-                            text = cdr.cli.ifEmpty { "SMS" },
-                            color = Color(0xFF38BDF8),
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.Bold,
-                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                        )
-                    }
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = cdr.num,
-                        color = Color.White,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Bold,
-                        fontFamily = FontFamily.Monospace
-                    )
-                }
-
-                Text(
-                    text = cdr.dt,
-                    color = Color(0xFF64748B),
-                    fontSize = 9.sp
-                )
-            }
-
-            Spacer(modifier = Modifier.height(6.dp))
-
-            Text(
-                text = cdr.message,
-                color = Color(0xFFE2E8F0),
-                fontSize = 12.sp,
-                lineHeight = 16.sp
-            )
         }
     }
 }

@@ -129,6 +129,138 @@ fun SettingsSection(
             }
         }
 
+        // Smart Automation & Workflow Controls (Option 1 & Option 6 User Toggles)
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            border = androidx.compose.foundation.BorderStroke(1.5.dp, Color(0xFF00E676).copy(alpha = 0.5f))
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        modifier = Modifier
+                            .size(36.dp)
+                            .clip(CircleShape)
+                            .background(Color(0xFF00E676).copy(alpha = 0.15f)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Bolt,
+                            contentDescription = null,
+                            tint = Color(0xFF00E676),
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Column {
+                        Text(
+                            text = "Automation & Alerts (অপশন ১ ও ৬ কন্ট্রোল)",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            text = "আপনার সুবিধামতো ১ ও ৬ নম্বর অপশন অন অথবা অফ রাখুন",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(14.dp))
+
+                // OPTION 1: Auto-Copy OTP to Clipboard
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Surface(
+                                shape = RoundedCornerShape(4.dp),
+                                color = Color(0xFF00E676).copy(alpha = 0.15f)
+                            ) {
+                                Text(
+                                    text = "OPTION 1",
+                                    color = Color(0xFF00E676),
+                                    fontSize = 9.sp,
+                                    fontWeight = FontWeight.ExtraBold,
+                                    modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "Auto-Copy OTP to Clipboard",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 14.sp
+                            )
+                        }
+                        Spacer(modifier = Modifier.height(3.dp))
+                        Text(
+                            text = if (state.autoCopyOtp) "অন আছে: OTP আসার সাথে সাথে ক্লিপবোর্ডে অটো কপি হবে" else "অফ আছে: সরাসরি কপি হবে না, ক্লিক করে কপি করতে হবে",
+                            fontSize = 11.5.sp,
+                            color = if (state.autoCopyOtp) Color(0xFF00E676) else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+
+                    Switch(
+                        checked = state.autoCopyOtp,
+                        onCheckedChange = { OverlayStateManager.setAutoCopyOtp(it) },
+                        modifier = Modifier.testTag("auto_copy_otp_switch")
+                    )
+                }
+
+                androidx.compose.material3.HorizontalDivider(
+                    color = MaterialTheme.colorScheme.outline.copy(alpha = 0.12f),
+                    thickness = 0.8.dp,
+                    modifier = Modifier.padding(vertical = 12.dp)
+                )
+
+                // OPTION 6: Sound & Vibration Alert on OTP
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Surface(
+                                shape = RoundedCornerShape(4.dp),
+                                color = Color(0xFFFFB300).copy(alpha = 0.15f)
+                            ) {
+                                Text(
+                                    text = "OPTION 6",
+                                    color = Color(0xFFFFB300),
+                                    fontSize = 9.sp,
+                                    fontWeight = FontWeight.ExtraBold,
+                                    modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "OTP Sound & Vibration Alert",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 14.sp
+                            )
+                        }
+                        Spacer(modifier = Modifier.height(3.dp))
+                        Text(
+                            text = if (state.otpSoundVibrationEnabled) "অন আছে: নতুন OTP আসলে শব্দ ও ভাইব্রেশন করবে" else "অফ আছে: সম্পূর্ণ সাইলেন্ট থাকবে, কোনো শব্দ বা ভাইব্রেশন হবে না",
+                            fontSize = 11.5.sp,
+                            color = if (state.otpSoundVibrationEnabled) Color(0xFFFFB300) else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+
+                    Switch(
+                        checked = state.otpSoundVibrationEnabled,
+                        onCheckedChange = { OverlayStateManager.setOtpSoundVibrationEnabled(it) },
+                        modifier = Modifier.testTag("otp_sound_vibration_switch")
+                    )
+                }
+            }
+        }
+
         // Messenger-Style Floating Overlay Permission & Switcher
         Card(
             modifier = Modifier.fillMaxWidth(),

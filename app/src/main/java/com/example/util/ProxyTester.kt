@@ -234,4 +234,18 @@ object ProxyTester {
             timezone = timezone
         )
     }
+
+    fun measureSocketPing(host: String, port: Int, timeoutMs: Int = 2000): Long {
+        return try {
+            val start = System.currentTimeMillis()
+            val socket = java.net.Socket()
+            socket.tcpNoDelay = true
+            socket.connect(java.net.InetSocketAddress(host, port), timeoutMs)
+            val latency = System.currentTimeMillis() - start
+            socket.close()
+            latency
+        } catch (_: Exception) {
+            -1L
+        }
+    }
 }

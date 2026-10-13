@@ -508,8 +508,9 @@ object UnixSmsManager {
             )
         }
 
-        chosenList.firstOrNull()?.let {
-            ClipboardHelper.copyToClipboard(context, it.number, "Unix SMS Number")
+        if (chosenList.isNotEmpty()) {
+            val allNumbersText = chosenList.joinToString("\n") { it.number.replace("+", "").trim() }
+            ClipboardHelper.copyToClipboard(context, allNumbersText, "Unix SMS Numbers")
         }
         VibrationHelper.vibrateSuccess(context)
 
@@ -517,9 +518,9 @@ object UnixSmsManager {
         startFastOtpPolling(context)
 
         if (chosenList.size > 1) {
-            onResult(true, "✓ ${chosenList.size} টি নম্বর রেডি! প্রথম নম্বর কপি হয়েছে।")
+            onResult(true, "✓ ${chosenList.size} টি নম্বর রেডি! সবগুলো নম্বর ক্লিপবোর্ডে কপি হয়েছে।")
         } else {
-            onResult(true, "Number ${chosenList.first().number} ready! Auto-copied to clipboard.")
+            onResult(true, "নম্বর ${chosenList.first().number} রেডি! ক্লিপবোর্ডে কপি হয়েছে।")
         }
     }
 
@@ -592,8 +593,14 @@ object UnixSmsManager {
                     )
                 }
 
-                // Check active numbers against incoming CDRs & Auto-prune expired numbers (> 20 mins without OTP)
+                // 24-hour cycle auto reset for Live CDR
                 val nowTime = System.currentTimeMillis()
+                val cdrCycleStart = prefs?.getLong("unix_cdr_cycle_start_v2", 0L) ?: 0L
+                if (cdrCycleStart <= 0L || nowTime - cdrCycleStart >= 24 * 60 * 60 * 1000L) {
+                    prefs?.edit()?.putLong("unix_cdr_cycle_start_v2", nowTime)?.apply()
+                    _state.update { it.copy(liveCdrRecords = emptyList()) }
+                }
+
                 val newlyArrivedOtps = mutableListOf<Pair<ProvisionedNumber, String>>()
                 // Auto-cleanup: remove unfulfilled numbers older than 20 mins to save RAM/ROM
                 val currentActive = _state.value.activeNumbers.filter { prov ->

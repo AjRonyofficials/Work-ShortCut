@@ -357,9 +357,9 @@ object VirtualNumberManager {
         _state.update { current ->
             var hasChanges = false
             val updated = current.provisionedNumbers.map { item ->
-                if (item.status == "pending" && now >= item.expiresAt) {
+                if (item.otpCode.isNullOrEmpty() && (item.status == "pending" || item.status == "wait") && now >= item.expiresAt) {
                     hasChanges = true
-                    item.copy(status = "failed", failReason = "Timeout")
+                    item.copy(status = "failed", failReason = "Timeout (20m)")
                 } else {
                     item
                 }
@@ -562,9 +562,10 @@ object VirtualNumberManager {
                         Toast.LENGTH_SHORT
                     ).show()
                     VibrationHelper.vibrateSuccess(context)
-                    // Auto copy first number to clipboard
-                    newNumbers.firstOrNull()?.let {
-                        ClipboardHelper.copyToClipboard(context, it.number, "Phone Number")
+                    // Auto copy all numbers to clipboard separated by newline
+                    if (newNumbers.isNotEmpty()) {
+                        val allNumbersText = newNumbers.joinToString("\n") { it.number.replace("+", "").trim() }
+                        ClipboardHelper.copyToClipboard(context, allNumbersText, "Phone Numbers")
                     }
                     // Start live OTP polling immediately!
                     startAutoPolling(context, autoCopy = true)
@@ -719,7 +720,7 @@ object VirtualNumberManager {
                 }
                 checkNumberTimeouts()
                 fetchIncomingOtps(context, autoCopy = autoCopy)
-                delay(2000L) // Fast 2-second check & timeout evaluator
+                delay(1000L) // Ultra-fast 1-second background auto fetch
             }
         }
     }
@@ -832,6 +833,21 @@ object VirtualNumberManager {
                 resetCycleStartTime = 0L
             )
         }
+    }
+
+    fun clearFailedNumbers(context: Context) {
+        val now = System.currentTimeMillis()
+        val current = _state.value.provisionedNumbers
+        val (failed, remaining) = current.partition {
+            it.otpCode.isNullOrEmpty() && (it.status == "failed" || it.status == "expired" || now >= it.expiresAt)
+        }
+        if (failed.isEmpty()) {
+            Toast.makeText(context, "কোনো ব্যর্থ বা মেয়াদোত্তীর্ণ নম্বর নেই", Toast.LENGTH_SHORT).show()
+            return
+        }
+        saveUserProvisionedNumbers(remaining)
+        _state.update { it.copy(provisionedNumbers = remaining) }
+        Toast.makeText(context, "✓ ${failed.size} টি ব্যর্থ নম্বর রিমুভ করা হয়েছে!", Toast.LENGTH_SHORT).show()
     }
 
     fun isPhoneNumberMatch(num1: String, num2: String): Boolean {

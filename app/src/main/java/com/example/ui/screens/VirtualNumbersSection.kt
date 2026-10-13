@@ -32,9 +32,11 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.DateRange
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Key
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import com.example.service.OverlayStateManager
 import com.example.ui.components.UserProfileOtpHistoryDialog
 import com.example.util.VibrationHelper
 import androidx.compose.material.icons.filled.KeyboardArrowDown
@@ -107,6 +109,7 @@ fun VirtualNumbersSection(
 ) {
     val context = LocalContext.current
     val state by VirtualNumberManager.state.collectAsState()
+    val overlayState by OverlayStateManager.uiState.collectAsState()
 
     var selectedSubTab by remember { mutableIntStateOf(0) } // 0: Get Number, 1: Live Console
     var filterTab by remember { mutableStateOf("ALL") } // "ALL", "SUCCESS", "PENDING", "FAILED"
@@ -150,15 +153,19 @@ fun VirtualNumbersSection(
     }
 
     val total = state.provisionedNumbers.size
-    val successCount = state.provisionedNumbers.count { it.status == "success" }
-    val waitCount = state.provisionedNumbers.count { it.status == "pending" }
-    val failedCount = state.provisionedNumbers.count { it.status == "failed" }
+    val successCount = state.provisionedNumbers.count { it.status == "success" || !it.otpCode.isNullOrEmpty() }
+    val waitCount = state.provisionedNumbers.count {
+        it.otpCode.isNullOrEmpty() && (it.status == "pending" || it.status == "wait") && nowTick < it.expiresAt
+    }
+    val failedCount = state.provisionedNumbers.count {
+        it.status == "failed" || it.status == "expired" || (it.otpCode.isNullOrEmpty() && nowTick >= it.expiresAt)
+    }
     val successRate = if (total > 0) (successCount.toFloat() / total.toFloat()) * 100f else 0f
 
     val filteredList = when (filterTab) {
-        "SUCCESS" -> state.provisionedNumbers.filter { it.status == "success" }
-        "PENDING" -> state.provisionedNumbers.filter { it.status == "pending" }
-        "FAILED" -> state.provisionedNumbers.filter { it.status == "failed" }
+        "SUCCESS" -> state.provisionedNumbers.filter { it.status == "success" || !it.otpCode.isNullOrEmpty() }
+        "PENDING" -> state.provisionedNumbers.filter { it.otpCode.isNullOrEmpty() && (it.status == "pending" || it.status == "wait") && nowTick < it.expiresAt }
+        "FAILED" -> state.provisionedNumbers.filter { it.status == "failed" || it.status == "expired" || (it.otpCode.isNullOrEmpty() && nowTick >= it.expiresAt) }
         else -> state.provisionedNumbers
     }
 
@@ -499,7 +506,7 @@ fun VirtualNumbersSection(
                             modifier = Modifier.weight(1f)
                         )
                         StatPill(
-                            label = "WAIT",
+                            label = "WAIT (20m)",
                             value = waitCount.toString(),
                             color = Color(0xFFFFD600),
                             modifier = Modifier.weight(1f)
@@ -510,6 +517,110 @@ fun VirtualNumbersSection(
                             color = Color(0xFFFF5252),
                             modifier = Modifier.weight(1f)
                         )
+                    }
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    // Smart Automation Toggles (Option 1 & Option 6) + Option 5 Clear Failed
+                    Surface(
+                        color = Color(0xFF0F1A26),
+                        shape = RoundedCornerShape(10.dp),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF1E3A56)),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 10.dp, vertical = 7.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                // Option 1 Chip: Auto-Copy
+                                Surface(
+                                    color = if (overlayState.autoCopyOtp) Color(0xFF00E676).copy(alpha = 0.2f) else Color(0xFF263238),
+                                    shape = RoundedCornerShape(6.dp),
+                                    border = androidx.compose.foundation.BorderStroke(
+                                        1.dp,
+                                        if (overlayState.autoCopyOtp) Color(0xFF00E676) else Color(0xFF546E7A)
+                                    ),
+                                    modifier = Modifier.clickable { OverlayStateManager.toggleAutoCopyOtp() }
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(horizontal = 7.dp, vertical = 4.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(
+                                            text = "1. Auto-Copy: ",
+                                            fontSize = 10.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = Color.White
+                                        )
+                                        Text(
+                                            text = if (overlayState.autoCopyOtp) "ON" else "OFF",
+                                            fontSize = 10.sp,
+                                            fontWeight = FontWeight.ExtraBold,
+                                            color = if (overlayState.autoCopyOtp) Color(0xFF00E676) else Color(0xFFFF5252)
+                                        )
+                                    }
+                                }
+
+                                Spacer(modifier = Modifier.width(6.dp))
+
+                                // Option 6 Chip: Sound/Vibration
+                                Surface(
+                                    color = if (overlayState.otpSoundVibrationEnabled) Color(0xFFFFB300).copy(alpha = 0.2f) else Color(0xFF263238),
+                                    shape = RoundedCornerShape(6.dp),
+                                    border = androidx.compose.foundation.BorderStroke(
+                                        1.dp,
+                                        if (overlayState.otpSoundVibrationEnabled) Color(0xFFFFB300) else Color(0xFF546E7A)
+                                    ),
+                                    modifier = Modifier.clickable { OverlayStateManager.toggleOtpSoundVibrationEnabled() }
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(horizontal = 7.dp, vertical = 4.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(
+                                            text = "6. Sound/Vibe: ",
+                                            fontSize = 10.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = Color.White
+                                        )
+                                        Text(
+                                            text = if (overlayState.otpSoundVibrationEnabled) "ON" else "OFF",
+                                            fontSize = 10.sp,
+                                            fontWeight = FontWeight.ExtraBold,
+                                            color = if (overlayState.otpSoundVibrationEnabled) Color(0xFFFFB300) else Color(0xFFFF5252)
+                                        )
+                                    }
+                                }
+                            }
+
+                            // Option 5: Clear Failed (20m) Button
+                            if (failedCount > 0) {
+                                Surface(
+                                    color = Color(0xFFFF5252).copy(alpha = 0.2f),
+                                    shape = RoundedCornerShape(6.dp),
+                                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFFF5252)),
+                                    modifier = Modifier.clickable { VirtualNumberManager.clearFailedNumbers(context) }
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 4.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Icon(Icons.Default.Delete, contentDescription = null, tint = Color(0xFFFF5252), modifier = Modifier.size(12.dp))
+                                        Spacer(modifier = Modifier.width(2.dp))
+                                        Text(
+                                            text = "Clear Failed",
+                                            fontSize = 9.5.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = Color(0xFFFF5252)
+                                        )
+                                    }
+                                }
+                            }
+                        }
                     }
 
                     Spacer(modifier = Modifier.height(10.dp))

@@ -59,16 +59,24 @@ object OtpNotificationHelper {
             }
             recentlyNotifiedSignatures[signature] = now
 
-            // 1. Immediate Auto-Copy to Clipboard
-            try {
-                ClipboardHelper.copyToClipboard(context, cleanOtp, "OTP Code")
-            } catch (_: Throwable) {}
+            val autoCopyEnabled = com.example.service.OverlayStateManager.uiState.value.autoCopyOtp
+            val soundVibEnabled = com.example.service.OverlayStateManager.uiState.value.otpSoundVibrationEnabled
+
+            // 1. Auto-Copy to Clipboard (Controlled by user setting 1)
+            if (autoCopyEnabled) {
+                try {
+                    ClipboardHelper.copyToClipboard(context, cleanOtp, "OTP Code")
+                } catch (_: Throwable) {}
+            }
 
             // 2. Immediate Toast & In-App Top Popup Banner (safely posted to Main Thread)
             android.os.Handler(android.os.Looper.getMainLooper()).post {
                 try {
-                    Toast.makeText(context.applicationContext, "⚡ OTP কপি হয়েছে: $cleanOtp", Toast.LENGTH_SHORT).show()
-                    VibrationHelper.vibrateSuccess(context)
+                    val toastMsg = if (autoCopyEnabled) "⚡ OTP কপি হয়েছে: $cleanOtp" else "📩 নতুন OTP এসেছে: $cleanOtp"
+                    Toast.makeText(context.applicationContext, toastMsg, Toast.LENGTH_SHORT).show()
+                    if (soundVibEnabled) {
+                        VibrationHelper.vibrateSuccess(context)
+                    }
                 } catch (_: Throwable) {}
             }
             try {
@@ -87,9 +95,13 @@ object OtpNotificationHelper {
                         NotificationManager.IMPORTANCE_HIGH
                     ).apply {
                         description = "Live Virtual Number OTP Incoming Alerts"
-                        enableVibration(true)
+                        enableVibration(soundVibEnabled)
                         enableLights(true)
-                        vibrationPattern = longArrayOf(0, 250, 100, 250)
+                        if (soundVibEnabled) {
+                            vibrationPattern = longArrayOf(0, 250, 100, 250)
+                        } else {
+                            vibrationPattern = longArrayOf(0)
+                        }
                         lockscreenVisibility = NotificationCompat.VISIBILITY_PUBLIC
                         setShowBadge(true)
                     }
@@ -130,21 +142,18 @@ object OtpNotificationHelper {
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
             )
 
-            val soundUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
+            val soundUri = if (soundVibEnabled) RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION) else null
 
-            val notification = NotificationCompat.Builder(context, CHANNEL_ID)
+            val notifBuilder = NotificationCompat.Builder(context, CHANNEL_ID)
                 .setSmallIcon(android.R.drawable.ic_dialog_info)
-                .setContentTitle("⚡ OTP Received: $cleanOtp")
+                .setContentTitle(if (autoCopyEnabled) "⚡ OTP Received & Copied: $cleanOtp" else "📩 OTP Received: $cleanOtp")
                 .setContentText("$phoneNumber: $fullMessage")
                 .setStyle(
                     NotificationCompat.BigTextStyle()
                         .bigText("Phone: $phoneNumber\nOTP: $cleanOtp\nMessage: $fullMessage")
                 )
                 .setPriority(NotificationCompat.PRIORITY_MAX)
-                .setDefaults(NotificationCompat.DEFAULT_ALL)
                 .setCategory(NotificationCompat.CATEGORY_MESSAGE)
-                .setSound(soundUri)
-                .setVibrate(longArrayOf(0, 250, 100, 250))
                 .setAutoCancel(true)
                 .setContentIntent(contentPendingIntent)
                 .addAction(
@@ -152,7 +161,16 @@ object OtpNotificationHelper {
                     "COPY OTP ($cleanOtp)",
                     copyPendingIntent
                 )
-                .build()
+
+            if (soundVibEnabled) {
+                notifBuilder.setSound(soundUri)
+                notifBuilder.setVibrate(longArrayOf(0, 250, 100, 250))
+                notifBuilder.setDefaults(NotificationCompat.DEFAULT_ALL)
+            } else {
+                notifBuilder.setSilent(true)
+            }
+
+            val notification = notifBuilder.build()
 
             // Stable bounded ID per phone number (replaces instead of flooding status bar)
             val notificationId = (cleanPhone.hashCode() and 0x7FFFFFFF) % 1000 + 1000

@@ -114,7 +114,9 @@ data class OverlayUiState(
     val showOverlayApps: Boolean = true,
     val showOverlayClean: Boolean = true,
     val showOverlayVirtualNumbers: Boolean = true,
-    val isVirtualNumbersOverlayExpanded: Boolean = false
+    val isVirtualNumbersOverlayExpanded: Boolean = false,
+    val autoCopyOtp: Boolean = true,
+    val otpSoundVibrationEnabled: Boolean = true
 )
 
 object OverlayStateManager {
@@ -313,6 +315,8 @@ object OverlayStateManager {
                     showOverlayApps = showApps,
                     showOverlayClean = showClean,
                     showOverlayVirtualNumbers = showVirtual,
+                    autoCopyOtp = p.getBoolean("auto_copy_otp", true),
+                    otpSoundVibrationEnabled = p.getBoolean("otp_sound_vibration_enabled", true),
                     proxyState = it.proxyState.copy(
                         profileName = profileName,
                         host = proxyHost,
@@ -389,6 +393,24 @@ object OverlayStateManager {
 
     fun toggleVirtualNumbersOverlay() {
         _uiState.update { it.copy(isVirtualNumbersOverlayExpanded = !it.isVirtualNumbersOverlayExpanded) }
+    }
+
+    fun setAutoCopyOtp(enabled: Boolean) {
+        _uiState.update { it.copy(autoCopyOtp = enabled) }
+        prefs?.edit()?.putBoolean("auto_copy_otp", enabled)?.apply()
+    }
+
+    fun toggleAutoCopyOtp() {
+        setAutoCopyOtp(!_uiState.value.autoCopyOtp)
+    }
+
+    fun setOtpSoundVibrationEnabled(enabled: Boolean) {
+        _uiState.update { it.copy(otpSoundVibrationEnabled = enabled) }
+        prefs?.edit()?.putBoolean("otp_sound_vibration_enabled", enabled)?.apply()
+    }
+
+    fun toggleOtpSoundVibrationEnabled() {
+        setOtpSoundVibrationEnabled(!_uiState.value.otpSoundVibrationEnabled)
     }
 
     fun setRandomPasswordMode(enabled: Boolean) {
@@ -856,6 +878,48 @@ object OverlayStateManager {
             label = "Sheet Data",
             toastMessage = "✅ Copied all ${rows.size} rows as Excel table!"
         )
+    }
+
+    fun shareAllRowsAsCsv(context: Context, rows: List<com.example.data.local.model.ExcelRowEntity>) {
+        if (rows.isEmpty()) {
+            Toast.makeText(context, "এক্সপোর্ট করার জন্য কোনো ডাটা নেই!", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        val sorted = rows.sortedBy { it.id }
+        fun escapeCsv(v: String): String {
+            return if (v.contains(",") || v.contains("\"") || v.contains("\n")) {
+                "\"" + v.replace("\"", "\"\"") + "\""
+            } else v
+        }
+
+        val header = "Col A,Col B,Col C,Col D,Col E,Col F"
+        val csvLines = sorted.map { row ->
+            listOf(
+                escapeCsv(row.colA),
+                escapeCsv(row.colB),
+                escapeCsv(row.colC),
+                escapeCsv(row.colD),
+                escapeCsv(row.colE),
+                escapeCsv(row.colF)
+            ).joinToString(",")
+        }
+        val fullCsv = (listOf(header) + csvLines).joinToString("\n")
+
+        try {
+            val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                type = "text/plain"
+                putExtra(Intent.EXTRA_SUBJECT, "Excel_Collector_Export_${System.currentTimeMillis()}.csv")
+                putExtra(Intent.EXTRA_TEXT, fullCsv)
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK
+            }
+            context.startActivity(Intent.createChooser(shareIntent, "Share Excel CSV Data").apply {
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK
+            })
+            VibrationHelper.vibrateSuccess(context)
+        } catch (_: Exception) {
+            com.example.util.ClipboardHelper.copyToClipboard(context, fullCsv, "CSV Export", "✓ CSV ক্লিপবোর্ডে কপি হয়েছে!")
+        }
     }
 
     fun autoPasteClipboardToColumn(context: Context, columnKey: String) {

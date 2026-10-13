@@ -910,7 +910,7 @@ fun UserProfileOtpHistoryDialog(
                                             shape = RoundedCornerShape(4.dp)
                                         ) {
                                             Text(
-                                                text = "Unix: $${String.format(Locale.US, "%.3f", otpState.currentUnixRate)} • Zenex: $${String.format(Locale.US, "%.3f", otpState.currentZenexRate)}",
+                                                text = "Unix: ${String.format(Locale.US, "%.2f", otpState.currentUnixRate)}৳ • Kop 1: ${String.format(Locale.US, "%.2f", otpState.currentZenexRate)}৳ • Kop 2: ${String.format(Locale.US, "%.2f", otpState.currentKop2Rate)}৳",
                                                 color = Color(0xFF38BDF8),
                                                 fontSize = 9.sp,
                                                 fontWeight = FontWeight.Bold,
@@ -932,24 +932,30 @@ fun UserProfileOtpHistoryDialog(
                                             border = BorderStroke(1.dp, Color(0xFF0284C7).copy(alpha = 0.4f)),
                                             modifier = Modifier.weight(1f)
                                         ) {
-                                            Column(modifier = Modifier.padding(10.dp)) {
+                                            Column(modifier = Modifier.padding(8.dp)) {
                                                 Text(
-                                                    text = "1. Premium Numbers",
+                                                    text = "1. Premium",
                                                     color = Color(0xFF38BDF8),
-                                                    fontSize = 11.sp,
+                                                    fontSize = 10.5.sp,
                                                     fontWeight = FontWeight.Bold
+                                                )
+                                                Text(
+                                                    text = "Rate: ${String.format(Locale.US, "%.2f", otpState.currentUnixRate)}৳",
+                                                    color = Color(0xFF67E8F9),
+                                                    fontSize = 9.sp,
+                                                    fontWeight = FontWeight.SemiBold
                                                 )
                                                 Spacer(modifier = Modifier.height(4.dp))
                                                 Text(
-                                                    text = "Today: ${otpState.unixTodayOtps} OTPs",
+                                                    text = "Today: ${otpState.unixTodayOtps}",
                                                     color = Color.White,
-                                                    fontSize = 12.sp,
+                                                    fontSize = 11.sp,
                                                     fontWeight = FontWeight.ExtraBold
                                                 )
                                                 Text(
-                                                    text = "Total: ${otpState.unixTotalAllTime} OTPs",
+                                                    text = "Total: ${otpState.unixTotalAllTime}",
                                                     color = Color(0xFF94A3B8),
-                                                    fontSize = 10.sp
+                                                    fontSize = 9.sp
                                                 )
                                             }
                                         }
@@ -964,17 +970,18 @@ fun UserProfileOtpHistoryDialog(
                                             Column(modifier = Modifier.padding(8.dp)) {
                                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                                     Text(
-                                                        text = "2. Kop 1 ",
+                                                        text = "2. Kop 1",
                                                         color = Color(0xFF34D399),
-                                                        fontSize = 10.sp,
+                                                        fontSize = 10.5.sp,
                                                         fontWeight = FontWeight.Bold
                                                     )
-                                                    Text(
-                                                        text = "(Api)",
-                                                        color = Color(0xFF6EE7B7),
-                                                        fontSize = 8.5.sp
-                                                    )
                                                 }
+                                                Text(
+                                                    text = "Rate: ${String.format(Locale.US, "%.2f", otpState.currentZenexRate)}৳",
+                                                    color = Color(0xFFA7F3D0),
+                                                    fontSize = 9.sp,
+                                                    fontWeight = FontWeight.SemiBold
+                                                )
                                                 Spacer(modifier = Modifier.height(4.dp))
                                                 Text(
                                                     text = "Today: ${otpState.zenexTodayOtps}",
@@ -1000,17 +1007,18 @@ fun UserProfileOtpHistoryDialog(
                                             Column(modifier = Modifier.padding(8.dp)) {
                                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                                     Text(
-                                                        text = "3. Kop 2 ",
+                                                        text = "3. Kop 2",
                                                         color = Color(0xFFA78BFA),
-                                                        fontSize = 10.sp,
+                                                        fontSize = 10.5.sp,
                                                         fontWeight = FontWeight.Bold
                                                     )
-                                                    Text(
-                                                        text = "(Api)",
-                                                        color = Color(0xFFC4B5FD),
-                                                        fontSize = 8.5.sp
-                                                    )
                                                 }
+                                                Text(
+                                                    text = "Rate: ${String.format(Locale.US, "%.2f", otpState.currentKop2Rate)}৳",
+                                                    color = Color(0xFFDDD6FE),
+                                                    fontSize = 9.sp,
+                                                    fontWeight = FontWeight.SemiBold
+                                                )
                                                 Spacer(modifier = Modifier.height(4.dp))
                                                 Text(
                                                     text = "Today: ${otpState.kop2TodayOtps}",
@@ -1281,7 +1289,7 @@ fun DailyOtpRowItem(
                         fontWeight = if (isToday) FontWeight.Bold else FontWeight.Medium
                     )
                     Text(
-                        text = "Unix: ${summary.unixCount} • Zenex: ${summary.zenexCount}",
+                        text = "Unix: ${summary.unixCount} • Kop 1: ${summary.zenexCount} • Kop 2: ${summary.kop2Count}",
                         color = Color(0xFF94A3B8),
                         fontSize = 9.sp
                     )

@@ -100,6 +100,7 @@ import com.example.util.ClipboardHelper
 import com.example.util.NameGenerator
 import com.example.util.ProxyFormatHelper
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 @Composable
 fun ProxySection(
@@ -112,6 +113,7 @@ fun ProxySection(
     val scope = rememberCoroutineScope()
     val proxy = state.proxyState
 
+    var isFastestSearching by remember { mutableStateOf(false) }
     var profileName by remember(proxy.profileName) { mutableStateOf(proxy.profileName) }
     var serverHost by remember(proxy.host) { mutableStateOf(proxy.host) }
     var serverPort by remember(proxy.port) { mutableStateOf(proxy.port.toString()) }
@@ -966,17 +968,79 @@ fun ProxySection(
                             Icon(Icons.Default.Dns, contentDescription = null, tint = BrandBlue, modifier = Modifier.size(20.dp))
                             Spacer(modifier = Modifier.width(6.dp))
                             Text(
-                                text = "Saved Proxy Profiles (${savedProxies.size})",
+                                text = "Saved Proxies (${savedProxies.size})",
                                 style = MaterialTheme.typography.titleSmall,
                                 fontWeight = FontWeight.Bold
                             )
                         }
 
-                        Text(
-                            text = "Tap to load",
-                            fontSize = 11.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                        if (savedProxies.isNotEmpty()) {
+                            Button(
+                                onClick = {
+                                    isFastestSearching = true
+                                    scope.launch(kotlinx.coroutines.Dispatchers.IO) {
+                                        var bestProxy: com.example.data.local.model.ProxyProfileEntity? = null
+                                        var lowestPing = Long.MAX_VALUE
+
+                                        for (item in savedProxies) {
+                                            val ping = com.example.util.ProxyTester.measureSocketPing(item.host, item.port, 2000)
+                                            if (ping in 1 until lowestPing) {
+                                                lowestPing = ping
+                                                bestProxy = item
+                                            }
+                                        }
+
+                                        withContext(kotlinx.coroutines.Dispatchers.Main) {
+                                            isFastestSearching = false
+                                            if (bestProxy != null) {
+                                                profileName = bestProxy.name
+                                                serverHost = bestProxy.host
+                                                serverPort = bestProxy.port.toString()
+                                                protocol = bestProxy.protocol
+                                                username = bestProxy.username
+                                                password = bestProxy.password
+                                                countryCode = bestProxy.countryCode
+
+                                                OverlayStateManager.updateSuperProxyProfile(
+                                                    profileName = bestProxy.name,
+                                                    server = bestProxy.host,
+                                                    port = bestProxy.port,
+                                                    protocol = bestProxy.protocol,
+                                                    countryCode = bestProxy.countryCode,
+                                                    username = bestProxy.username,
+                                                    password = bestProxy.password
+                                                )
+                                                repository?.setActiveProxy(bestProxy.id)
+                                                com.example.util.VibrationHelper.vibrateSuccess(context)
+                                                Toast.makeText(context, "⚡ ফাস্টেস্ট প্রক্সি সিলেক্টেড: ${bestProxy.name} (${lowestPing}ms)", Toast.LENGTH_LONG).show()
+                                            } else {
+                                                Toast.makeText(context, "প্রক্সি পিং পাওয়া যায়নি", Toast.LENGTH_SHORT).show()
+                                            }
+                                        }
+                                    }
+                                },
+                                shape = RoundedCornerShape(8.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00E676)),
+                                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                                modifier = Modifier.height(30.dp)
+                            ) {
+                                if (isFastestSearching) {
+                                    CircularProgressIndicator(color = Color.Black, modifier = Modifier.size(12.dp), strokeWidth = 2.dp)
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text("টেস্ট...", fontSize = 10.sp, color = Color.Black, fontWeight = FontWeight.Bold)
+                                } else {
+                                    Icon(Icons.Default.Bolt, contentDescription = null, tint = Color.Black, modifier = Modifier.size(13.dp))
+                                    Spacer(modifier = Modifier.width(3.dp))
+                                    Text("⚡ ফাস্টেস্ট সিলেক্ট", fontSize = 10.sp, color = Color.Black, fontWeight = FontWeight.Bold)
+                                }
+                            }
+                        } else {
+                            Text(
+                                text = "Tap to load",
+                                fontSize = 11.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
                     }
 
                     Spacer(modifier = Modifier.height(10.dp))

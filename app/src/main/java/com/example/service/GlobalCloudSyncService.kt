@@ -208,6 +208,7 @@ object GlobalCloudSyncService {
                 val patchPayload = JSONObject().apply {
                     put("otp_rate", unixRate)
                     put("zenex_rate", zenexRate)
+                    put("kop2_rate", kop2Rate)
                     put("numbers_json", numArr.toString())
                     put("updated_at", System.currentTimeMillis())
                 }
@@ -223,7 +224,37 @@ object GlobalCloudSyncService {
                 httpClient.newCall(req).execute()
                 Log.d(TAG, "Pushed ${numArr.length()} numbers & rates to Supabase successfully.")
             } catch (e: Exception) {
-                Log.e(TAG, "Push to Supabase failed: ${e.message}")
+                Log.e(TAG, "Error pushing to cloud: ${e.message}")
+            }
+        }
+    }
+
+    fun pushRateSettingsOnly(
+        unixRate: Double = UnixSmsManager.state.value.otpRatePerSms,
+        zenexRate: Double = VirtualNumberManager.zenexOtpRate.value,
+        kop2Rate: Double = KopEngine2Manager.kop2OtpRate.value
+    ) {
+        lastLocalPushTimestamp = System.currentTimeMillis()
+        scope.launch {
+            try {
+                val patchPayload = JSONObject().apply {
+                    put("otp_rate", unixRate)
+                    put("zenex_rate", zenexRate)
+                    put("kop2_rate", kop2Rate)
+                    put("updated_at", System.currentTimeMillis())
+                }
+                val body = patchPayload.toString().toRequestBody("application/json; charset=utf-8".toMediaTypeOrNull())
+                val req = Request.Builder()
+                    .url("$SUPABASE_BASE_URL/app_settings?id=eq.1")
+                    .header("apikey", SUPABASE_KEY)
+                    .header("Content-Type", "application/json")
+                    .header("Prefer", "return=minimal")
+                    .patch(body)
+                    .build()
+                httpClient.newCall(req).execute()
+                Log.d(TAG, "Pushed rate settings to Supabase successfully: Unix=$unixRate, Zenex=$zenexRate, Kop2=$kop2Rate")
+            } catch (e: Exception) {
+                Log.e(TAG, "Error pushing rates to cloud: ${e.message}")
             }
         }
     }

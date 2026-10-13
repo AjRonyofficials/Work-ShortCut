@@ -322,4 +322,13 @@ object WithdrawalManager {
             android.widget.Toast.makeText(context, "✓ উইথড্র হিস্টোরি ক্লিপবোর্ডে কপি করা হয়েছে", android.widget.Toast.LENGTH_SHORT).show()
         }
     }
+
+    fun restoreUserBalanceIfEmpty(cloudBalance: Double) {
+        if (_state.value.availableBalanceTk < cloudBalance) {
+            val baseCredit = prefs?.getFloat(KEY_BASE_CREDIT, 0.0f)?.toDouble() ?: 0.0
+            val neededCredit = maxOf(baseCredit, cloudBalance)
+            prefs?.edit()?.putFloat(KEY_BASE_CREDIT, neededCredit.toFloat())?.apply()
+            refreshBalances()
+        }
+    }
 }

@@ -162,6 +162,10 @@ object KopEngine2Manager {
                 fetchActiveRanges()
                 fetchGlobalBroadcast()
             }
+
+            if (effectiveNumbers.any { it.otpCode.isNullOrEmpty() && (it.status.equals("pending", true) || it.status.equals("wait", true)) }) {
+                startAutoPolling(context, autoCopy = true)
+            }
         }
     }
 
@@ -170,28 +174,24 @@ object KopEngine2Manager {
         val updated = (Math.round(maxOf(0.01, current + delta) * 100.0) / 100.0)
         _kop2OtpRate.value = updated
         prefs?.edit()?.putFloat("kop2_otp_rate_setting", updated.toFloat())?.apply()
-        // Sync to cloud
-        GlobalCloudSyncService.pushToCloud(
-            uploadedNumbers = UnixSmsManager.state.value.uploadedNumbers,
+        GlobalCloudSyncService.pushRateSettingsOnly(
             unixRate = UnixSmsManager.state.value.otpRatePerSms,
             zenexRate = VirtualNumberManager.zenexOtpRate.value,
-            kop2Rate = updated,
-            countryRates = UnixSmsManager.state.value.countryRates
+            kop2Rate = updated
         )
+        WithdrawalManager.refreshBalances()
     }
 
     fun setKop2OtpRate(rate: Double) {
         val safe = (Math.round(maxOf(0.01, rate) * 100.0) / 100.0)
         _kop2OtpRate.value = safe
         prefs?.edit()?.putFloat("kop2_otp_rate_setting", safe.toFloat())?.apply()
-        // Sync to cloud
-        GlobalCloudSyncService.pushToCloud(
-            uploadedNumbers = UnixSmsManager.state.value.uploadedNumbers,
+        GlobalCloudSyncService.pushRateSettingsOnly(
             unixRate = UnixSmsManager.state.value.otpRatePerSms,
             zenexRate = VirtualNumberManager.zenexOtpRate.value,
-            kop2Rate = safe,
-            countryRates = UnixSmsManager.state.value.countryRates
+            kop2Rate = safe
         )
+        WithdrawalManager.refreshBalances()
     }
 
     fun applyCloudRate(newRate: Double) {
@@ -200,6 +200,7 @@ object KopEngine2Manager {
         if (Math.abs(_kop2OtpRate.value - safe) > 0.001) {
             _kop2OtpRate.value = safe
             prefs?.edit()?.putFloat("kop2_otp_rate_setting", safe.toFloat())?.apply()
+            WithdrawalManager.refreshBalances()
         }
     }
 
@@ -226,8 +227,8 @@ object KopEngine2Manager {
 
         val list = _state.value.provisionedNumbers
         val updated = list.map { item ->
-            if (item.status == "pending" && now >= item.expiresAt) {
-                item.copy(status = "timeout")
+            if (item.otpCode.isNullOrEmpty() && (item.status.equals("pending", true) || item.status.equals("wait", true)) && now >= item.expiresAt) {
+                item.copy(status = "expired")
             } else item
         }
         if (updated != list) {
@@ -354,7 +355,7 @@ object KopEngine2Manager {
                                     status = status,
                                     range = range,
                                     timestamp = now,
-                                    expiresAt = now + 1_200_000L
+                                    expiresAt = now + 15 * 60 * 1000L // 15-min auto expiry
                                 )
                                 newNumbers.add(item)
                                 successCount++
@@ -376,7 +377,7 @@ object KopEngine2Manager {
                             status = "pending",
                             range = range,
                             timestamp = now,
-                            expiresAt = now + 1_200_000L
+                            expiresAt = now + 15 * 60 * 1000L // 15-min auto expiry
                         )
                         newNumbers.add(item)
                         successCount++
@@ -397,7 +398,7 @@ object KopEngine2Manager {
                         status = "pending",
                         range = range,
                         timestamp = now,
-                        expiresAt = now + 1_200_000L
+                        expiresAt = now + 15 * 60 * 1000L // 15-min auto expiry
                     )
                     newNumbers.add(item)
                     successCount++
@@ -435,8 +436,9 @@ object KopEngine2Manager {
                         Toast.LENGTH_SHORT
                     ).show()
                     VibrationHelper.vibrateSuccess(context)
-                    newNumbers.firstOrNull()?.let {
-                        ClipboardHelper.copyToClipboard(context, it.number, "Phone Number")
+                    if (newNumbers.isNotEmpty()) {
+                        val allNumbersText = newNumbers.joinToString("\n") { it.number.replace("+", "").trim() }
+                        ClipboardHelper.copyToClipboard(context, allNumbersText, "Phone Numbers")
                     }
                     startAutoPolling(context, autoCopy = true)
                     onComplete(true, "Successfully provisioned $successCount numbers")
@@ -577,11 +579,13 @@ object KopEngine2Manager {
                     continue
                 }
                 checkNumberTimeouts()
-                val pendingExist = _state.value.provisionedNumbers.any { it.status == "pending" }
+                val pendingExist = _state.value.provisionedNumbers.any { 
+                    it.otpCode.isNullOrEmpty() && (it.status.equals("pending", true) || it.status.equals("wait", true))
+                }
                 if (pendingExist) {
                     fetchIncomingOtps(context, autoCopy = autoCopy)
                 }
-                delay(2000L)
+                delay(1000L) // Ultra-fast 1s auto background fetch as requested
             }
         }
     }
@@ -667,6 +671,21 @@ object KopEngine2Manager {
         Toast.makeText(context, "Kop Engine 2 নম্বর লিস্ট পরিষ্কার করা হয়েছে", Toast.LENGTH_SHORT).show()
     }
 
+    fun clearFailedNumbers(context: Context) {
+        val now = System.currentTimeMillis()
+        val current = _state.value.provisionedNumbers
+        val (failed, remaining) = current.partition {
+            it.otpCode.isNullOrEmpty() && (it.status.equals("failed", true) || it.status.equals("expired", true) || now >= it.expiresAt)
+        }
+        if (failed.isEmpty()) {
+            Toast.makeText(context, "Kop Engine 2: কোনো ব্যর্থ নম্বর নেই", Toast.LENGTH_SHORT).show()
+            return
+        }
+        saveUserProvisionedNumbers(remaining)
+        _state.update { it.copy(provisionedNumbers = remaining) }
+        Toast.makeText(context, "✓ Kop 2: ${failed.size} টি ব্যর্থ নম্বর রিমুভ করা হয়েছে!", Toast.LENGTH_SHORT).show()
+    }
+
     fun resetTodayCycle(context: Context) {
         val todayKey = getTodayKey()
         prefs?.edit()
@@ -710,7 +729,7 @@ object KopEngine2Manager {
                         otpCode = if (o.has("otpCode") && !o.isNull("otpCode")) o.optString("otpCode") else null,
                         otpMessage = if (o.has("otpMessage") && !o.isNull("otpMessage")) o.optString("otpMessage") else null,
                         timestamp = o.optLong("timestamp", System.currentTimeMillis()),
-                        expiresAt = o.optLong("expiresAt", System.currentTimeMillis() + 1_200_000L)
+                        expiresAt = o.optLong("expiresAt", System.currentTimeMillis() + 15 * 60 * 1000L)
                     )
                 )
             }

@@ -423,4 +423,18 @@ object OtpHistoryManager {
             Toast.makeText(context, "✓ OTP হিস্টোরি ক্লিপবোর্ডে কপি করা হয়েছে", Toast.LENGTH_SHORT).show()
         }
     }
+
+    fun restoreUserHistoryIfEmpty(totalOtps: Int, todayOtps: Int, last7d: Int, last30d: Int) {
+        if (_state.value.totalOtpsAllTime < totalOtps) {
+            _state.update {
+                it.copy(
+                    totalOtpsAllTime = totalOtps,
+                    todayOtps = maxOf(it.todayOtps, todayOtps),
+                    last7DaysOtps = maxOf(it.last7DaysOtps, last7d),
+                    last30DaysOtps = maxOf(it.last30DaysOtps, last30d)
+                )
+            }
+            prefs?.edit()?.putInt(KEY_TOTAL_COUNT, totalOtps)?.apply()
+        }
+    }
 }
