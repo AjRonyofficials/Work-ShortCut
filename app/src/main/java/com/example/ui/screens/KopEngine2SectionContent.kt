@@ -108,17 +108,26 @@ fun KopEngine2SectionContent(
     var selectedSubTab by remember { mutableIntStateOf(0) } // 0: Get Numbers & Active Feed, 1: Signal (Live Feed)
     var consoleFilter by remember { mutableStateOf("") }
     var nowTick by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    var syncCountdown by remember { mutableIntStateOf(3) }
 
-    // Fast 1.2s Auto Background Check & Expiry Management
+    // Fast 1s Real-Time Clock Tick & 3s Live API Auto Sync
     LaunchedEffect(Unit) {
         KopEngine2Manager.init(context)
         KopEngine2Manager.startAutoPolling(context, autoCopy = true)
+        KopEngine2Manager.fetchActiveRanges()
+        KopEngine2Manager.fetchGlobalBroadcast()
         while (true) {
-            delay(1200L)
+            delay(1000L)
             nowTick = System.currentTimeMillis()
             KopEngine2Manager.checkNumberTimeouts()
             KopEngine2Manager.fetchIncomingOtps(context, autoCopy = true)
-            KopEngine2Manager.fetchGlobalBroadcast()
+            if (syncCountdown <= 1) {
+                syncCountdown = 3
+                KopEngine2Manager.fetchGlobalBroadcast()
+                KopEngine2Manager.fetchActiveRanges()
+            } else {
+                syncCountdown -= 1
+            }
         }
     }
 
@@ -540,7 +549,7 @@ fun KopEngine2SectionContent(
                     OutlinedTextField(
                         value = state.targetRange,
                         onValueChange = { KopEngine2Manager.setTargetRange(it) },
-                        placeholder = { Text("e.g. 260XXX, 23276345XXX, 447700XXX...", color = Color(0xFF64748B), fontSize = 12.sp) },
+                        placeholder = { Text("e.g. 237626XXX, 224655XXX, 261385XXX...", color = Color(0xFF64748B), fontSize = 12.sp) },
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true,
                         shape = RoundedCornerShape(12.dp),
@@ -553,13 +562,12 @@ fun KopEngine2SectionContent(
                             unfocusedContainerColor = ThemeSurfaceDark
                         )
                     )
-
                     Spacer(modifier = Modifier.height(10.dp))
 
                     // Active suggestions
                     if (state.activeRanges.isNotEmpty()) {
                         Text(
-                            text = "Active Suggestions (ট্যাপ করে সিলেক্ট করুন):",
+                            text = "Live Active Signals / Ranges (ট্যাপ করে সিলেক্ট করুন):",
                             color = ThemeMuted,
                             fontSize = 10.5.sp,
                             fontWeight = FontWeight.SemiBold
@@ -583,8 +591,9 @@ fun KopEngine2SectionContent(
                                         KopEngine2Manager.setTargetRange(item.range)
                                     }
                                 ) {
+                                    val label = if (item.hits > 0) "${item.range} (${item.service} • ${item.hits})" else "${item.range} (${item.service})"
                                     Text(
-                                        text = "${item.range} (${item.service})",
+                                        text = label,
                                         color = if (isSelected) Color.White else Color(0xFFCBD5E1),
                                         fontSize = 10.5.sp,
                                         fontWeight = FontWeight.SemiBold,
@@ -809,8 +818,12 @@ fun KopEngine2SectionContent(
                 state = state,
                 consoleFilter = consoleFilter,
                 onFilterChange = { consoleFilter = it },
+                syncCountdown = syncCountdown,
+                nowTick = nowTick,
                 onManualRefresh = {
+                    syncCountdown = 3
                     KopEngine2Manager.fetchGlobalBroadcast()
+                    KopEngine2Manager.fetchActiveRanges()
                     KopEngine2Manager.fetchIncomingOtps(context, autoCopy = true)
                 },
                 context = context
@@ -1112,11 +1125,13 @@ private fun Kop2LiveConsoleTab(
     state: com.example.service.VirtualNumbersUiState,
     consoleFilter: String,
     onFilterChange: (String) -> Unit,
+    syncCountdown: Int,
+    nowTick: Long,
     onManualRefresh: () -> Unit,
     context: Context
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        // Stream Header Bar with Total Records badge
+        // Stream Header Bar with Total Records badge and Auto Sync Indicator
         Surface(
             color = ThemeCardBg,
             shape = RoundedCornerShape(12.dp),
@@ -1147,7 +1162,34 @@ private fun Kop2LiveConsoleTab(
                 }
 
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    // Records Count Badge (Screenshot 8: "72 records")
+                    // Live 3s Auto-Sync Badge
+                    Surface(
+                        color = ThemeEmerald.copy(alpha = 0.15f),
+                        shape = RoundedCornerShape(20.dp),
+                        border = BorderStroke(1.dp, ThemeEmerald.copy(alpha = 0.5f))
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(5.dp)
+                                    .clip(CircleShape)
+                                    .background(ThemeEmerald)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                text = "Auto Sync: ${syncCountdown}s",
+                                color = ThemeEmerald,
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                    Spacer(modifier = Modifier.width(6.dp))
+
+                    // Records Count Badge
                     Surface(
                         color = ThemeSurfaceDark,
                         shape = RoundedCornerShape(20.dp),
@@ -1179,7 +1221,7 @@ private fun Kop2LiveConsoleTab(
             }
         }
 
-        // Search Bar (Screenshot 8: "Search by service, range, country, or operator...")
+        // Search Bar
         OutlinedTextField(
             value = consoleFilter,
             onValueChange = onFilterChange,
@@ -1238,7 +1280,7 @@ private fun Kop2LiveConsoleTab(
                 ) {
                     Icon(Icons.Default.Sensors, contentDescription = null, tint = Color(0xFF64748B), modifier = Modifier.size(32.dp))
                     Spacer(modifier = Modifier.height(6.dp))
-                    Text("কোনো লাইভ ওটিপি রেকর্ড পাওয়া যায়নি", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    Text("কোনো লাইভ ওটিপি রেকর্ড পাওয়া যায়নি (Syncing...)", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                 }
             }
         } else {
@@ -1247,6 +1289,7 @@ private fun Kop2LiveConsoleTab(
                     MkLiveOtpFeedCard(
                         item = feedItem,
                         isNew = index == 0,
+                        nowTick = nowTick,
                         context = context
                     )
                 }
@@ -1256,31 +1299,34 @@ private fun Kop2LiveConsoleTab(
 }
 
 /**
- * MK Network Live OTP Feed Card (Screenshot 8 UI layout):
- * - Top Row: [ 260XXX ❐ ] and Chips: [Service], [Country], [Operator], [• NEW]
- * - Body: Monospace rounded message box
- * - Bottom Row: Clock + "09:48:53 PM · 13 Oct 2026 BDT" and "52s ago"
+ * MK Network Live OTP Feed Card:
+ * Real-time clock syncing, dynamic second-by-second countdown, and live feed metadata.
  */
 @Composable
 private fun MkLiveOtpFeedCard(
     item: BroadcastFeedItem,
     isNew: Boolean,
+    nowTick: Long,
     context: Context
 ) {
-    val bdtDateFormat = remember {
-        SimpleDateFormat("hh:mm:ss a · dd MMM yyyy 'BDT'", Locale.ENGLISH).apply {
-            timeZone = TimeZone.getTimeZone("Asia/Dhaka")
+    val timeFormat = remember {
+        SimpleDateFormat("hh:mm:ss a · dd MMM yyyy", Locale.getDefault()).apply {
+            timeZone = TimeZone.getDefault()
         }
     }
-    val formattedTime = remember(item.time) {
-        bdtDateFormat.format(Date(item.time))
+    val timeMs = remember(item.time) {
+        if (item.time in 1..9_999_999_999L) item.time * 1000L else item.time
     }
-
-    val elapsedSeconds = ((System.currentTimeMillis() - item.time) / 1000L).coerceAtLeast(5L)
+    val formattedTime = remember(timeMs) {
+        timeFormat.format(Date(if (timeMs > 0L) timeMs else System.currentTimeMillis()))
+    }
+    val diffMs = (nowTick - timeMs).coerceAtLeast(0L)
+    val elapsedSeconds = diffMs / 1000L
     val elapsedText = when {
-        elapsedSeconds < 60 -> "${elapsedSeconds}s ago"
-        elapsedSeconds < 3600 -> "${elapsedSeconds / 60}m ${elapsedSeconds % 60}s ago"
-        else -> "${elapsedSeconds / 3600}h ago"
+        elapsedSeconds <= 3L -> "Just now"
+        elapsedSeconds < 60L -> "${elapsedSeconds}s ago"
+        elapsedSeconds < 3600L -> "${elapsedSeconds / 60L}m ${elapsedSeconds % 60L}s ago"
+        else -> "${elapsedSeconds / 3600L}h ago"
     }
 
     Card(

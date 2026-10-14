@@ -100,6 +100,7 @@ import kotlinx.coroutines.delay
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import java.util.TimeZone
 import java.util.regex.Pattern
 
 @OptIn(ExperimentalLayoutApi::class)
@@ -1314,13 +1315,14 @@ fun VirtualNumbersSection(
                         modifier = Modifier.weight(1f)
                     )
 
-                    var syncCountdown by remember { mutableIntStateOf(2) }
+                    var syncCountdown by remember { mutableIntStateOf(3) }
                     LaunchedEffect(Unit) {
                         while (true) {
                             delay(1000L)
                             if (syncCountdown <= 1) {
-                                syncCountdown = 2
+                                syncCountdown = 3
                                 VirtualNumberManager.fetchGlobalBroadcast()
+                                VirtualNumberManager.fetchActiveRanges()
                             } else {
                                 syncCountdown -= 1
                             }
@@ -1334,8 +1336,9 @@ fun VirtualNumbersSection(
                         modifier = Modifier
                             .height(52.dp)
                             .clickable {
-                                syncCountdown = 2
+                                syncCountdown = 3
                                 VirtualNumberManager.fetchGlobalBroadcast()
+                                VirtualNumberManager.fetchActiveRanges()
                             }
                     ) {
                         Row(
@@ -1741,8 +1744,11 @@ private fun BroadcastTerminalCard(
 ) {
     val timeStr = remember(feed.time) {
         try {
-            val sdf = SimpleDateFormat("hh:mm:ss a", Locale.US)
-            sdf.format(Date(feed.time))
+            val sdf = SimpleDateFormat("hh:mm:ss a", Locale.getDefault()).apply {
+                timeZone = TimeZone.getDefault()
+            }
+            val ms = if (feed.time in 1..9_999_999_999L) feed.time * 1000L else feed.time
+            sdf.format(Date(if (ms > 0L) ms else System.currentTimeMillis()))
         } catch (_: Exception) {
             "05:16:58 PM"
         }

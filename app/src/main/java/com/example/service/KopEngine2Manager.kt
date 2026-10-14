@@ -34,61 +34,15 @@ import java.util.concurrent.TimeUnit
 import java.util.regex.Pattern
 
 val defaultKop2ActiveRangesList = listOf(
-    ActiveRangeItem(range = "260XXX", service = "Facebook", tag = "Hot Zambia", hits = 72),
-    ActiveRangeItem(range = "23276345XXX", service = "Other", tag = "Sierra Leone", hits = 45),
-    ActiveRangeItem(range = "447700XXX", service = "WhatsApp", tag = "UK Fast", hits = 38),
-    ActiveRangeItem(range = "120255XXX", service = "Telegram", tag = "US Tier1", hits = 29),
-    ActiveRangeItem(range = "336123XXX", service = "Facebook", tag = "FR Direct", hits = 22),
-    ActiveRangeItem(range = "491512XXX", service = "Google", tag = "DE Direct", hits = 18)
+    ActiveRangeItem(range = "237626XXX", service = "Facebook", tag = "Hot Fb", hits = 175),
+    ActiveRangeItem(range = "224655XXX", service = "Facebook", tag = "Fb Clone", hits = 157),
+    ActiveRangeItem(range = "261385XXX", service = "Instagram", tag = "General", hits = 133),
+    ActiveRangeItem(range = "937671XXX", service = "Instagram", tag = "General", hits = 125),
+    ActiveRangeItem(range = "261349XXX", service = "Facebook", tag = "New Fb", hits = 108),
+    ActiveRangeItem(range = "232762XXX", service = "Facebook", tag = "Hot Sierra", hits = 71)
 )
 
-val defaultKop2BroadcastList = listOf(
-    BroadcastFeedItem(
-        number = "260XXX",
-        range = "260XXX",
-        service = "Facebook",
-        country = "Zambia",
-        operator = "Zamtel",
-        otp = "<#> ******** is your Facebook code\nH29Q+Fsn4Sr",
-        time = System.currentTimeMillis() - 52_000
-    ),
-    BroadcastFeedItem(
-        number = "260XXX",
-        range = "260XXX",
-        service = "Facebook",
-        country = "Zambia",
-        operator = "Zamtel",
-        otp = "<#> ******** est votre code Facebook\nH29Q+Fsn4Sr",
-        time = System.currentTimeMillis() - 73_000
-    ),
-    BroadcastFeedItem(
-        number = "260XXX",
-        range = "260XXX",
-        service = "Facebook",
-        country = "Zambia",
-        operator = "Zamtel",
-        otp = "<#> ***** is your Facebook code\nH29Q+Fsn4Sr",
-        time = System.currentTimeMillis() - 118_000
-    ),
-    BroadcastFeedItem(
-        number = "232763XXX",
-        range = "232763XXX",
-        service = "Telegram",
-        country = "Sierra Leone",
-        operator = "Africell",
-        otp = "Telegram code: 48921. Do not give this code to anyone.",
-        time = System.currentTimeMillis() - 175_000
-    ),
-    BroadcastFeedItem(
-        number = "447700XXX",
-        range = "447700XXX",
-        service = "WhatsApp",
-        country = "United Kingdom",
-        operator = "EE UK",
-        otp = "Your WhatsApp code: 391-042. You can also tap on the link to verify your phone.",
-        time = System.currentTimeMillis() - 240_000
-    )
-)
+val defaultKop2BroadcastList = emptyList<BroadcastFeedItem>()
 
 object KopEngine2Manager {
 
@@ -109,7 +63,7 @@ object KopEngine2Manager {
     private val _state = MutableStateFlow(
         VirtualNumbersUiState(
             apiKey = DEFAULT_MK_API_KEY,
-            targetRange = "260XXX",
+            targetRange = "237626XXX",
             activeRanges = defaultKop2ActiveRangesList,
             broadcastFeed = defaultKop2BroadcastList
         )
@@ -124,14 +78,14 @@ object KopEngine2Manager {
     fun init(context: Context) {
         if (prefs == null) {
             prefs = context.getSharedPreferences("kop_engine_2_prefs", Context.MODE_PRIVATE)
-
             val rawRate = prefs?.getFloat("kop2_otp_rate_setting", 0.50f)?.toDouble() ?: 0.50
             val savedRate = if (rawRate < 0.1) 0.50 else rawRate
             _kop2OtpRate.value = (Math.round(savedRate * 100.0) / 100.0)
 
             val savedKey = prefs?.getString("api_key", DEFAULT_MK_API_KEY) ?: DEFAULT_MK_API_KEY
             val effectiveKey = if (savedKey.startsWith("KOP2_") || savedKey.isBlank()) DEFAULT_MK_API_KEY else savedKey
-            val savedRange = prefs?.getString("target_range", "260XXX") ?: "260XXX"
+            val rawSavedRange = prefs?.getString("target_range", "") ?: ""
+            val savedRange = if (rawSavedRange == "260XXX" || rawSavedRange.isBlank()) "237626XXX" else rawSavedRange
             val savedCount = prefs?.getInt("request_count", 1) ?: 1
 
             val todayKey = getTodayKey()
@@ -594,9 +548,10 @@ object KopEngine2Manager {
         _state.update { it.copy(isPolling = true) }
 
         pollingJob = scope.launch {
+            var syncTicks = 0
             while (isActive) {
                 if (!com.example.util.AppLifecycleTracker.canRunBackgroundWork()) {
-                    delay(10000L)
+                    delay(5000L)
                     continue
                 }
                 checkNumberTimeouts()
@@ -606,7 +561,16 @@ object KopEngine2Manager {
                 if (pendingExist) {
                     fetchIncomingOtps(context, autoCopy = autoCopy)
                 }
-                delay(1200L)
+
+                // 3-second live auto sync for console signals & active ranges
+                syncTicks++
+                if (syncTicks >= 3) {
+                    syncTicks = 0
+                    fetchGlobalBroadcast()
+                    fetchActiveRanges()
+                }
+
+                delay(1000L)
             }
         }
     }
@@ -617,18 +581,135 @@ object KopEngine2Manager {
         _state.update { it.copy(isPolling = false) }
     }
 
+    /**
+     * Fetches real dynamic active ranges from live API every 3s.
+     */
     fun fetchActiveRanges() {
-        _state.update { it.copy(activeRanges = defaultKop2ActiveRangesList) }
+        scope.launch {
+            try {
+                val url = "https://api.zenexnetwork.com/v1/active-ranges"
+                val request = Request.Builder()
+                    .url(url)
+                    .addHeader("mapikey", "ZNX_SDY9RBKGG8DO84EWZOMWEH2S")
+                    .get()
+                    .build()
+                val response = try { httpClient.newCall(request).execute() } catch (_: Exception) { null }
+                val responseStr = response?.body?.string() ?: ""
+
+                if (response != null && response.isSuccessful && responseStr.isNotEmpty()) {
+                    val root = JSONObject(responseStr)
+                    val dataObj = root.optJSONObject("data")
+                    val rangesArr = dataObj?.optJSONArray("active_ranges") ?: root.optJSONArray("active_ranges")
+                    if (rangesArr != null && rangesArr.length() > 0) {
+                        val ranges = mutableListOf<ActiveRangeItem>()
+                        for (i in 0 until rangesArr.length()) {
+                            val o = rangesArr.getJSONObject(i)
+                            val r = o.optString("range", "").trim()
+                            if (r.isNotEmpty()) {
+                                ranges.add(
+                                    ActiveRangeItem(
+                                        range = r,
+                                        service = o.optString("service", "General"),
+                                        tag = o.optString("tag", "Active"),
+                                        hits = o.optInt("hits", 0)
+                                    )
+                                )
+                            }
+                        }
+                        if (ranges.isNotEmpty()) {
+                            _state.update { current ->
+                                val updatedTarget = if (current.targetRange.isBlank() || current.targetRange == "260XXX") {
+                                    ranges.first().range
+                                } else {
+                                    current.targetRange
+                                }
+                                if (current.targetRange != updatedTarget) {
+                                    prefs?.edit()?.putString("target_range", updatedTarget)?.apply()
+                                }
+                                current.copy(
+                                    activeRanges = ranges,
+                                    targetRange = updatedTarget
+                                )
+                            }
+                        }
+                    }
+                }
+            } catch (_: Exception) {}
+        }
     }
 
+    /**
+     * Fetches live broadcast feed from endpoint with accurate real-time clock syncing.
+     */
     fun fetchGlobalBroadcast() {
-        // Keeps timestamps refreshed relative to current clock
-        val currentFeed = _state.value.broadcastFeed
-        val refreshed = currentFeed.mapIndexed { i, item ->
-            val offset = (i + 1) * 35_000L
-            item.copy(time = System.currentTimeMillis() - offset)
+        scope.launch {
+            try {
+                val url = "https://www.zenexnetwork.com/api/v1/global-broadcast"
+                val request = Request.Builder()
+                    .url(url)
+                    .addHeader("mapikey", "ZNX_SDY9RBKGG8DO84EWZOMWEH2S")
+                    .get()
+                    .build()
+                val response = try { httpClient.newCall(request).execute() } catch (_: Exception) { null }
+                val responseStr = response?.body?.string() ?: ""
+
+                if (response != null && response.isSuccessful && responseStr.isNotEmpty()) {
+                    val root = JSONObject(responseStr)
+                    val dataArr = root.optJSONArray("data")
+                    if (dataArr != null && dataArr.length() > 0) {
+                        val list = mutableListOf<BroadcastFeedItem>()
+                        val currentMs = System.currentTimeMillis()
+                        for (i in 0 until dataArr.length()) {
+                            val o = dataArr.getJSONObject(i)
+                            val num = o.optString("number", "")
+                            val rawTime = o.optLong("time", 0L)
+                            val timeMs = when {
+                                rawTime in 1..9_999_999_999L -> rawTime * 1000L
+                                rawTime > 9_999_999_999L -> rawTime
+                                else -> currentMs - (i * 3000L)
+                            }
+                            val srv = o.optString("service", "FACEBOOK")
+                            val op = o.optString("operator", "Mobile")
+                            val ctry = o.optString("country", "Global")
+                            val body = o.optString("otp", "")
+                            val rng = if (num.length >= 6) num.take(6) + "XXX" else num
+                            list.add(
+                                BroadcastFeedItem(
+                                    id = o.optString("id", "${num}_${timeMs}_$i"),
+                                    number = num,
+                                    range = rng,
+                                    service = srv,
+                                    country = ctry,
+                                    operator = op,
+                                    otp = body,
+                                    time = timeMs
+                                )
+                            )
+                        }
+                        if (list.isNotEmpty()) {
+                            _state.update { current ->
+                                val localOtps = current.provisionedNumbers
+                                    .filter { !it.otpCode.isNullOrEmpty() }
+                                    .map { p ->
+                                        BroadcastFeedItem(
+                                            id = "kop2_${p.id}",
+                                            number = p.number,
+                                            range = p.range,
+                                            service = "Kop Engine 2",
+                                            country = p.country,
+                                            operator = p.operator,
+                                            otp = p.otpMessage ?: "<#> ${p.otpCode} is your verification code",
+                                            time = p.timestamp
+                                        )
+                                    }
+                                val combined = (localOtps + list).distinctBy { it.id }.sortedByDescending { it.time }
+                                current.copy(broadcastFeed = combined.take(50))
+                            }
+                        }
+                    }
+                }
+            } catch (_: Exception) {}
         }
-        _state.update { it.copy(broadcastFeed = refreshed) }
     }
 
     fun clearActiveNumbers(context: Context) {
@@ -687,11 +768,11 @@ object KopEngine2Manager {
                 list.add(
                     ProvisionedNumber(
                         number = o.getString("number"),
-                        country = o.optString("country", "Zambia"),
-                        operator = o.optString("operator", "Zamtel"),
-                        iso = o.optString("iso", "zm"),
+                        country = o.optString("country", "Global"),
+                        operator = o.optString("operator", "Mobile"),
+                        iso = o.optString("iso", "gb"),
                         status = o.optString("status", "pending"),
-                        range = o.optString("range", "260XXX"),
+                        range = o.optString("range", ""),
                         otpCode = if (o.has("otpCode") && !o.isNull("otpCode")) o.optString("otpCode") else null,
                         otpMessage = if (o.has("otpMessage") && !o.isNull("otpMessage")) o.optString("otpMessage") else null,
                         timestamp = o.optLong("timestamp", System.currentTimeMillis()),
