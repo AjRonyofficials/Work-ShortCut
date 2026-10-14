@@ -6,13 +6,14 @@ data class ProvisionedNumber(
     val country: String = "United Kingdom",
     val operator: String = "Mobile",
     val iso: String = "gb",
-    val status: String = "pending", // "pending", "success", "failed"
+    val status: String = "pending", // "pending", "success", "failed", "expired"
     val otpCode: String? = null,
     val otpMessage: String? = null,
     val range: String = "",
     val timestamp: Long = System.currentTimeMillis(),
-    val expiresAt: Long = System.currentTimeMillis() + 1_200_000L, // 20 minutes timeout (Zenex panel standard)
-    val failReason: String? = null // "Timeout"
+    val expiresAt: Long = System.currentTimeMillis() + 1_200_000L,
+    val failReason: String? = null,
+    val requestId: Long? = null
 )
 
 data class ActiveRangeItem(

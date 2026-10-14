@@ -2,7 +2,6 @@ package com.example.ui.screens
 
 import android.content.Context
 import android.widget.Toast
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -25,19 +24,13 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.ContentCopy
-import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material.icons.filled.KeyboardArrowUp
-import androidx.compose.material.icons.filled.Menu
-import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.Phone
-import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Sensors
-import androidx.compose.material.icons.filled.Terminal
+import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -47,7 +40,6 @@ import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -82,17 +74,25 @@ import androidx.compose.ui.unit.sp
 import com.example.data.model.BroadcastFeedItem
 import com.example.data.model.ProvisionedNumber
 import com.example.service.KopEngine2Manager
-import com.example.service.OtpHistoryManager
 import com.example.service.OverlayStateManager
 import com.example.util.ClipboardHelper
-import com.example.util.OtpNotificationHelper
-import com.example.util.VibrationHelper
 import kotlinx.coroutines.delay
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import java.util.TimeZone
-import java.util.regex.Pattern
+
+// Modern Cyber Slate & Electric Cyan Palette (No violet / beguni, No red for waiting)
+private val ThemeBgDark = Color(0xFF0B132B)
+private val ThemeCardBg = Color(0xFF0F172A)
+private val ThemeSurfaceDark = Color(0xFF1E293B)
+private val ThemeBorder = Color(0xFF334155)
+private val ThemeCyan = Color(0xFF06B6D4)
+private val ThemeSky = Color(0xFF0284C7)
+private val ThemeSkyBright = Color(0xFF38BDF8)
+private val ThemeEmerald = Color(0xFF10B981)
+private val ThemeAmber = Color(0xFFF59E0B)
+private val ThemeMuted = Color(0xFF94A3B8)
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -105,37 +105,25 @@ fun KopEngine2SectionContent(
     val overlayState by OverlayStateManager.uiState.collectAsState()
 
     var quantityDropdownExpanded by remember { mutableStateOf(false) }
-    var selectedSubTab by remember { mutableIntStateOf(0) } // 0: Get Numbers & Active Feed, 1: Signal (Live Console)
+    var selectedSubTab by remember { mutableIntStateOf(0) } // 0: Get Numbers & Active Feed, 1: Signal (Live Feed)
     var consoleFilter by remember { mutableStateOf("") }
-    var syncCountdown by remember { mutableIntStateOf(1) }
-    var isLiveStreamPaused by remember { mutableStateOf(false) }
     var nowTick by remember { mutableLongStateOf(System.currentTimeMillis()) }
 
-    // Ultra-Fast 1-Second Auto Background Fetch & 15-Minute Expiry Countdown Engine
+    // Fast 1.2s Auto Background Check & Expiry Management
     LaunchedEffect(Unit) {
         KopEngine2Manager.init(context)
         KopEngine2Manager.startAutoPolling(context, autoCopy = true)
         while (true) {
-            delay(1000L)
+            delay(1200L)
             nowTick = System.currentTimeMillis()
             KopEngine2Manager.checkNumberTimeouts()
-            if (syncCountdown <= 1) {
-                syncCountdown = 1
-                if (!isLiveStreamPaused) {
-                    KopEngine2Manager.fetchGlobalBroadcast()
-                }
-                KopEngine2Manager.fetchIncomingOtps(context, autoCopy = true)
-            } else {
-                syncCountdown -= 1
-            }
+            KopEngine2Manager.fetchIncomingOtps(context, autoCopy = true)
+            KopEngine2Manager.fetchGlobalBroadcast()
         }
     }
 
     val total = state.provisionedNumbers.size
     val successCount = state.provisionedNumbers.count { it.status.equals("success", true) || !it.otpCode.isNullOrEmpty() }
-    val waitCount = state.provisionedNumbers.count {
-        it.otpCode.isNullOrEmpty() && (it.status.equals("pending", true) || it.status.equals("wait", true)) && nowTick < it.expiresAt
-    }
     val expiredCount = state.provisionedNumbers.count {
         it.status.equals("expired", true) || it.status.equals("timeout", true) || it.status.equals("failed", true) ||
                 (it.otpCode.isNullOrEmpty() && nowTick >= it.expiresAt)
@@ -150,9 +138,9 @@ fun KopEngine2SectionContent(
     ) {
         // 1. Header Card (KOP ENGINE 2 ACTIVE & STATS)
         Card(
-            colors = CardDefaults.cardColors(containerColor = Color(0xFF0F172A)),
+            colors = CardDefaults.cardColors(containerColor = ThemeCardBg),
             shape = RoundedCornerShape(18.dp),
-            border = BorderStroke(1.2.dp, Color(0xFF6366F1).copy(alpha = 0.5f)),
+            border = BorderStroke(1.2.dp, ThemeSky.copy(alpha = 0.5f)),
             modifier = Modifier.fillMaxWidth()
         ) {
             Column(modifier = Modifier.padding(14.dp)) {
@@ -166,12 +154,12 @@ fun KopEngine2SectionContent(
                             modifier = Modifier
                                 .size(9.dp)
                                 .clip(CircleShape)
-                                .background(Color(0xFF10B981))
+                                .background(ThemeEmerald)
                         )
                         Spacer(modifier = Modifier.width(7.dp))
                         Text(
-                            text = "MK CORE • KOP ENGINE 2",
-                            color = Color(0xFF818CF8),
+                            text = "KOP ENGINE 2 • LIVE CORE",
+                            color = ThemeSkyBright,
                             fontSize = 12.sp,
                             fontWeight = FontWeight.ExtraBold,
                             letterSpacing = 0.8.sp
@@ -180,9 +168,9 @@ fun KopEngine2SectionContent(
 
                     // Today OTP Counter Card
                     Surface(
-                        color = Color(0xFF4338CA).copy(alpha = 0.35f),
+                        color = ThemeSky.copy(alpha = 0.2f),
                         shape = RoundedCornerShape(10.dp),
-                        border = BorderStroke(1.dp, Color(0xFF6366F1))
+                        border = BorderStroke(1.dp, ThemeSky.copy(alpha = 0.6f))
                     ) {
                         Row(
                             modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
@@ -197,34 +185,85 @@ fun KopEngine2SectionContent(
                             Spacer(modifier = Modifier.width(5.dp))
                             Text(
                                 text = "TODAY OTP: ${state.todayOtpCount}",
-                                color = Color(0xFFE0E7FF),
-                                fontSize = 12.sp,
+                                color = Color.White,
+                                fontSize = 11.5.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // Stats Row: Total, Success, Rate
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    // Total Numbers
+                    Surface(
+                        color = ThemeSurfaceDark,
+                        shape = RoundedCornerShape(10.dp),
+                        border = BorderStroke(1.dp, ThemeBorder),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(vertical = 8.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Text(text = "TOTAL", color = ThemeMuted, fontSize = 9.5.sp, fontWeight = FontWeight.Bold)
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text(text = "$total", color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.ExtraBold)
+                        }
+                    }
+
+                    // Success Count
+                    Surface(
+                        color = ThemeSurfaceDark,
+                        shape = RoundedCornerShape(10.dp),
+                        border = BorderStroke(1.dp, ThemeBorder),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(vertical = 8.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Text(text = "SUCCESS", color = ThemeEmerald, fontSize = 9.5.sp, fontWeight = FontWeight.Bold)
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text(text = "$successCount", color = ThemeEmerald, fontSize = 15.sp, fontWeight = FontWeight.ExtraBold)
+                        }
+                    }
+
+                    // OTP Rate
+                    Surface(
+                        color = ThemeSurfaceDark,
+                        shape = RoundedCornerShape(10.dp),
+                        border = BorderStroke(1.dp, ThemeBorder),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(vertical = 8.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Text(text = "RATE", color = ThemeSkyBright, fontSize = 9.5.sp, fontWeight = FontWeight.Bold)
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text(
+                                text = "${String.format(Locale.US, "%.2f", kop2OtpRate)} ৳",
+                                color = ThemeSkyBright,
+                                fontSize = 14.sp,
                                 fontWeight = FontWeight.ExtraBold
                             )
                         }
                     }
                 }
 
-                Spacer(modifier = Modifier.height(14.dp))
-
-                // 4 Stat Cards: TOTAL, SUCCESS, WAIT, EXPIRED (15 min)
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    StatPillKop2(label = "TOTAL", value = total.toString(), color = Color(0xFFF8FAFC), bgColor = Color(0xFF1E293B), borderColor = Color(0xFF475569), modifier = Modifier.weight(1f))
-                    StatPillKop2(label = "SUCCESS", value = successCount.toString(), color = Color(0xFF34D399), bgColor = Color(0xFF064E3B).copy(alpha = 0.35f), borderColor = Color(0xFF10B981).copy(alpha = 0.6f), modifier = Modifier.weight(1f))
-                    StatPillKop2(label = "WAIT (15m)", value = waitCount.toString(), color = Color(0xFFFBBF24), bgColor = Color(0xFF451A03).copy(alpha = 0.35f), borderColor = Color(0xFFF59E0B).copy(alpha = 0.6f), modifier = Modifier.weight(1f))
-                    StatPillKop2(label = "FAILED", value = expiredCount.toString(), color = Color(0xFFF87171), bgColor = Color(0xFF450A0A).copy(alpha = 0.35f), borderColor = Color(0xFFEF4444).copy(alpha = 0.6f), modifier = Modifier.weight(1f))
-                }
-
                 Spacer(modifier = Modifier.height(10.dp))
 
-                // Smart Automation Toggles (Option 1 & Option 6) + Option 5 Clear Failed (15m)
+                // Overlay & Auto Copy Controls Bar
                 Surface(
-                    color = Color(0xFF1E293B),
+                    color = ThemeSurfaceDark,
                     shape = RoundedCornerShape(10.dp),
-                    border = BorderStroke(1.dp, Color(0xFF334155)),
+                    border = BorderStroke(1.dp, ThemeBorder),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Row(
@@ -235,13 +274,13 @@ fun KopEngine2SectionContent(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            // Option 1 Chip: Auto-Copy
+                            // Auto-Copy Chip
                             Surface(
-                                color = if (overlayState.autoCopyOtp) Color(0xFF34D399).copy(alpha = 0.2f) else Color(0xFF281E48),
+                                color = if (overlayState.autoCopyOtp) ThemeEmerald.copy(alpha = 0.2f) else ThemeBgDark,
                                 shape = RoundedCornerShape(6.dp),
                                 border = BorderStroke(
                                     1.dp,
-                                    if (overlayState.autoCopyOtp) Color(0xFF34D399) else Color(0xFF6B589C)
+                                    if (overlayState.autoCopyOtp) ThemeEmerald else ThemeBorder
                                 ),
                                 modifier = Modifier.clickable { OverlayStateManager.toggleAutoCopyOtp() }
                             ) {
@@ -250,7 +289,7 @@ fun KopEngine2SectionContent(
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     Text(
-                                        text = "1. Auto-Copy: ",
+                                        text = "Auto-Copy: ",
                                         fontSize = 10.sp,
                                         fontWeight = FontWeight.Bold,
                                         color = Color.White
@@ -259,20 +298,20 @@ fun KopEngine2SectionContent(
                                         text = if (overlayState.autoCopyOtp) "ON" else "OFF",
                                         fontSize = 10.sp,
                                         fontWeight = FontWeight.ExtraBold,
-                                        color = if (overlayState.autoCopyOtp) Color(0xFF34D399) else Color(0xFFFF5252)
+                                        color = if (overlayState.autoCopyOtp) ThemeEmerald else ThemeAmber
                                     )
                                 }
                             }
 
                             Spacer(modifier = Modifier.width(6.dp))
 
-                            // Option 6 Chip: Sound/Vibe
+                            // Sound/Vibe Chip
                             Surface(
-                                color = if (overlayState.otpSoundVibrationEnabled) Color(0xFFFFD600).copy(alpha = 0.2f) else Color(0xFF281E48),
+                                color = if (overlayState.otpSoundVibrationEnabled) ThemeSky.copy(alpha = 0.2f) else ThemeBgDark,
                                 shape = RoundedCornerShape(6.dp),
                                 border = BorderStroke(
                                     1.dp,
-                                    if (overlayState.otpSoundVibrationEnabled) Color(0xFFFFD600) else Color(0xFF6B589C)
+                                    if (overlayState.otpSoundVibrationEnabled) ThemeSky else ThemeBorder
                                 ),
                                 modifier = Modifier.clickable { OverlayStateManager.toggleOtpSoundVibrationEnabled() }
                             ) {
@@ -281,7 +320,7 @@ fun KopEngine2SectionContent(
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     Text(
-                                        text = "6. Sound/Vibe: ",
+                                        text = "Sound/Vibe: ",
                                         fontSize = 10.sp,
                                         fontWeight = FontWeight.Bold,
                                         color = Color.White
@@ -290,31 +329,31 @@ fun KopEngine2SectionContent(
                                         text = if (overlayState.otpSoundVibrationEnabled) "ON" else "OFF",
                                         fontSize = 10.sp,
                                         fontWeight = FontWeight.ExtraBold,
-                                        color = if (overlayState.otpSoundVibrationEnabled) Color(0xFFFFD600) else Color(0xFFFF5252)
+                                        color = if (overlayState.otpSoundVibrationEnabled) ThemeSkyBright else ThemeMuted
                                     )
                                 }
                             }
                         }
 
-                        // Option 5: Clear Failed (15m) Button
+                        // Clear Failed Button
                         if (expiredCount > 0) {
                             Surface(
-                                color = Color(0xFFFF5252).copy(alpha = 0.2f),
+                                color = ThemeSurfaceDark,
                                 shape = RoundedCornerShape(6.dp),
-                                border = BorderStroke(1.dp, Color(0xFFFF5252)),
+                                border = BorderStroke(1.dp, ThemeMuted),
                                 modifier = Modifier.clickable { KopEngine2Manager.clearFailedNumbers(context) }
                             ) {
                                 Row(
                                     modifier = Modifier.padding(horizontal = 6.dp, vertical = 4.dp),
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Icon(Icons.Default.Delete, contentDescription = null, tint = Color(0xFFFF5252), modifier = Modifier.size(12.dp))
+                                    Icon(Icons.Default.Delete, contentDescription = null, tint = ThemeMuted, modifier = Modifier.size(12.dp))
                                     Spacer(modifier = Modifier.width(2.dp))
                                     Text(
                                         text = "Clear Failed",
                                         fontSize = 9.5.sp,
                                         fontWeight = FontWeight.Bold,
-                                        color = Color(0xFFFF5252)
+                                        color = ThemeMuted
                                     )
                                 }
                             }
@@ -324,7 +363,7 @@ fun KopEngine2SectionContent(
 
                 Spacer(modifier = Modifier.height(10.dp))
 
-                // SUCCESS RATE PROGRESS
+                // Success Rate Progress Bar
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -332,37 +371,35 @@ fun KopEngine2SectionContent(
                 ) {
                     Text(
                         text = "↗ SUCCESS RATE",
-                        color = Color(0xFF90A4AE),
+                        color = ThemeMuted,
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Bold
                     )
                     Text(
                         text = String.format(Locale.US, "%.1f%%", successRate),
-                        color = Color(0xFF34D399),
+                        color = ThemeEmerald,
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Bold
                     )
                 }
-
                 Spacer(modifier = Modifier.height(6.dp))
-
                 LinearProgressIndicator(
                     progress = { (successRate / 100f).coerceIn(0f, 1f) },
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(6.dp)
                         .clip(RoundedCornerShape(3.dp)),
-                    color = Color(0xFF10B981),
-                    trackColor = Color(0xFF1E293B)
+                    color = ThemeEmerald,
+                    trackColor = ThemeSurfaceDark
                 )
 
                 Spacer(modifier = Modifier.height(10.dp))
 
-                // 24-HOUR AUTO RESET CYCLE BAR
+                // 24-Hour Auto Reset Cycle Bar
                 Surface(
-                    color = Color(0xFF1E293B),
+                    color = ThemeSurfaceDark,
                     shape = RoundedCornerShape(8.dp),
-                    border = BorderStroke(1.dp, Color(0xFF334155)),
+                    border = BorderStroke(1.dp, ThemeBorder),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Row(
@@ -373,37 +410,47 @@ fun KopEngine2SectionContent(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Default.Schedule, contentDescription = null, tint = Color(0xFF38BDF8), modifier = Modifier.size(14.dp))
+                            Icon(Icons.Default.Schedule, contentDescription = null, tint = ThemeSkyBright, modifier = Modifier.size(14.dp))
                             Spacer(modifier = Modifier.width(6.dp))
                             Text(
                                 text = "24h Auto Reset: ${KopEngine2Manager.getFormattedCycleCountdown()}",
                                 color = Color(0xFFE2E8F0),
-                                fontSize = 11.5.sp,
-                                fontWeight = FontWeight.Bold
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.SemiBold
                             )
                         }
-
                         Text(
-                            text = "Auto Clear",
-                            color = Color(0xFF818CF8),
-                            fontSize = 9.5.sp,
-                            fontWeight = FontWeight.Bold
+                            text = "Reset Now",
+                            color = ThemeSkyBright,
+                            fontSize = 10.5.sp,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.clickable {
+                                KopEngine2Manager.resetTodayCycle(context)
+                            }
                         )
                     }
                 }
             }
         }
 
-        // Subtabs: Numbers vs Signal (Live Feed)
+        // 2. Navigation Tab Row (Sub-Tabs)
         TabRow(
             selectedTabIndex = selectedSubTab,
-            containerColor = Color(0xFF0F0B1E),
-            contentColor = Color(0xFFA78BFA),
+            containerColor = ThemeCardBg,
+            contentColor = Color.White,
             indicator = { tabPositions ->
                 TabRowDefaults.SecondaryIndicator(
-                    Modifier.tabIndicatorOffset(tabPositions[selectedSubTab]),
-                    color = Color(0xFFA78BFA),
+                    modifier = Modifier.tabIndicatorOffset(tabPositions[selectedSubTab]),
+                    color = ThemeSkyBright,
                     height = 2.5.dp
+                )
+            },
+            divider = {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(1.dp)
+                        .background(ThemeBorder)
                 )
             }
         ) {
@@ -412,9 +459,19 @@ fun KopEngine2SectionContent(
                 onClick = { selectedSubTab = 0 },
                 text = {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Default.Phone, contentDescription = null, modifier = Modifier.size(14.dp))
+                        Icon(
+                            Icons.Default.Phone,
+                            contentDescription = null,
+                            tint = if (selectedSubTab == 0) ThemeSkyBright else ThemeMuted,
+                            modifier = Modifier.size(15.dp)
+                        )
                         Spacer(modifier = Modifier.width(6.dp))
-                        Text("Numbers", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        Text(
+                            "Get Numbers (${state.provisionedNumbers.size})",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = if (selectedSubTab == 0) ThemeSkyBright else ThemeMuted
+                        )
                     }
                 }
             )
@@ -426,11 +483,16 @@ fun KopEngine2SectionContent(
                         Icon(
                             Icons.Default.Sensors,
                             contentDescription = null,
-                            tint = if (selectedSubTab == 1) Color(0xFF10B981) else Color(0xFFA78BFA),
+                            tint = if (selectedSubTab == 1) ThemeEmerald else ThemeMuted,
                             modifier = Modifier.size(15.dp)
                         )
                         Spacer(modifier = Modifier.width(6.dp))
-                        Text("Signal (Live Feed)", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        Text(
+                            "Signal (Live Feed)",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = if (selectedSubTab == 1) ThemeEmerald else ThemeMuted
+                        )
                     }
                 }
             )
@@ -439,9 +501,9 @@ fun KopEngine2SectionContent(
         if (selectedSubTab == 0) {
             // TAB 0: GET NUMBER CARD & PROVISIONED NUMBERS
             Card(
-                colors = CardDefaults.cardColors(containerColor = Color(0xFF0F172A)),
+                colors = CardDefaults.cardColors(containerColor = ThemeCardBg),
                 shape = RoundedCornerShape(18.dp),
-                border = BorderStroke(1.2.dp, Color(0xFF334155)),
+                border = BorderStroke(1.2.dp, ThemeBorder),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(modifier = Modifier.padding(14.dp)) {
@@ -454,19 +516,18 @@ fun KopEngine2SectionContent(
                             text = "TARGET RANGE / PREFIX:",
                             fontSize = 11.5.sp,
                             fontWeight = FontWeight.ExtraBold,
-                            color = Color(0xFF818CF8),
+                            color = ThemeSkyBright,
                             letterSpacing = 0.5.sp
                         )
-
-                        // Rate Pill (shows Admin rate setting)
+                        // Rate Pill
                         Surface(
-                            color = Color(0xFF4338CA).copy(alpha = 0.3f),
+                            color = ThemeSky.copy(alpha = 0.2f),
                             shape = RoundedCornerShape(8.dp),
-                            border = BorderStroke(1.dp, Color(0xFF6366F1))
+                            border = BorderStroke(1.dp, ThemeSky.copy(alpha = 0.5f))
                         ) {
                             Text(
                                 text = "Rate: ${String.format(Locale.US, "%.2f", kop2OtpRate)} ৳ / OTP",
-                                color = Color(0xFFC7D2FE),
+                                color = ThemeSkyBright,
                                 fontSize = 10.5.sp,
                                 fontWeight = FontWeight.Bold,
                                 modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
@@ -479,17 +540,17 @@ fun KopEngine2SectionContent(
                     OutlinedTextField(
                         value = state.targetRange,
                         onValueChange = { KopEngine2Manager.setTargetRange(it) },
-                        placeholder = { Text("e.g. 447700XXX, 336123XXX, 491512XXX...", color = Color(0xFF64748B), fontSize = 12.sp) },
+                        placeholder = { Text("e.g. 260XXX, 23276345XXX, 447700XXX...", color = Color(0xFF64748B), fontSize = 12.sp) },
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true,
                         shape = RoundedCornerShape(12.dp),
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedTextColor = Color.White,
                             unfocusedTextColor = Color.White,
-                            focusedBorderColor = Color(0xFF6366F1),
-                            unfocusedBorderColor = Color(0xFF334155),
-                            focusedContainerColor = Color(0xFF1E293B),
-                            unfocusedContainerColor = Color(0xFF1E293B)
+                            focusedBorderColor = ThemeSkyBright,
+                            unfocusedBorderColor = ThemeBorder,
+                            focusedContainerColor = ThemeSurfaceDark,
+                            unfocusedContainerColor = ThemeSurfaceDark
                         )
                     )
 
@@ -499,7 +560,7 @@ fun KopEngine2SectionContent(
                     if (state.activeRanges.isNotEmpty()) {
                         Text(
                             text = "Active Suggestions (ট্যাপ করে সিলেক্ট করুন):",
-                            color = Color(0xFF94A3B8),
+                            color = ThemeMuted,
                             fontSize = 10.5.sp,
                             fontWeight = FontWeight.SemiBold
                         )
@@ -509,14 +570,14 @@ fun KopEngine2SectionContent(
                             horizontalArrangement = Arrangement.spacedBy(6.dp),
                             verticalArrangement = Arrangement.spacedBy(5.dp)
                         ) {
-                            state.activeRanges.take(4).forEach { item ->
+                            state.activeRanges.forEach { item ->
                                 val isSelected = state.targetRange == item.range
                                 Surface(
-                                    color = if (isSelected) Color(0xFF4F46E5) else Color(0xFF1E293B),
+                                    color = if (isSelected) ThemeSky.copy(alpha = 0.35f) else ThemeSurfaceDark,
                                     shape = RoundedCornerShape(8.dp),
                                     border = BorderStroke(
                                         1.dp,
-                                        if (isSelected) Color(0xFF818CF8) else Color(0xFF334155)
+                                        if (isSelected) ThemeSkyBright else ThemeBorder
                                     ),
                                     modifier = Modifier.clickable {
                                         KopEngine2Manager.setTargetRange(item.range)
@@ -544,24 +605,10 @@ fun KopEngine2SectionContent(
                         // National & No (+) checkboxes
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Checkbox(
-                                checked = state.isNational,
-                                onCheckedChange = { KopEngine2Manager.setNational(it) },
-                                colors = CheckboxDefaults.colors(
-                                    checkedColor = Color(0xFF6366F1),
-                                    uncheckedColor = Color(0xFF64748B)
-                                ),
-                                modifier = Modifier.size(24.dp)
-                            )
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text("National", color = Color(0xFFE2E8F0), fontSize = 11.5.sp)
-
-                            Spacer(modifier = Modifier.width(10.dp))
-
-                            Checkbox(
                                 checked = state.removePlus,
                                 onCheckedChange = { KopEngine2Manager.setRemovePlus(it) },
                                 colors = CheckboxDefaults.colors(
-                                    checkedColor = Color(0xFF6366F1),
+                                    checkedColor = ThemeSkyBright,
                                     uncheckedColor = Color(0xFF64748B)
                                 ),
                                 modifier = Modifier.size(24.dp)
@@ -573,9 +620,9 @@ fun KopEngine2SectionContent(
                         // QUANTITY DROPDOWN (1 to 10 numbers)
                         Box {
                             Surface(
-                                color = Color(0xFF1E293B),
+                                color = ThemeSurfaceDark,
                                 shape = RoundedCornerShape(8.dp),
-                                border = BorderStroke(1.dp, Color(0xFF334155)),
+                                border = BorderStroke(1.dp, ThemeBorder),
                                 modifier = Modifier.clickable { quantityDropdownExpanded = true }
                             ) {
                                 Row(
@@ -584,30 +631,29 @@ fun KopEngine2SectionContent(
                                 ) {
                                     Text(
                                         text = "Qty: ${state.requestCount}",
-                                        color = Color(0xFF818CF8),
+                                        color = ThemeSkyBright,
                                         fontSize = 12.sp,
                                         fontWeight = FontWeight.Bold
                                     )
                                     Icon(
                                         Icons.Default.ArrowDropDown,
                                         contentDescription = null,
-                                        tint = Color(0xFF818CF8),
+                                        tint = ThemeSkyBright,
                                         modifier = Modifier.size(18.dp)
                                     )
                                 }
                             }
-
                             DropdownMenu(
                                 expanded = quantityDropdownExpanded,
                                 onDismissRequest = { quantityDropdownExpanded = false },
-                                modifier = Modifier.background(Color(0xFF0F172A))
+                                modifier = Modifier.background(ThemeCardBg)
                             ) {
                                 (1..10).forEach { count ->
                                     DropdownMenuItem(
                                         text = {
                                             Text(
                                                 "$count টি নম্বর",
-                                                color = if (state.requestCount == count) Color(0xFF34D399) else Color.White,
+                                                color = if (state.requestCount == count) ThemeEmerald else Color.White,
                                                 fontSize = 13.sp,
                                                 fontWeight = if (state.requestCount == count) FontWeight.Bold else FontWeight.Normal
                                             )
@@ -632,8 +678,8 @@ fun KopEngine2SectionContent(
                         },
                         enabled = !state.isLoading,
                         colors = ButtonDefaults.buttonColors(
-                            containerColor = Color(0xFF2563EB),
-                            disabledContainerColor = Color(0xFF2563EB).copy(alpha = 0.4f)
+                            containerColor = ThemeSky,
+                            disabledContainerColor = ThemeSky.copy(alpha = 0.4f)
                         ),
                         shape = RoundedCornerShape(12.dp),
                         modifier = Modifier
@@ -647,7 +693,7 @@ fun KopEngine2SectionContent(
                                 strokeWidth = 2.dp
                             )
                             Spacer(modifier = Modifier.width(8.dp))
-                            Text("PROVISIONING...", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                            Text("ALLOCATING FROM MK NETWORK...", fontWeight = FontWeight.Bold, fontSize = 12.5.sp)
                         } else {
                             Icon(Icons.Default.Phone, contentDescription = null, tint = Color.White)
                             Spacer(modifier = Modifier.width(8.dp))
@@ -674,12 +720,12 @@ fun KopEngine2SectionContent(
                         modifier = Modifier
                             .size(7.dp)
                             .clip(CircleShape)
-                            .background(Color(0xFF10B981))
+                            .background(ThemeEmerald)
                     )
                     Spacer(modifier = Modifier.width(7.dp))
                     Text(
-                        text = "PROVISIONED NUMBERS (${state.provisionedNumbers.size})",
-                        color = Color(0xFF818CF8),
+                        text = "ALLOCATED NUMBERS (${state.provisionedNumbers.size})",
+                        color = ThemeSkyBright,
                         fontSize = 12.5.sp,
                         fontWeight = FontWeight.ExtraBold,
                         letterSpacing = 0.5.sp
@@ -688,13 +734,13 @@ fun KopEngine2SectionContent(
 
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Surface(
-                        color = Color(0xFF064E3B).copy(alpha = 0.35f),
+                        color = ThemeEmerald.copy(alpha = 0.15f),
                         shape = RoundedCornerShape(8.dp),
-                        border = BorderStroke(1.dp, Color(0xFF10B981))
+                        border = BorderStroke(1.dp, ThemeEmerald.copy(alpha = 0.5f))
                     ) {
                         Text(
-                            text = "Auto Poll: 1s",
-                            color = Color(0xFF34D399),
+                            text = "Auto Poll: 1.2s",
+                            color = ThemeEmerald,
                             fontSize = 10.5.sp,
                             fontWeight = FontWeight.Bold,
                             modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp)
@@ -710,19 +756,19 @@ fun KopEngine2SectionContent(
                         Icon(
                             Icons.Default.Refresh,
                             contentDescription = "Refresh",
-                            tint = Color(0xFF818CF8),
+                            tint = ThemeSkyBright,
                             modifier = Modifier.size(16.dp)
                         )
                     }
                 }
             }
 
-            // ACTIVE PROVISIONED NUMBERS LIST (WITH 15-MINUTE EXPIRY TIMER)
+            // PROVISIONED NUMBERS LIST (NO RED - USES CYBER SKY / OCEAN BLUE & EMERALD)
             if (state.provisionedNumbers.isEmpty()) {
                 Surface(
-                    color = Color(0xFF0F172A),
+                    color = ThemeCardBg,
                     shape = RoundedCornerShape(14.dp),
-                    border = BorderStroke(1.dp, Color(0xFF334155)),
+                    border = BorderStroke(1.dp, ThemeBorder),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Column(
@@ -741,7 +787,7 @@ fun KopEngine2SectionContent(
                         )
                         Text(
                             text = "উপরে 'GET NUMBER' চাপুন নতুন নাম্বার নিতে (১৫ মিনিট ভ্যালিডিটি)",
-                            color = Color(0xFF94A3B8),
+                            color = ThemeMuted,
                             fontSize = 11.sp
                         )
                     }
@@ -758,28 +804,15 @@ fun KopEngine2SectionContent(
                 }
             }
         } else {
-            // TAB 1: SIGNAL (MK NETWORK LIVE OTP FEED)
+            // TAB 1: SIGNAL (MK NETWORK LIVE OTP FEED TEMPLATE)
             Kop2LiveConsoleTab(
                 state = state,
                 consoleFilter = consoleFilter,
                 onFilterChange = { consoleFilter = it },
-                syncCountdown = syncCountdown,
-                isLiveStreamPaused = isLiveStreamPaused,
-                onTogglePause = {
-                    isLiveStreamPaused = !isLiveStreamPaused
-                    Toast.makeText(
-                        context,
-                        if (isLiveStreamPaused) "লাইভ স্ট্রিম পজ করা হয়েছে" else "লাইভ স্ট্রিম চালু করা হয়েছে",
-                        Toast.LENGTH_SHORT
-                    ).show()
-                },
                 onManualRefresh = {
-                    syncCountdown = 1
                     KopEngine2Manager.fetchGlobalBroadcast()
                     KopEngine2Manager.fetchIncomingOtps(context, autoCopy = true)
                 },
-                nowTick = nowTick,
-                kop2OtpRate = kop2OtpRate,
                 context = context
             )
         }
@@ -787,7 +820,9 @@ fun KopEngine2SectionContent(
 }
 
 /**
- * Kop Engine 2 Number Card with 15-Minute Countdown Timer & OTP Display
+ * Kop Engine 2 Number Card:
+ * Changed waiting state away from red to sleek Ocean Slate / Cyan Blue.
+ * Success is Emerald Green. Expired is neutral slate.
  */
 @Composable
 private fun Kop2ProvisionedNumberCard(
@@ -798,31 +833,30 @@ private fun Kop2ProvisionedNumberCard(
     val remainingMs = (item.expiresAt - nowTick).coerceAtLeast(0L)
     val isExpired = (nowTick >= item.expiresAt || item.status.equals("expired", true) || item.status.equals("timeout", true)) && item.otpCode.isNullOrEmpty()
     val isSuccess = item.status.equals("success", true) || !item.otpCode.isNullOrEmpty()
-
     val totalDurationMs = 15 * 60 * 1000f // 15 Minutes
     val progressRatio = (remainingMs.toFloat() / totalDurationMs).coerceIn(0f, 1f)
 
     Card(
         colors = CardDefaults.cardColors(
             containerColor = when {
-                isSuccess -> Color(0xFF064E3B).copy(alpha = 0.45f)
-                isExpired -> Color(0xFF450A0A).copy(alpha = 0.45f)
-                else -> Color(0xFF0F172A)
+                isSuccess -> Color(0xFF063529)
+                isExpired -> Color(0xFF1E293B)
+                else -> Color(0xFF0F1E2E) // Smooth dark ocean cyan, NOT RED
             }
         ),
         shape = RoundedCornerShape(14.dp),
         border = BorderStroke(
             1.2.dp,
             when {
-                isSuccess -> Color(0xFF10B981)
-                isExpired -> Color(0xFFEF4444).copy(alpha = 0.7f)
-                else -> Color(0xFF334155)
+                isSuccess -> ThemeEmerald
+                isExpired -> ThemeBorder
+                else -> ThemeSky.copy(alpha = 0.8f) // Clean sky blue, NOT RED
             }
         ),
         modifier = Modifier.fillMaxWidth()
     ) {
         Column(modifier = Modifier.padding(12.dp)) {
-            // Line 1: Number + Country | Status Pill + Elapsed + Delete
+            // Line 1: Number + Country | Status Pill + Delete
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -832,54 +866,52 @@ private fun Kop2ProvisionedNumberCard(
                     Text(
                         text = item.number,
                         color = Color.White,
-                        fontSize = 14.5.sp,
+                        fontSize = 15.sp,
                         fontWeight = FontWeight.ExtraBold,
                         fontFamily = FontFamily.Monospace,
                         modifier = Modifier.clickable {
                             KopEngine2Manager.copyAndRemovePlus(context, item.number)
                         }
                     )
-
                     Spacer(modifier = Modifier.width(6.dp))
-
                     Surface(
-                        color = Color(0xFF271C46),
-                        shape = RoundedCornerShape(4.dp)
+                        color = ThemeSurfaceDark,
+                        shape = RoundedCornerShape(4.dp),
+                        border = BorderStroke(0.8.dp, ThemeBorder)
                     ) {
                         Text(
                             text = item.country.uppercase(),
-                            color = Color(0xFFC4B5FD),
+                            color = ThemeSkyBright,
                             fontSize = 9.sp,
                             fontWeight = FontWeight.Bold,
                             modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
                         )
                     }
-
                     IconButton(
                         onClick = {
                             KopEngine2Manager.copyAndRemovePlus(context, item.number)
                         },
                         modifier = Modifier.size(28.dp)
                     ) {
-                        Icon(Icons.Default.ContentCopy, contentDescription = "Copy", tint = Color(0xFFA78BFA), modifier = Modifier.size(14.dp))
+                        Icon(Icons.Default.ContentCopy, contentDescription = "Copy", tint = ThemeSkyBright, modifier = Modifier.size(14.dp))
                     }
                 }
 
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    // Status Badge
+                    // Status Badge (WAITING: Ocean Cyan | SUCCESS: Emerald | EXPIRED: Slate)
                     Surface(
                         color = when {
-                            isSuccess -> Color(0xFF10B981).copy(alpha = 0.2f)
-                            isExpired -> Color(0xFFEF4444).copy(alpha = 0.2f)
-                            else -> Color(0xFFF59E0B).copy(alpha = 0.2f)
+                            isSuccess -> ThemeEmerald.copy(alpha = 0.2f)
+                            isExpired -> ThemeBorder.copy(alpha = 0.4f)
+                            else -> ThemeSky.copy(alpha = 0.25f) // NOT RED
                         },
                         shape = RoundedCornerShape(4.dp),
                         border = BorderStroke(
                             1.dp,
                             when {
-                                isSuccess -> Color(0xFF10B981)
-                                isExpired -> Color(0xFFEF4444)
-                                else -> Color(0xFFF59E0B)
+                                isSuccess -> ThemeEmerald
+                                isExpired -> ThemeBorder
+                                else -> ThemeSkyBright // NOT RED
                             }
                         )
                     ) {
@@ -890,9 +922,9 @@ private fun Kop2ProvisionedNumberCard(
                                 else -> "WAITING"
                             },
                             color = when {
-                                isSuccess -> Color(0xFF34D399)
-                                isExpired -> Color(0xFFF87171)
-                                else -> Color(0xFFFBBF24)
+                                isSuccess -> ThemeEmerald
+                                isExpired -> ThemeMuted
+                                else -> ThemeSkyBright // NOT RED
                             },
                             fontSize = 9.5.sp,
                             fontWeight = FontWeight.ExtraBold,
@@ -900,73 +932,77 @@ private fun Kop2ProvisionedNumberCard(
                         )
                     }
 
-                    Spacer(modifier = Modifier.width(4.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
 
                     IconButton(
                         onClick = {
                             KopEngine2Manager.deleteNumber(item.id)
                         },
-                        modifier = Modifier.size(28.dp)
+                        modifier = Modifier.size(24.dp)
                     ) {
-                        Icon(Icons.Default.Delete, contentDescription = "Delete", tint = Color(0xFFEF4444), modifier = Modifier.size(15.dp))
+                        Icon(
+                            Icons.Default.Delete,
+                            contentDescription = "Delete",
+                            tint = ThemeMuted,
+                            modifier = Modifier.size(15.dp)
+                        )
                     }
                 }
             }
 
-            // Subline: Operator & Creation Time Elapsed
+            // Line 2: Operator & Range
             Row(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 2.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.Sensors, contentDescription = null, tint = Color(0xFF8B5CF6), modifier = Modifier.size(12.dp))
-                    Spacer(modifier = Modifier.width(4.dp))
+                Text(
+                    text = "${item.operator} • Range: ${item.range}",
+                    color = ThemeMuted,
+                    fontSize = 11.sp
+                )
+                if (item.requestId != null) {
                     Text(
-                        text = "${item.operator} • Range: ${item.range}",
-                        color = Color(0xFF9CA3AF),
-                        fontSize = 10.sp
+                        text = "Req #${item.requestId}",
+                        color = ThemeSkyBright.copy(alpha = 0.7f),
+                        fontSize = 10.sp,
+                        fontFamily = FontFamily.Monospace
                     )
                 }
-
-                Text(
-                    text = formatTimeElapsed(item.timestamp, nowTick),
-                    color = Color(0xFF9CA3AF),
-                    fontSize = 10.sp
-                )
             }
 
-            // 15-MINUTE COUNTDOWN TIMER CARD (WHEN WAITING/PENDING)
+            // 15-Minute Countdown Progress
             if (!isSuccess && !isExpired) {
                 Spacer(modifier = Modifier.height(8.dp))
                 Surface(
-                    color = Color(0xFF191233),
-                    shape = RoundedCornerShape(8.dp),
-                    border = BorderStroke(0.8.dp, Color(0xFF8B5CF6).copy(alpha = 0.4f)),
+                    color = ThemeSurfaceDark,
+                    shape = RoundedCornerShape(6.dp),
+                    border = BorderStroke(0.8.dp, ThemeBorder),
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Column(modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)) {
+                    Column(modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp)) {
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(
-                                    imageVector = Icons.Default.Bolt,
-                                    contentDescription = null,
-                                    tint = Color(0xFFFFD600),
-                                    modifier = Modifier.size(13.dp)
+                                Box(
+                                    modifier = Modifier
+                                        .size(6.dp)
+                                        .clip(CircleShape)
+                                        .background(ThemeSkyBright)
                                 )
-                                Spacer(modifier = Modifier.width(4.dp))
+                                Spacer(modifier = Modifier.width(5.dp))
                                 Text(
-                                    text = "15-Min OTP Window:",
-                                    color = Color(0xFFFFD600),
+                                    text = "MK Network Polling Active (1.2s)",
+                                    color = ThemeSkyBright,
                                     fontSize = 10.sp,
                                     fontWeight = FontWeight.Bold
                                 )
                             }
-
                             val mins = (remainingMs / 60000).toInt()
                             val secs = ((remainingMs % 60000) / 1000).toInt()
                             Text(
@@ -977,26 +1013,24 @@ private fun Kop2ProvisionedNumberCard(
                                 fontFamily = FontFamily.Monospace
                             )
                         }
-
                         Spacer(modifier = Modifier.height(4.dp))
-
                         LinearProgressIndicator(
                             progress = { progressRatio },
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .height(4.dp)
                                 .clip(RoundedCornerShape(2.dp)),
-                            color = Color(0xFFA78BFA),
-                            trackColor = Color(0xFF281E48)
+                            color = ThemeSkyBright,
+                            trackColor = ThemeBgDark
                         )
                     }
                 }
             } else if (isExpired && !isSuccess) {
                 Spacer(modifier = Modifier.height(8.dp))
                 Surface(
-                    color = Color(0xFF381515).copy(alpha = 0.5f),
+                    color = ThemeSurfaceDark,
                     shape = RoundedCornerShape(6.dp),
-                    border = BorderStroke(0.8.dp, Color(0xFFEF4444).copy(alpha = 0.5f)),
+                    border = BorderStroke(0.8.dp, ThemeBorder),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Row(
@@ -1004,8 +1038,8 @@ private fun Kop2ProvisionedNumberCard(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            text = "⚠️ ১৫ মিনিট অতিবাহিত হওয়ায় নম্বরটির ওটিপি মেয়াদ শেষ হয়েছে।",
-                            color = Color(0xFFFCA5A5),
+                            text = "ℹ️ ১৫ মিনিট অতিবাহিত হওয়ায় নম্বরটির ওটিপি মেয়াদ শেষ হয়েছে।",
+                            color = ThemeMuted,
                             fontSize = 10.sp,
                             fontWeight = FontWeight.Medium
                         )
@@ -1017,9 +1051,9 @@ private fun Kop2ProvisionedNumberCard(
             if (!item.otpCode.isNullOrEmpty()) {
                 Spacer(modifier = Modifier.height(8.dp))
                 Surface(
-                    color = Color(0xFF064E3B).copy(alpha = 0.35f),
+                    color = Color(0xFF042F24),
                     shape = RoundedCornerShape(8.dp),
-                    border = BorderStroke(1.dp, Color(0xFF059669)),
+                    border = BorderStroke(1.dp, ThemeEmerald),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Row(
@@ -1030,7 +1064,7 @@ private fun Kop2ProvisionedNumberCard(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Column {
-                            Text(text = "OTP RECEIVED:", fontSize = 9.sp, color = Color(0xFF34D399), fontWeight = FontWeight.Bold)
+                            Text(text = "OTP RECEIVED:", fontSize = 9.sp, color = ThemeEmerald, fontWeight = FontWeight.Bold)
                             Text(
                                 text = item.otpCode ?: "",
                                 fontSize = 18.sp,
@@ -1049,12 +1083,11 @@ private fun Kop2ProvisionedNumberCard(
                                 )
                             }
                         }
-
                         Button(
                             onClick = {
                                 KopEngine2Manager.copyOtpCode(context, item.otpCode ?: "")
                             },
-                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF059669)),
+                            colors = ButtonDefaults.buttonColors(containerColor = ThemeEmerald),
                             shape = RoundedCornerShape(6.dp),
                             contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
                             modifier = Modifier.height(30.dp)
@@ -1071,283 +1104,149 @@ private fun Kop2ProvisionedNumberCard(
 }
 
 /**
- * Tab 1: Signal (MK NETWORK Live OTP Feed matching live console screenshots)
+ * Tab 1: Signal (Live OTP Feed following MK Network Screenshot 8 template)
+ * Live Pause and fake MK header removed as requested.
  */
 @Composable
 private fun Kop2LiveConsoleTab(
     state: com.example.service.VirtualNumbersUiState,
     consoleFilter: String,
     onFilterChange: (String) -> Unit,
-    syncCountdown: Int,
-    isLiveStreamPaused: Boolean,
-    onTogglePause: () -> Unit,
     onManualRefresh: () -> Unit,
-    nowTick: Long,
-    kop2OtpRate: Double,
     context: Context
 ) {
-    var rangeOptionExpanded by remember { mutableStateOf(false) }
-    var showMenuModal by remember { mutableStateOf(false) }
-    val currentSelectedRange = state.targetRange.ifEmpty { "447700XXX" }
-    val matchingRangeItem = state.activeRanges.firstOrNull { it.range == currentSelectedRange }
-        ?: state.activeRanges.firstOrNull()
-
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        // 1. MK NETWORK Top Header Bar (Screenshot 1 & 2)
+        // Stream Header Bar with Total Records badge
         Surface(
-            color = Color(0xFF16112C),
-            shape = RoundedCornerShape(14.dp),
-            border = BorderStroke(1.dp, Color(0xFF3B2968)),
+            color = ThemeCardBg,
+            shape = RoundedCornerShape(12.dp),
+            border = BorderStroke(1.dp, ThemeBorder),
             modifier = Modifier.fillMaxWidth()
         ) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 14.dp, vertical = 10.dp),
+                    .padding(horizontal = 12.dp, vertical = 10.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    IconButton(
-                        onClick = { showMenuModal = !showMenuModal },
-                        modifier = Modifier.size(34.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Menu,
-                            contentDescription = "MK Network Menu",
-                            tint = Color.White,
-                            modifier = Modifier.size(20.dp)
-                        )
-                    }
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(
-                            text = "MK ",
-                            color = Color(0xFF3B82F6),
-                            fontSize = 17.sp,
-                            fontWeight = FontWeight.Black,
-                            letterSpacing = 0.5.sp
-                        )
-                        Text(
-                            text = "NETWORK",
-                            color = Color.White,
-                            fontSize = 17.sp,
-                            fontWeight = FontWeight.Bold,
-                            letterSpacing = 0.5.sp
-                        )
-                    }
-                }
-
-                // Blue Circular Pause / Play Stream Button
-                Surface(
-                    shape = CircleShape,
-                    color = if (isLiveStreamPaused) Color(0xFF10B981) else Color(0xFF2563EB),
-                    modifier = Modifier
-                        .size(36.dp)
-                        .clickable { onTogglePause() }
-                ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Icon(
-                            imageVector = if (isLiveStreamPaused) Icons.Default.PlayArrow else Icons.Default.Pause,
-                            contentDescription = if (isLiveStreamPaused) "Resume Live Stream" else "Pause Live Stream",
-                            tint = Color.White,
-                            modifier = Modifier.size(18.dp)
-                        )
-                    }
-                }
-            }
-        }
-
-        // Dropdown Menu overlay if menu is toggled
-        if (showMenuModal) {
-            Surface(
-                color = Color(0xFF130E24),
-                shape = RoundedCornerShape(12.dp),
-                border = BorderStroke(1.dp, Color(0xFF3B2968)),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Column(modifier = Modifier.padding(14.dp)) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = "SYSTEM CORE",
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = Color(0xFF94A3B8),
-                            letterSpacing = 1.sp
-                        )
-                        IconButton(
-                            onClick = { showMenuModal = false },
-                            modifier = Modifier.size(24.dp)
-                        ) {
-                            Icon(Icons.Default.Close, contentDescription = "Close", tint = Color(0xFF94A3B8), modifier = Modifier.size(16.dp))
-                        }
-                    }
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Row(
+                    Box(
                         modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable {
-                                Toast.makeText(context, "Signal (Live Console) সিলেক্টেড", Toast.LENGTH_SHORT).show()
-                                showMenuModal = false
-                            }
-                            .background(Color(0xFF7C3AED).copy(alpha = 0.2f), RoundedCornerShape(8.dp))
-                            .padding(horizontal = 10.dp, vertical = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically
+                            .size(8.dp)
+                            .clip(CircleShape)
+                            .background(ThemeEmerald)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "Live OTP Feed",
+                        color = Color.White,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    // Records Count Badge (Screenshot 8: "72 records")
+                    Surface(
+                        color = ThemeSurfaceDark,
+                        shape = RoundedCornerShape(20.dp),
+                        border = BorderStroke(1.dp, ThemeBorder)
                     ) {
-                        Icon(Icons.Default.Sensors, contentDescription = null, tint = Color(0xFF10B981), modifier = Modifier.size(18.dp))
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("Signal (Live OTP Feed)", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                        Text(
+                            text = "${state.broadcastFeed.size} records",
+                            color = ThemeMuted,
+                            fontSize = 10.5.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.width(6.dp))
+
+                    IconButton(
+                        onClick = onManualRefresh,
+                        modifier = Modifier.size(30.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Refresh,
+                            contentDescription = "Refresh",
+                            tint = ThemeSkyBright,
+                            modifier = Modifier.size(16.dp)
+                        )
                     }
                 }
             }
         }
 
-        // 2. Search Bar with exact placeholder from Screenshot 2
+        // Search Bar (Screenshot 8: "Search by service, range, country, or operator...")
         OutlinedTextField(
             value = consoleFilter,
             onValueChange = onFilterChange,
             placeholder = {
                 Text(
                     text = "Search by service, range, country, or operator...",
-                    color = Color(0xFF94A3B8),
-                    fontSize = 12.sp,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
+                    color = Color(0xFF64748B),
+                    fontSize = 11.5.sp
                 )
             },
             leadingIcon = {
                 Icon(
                     imageVector = Icons.Default.Search,
                     contentDescription = null,
-                    tint = Color(0xFF94A3B8),
-                    modifier = Modifier.size(18.dp)
+                    tint = ThemeSkyBright,
+                    modifier = Modifier.size(16.dp)
                 )
             },
-            trailingIcon = {
-                if (consoleFilter.isNotEmpty()) {
-                    IconButton(onClick = { onFilterChange("") }) {
-                        Icon(
-                            imageVector = Icons.Default.Close,
-                            contentDescription = "Clear",
-                            tint = Color(0xFF94A3B8),
-                            modifier = Modifier.size(16.dp)
-                        )
-                    }
-                }
-            },
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true,
+            shape = RoundedCornerShape(12.dp),
             colors = OutlinedTextFieldDefaults.colors(
                 focusedTextColor = Color.White,
                 unfocusedTextColor = Color.White,
-                focusedBorderColor = Color(0xFFA78BFA),
-                unfocusedBorderColor = Color(0xFF3B2968),
-                focusedContainerColor = Color(0xFF130E24),
-                unfocusedContainerColor = Color(0xFF130E24)
-            ),
-            shape = RoundedCornerShape(12.dp),
-            singleLine = true,
-            modifier = Modifier.fillMaxWidth()
+                focusedBorderColor = ThemeSkyBright,
+                unfocusedBorderColor = ThemeBorder,
+                focusedContainerColor = ThemeCardBg,
+                unfocusedContainerColor = ThemeCardBg
+            )
         )
 
-        // 3. Subheader: Live OTP Feed + Records Pill Badge
-        val filteredBroadcast = if (consoleFilter.isBlank()) {
-            state.broadcastFeed
-        } else {
-            state.broadcastFeed.filter {
-                it.number.contains(consoleFilter, ignoreCase = true) ||
-                        it.otp.contains(consoleFilter, ignoreCase = true) ||
-                        it.service.contains(consoleFilter, ignoreCase = true) ||
-                        it.range.contains(consoleFilter, ignoreCase = true) ||
-                        it.country.contains(consoleFilter, ignoreCase = true) ||
-                        it.operator.contains(consoleFilter, ignoreCase = true)
-            }
-        }
-
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 4.dp, vertical = 2.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(
-                    imageVector = Icons.Default.Sensors,
-                    contentDescription = null,
-                    tint = Color(0xFF10B981),
-                    modifier = Modifier.size(18.dp)
-                )
-                Spacer(modifier = Modifier.width(6.dp))
-                Text(
-                    text = "Live OTP Feed",
-                    color = Color.White,
-                    fontSize = 15.sp,
-                    fontWeight = FontWeight.Bold
-                )
-                if (isLiveStreamPaused) {
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Surface(
-                        color = Color(0xFFEF4444).copy(alpha = 0.2f),
-                        shape = RoundedCornerShape(4.dp),
-                        border = BorderStroke(0.8.dp, Color(0xFFEF4444))
-                    ) {
-                        Text(
-                            text = "PAUSED",
-                            color = Color(0xFFF87171),
-                            fontSize = 9.sp,
-                            fontWeight = FontWeight.Bold,
-                            modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp)
-                        )
-                    }
+        // Filtered broadcast items
+        val filteredList = remember(state.broadcastFeed, consoleFilter) {
+            if (consoleFilter.isBlank()) state.broadcastFeed
+            else {
+                state.broadcastFeed.filter {
+                    it.service.contains(consoleFilter, ignoreCase = true) ||
+                            it.range.contains(consoleFilter, ignoreCase = true) ||
+                            it.number.contains(consoleFilter, ignoreCase = true) ||
+                            it.country.contains(consoleFilter, ignoreCase = true) ||
+                            it.operator.contains(consoleFilter, ignoreCase = true)
                 }
             }
-
-            Surface(
-                shape = RoundedCornerShape(12.dp),
-                color = Color(0xFF1E1738),
-                border = BorderStroke(1.dp, Color(0xFF3B2968))
-            ) {
-                Text(
-                    text = "${filteredBroadcast.size} records",
-                    color = Color(0xFFCBD5E1),
-                    fontSize = 11.5.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
-                )
-            }
         }
 
-        // 4. Live Feed List (Styled exactly as Screenshot 2)
-        if (filteredBroadcast.isEmpty()) {
+        if (filteredList.isEmpty()) {
             Surface(
-                color = Color(0xFF130E24),
-                shape = RoundedCornerShape(12.dp),
-                border = BorderStroke(1.dp, Color(0xFF2C1F4D)),
+                color = ThemeCardBg,
+                shape = RoundedCornerShape(14.dp),
+                border = BorderStroke(1.dp, ThemeBorder),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(24.dp),
+                    modifier = Modifier.padding(24.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    Icon(Icons.Default.Sensors, contentDescription = null, tint = Color(0xFF6B7280), modifier = Modifier.size(28.dp))
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text("কোনো রেকর্ড পাওয়া যায়নি", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                    Text("১ সেকেন্ড পর পর লাইভ ফেচ হচ্ছে...", color = Color(0xFF9CA3AF), fontSize = 11.sp)
+                    Icon(Icons.Default.Sensors, contentDescription = null, tint = Color(0xFF64748B), modifier = Modifier.size(32.dp))
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text("কোনো লাইভ ওটিপি রেকর্ড পাওয়া যায়নি", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                 }
             }
         } else {
-            filteredBroadcast.forEachIndexed { index, feed ->
-                key(feed.id) {
-                    Kop2SignalLiveFeedCard(
-                        feed = feed,
-                        isNewest = index == 0 || (nowTick - feed.time) <= 90_000L,
-                        nowTick = nowTick,
-                        kop2OtpRate = kop2OtpRate,
+            filteredList.forEachIndexed { index, feedItem ->
+                key(feedItem.id) {
+                    MkLiveOtpFeedCard(
+                        item = feedItem,
+                        isNew = index == 0,
                         context = context
                     )
                 }
@@ -1357,186 +1256,173 @@ private fun Kop2LiveConsoleTab(
 }
 
 /**
- * Kop Engine 2 Signal Live Feed Card (Pixel-perfect recreation of Screenshot 2)
+ * MK Network Live OTP Feed Card (Screenshot 8 UI layout):
+ * - Top Row: [ 260XXX ❐ ] and Chips: [Service], [Country], [Operator], [• NEW]
+ * - Body: Monospace rounded message box
+ * - Bottom Row: Clock + "09:48:53 PM · 13 Oct 2026 BDT" and "52s ago"
  */
 @Composable
-private fun Kop2SignalLiveFeedCard(
-    feed: BroadcastFeedItem,
-    isNewest: Boolean,
-    nowTick: Long,
-    kop2OtpRate: Double,
+private fun MkLiveOtpFeedCard(
+    item: BroadcastFeedItem,
+    isNew: Boolean,
     context: Context
 ) {
-    val displayNum = if (feed.number.endsWith("XXX", ignoreCase = true) || feed.number.length <= 6) {
-        feed.number
-    } else {
-        feed.number.take(6) + "XXX"
+    val bdtDateFormat = remember {
+        SimpleDateFormat("hh:mm:ss a · dd MMM yyyy 'BDT'", Locale.ENGLISH).apply {
+            timeZone = TimeZone.getTimeZone("Asia/Dhaka")
+        }
     }
-    val serviceStr = feed.service.ifEmpty { "Facebook" }.replaceFirstChar { it.uppercase() }
-    val countryStr = feed.country.ifEmpty { "Zambia" }.replaceFirstChar { it.uppercase() }
-    val operatorStr = feed.operator.ifEmpty { "Zamtel" }.replaceFirstChar { it.uppercase() }
+    val formattedTime = remember(item.time) {
+        bdtDateFormat.format(Date(item.time))
+    }
+
+    val elapsedSeconds = ((System.currentTimeMillis() - item.time) / 1000L).coerceAtLeast(5L)
+    val elapsedText = when {
+        elapsedSeconds < 60 -> "${elapsedSeconds}s ago"
+        elapsedSeconds < 3600 -> "${elapsedSeconds / 60}m ${elapsedSeconds % 60}s ago"
+        else -> "${elapsedSeconds / 3600}h ago"
+    }
 
     Card(
-        colors = CardDefaults.cardColors(containerColor = Color.White),
+        colors = CardDefaults.cardColors(containerColor = ThemeCardBg),
         shape = RoundedCornerShape(14.dp),
-        border = BorderStroke(1.dp, Color(0xFFE2E8F0)),
+        border = BorderStroke(1.dp, ThemeBorder),
         modifier = Modifier.fillMaxWidth()
     ) {
-        Column(modifier = Modifier.padding(14.dp)) {
-            // Row 1: Number Pill with Copy Icon (e.g. 260XXX ❐)
-            Surface(
-                color = Color(0xFFE0F2FE),
-                shape = RoundedCornerShape(8.dp),
-                border = BorderStroke(1.dp, Color(0xFFBAE6FD)),
-                modifier = Modifier.clickable {
-                    ClipboardHelper.copyToClipboard(context, feed.number, "Phone Number")
-                    VibrationHelper.vibrateSuccess(context)
-                    Toast.makeText(context, "নম্বর কপি হয়েছে: ${feed.number}", Toast.LENGTH_SHORT).show()
-                }
-            ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = displayNum,
-                        color = Color(0xFF0369A1),
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.ExtraBold,
-                        fontFamily = FontFamily.Monospace
-                    )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Icon(
-                        imageVector = Icons.Default.ContentCopy,
-                        contentDescription = "Copy Number",
-                        tint = Color(0xFF0284C7),
-                        modifier = Modifier.size(13.dp)
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.height(10.dp))
-
-            // Row 2: Badges (Service, Country, Operator, • NEW)
+        Column(modifier = Modifier.padding(12.dp)) {
+            // Line 1: [ 260XXX ❐ ] Badge + Chips Row
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                verticalAlignment = Alignment.CenterVertically
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                // Service Badge (Facebook, etc. - soft purple pill)
+                // Range Pill with Copy icon (Screenshot 8)
                 Surface(
-                    color = Color(0xFFF3E8FF),
-                    shape = RoundedCornerShape(6.dp),
-                    border = BorderStroke(0.8.dp, Color(0xFFE9D5FF))
+                    color = ThemeSky.copy(alpha = 0.2f),
+                    shape = RoundedCornerShape(8.dp),
+                    border = BorderStroke(1.dp, ThemeSky.copy(alpha = 0.5f)),
+                    modifier = Modifier.clickable {
+                        ClipboardHelper.copyToClipboard(context, item.range.ifEmpty { item.number }, "Range")
+                        Toast.makeText(context, "Range কপি হয়েছে: ${item.range.ifEmpty { item.number }}", Toast.LENGTH_SHORT).show()
+                    }
                 ) {
-                    Text(
-                        text = serviceStr,
-                        color = Color(0xFF7E22CE),
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.5.dp)
-                    )
-                }
-
-                // Country Badge (Zambia, etc. - soft mint pill)
-                Surface(
-                    color = Color(0xFFD1FAE5),
-                    shape = RoundedCornerShape(6.dp),
-                    border = BorderStroke(0.8.dp, Color(0xFFA7F3D0))
-                ) {
-                    Text(
-                        text = countryStr,
-                        color = Color(0xFF065F46),
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.5.dp)
-                    )
-                }
-
-                // Operator Badge (Zamtel, etc. - soft amber pill)
-                Surface(
-                    color = Color(0xFFFEF3C7),
-                    shape = RoundedCornerShape(6.dp),
-                    border = BorderStroke(0.8.dp, Color(0xFFFDE68A))
-                ) {
-                    Text(
-                        text = operatorStr,
-                        color = Color(0xFF92400E),
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.5.dp)
-                    )
-                }
-
-                // Status Badge: • NEW
-                if (isNewest) {
-                    Surface(
-                        color = Color(0xFFDCFCE7),
-                        shape = RoundedCornerShape(6.dp),
-                        border = BorderStroke(0.8.dp, Color(0xFFBBF7D0))
+                    Row(
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            text = "• NEW",
-                            color = Color(0xFF15803D),
-                            fontSize = 10.5.sp,
-                            fontWeight = FontWeight.Bold,
-                            modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.5.dp)
+                            text = item.range.ifEmpty { item.number },
+                            color = ThemeSkyBright,
+                            fontSize = 12.5.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            fontFamily = FontFamily.Monospace
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Icon(
+                            imageVector = Icons.Default.ContentCopy,
+                            contentDescription = "Copy Range",
+                            tint = ThemeSkyBright,
+                            modifier = Modifier.size(12.dp)
                         )
                     }
                 }
-            }
 
-            Spacer(modifier = Modifier.height(10.dp))
+                // Tags / Chips Row: [Service] [Country] [Operator] [• NEW]
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    // Service Chip
+                    Surface(
+                        color = ThemeSurfaceDark,
+                        shape = RoundedCornerShape(6.dp),
+                        border = BorderStroke(0.8.dp, ThemeBorder)
+                    ) {
+                        Text(
+                            text = item.service,
+                            color = ThemeCyan,
+                            fontSize = 9.5.sp,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                        )
+                    }
 
-            // Row 3: SMS Message Body Box (Light gray container with monospace text)
-            Surface(
-                color = Color(0xFFF8FAFC),
-                shape = RoundedCornerShape(10.dp),
-                border = BorderStroke(1.dp, Color(0xFFE2E8F0)),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable {
-                        val regex = Pattern.compile("\\b\\d{4,8}\\b")
-                        val matcher = regex.matcher(feed.otp)
-                        if (matcher.find()) {
-                            val code = matcher.group()
-                            ClipboardHelper.copyToClipboard(context, code, "OTP Code")
-                            VibrationHelper.vibrateSuccess(context)
-                            OtpNotificationHelper.showOtpNotification(
-                                context = context,
-                                phoneNumber = feed.number,
-                                otpCode = code,
-                                fullMessage = feed.otp
+                    // Country Chip
+                    Surface(
+                        color = ThemeSurfaceDark,
+                        shape = RoundedCornerShape(6.dp),
+                        border = BorderStroke(0.8.dp, ThemeBorder)
+                    ) {
+                        Text(
+                            text = item.country,
+                            color = Color(0xFF2DD4BF),
+                            fontSize = 9.5.sp,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                        )
+                    }
+
+                    // Operator Chip
+                    Surface(
+                        color = ThemeSurfaceDark,
+                        shape = RoundedCornerShape(6.dp),
+                        border = BorderStroke(0.8.dp, ThemeBorder)
+                    ) {
+                        Text(
+                            text = item.operator,
+                            color = ThemeAmber,
+                            fontSize = 9.5.sp,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                        )
+                    }
+
+                    // • NEW Badge
+                    if (isNew) {
+                        Surface(
+                            color = ThemeEmerald.copy(alpha = 0.2f),
+                            shape = RoundedCornerShape(6.dp),
+                            border = BorderStroke(0.8.dp, ThemeEmerald)
+                        ) {
+                            Text(
+                                text = "• NEW",
+                                color = ThemeEmerald,
+                                fontSize = 9.sp,
+                                fontWeight = FontWeight.Black,
+                                modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
                             )
-                            OtpHistoryManager.recordOtp(
-                                phoneNumber = feed.number,
-                                otpCode = code,
-                                service = feed.service,
-                                platform = "Kop Engine 2 (Signal)",
-                                rate = kop2OtpRate
-                            )
-                            Toast.makeText(context, "✓ OTP $code কপি হয়েছে", Toast.LENGTH_SHORT).show()
-                        } else {
-                            ClipboardHelper.copyToClipboard(context, feed.otp, "SMS Body")
-                            VibrationHelper.vibrateSuccess(context)
-                            Toast.makeText(context, "এসএমএস কপি হয়েছে", Toast.LENGTH_SHORT).show()
                         }
                     }
-            ) {
-                Column(modifier = Modifier.padding(12.dp)) {
-                    Text(
-                        text = feed.otp,
-                        color = Color(0xFF0F172A),
-                        fontSize = 12.sp,
-                        fontFamily = FontFamily.Monospace,
-                        lineHeight = 18.sp
-                    )
                 }
             }
 
             Spacer(modifier = Modifier.height(10.dp))
 
-            // Row 4: Timestamp (09:48:53 PM • 13 Oct 2026 BDT) & Relative time pill (52s ago)
+            // Body: SMS / OTP Code Box in rounded mono container (Screenshot 8)
+            Surface(
+                color = ThemeBgDark,
+                shape = RoundedCornerShape(8.dp),
+                border = BorderStroke(1.dp, ThemeBorder),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable {
+                        ClipboardHelper.copyToClipboard(context, item.otp, "SMS Body")
+                        Toast.makeText(context, "এসএমএস কপি হয়েছে", Toast.LENGTH_SHORT).show()
+                    }
+            ) {
+                Text(
+                    text = item.otp,
+                    color = Color(0xFFE2E8F0),
+                    fontSize = 11.5.sp,
+                    fontFamily = FontFamily.Monospace,
+                    lineHeight = 16.sp,
+                    modifier = Modifier.padding(10.dp)
+                )
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // Line 3: Bottom metadata (Timestamp and Elapsed time)
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -1546,86 +1432,33 @@ private fun Kop2SignalLiveFeedCard(
                     Icon(
                         imageVector = Icons.Default.Schedule,
                         contentDescription = null,
-                        tint = Color(0xFF64748B),
+                        tint = ThemeMuted,
                         modifier = Modifier.size(13.dp)
                     )
                     Spacer(modifier = Modifier.width(5.dp))
                     Text(
-                        text = formatLiveTimestamp(feed.time),
-                        color = Color(0xFF64748B),
-                        fontSize = 10.5.sp
+                        text = formattedTime,
+                        color = ThemeMuted,
+                        fontSize = 10.sp,
+                        fontFamily = FontFamily.Monospace
                     )
                 }
 
-                // Relative time pill
+                // Green Elapsed Time Badge (e.g. "52s ago")
                 Surface(
-                    color = Color(0xFFDCFCE7),
+                    color = ThemeEmerald.copy(alpha = 0.15f),
                     shape = RoundedCornerShape(12.dp),
-                    border = BorderStroke(0.8.dp, Color(0xFFBBF7D0))
+                    border = BorderStroke(0.8.dp, ThemeEmerald.copy(alpha = 0.6f))
                 ) {
                     Text(
-                        text = formatRelativeTime(feed.time, nowTick),
-                        color = Color(0xFF15803D),
-                        fontSize = 10.5.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
+                        text = elapsedText,
+                        color = ThemeEmerald,
+                        fontSize = 9.5.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp)
                     )
                 }
             }
-        }
-    }
-}
-
-private fun formatLiveTimestamp(timeMs: Long): String {
-    return try {
-        val sdf = SimpleDateFormat("hh:mm:ss a • dd MMM yyyy", Locale.US).apply {
-            timeZone = TimeZone.getTimeZone("Asia/Dhaka")
-        }
-        "${sdf.format(Date(timeMs))} BDT"
-    } catch (_: Exception) {
-        "12:00:00 PM • BDT"
-    }
-}
-
-private fun formatRelativeTime(timeMs: Long, nowMs: Long): String {
-    val diffSec = ((nowMs - timeMs) / 1000).coerceAtLeast(0)
-    return when {
-        diffSec < 60 -> "${diffSec}s ago"
-        diffSec < 3600 -> {
-            val mins = diffSec / 60
-            val secs = diffSec % 60
-            if (secs > 0) "${mins}m ${secs}s ago" else "${mins}m ago"
-        }
-        else -> {
-            val hours = diffSec / 3600
-            val mins = (diffSec % 3600) / 60
-            if (mins > 0) "${hours}h ${mins}m ago" else "${hours}h ago"
-        }
-    }
-}
-
-@Composable
-private fun StatPillKop2(
-    label: String,
-    value: String,
-    color: Color,
-    bgColor: Color = Color(0xFF1E293B),
-    borderColor: Color = Color(0xFF334155),
-    modifier: Modifier = Modifier
-) {
-    Surface(
-        color = bgColor,
-        shape = RoundedCornerShape(10.dp),
-        border = BorderStroke(1.dp, borderColor),
-        modifier = modifier
-    ) {
-        Column(
-            modifier = Modifier.padding(vertical = 8.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            Text(text = label, color = Color(0xFF94A3B8), fontSize = 9.5.sp, fontWeight = FontWeight.Bold)
-            Spacer(modifier = Modifier.height(2.dp))
-            Text(text = value, color = color, fontSize = 14.sp, fontWeight = FontWeight.ExtraBold)
         }
     }
 }

@@ -55,8 +55,15 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.filled.CloudSync
+import androidx.compose.runtime.collectAsState
 import com.example.service.OverlayStateManager
 import com.example.service.OverlayUiState
+import com.example.service.UnixSmsManager
 import com.example.ui.theme.AlertRed
 import com.example.ui.theme.BrandAmber
 import com.example.ui.theme.BrandRose
@@ -71,6 +78,7 @@ fun ClearDataSection(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
+    val unixState by UnixSmsManager.state.collectAsState()
     var searchQuery by remember { mutableStateOf("") }
     val allInstalledApps = remember { mutableStateListOf<AppInfoItem>() }
 
@@ -239,6 +247,208 @@ fun ClearDataSection(
                     fontWeight = FontWeight.Bold,
                     fontSize = 13.sp
                 )
+            }
+        }
+
+        // Premium Numbers Database Clear (By Country with Cloud Live Auto Sync)
+        item {
+            var selectedCountryToClear by remember { mutableStateOf("ALL") }
+            var countryDropdownOpen by remember { mutableStateOf(false) }
+            var showConfirmDialog by remember { mutableStateOf(false) }
+
+            val uploadedNumbers = unixState.uploadedNumbers
+            val distinctCountries = remember(uploadedNumbers) {
+                uploadedNumbers.map { it.countryCode to it.countryName }.distinct()
+            }
+            val targetCount = remember(uploadedNumbers, selectedCountryToClear) {
+                if (selectedCountryToClear == "ALL") uploadedNumbers.size
+                else uploadedNumbers.count { it.countryCode.equals(selectedCountryToClear, ignoreCase = true) }
+            }
+
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                ),
+                border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.3f))
+            ) {
+                Column(modifier = Modifier.padding(14.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Default.CloudSync,
+                                contentDescription = null,
+                                tint = BrandSky,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "Premium Numbers Database Clear",
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+
+                        Surface(
+                            color = BrandSky.copy(alpha = 0.15f),
+                            shape = RoundedCornerShape(6.dp)
+                        ) {
+                            Text(
+                                text = "Live Auto Sync",
+                                color = BrandSky,
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(6.dp))
+
+                    Text(
+                        text = "দেশ নির্বাচন করে ডাটাবেস থেকে নাম্বার ক্লিয়ার করুন। সাথে সাথে ক্লাউড ডাটাবেস ও সকল ইউজারের অ্যাপ থেকেও অটো সিঙ্ক হয়ে মুছে যাবে।",
+                        fontSize = 11.5.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    // Country Selector Box
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Box(modifier = Modifier.weight(1f)) {
+                            Surface(
+                                shape = RoundedCornerShape(10.dp),
+                                color = MaterialTheme.colorScheme.surface,
+                                border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.4f)),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { countryDropdownOpen = true }
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = if (selectedCountryToClear == "ALL") "🌐 ALL COUNTRIES (${uploadedNumbers.size})"
+                                        else "🏳️ $selectedCountryToClear ($targetCount nos)",
+                                        fontSize = 12.5.sp,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                    Icon(
+                                        imageVector = Icons.Default.ArrowDropDown,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                }
+                            }
+
+                            DropdownMenu(
+                                expanded = countryDropdownOpen,
+                                onDismissRequest = { countryDropdownOpen = false }
+                            ) {
+                                DropdownMenuItem(
+                                    text = {
+                                        Text(
+                                            "🌐 সব দেশের নাম্বার (ALL) - ${uploadedNumbers.size} টি",
+                                            fontWeight = FontWeight.Bold,
+                                            color = AlertRed
+                                        )
+                                    },
+                                    onClick = {
+                                        selectedCountryToClear = "ALL"
+                                        countryDropdownOpen = false
+                                    }
+                                )
+                                distinctCountries.forEach { (code, name) ->
+                                    val count = uploadedNumbers.count { it.countryCode.equals(code, ignoreCase = true) }
+                                    DropdownMenuItem(
+                                        text = {
+                                            Text("$name ($code) - $count টি")
+                                        },
+                                        onClick = {
+                                            selectedCountryToClear = code
+                                            countryDropdownOpen = false
+                                        }
+                                    )
+                                }
+                            }
+                        }
+
+                        // Clear Action Button
+                        Button(
+                            onClick = {
+                                if (targetCount > 0) {
+                                    showConfirmDialog = true
+                                } else {
+                                    Toast.makeText(context, "সিলেক্টেড দেশে কোনো নাম্বার নেই", Toast.LENGTH_SHORT).show()
+                                }
+                            },
+                            enabled = targetCount > 0,
+                            colors = ButtonDefaults.buttonColors(containerColor = AlertRed),
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier.height(44.dp)
+                        ) {
+                            Icon(Icons.Default.Delete, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Clear", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                        }
+                    }
+
+                    // Delete Confirmation Dialog
+                    if (showConfirmDialog) {
+                        AlertDialog(
+                            onDismissRequest = { showConfirmDialog = false },
+                            title = {
+                                Text(
+                                    text = "⚠️ নাম্বার ডিলিট ও লাইভ সিঙ্ক",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 15.sp
+                                )
+                            },
+                            text = {
+                                Text(
+                                    text = if (selectedCountryToClear == "ALL") {
+                                        "আপনি কি নিশ্চিত যে সমস্ত ($targetCount টি) আপলোড করা নাম্বার ডাটাবেস ও সকল ইউজারদের অ্যাপ থেকে সম্পূর্ণ ডিলিট ও লাইভ সিঙ্ক করতে চান?"
+                                    } else {
+                                        "আপনি কি নিশ্চিত যে $selectedCountryToClear দেশের সকল ($targetCount টি) নাম্বার ডাটাবেস ও সকল ইউজারদের অ্যাপ থেকে মুছে দিতে চান?"
+                                    },
+                                    fontSize = 12.sp
+                                )
+                            },
+                            confirmButton = {
+                                Button(
+                                    onClick = {
+                                        UnixSmsManager.deleteNumbersByCountry(selectedCountryToClear)
+                                        showConfirmDialog = false
+                                        Toast.makeText(
+                                            context,
+                                            "✓ $selectedCountryToClear এর নাম্বার ডাটাবেস ও ইউজারদের থেকে মুছে লাইভ সিঙ্ক করা হয়েছে!",
+                                            Toast.LENGTH_LONG
+                                        ).show()
+                                    },
+                                    colors = ButtonDefaults.buttonColors(containerColor = AlertRed)
+                                ) {
+                                    Text("হ্যাঁ, ডিলিট করুন")
+                                }
+                            },
+                            dismissButton = {
+                                OutlinedButton(onClick = { showConfirmDialog = false }) {
+                                    Text("বাতিল")
+                                }
+                            }
+                        )
+                    }
+                }
             }
         }
 
