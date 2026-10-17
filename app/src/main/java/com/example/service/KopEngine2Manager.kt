@@ -575,63 +575,121 @@ object KopEngine2Manager {
     }
 
     /**
-     * Fetches real dynamic active ranges from live API every 3s.
+     * Fetches 100% real active ranges and live OTP broadcast feed from MK Network v3 Radar API.
+     * Endpoint: https://mknetworkbd.com/api/v3/public/radar
+     * No fake data, no simulated math.
      */
-    /**
-     * Refreshes dynamic active ranges exclusively for MK Network with natural activity variance.
-     */
-    /**
-     * Refreshes dynamic active ranges exclusively from user's real verified MK Network transactions.
-     * No fake default ranges or random math.
-     */
-    fun fetchActiveRanges() {
+    fun fetchRadarData() {
+        val apiKey = _state.value.apiKey.ifEmpty { DEFAULT_MK_API_KEY }
         scope.launch {
             try {
-                val realSuccessful = _state.value.provisionedNumbers
-                    .filter { it.range.isNotBlank() }
-                    .groupBy { it.range }
-                    .map { (range, items) ->
+                val url = "$MK_BASE_URL/radar"
+                val request = Request.Builder()
+                    .url(url)
+                    .addHeader("mknetwork-key", apiKey)
+                    .addHeader("User-Agent", "Mozilla/5.0")
+                    .get()
+                    .build()
+
+                val response = try {
+                    httpClient.newCall(request).execute()
+                } catch (_: Exception) { null }
+
+                val responseStr = response?.body?.string() ?: ""
+                if (response != null && response.isSuccessful && responseStr.isNotEmpty()) {
+                    val root = JSONObject(responseStr)
+                    val dataObj = root.optJSONObject("data") ?: return@launch
+                    val itemsArr = dataObj.optJSONArray("items") ?: JSONArray()
+
+                    val radarBroadcastItems = mutableListOf<BroadcastFeedItem>()
+                    val rangeHitMap = mutableMapOf<String, Triple<String, String, Int>>() // range -> (service, tag, count)
+
+                    for (i in 0 until itemsArr.length()) {
+                        val it = itemsArr.optJSONObject(i) ?: continue
+                        val id = it.optLong("id", i.toLong())
+                        val range = it.optString("range", "").trim()
+                        val service = it.optString("service", "MK Network").trim()
+                        val country = it.optString("country", "Global").trim()
+                        val operator = it.optString("operator", "Mobile").trim()
+                        val sms = it.optString("sms", "").trim()
+                        val ageSeconds = it.optLong("age_seconds", 0L)
+                        val timestamp = System.currentTimeMillis() - (ageSeconds * 1000L)
+
+                        val displayNum = if (range.endsWith("XXX")) {
+                            "${range.removeSuffix("XXX")}******"
+                        } else if (range.isNotEmpty()) {
+                            range
+                        } else "MK_LIVE"
+
+                        radarBroadcastItems.add(
+                            BroadcastFeedItem(
+                                id = "mk_radar_$id",
+                                number = displayNum,
+                                range = range,
+                                service = service,
+                                country = country,
+                                operator = operator,
+                                otp = sms,
+                                time = timestamp
+                            )
+                        )
+
+                        if (range.isNotBlank()) {
+                            val existing = rangeHitMap[range]
+                            val newHits = (existing?.third ?: 0) + 1
+                            val tag = if (operator.isNotBlank() && !operator.equals("Mobile", ignoreCase = true)) {
+                                "$operator ⚡"
+                            } else {
+                                "$country ⚡"
+                            }
+                            rangeHitMap[range] = Triple(service, tag, newHits)
+                        }
+                    }
+
+                    val dynamicRanges = rangeHitMap.map { (r, info) ->
                         ActiveRangeItem(
-                            range = range,
-                            service = "MK Network",
-                            tag = "Real Stock ⚡",
-                            hits = items.size
+                            range = r,
+                            service = info.first,
+                            tag = info.second,
+                            hits = info.third
+                        )
+                    }.sortedByDescending { it.hits }
+
+                    _state.update { current ->
+                        val localOtps = current.provisionedNumbers
+                            .filter { !it.otpCode.isNullOrEmpty() }
+                            .map { p ->
+                                BroadcastFeedItem(
+                                    id = "kop2_${p.id}",
+                                    number = p.number,
+                                    range = p.range,
+                                    service = "MK Network",
+                                    country = p.country,
+                                    operator = p.operator,
+                                    otp = p.otpMessage ?: "<#> ${p.otpCode} is your verification code",
+                                    time = p.timestamp
+                                )
+                            }
+                        val combinedBroadcast = (localOtps + radarBroadcastItems)
+                            .distinctBy { it.id }
+                            .sortedByDescending { it.time }
+
+                        current.copy(
+                            activeRanges = dynamicRanges,
+                            broadcastFeed = combinedBroadcast
                         )
                     }
-                _state.update { current ->
-                    current.copy(activeRanges = realSuccessful)
                 }
             } catch (_: Exception) {}
         }
     }
 
-    /**
-     * Fetches live broadcast feed exclusively for Kop Engine 2 / MK Network transactions.
-     * Only displays real verified OTPs from MK Network v3 - No simulated/fake data.
-     */
+    fun fetchActiveRanges() {
+        fetchRadarData()
+    }
+
     fun fetchGlobalBroadcast() {
-        scope.launch {
-            try {
-                _state.update { current ->
-                    val localOtps = current.provisionedNumbers
-                        .filter { !it.otpCode.isNullOrEmpty() }
-                        .map { p ->
-                            BroadcastFeedItem(
-                                id = "kop2_${p.id}",
-                                number = p.number,
-                                range = p.range,
-                                service = "MK Network",
-                                country = p.country,
-                                operator = p.operator,
-                                otp = p.otpMessage ?: "<#> ${p.otpCode} is your verification code",
-                                time = p.timestamp
-                            )
-                        }
-                        .sortedByDescending { it.time }
-                    current.copy(broadcastFeed = localOtps)
-                }
-            } catch (_: Exception) {}
-        }
+        fetchRadarData()
     }
 
     fun clearActiveNumbers(context: Context) {
