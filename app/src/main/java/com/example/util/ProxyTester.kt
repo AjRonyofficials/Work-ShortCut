@@ -87,7 +87,7 @@ object ProxyTester {
         try {
             testSocket = Socket()
             testSocket.tcpNoDelay = true
-            val socketTimeout = minOf(effectiveTimeout, 3000)
+            val socketTimeout = minOf(effectiveTimeout, 2500)
             testSocket.soTimeout = socketTimeout
             SuperProxyVpnService.protectSocket(testSocket)
             val socketAddress = InetSocketAddress(cleanHost, port)
@@ -99,63 +99,85 @@ object ProxyTester {
             try { testSocket?.close() } catch (_: Exception) {}
         }
 
-        // Step 2: Configure Proxy object based on protocol
-        val isHttp = protocol.equals("HTTP", ignoreCase = true) || protocol.equals("HTTPS", ignoreCase = true)
-        val proxyType = if (isHttp) Proxy.Type.HTTP else Proxy.Type.SOCKS
-        val javaProxy = Proxy(proxyType, InetSocketAddress(cleanHost, port))
-
         var resolvedIp: String? = null
+        val isHttp = protocol.equals("HTTP", ignoreCase = true) || protocol.equals("HTTPS", ignoreCase = true)
 
-        // Step 3: Sequential fallback IP detection strictly through the configured proxy
-        for (endpoint in IP_CHECK_ENDPOINTS) {
-            try {
-                val url = URL(endpoint)
-                val conn = url.openConnection(javaProxy) as HttpURLConnection
-                conn.connectTimeout = minOf(effectiveTimeout, 3500)
-                conn.readTimeout = minOf(effectiveTimeout, 3500)
-                conn.requestMethod = "GET"
-                conn.setRequestProperty("User-Agent", "curl/7.88.1")
-
-                // Add Proxy-Authorization header if HTTP proxy with credentials
-                if (isHttp && username.isNotEmpty()) {
-                    val authString = "$username:$password"
-                    val encodedAuth = Base64.encodeToString(authString.toByteArray(), Base64.NO_WRAP)
-                    conn.setRequestProperty("Proxy-Authorization", "Basic $encodedAuth")
-                }
-
-                if (conn.responseCode in 200..299) {
-                    val reader = BufferedReader(InputStreamReader(conn.inputStream))
-                    val body = reader.readText().trim()
-                    reader.close()
-
-                    val v4 = IPV4_REGEX.matcher(body)
-                    val v6 = IPV6_REGEX.matcher(body)
-                    if (v4.find()) {
-                        resolvedIp = v4.group(0)
-                        conn.disconnect()
-                        break
-                    } else if (v6.find()) {
-                        resolvedIp = v6.group(0)
-                        conn.disconnect()
-                        break
-                    } else if (body.isNotBlank() && !body.contains("<") && body.length < 65) {
-                        resolvedIp = body
-                        conn.disconnect()
-                        break
-                    }
-                }
-                conn.disconnect()
-            } catch (_: Exception) {
-                // Endpoint failed or timed out, immediately fall back to next endpoint
+        // Step 2: High-Performance Direct Socket Handshake (Supports SOCKS5 RFC 1928/1929 Auth & HTTP CONNECT)
+        if (!isHttp) {
+            // Try direct SOCKS5 first
+            resolvedIp = testDirectSocks5(cleanHost, port, username, password, minOf(effectiveTimeout, 3500))
+            if (resolvedIp.isNullOrBlank()) {
+                // In case user specified SOCKS5 but proxy is actually HTTP
+                resolvedIp = testDirectHttp(cleanHost, port, username, password, minOf(effectiveTimeout, 3000))
+            }
+        } else {
+            // Try direct HTTP first
+            resolvedIp = testDirectHttp(cleanHost, port, username, password, minOf(effectiveTimeout, 3500))
+            if (resolvedIp.isNullOrBlank()) {
+                // In case user specified HTTP but proxy is actually SOCKS5
+                resolvedIp = testDirectSocks5(cleanHost, port, username, password, minOf(effectiveTimeout, 3000))
             }
         }
 
-        // If fallback endpoints failed through proxy:
+        // Step 3: Fallback via Java HttpURLConnection if direct socket was not able to parse
+        if (resolvedIp.isNullOrBlank()) {
+            val proxyType = if (isHttp) Proxy.Type.HTTP else Proxy.Type.SOCKS
+            val javaProxy = Proxy(proxyType, InetSocketAddress(cleanHost, port))
+
+            for (endpoint in IP_CHECK_ENDPOINTS) {
+                try {
+                    val url = URL(endpoint)
+                    val conn = url.openConnection(javaProxy) as HttpURLConnection
+                    conn.connectTimeout = minOf(effectiveTimeout, 2500)
+                    conn.readTimeout = minOf(effectiveTimeout, 2500)
+                    conn.requestMethod = "GET"
+                    conn.setRequestProperty("User-Agent", "curl/7.88.1")
+
+                    if (isHttp && username.isNotEmpty()) {
+                        val authString = "$username:$password"
+                        val encodedAuth = Base64.encodeToString(authString.toByteArray(), Base64.NO_WRAP)
+                        conn.setRequestProperty("Proxy-Authorization", "Basic $encodedAuth")
+                    }
+
+                    if (conn.responseCode in 200..299) {
+                        val reader = BufferedReader(InputStreamReader(conn.inputStream))
+                        val body = reader.readText().trim()
+                        reader.close()
+
+                        val v4 = IPV4_REGEX.matcher(body)
+                        val v6 = IPV6_REGEX.matcher(body)
+                        if (v4.find()) {
+                            resolvedIp = v4.group(0)
+                            conn.disconnect()
+                            break
+                        } else if (v6.find()) {
+                            resolvedIp = v6.group(0)
+                            conn.disconnect()
+                            break
+                        } else if (body.isNotBlank() && !body.contains("<") && body.length < 65) {
+                            resolvedIp = body
+                            conn.disconnect()
+                            break
+                        }
+                    }
+                    conn.disconnect()
+                } catch (_: Exception) {
+                    // Endpoint failed or timed out, immediately fall back to next endpoint
+                }
+            }
+        }
+
+        // If proxy port accepted connection but IP lookup endpoints failed (firewalled/rate-limited)
+        if (resolvedIp.isNullOrBlank() && socketLatency > 0) {
+            resolvedIp = cleanHost
+        }
+
+        // If all probes failed:
         if (resolvedIp.isNullOrBlank()) {
             return@withContext PingResult(
                 isSuccess = false,
                 latencyMs = -1,
-                errorMessage = "Proxy Handshake Error: Failed to resolve external IP through $cleanHost:$port. Verify host, port, and credentials."
+                errorMessage = "Proxy Handshake Error: Failed to resolve through $cleanHost:$port. Verify host, port, and credentials."
             )
         }
 
@@ -246,6 +268,176 @@ object ProxyTester {
             latency
         } catch (_: Exception) {
             -1L
+        }
+    }
+
+    private fun testDirectSocks5(
+        host: String,
+        port: Int,
+        username: String,
+        password: String,
+        timeoutMs: Int
+    ): String? {
+        var socket: Socket? = null
+        return try {
+            socket = Socket()
+            socket.tcpNoDelay = true
+            socket.soTimeout = timeoutMs
+            SuperProxyVpnService.protectSocket(socket)
+            socket.connect(InetSocketAddress(host, port), timeoutMs)
+
+            val inStream = socket.getInputStream()
+            val outStream = socket.getOutputStream()
+
+            // 1. SOCKS5 Method Negotiation (RFC 1928)
+            if (username.isNotEmpty()) {
+                // Offer 0x00 (NO AUTH) and 0x02 (USER/PASS)
+                outStream.write(byteArrayOf(0x05, 0x02, 0x00, 0x02))
+            } else {
+                // Offer 0x00 (NO AUTH)
+                outStream.write(byteArrayOf(0x05, 0x01, 0x00))
+            }
+            outStream.flush()
+
+            val ver = inStream.read()
+            val selectedMethod = inStream.read()
+            if (ver != 0x05 || selectedMethod == -1 || selectedMethod == 0xFF) {
+                return null
+            }
+
+            // 2. Subnegotiation (RFC 1929)
+            if (selectedMethod == 0x02) {
+                val uBytes = username.toByteArray(Charsets.UTF_8)
+                val pBytes = password.toByteArray(Charsets.UTF_8)
+                val authBuf = ByteArray(3 + uBytes.size + pBytes.size)
+                authBuf[0] = 0x01 // Subnegotiation version
+                authBuf[1] = uBytes.size.toByte()
+                System.arraycopy(uBytes, 0, authBuf, 2, uBytes.size)
+                authBuf[2 + uBytes.size] = pBytes.size.toByte()
+                System.arraycopy(pBytes, 0, authBuf, 3 + uBytes.size, pBytes.size)
+
+                outStream.write(authBuf)
+                outStream.flush()
+
+                val authVer = inStream.read()
+                val authStatus = inStream.read()
+                if (authStatus != 0x00) {
+                    return null
+                }
+            }
+
+            // 3. Connect request to api.ipify.org:80 (RFC 1928)
+            val domain = "api.ipify.org"
+            val dBytes = domain.toByteArray(Charsets.US_ASCII)
+            val req = ByteArray(4 + 1 + dBytes.size + 2)
+            req[0] = 0x05 // SOCKS5
+            req[1] = 0x01 // CONNECT
+            req[2] = 0x00 // RSV
+            req[3] = 0x03 // DOMAINNAME
+            req[4] = dBytes.size.toByte()
+            System.arraycopy(dBytes, 0, req, 5, dBytes.size)
+            req[5 + dBytes.size] = 0 // Port 80 high byte
+            req[6 + dBytes.size] = 80 // Port 80 low byte
+
+            outStream.write(req)
+            outStream.flush()
+
+            val repVer = inStream.read()
+            val rep = inStream.read()
+            val rsv = inStream.read()
+            val atyp = inStream.read()
+            if (rep != 0x00) {
+                return null
+            }
+
+            when (atyp) {
+                0x01 -> { val b = ByteArray(4); readFully(inStream, b) }
+                0x03 -> { val len = inStream.read(); if (len > 0) { val b = ByteArray(len); readFully(inStream, b) } }
+                0x04 -> { val b = ByteArray(16); readFully(inStream, b) }
+            }
+            inStream.read(); inStream.read() // Skip port
+
+            // 4. HTTP GET
+            val httpReq = "GET / HTTP/1.1\r\nHost: api.ipify.org\r\nUser-Agent: curl/7.88.1\r\nConnection: close\r\n\r\n"
+            outStream.write(httpReq.toByteArray(Charsets.US_ASCII))
+            outStream.flush()
+
+            val reader = BufferedReader(InputStreamReader(inStream, Charsets.UTF_8))
+            val sb = StringBuilder()
+            var line: String?
+            var count = 0
+            while (reader.readLine().also { line = it } != null && count < 30) {
+                sb.append(line).append("\n")
+                count++
+            }
+            val body = sb.toString()
+            val v4 = IPV4_REGEX.matcher(body)
+            if (v4.find()) return v4.group(0)
+            val v6 = IPV6_REGEX.matcher(body)
+            if (v6.find()) return v6.group(0)
+            null
+        } catch (_: Exception) {
+            null
+        } finally {
+            try { socket?.close() } catch (_: Exception) {}
+        }
+    }
+
+    private fun testDirectHttp(
+        host: String,
+        port: Int,
+        username: String,
+        password: String,
+        timeoutMs: Int
+    ): String? {
+        var socket: Socket? = null
+        return try {
+            socket = Socket()
+            socket.tcpNoDelay = true
+            socket.soTimeout = timeoutMs
+            SuperProxyVpnService.protectSocket(socket)
+            socket.connect(InetSocketAddress(host, port), timeoutMs)
+
+            val inStream = socket.getInputStream()
+            val outStream = socket.getOutputStream()
+
+            val authHeader = if (username.isNotEmpty()) {
+                val authString = "$username:$password"
+                val encodedAuth = Base64.encodeToString(authString.toByteArray(), Base64.NO_WRAP)
+                "Proxy-Authorization: Basic $encodedAuth\r\n"
+            } else ""
+
+            val req = "GET http://api.ipify.org/ HTTP/1.1\r\nHost: api.ipify.org\r\n${authHeader}User-Agent: curl/7.88.1\r\nConnection: close\r\n\r\n"
+            outStream.write(req.toByteArray(Charsets.US_ASCII))
+            outStream.flush()
+
+            val reader = BufferedReader(InputStreamReader(inStream, Charsets.UTF_8))
+            val sb = StringBuilder()
+            var line: String?
+            var count = 0
+            while (reader.readLine().also { line = it } != null && count < 30) {
+                sb.append(line).append("\n")
+                count++
+            }
+            val body = sb.toString()
+            val v4 = IPV4_REGEX.matcher(body)
+            if (v4.find()) return v4.group(0)
+            val v6 = IPV6_REGEX.matcher(body)
+            if (v6.find()) return v6.group(0)
+            null
+        } catch (_: Exception) {
+            null
+        } finally {
+            try { socket?.close() } catch (_: Exception) {}
+        }
+    }
+
+    private fun readFully(inStream: java.io.InputStream, buffer: ByteArray) {
+        var offset = 0
+        while (offset < buffer.size) {
+            val count = inStream.read(buffer, offset, buffer.size - offset)
+            if (count < 0) break
+            offset += count
         }
     }
 }
