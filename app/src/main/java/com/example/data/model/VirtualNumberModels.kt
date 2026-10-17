@@ -13,7 +13,9 @@ data class ProvisionedNumber(
     val timestamp: Long = System.currentTimeMillis(),
     val expiresAt: Long = System.currentTimeMillis() + 1_200_000L,
     val failReason: String? = null,
-    val requestId: Long? = null
+    val requestId: Long? = null,
+    val gateway: String = "LAMIX",
+    val rate: Double = 0.50
 )
 
 data class ActiveRangeItem(

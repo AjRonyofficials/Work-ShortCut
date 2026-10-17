@@ -1279,13 +1279,85 @@ fun AdminUnixSmsCard(
 
                 Spacer(modifier = Modifier.height(12.dp))
 
+                // 1. Gateway Selector: Lamix SMS vs Unix SMS
+                var selectedGateway by remember { mutableStateOf(unixState.selectedUploadGateway) }
+
+                Text(text = "1. SMS Gateway API নির্বাচন করুন (Select Gateway):", fontSize = 11.sp, color = Color(0xFF94A3B8), fontWeight = FontWeight.SemiBold)
+                Spacer(modifier = Modifier.height(6.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    val isLamix = selectedGateway == "LAMIX"
+                    Surface(
+                        color = if (isLamix) Color(0xFF0284C7).copy(alpha = 0.25f) else Color(0xFF090E17),
+                        shape = RoundedCornerShape(10.dp),
+                        border = BorderStroke(1.dp, if (isLamix) Color(0xFF38BDF8) else Color(0xFF243B55)),
+                        modifier = Modifier
+                            .weight(1f)
+                            .clickable {
+                                selectedGateway = "LAMIX"
+                                UnixSmsManager.setSelectedUploadGateway("LAMIX")
+                            }
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(vertical = 8.dp, horizontal = 10.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Text(
+                                text = "⚡ Lamix SMS",
+                                color = if (isLamix) Color(0xFF38BDF8) else Color(0xFF94A3B8),
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 11.5.sp
+                            )
+                            Text(
+                                text = "panel.lamix.org",
+                                color = if (isLamix) Color(0xFF7DD3FC) else Color(0xFF64748B),
+                                fontSize = 8.5.sp
+                            )
+                        }
+                    }
+
+                    val isUnix = selectedGateway == "UNIX"
+                    Surface(
+                        color = if (isUnix) Color(0xFF0284C7).copy(alpha = 0.25f) else Color(0xFF090E17),
+                        shape = RoundedCornerShape(10.dp),
+                        border = BorderStroke(1.dp, if (isUnix) Color(0xFF38BDF8) else Color(0xFF243B55)),
+                        modifier = Modifier
+                            .weight(1f)
+                            .clickable {
+                                selectedGateway = "UNIX"
+                                UnixSmsManager.setSelectedUploadGateway("UNIX")
+                            }
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(vertical = 8.dp, horizontal = 10.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Text(
+                                text = "🌐 Unix SMS",
+                                color = if (isUnix) Color(0xFF38BDF8) else Color(0xFF94A3B8),
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 11.5.sp
+                            )
+                            Text(
+                                text = "agent-api.unixsms.com",
+                                color = if (isUnix) Color(0xFF7DD3FC) else Color(0xFF64748B),
+                                fontSize = 8.5.sp
+                            )
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
                 // Country Selector Dropdown with Search Button
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text(text = "1. দেশ নির্বাচন করুন (Select Country):", fontSize = 11.sp, color = Color(0xFF94A3B8), fontWeight = FontWeight.SemiBold)
+                    Text(text = "2. দেশ নির্বাচন করুন (Select Country):", fontSize = 11.sp, color = Color(0xFF94A3B8), fontWeight = FontWeight.SemiBold)
                     OutlinedButton(
                         onClick = {
                             countrySearchQuery = ""
@@ -1654,11 +1726,13 @@ fun AdminUnixSmsCard(
                             countryCode = selectedCountry.code,
                             countryName = selectedCountry.name,
                             flag = selectedCountry.flag,
-                            service = selectedService
+                            service = selectedService,
+                            gateway = selectedGateway,
+                            customRate = currentCountryRate
                         )
                         isUploading = false
                         if (addedCount > 0) {
-                            Toast.makeText(context, "✓ $addedCount টি নতুন নাম্বার সফলভাবে প্যানেলে যোগ হয়েছে!", Toast.LENGTH_LONG).show()
+                            Toast.makeText(context, "✓ $addedCount টি নতুন $selectedGateway নাম্বার সফলভাবে প্যানেলে যোগ হয়েছে ও সকল ইউজারের কাছে লাইভ সিঙ্ক হয়েছে!", Toast.LENGTH_LONG).show()
                             numbersInput = ""
                             VibrationHelper.vibrateSuccess(context)
                         } else {
@@ -2217,6 +2291,31 @@ fun UploadedNumberRowItem(
                                 color = Color(0xFF94A3B8),
                                 fontSize = 9.sp
                             )
+                            Spacer(modifier = Modifier.width(6.dp))
+
+                            // Gateway Badge
+                            Surface(
+                                color = if (item.gateway.equals("LAMIX", ignoreCase = true)) Color(0xFF0284C7).copy(alpha = 0.25f) else Color(0xFF8B5CF6).copy(alpha = 0.25f),
+                                shape = RoundedCornerShape(4.dp),
+                                border = BorderStroke(1.dp, if (item.gateway.equals("LAMIX", ignoreCase = true)) Color(0xFF38BDF8) else Color(0xFFA78BFA))
+                            ) {
+                                Text(
+                                    text = if (item.gateway.equals("LAMIX", ignoreCase = true)) "⚡ LAMIX" else "🌐 UNIX",
+                                    color = if (item.gateway.equals("LAMIX", ignoreCase = true)) Color(0xFF38BDF8) else Color(0xFFA78BFA),
+                                    fontSize = 7.5.sp,
+                                    fontWeight = FontWeight.ExtraBold,
+                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                                )
+                            }
+                            if (item.customRate != null) {
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(
+                                    text = "${String.format(java.util.Locale.US, "%.2f", item.customRate)} ৳",
+                                    color = Color(0xFF34D399),
+                                    fontSize = 8.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
                             Spacer(modifier = Modifier.width(6.dp))
 
                             // Badges

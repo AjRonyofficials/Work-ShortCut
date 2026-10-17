@@ -63,7 +63,7 @@ object GlobalCloudSyncService {
                         delay(20000L)
                         continue
                     }
-                    val pollDelay = if (consecutiveErrors > 3) 15000L else if (consecutiveErrors > 0) 8000L else 5000L
+                    val pollDelay = if (consecutiveErrors > 3) 12000L else if (consecutiveErrors > 0) 6000L else 3500L
                     delay(pollDelay)
                     try {
                         pullFromCloud(context)
@@ -126,6 +126,8 @@ object GlobalCloudSyncService {
                                     countryName = o.optString("countryName", "United States"),
                                     flag = o.optString("flag", "🇺🇸"),
                                     service = o.optString("service", "Facebook"),
+                                    gateway = o.optString("gateway", "LAMIX"),
+                                    customRate = if (o.has("customRate") && !o.isNull("customRate")) o.optDouble("customRate") else null,
                                     addedAt = o.optLong("addedAt", System.currentTimeMillis()),
                                     isUsed = o.optBoolean("isUsed", false),
                                     otpCode = if (o.has("otpCode") && !o.isNull("otpCode")) o.optString("otpCode") else null,
@@ -198,6 +200,8 @@ object GlobalCloudSyncService {
                     o.put("countryName", item.countryName)
                     o.put("flag", item.flag)
                     o.put("service", item.service)
+                    o.put("gateway", item.gateway)
+                    if (item.customRate != null) o.put("customRate", item.customRate)
                     o.put("addedAt", item.addedAt)
                     o.put("isUsed", item.isUsed)
                     item.otpCode?.let { o.put("otpCode", it) }

@@ -31,6 +31,8 @@ data class UploadedNumberItem(
     val countryName: String,
     val flag: String,
     val service: String, // "Facebook", "Instagram", "WhatsApp"
+    val gateway: String = "LAMIX", // "LAMIX" or "UNIX"
+    val customRate: Double? = null,
     val addedAt: Long = System.currentTimeMillis(),
     val isUsed: Boolean = false,
     val otpCode: String? = null,
@@ -47,6 +49,8 @@ data class UnixSmsCdrRecord(
 
 data class UnixSmsState(
     val apiToken: String = "simple_v2_fQxnBh-RLx8BIZS2Zjx8TGVLYLv6aqPkATsrIqEKFbxIaowb",
+    val lamixApiToken: String = "pMRolCWFnQI0PjGibIKWOpeefLn8HbS6AqGS3BqPZlg",
+    val selectedUploadGateway: String = "LAMIX", // "LAMIX" or "UNIX"
     val uploadedNumbers: List<UploadedNumberItem> = emptyList(),
     val activeNumbers: List<ProvisionedNumber> = emptyList(),
     val liveCdrRecords: List<UnixSmsCdrRecord> = emptyList(),
@@ -82,6 +86,8 @@ object UnixSmsManager {
 
     private const val PREFS_NAME = "unix_sms_manager_prefs"
     private const val KEY_API_TOKEN = "unix_api_token"
+    private const val KEY_LAMIX_API_TOKEN = "lamix_api_token"
+    private const val KEY_SELECTED_UPLOAD_GATEWAY = "unix_selected_upload_gateway"
     private const val KEY_UPLOADED_NUMBERS = "uploaded_numbers_json"
     private const val KEY_ACTIVE_NUMBERS = "active_numbers_json"
     private const val KEY_TODAY_OTP = "today_otp_unix"
@@ -89,6 +95,7 @@ object UnixSmsManager {
     private const val KEY_SAVED_COUNTRY = "unix_saved_country"
     private const val KEY_COUNTRY_RATES = "unix_country_rates_json"
     const val DEFAULT_TOKEN = "simple_v2_fQxnBh-RLx8BIZS2Zjx8TGVLYLv6aqPkATsrIqEKFbxIaowb"
+    const val DEFAULT_LAMIX_TOKEN = "pMRolCWFnQI0PjGibIKWOpeefLn8HbS6AqGS3BqPZlg"
 
     private val scope = CoroutineScope(Dispatchers.IO + Job())
     private var prefs: SharedPreferences? = null
@@ -112,6 +119,8 @@ object UnixSmsManager {
         if (prefs == null) {
             prefs = context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
             val token = prefs?.getString(KEY_API_TOKEN, DEFAULT_TOKEN) ?: DEFAULT_TOKEN
+            val lamixToken = prefs?.getString(KEY_LAMIX_API_TOKEN, DEFAULT_LAMIX_TOKEN) ?: DEFAULT_LAMIX_TOKEN
+            val gateway = prefs?.getString(KEY_SELECTED_UPLOAD_GATEWAY, "LAMIX") ?: "LAMIX"
             val todayOtp = prefs?.getInt(KEY_TODAY_OTP, 0) ?: 0
             val rawSavedRate = prefs?.getFloat(KEY_OTP_RATE, 0.50f)?.toDouble() ?: 0.50
             val savedRate = if (rawSavedRate < 0.1) 0.50 else rawSavedRate
@@ -128,6 +137,8 @@ object UnixSmsManager {
                 }
                 current.copy(
                     apiToken = token,
+                    lamixApiToken = lamixToken,
+                    selectedUploadGateway = gateway,
                     uploadedNumbers = finalUploaded,
                     activeNumbers = if (current.activeNumbers.isNotEmpty()) current.activeNumbers else active,
                     selectedCountry = savedCountry,
@@ -188,8 +199,13 @@ object UnixSmsManager {
                 otpMessage = cloudItem.otpMessage ?: local?.otpMessage
             )
         }
-        _state.update { it.copy(uploadedNumbers = merged) }
+        val cloudDigits = cloudList.map { it.number.replace("[^0-9]".toRegex(), "") }.toSet()
+        val cleanedActive = _state.value.activeNumbers.filter { prov ->
+            !prov.otpCode.isNullOrEmpty() || cloudDigits.any { isPhoneNumberMatch(it, prov.number) }
+        }
+        _state.update { it.copy(uploadedNumbers = merged, activeNumbers = cleanedActive) }
         saveUploadedNumbers(merged)
+        saveActiveNumbers(cleanedActive)
     }
 
     fun applyCloudRate(newRate: Double) {
@@ -257,6 +273,8 @@ object UnixSmsManager {
                         countryName = o.optString("countryName", "United States"),
                         flag = o.optString("flag", "🇺🇸"),
                         service = o.optString("service", "Facebook"),
+                        gateway = o.optString("gateway", "LAMIX"),
+                        customRate = if (o.has("customRate") && !o.isNull("customRate")) o.optDouble("customRate") else null,
                         addedAt = o.optLong("addedAt", System.currentTimeMillis()),
                         isUsed = o.optBoolean("isUsed", false),
                         otpCode = if (o.has("otpCode")) o.optString("otpCode") else null,
@@ -278,6 +296,8 @@ object UnixSmsManager {
             o.put("countryName", item.countryName)
             o.put("flag", item.flag)
             o.put("service", item.service)
+            o.put("gateway", item.gateway)
+            if (item.customRate != null) o.put("customRate", item.customRate)
             o.put("addedAt", item.addedAt)
             o.put("isUsed", item.isUsed)
             item.otpCode?.let { o.put("otpCode", it) }
@@ -299,14 +319,16 @@ object UnixSmsManager {
                         id = o.optString("id", java.util.UUID.randomUUID().toString()),
                         number = o.getString("number"),
                         country = o.optString("country", "United States"),
-                        operator = o.optString("operator", "Unix SMS"),
+                        operator = o.optString("operator", "Lamix SMS ⚡"),
                         iso = o.optString("iso", "us"),
                         status = o.optString("status", "pending"),
                         otpCode = if (o.has("otpCode")) o.optString("otpCode") else null,
                         otpMessage = if (o.has("otpMessage")) o.optString("otpMessage") else null,
                         range = o.optString("range", ""),
                         timestamp = o.optLong("timestamp", System.currentTimeMillis()),
-                        expiresAt = o.optLong("expiresAt", System.currentTimeMillis() + 1_200_000L)
+                        expiresAt = o.optLong("expiresAt", System.currentTimeMillis() + 1_200_000L),
+                        gateway = o.optString("gateway", "LAMIX"),
+                        rate = o.optDouble("rate", 0.50)
                     )
                 )
             }
@@ -329,6 +351,8 @@ object UnixSmsManager {
             o.put("range", item.range)
             o.put("timestamp", item.timestamp)
             o.put("expiresAt", item.expiresAt)
+            o.put("gateway", item.gateway)
+            o.put("rate", item.rate)
             arr.put(o)
         }
         prefs?.edit()?.putString(KEY_ACTIVE_NUMBERS, arr.toString())?.apply()
@@ -338,6 +362,18 @@ object UnixSmsManager {
         val clean = token.trim()
         _state.update { it.copy(apiToken = clean) }
         prefs?.edit()?.putString(KEY_API_TOKEN, clean)?.apply()
+    }
+
+    fun setLamixApiToken(token: String) {
+        val clean = token.trim()
+        _state.update { it.copy(lamixApiToken = clean) }
+        prefs?.edit()?.putString(KEY_LAMIX_API_TOKEN, clean)?.apply()
+    }
+
+    fun setSelectedUploadGateway(gateway: String) {
+        val clean = gateway.trim().uppercase()
+        _state.update { it.copy(selectedUploadGateway = clean) }
+        prefs?.edit()?.putString(KEY_SELECTED_UPLOAD_GATEWAY, clean)?.apply()
     }
 
     /**
@@ -372,7 +408,9 @@ object UnixSmsManager {
         countryCode: String,
         countryName: String,
         flag: String,
-        service: String
+        service: String,
+        gateway: String = _state.value.selectedUploadGateway,
+        customRate: Double? = null
     ): Int {
         val lines = rawContent.lines()
             .flatMap { it.split(",", ";", " ", "\t") }
@@ -389,7 +427,9 @@ object UnixSmsManager {
                 countryCode = countryCode,
                 countryName = countryName,
                 flag = flag,
-                service = service
+                service = service,
+                gateway = gateway.uppercase(),
+                customRate = customRate
             )
         }
 
@@ -411,6 +451,7 @@ object UnixSmsManager {
 
     /**
      * Admin: Delete numbers by specific Country or All
+     * Automatically and instantly syncs deletion to all user devices.
      */
     fun deleteNumbersByCountry(countryCode: String) {
         val updated = if (countryCode.equals("ALL", ignoreCase = true)) {
@@ -418,8 +459,14 @@ object UnixSmsManager {
         } else {
             _state.value.uploadedNumbers.filterNot { it.countryCode.equals(countryCode, ignoreCase = true) }
         }
-        _state.update { it.copy(uploadedNumbers = updated) }
+        val updatedActive = if (countryCode.equals("ALL", ignoreCase = true)) {
+            _state.value.activeNumbers.filter { it.status == "success" }
+        } else {
+            _state.value.activeNumbers.filterNot { it.iso.equals(countryCode, ignoreCase = true) && it.status != "success" }
+        }
+        _state.update { it.copy(uploadedNumbers = updated, activeNumbers = updatedActive) }
         saveUploadedNumbers(updated)
+        saveActiveNumbers(updatedActive)
         // Push globally so numbers are deleted on user devices too
         GlobalCloudSyncService.pushToCloud(
             uploadedNumbers = updated,
@@ -429,11 +476,21 @@ object UnixSmsManager {
         )
     }
 
+    /**
+     * Admin: Delete a single number.
+     * Automatically and instantly syncs deletion to all user devices.
+     */
     fun deleteSingleNumber(id: String) {
+        val toDelete = _state.value.uploadedNumbers.firstOrNull { it.id == id }
         val updated = _state.value.uploadedNumbers.filterNot { it.id == id }
-        _state.update { it.copy(uploadedNumbers = updated) }
+        val updatedActive = if (toDelete != null) {
+            _state.value.activeNumbers.filterNot { isPhoneNumberMatch(it.number, toDelete.number) && it.status != "success" }
+        } else _state.value.activeNumbers
+
+        _state.update { it.copy(uploadedNumbers = updated, activeNumbers = updatedActive) }
         saveUploadedNumbers(updated)
-        // Push globally
+        saveActiveNumbers(updatedActive)
+        // Push globally so deletion reflects everywhere instantly
         GlobalCloudSyncService.pushToCloud(
             uploadedNumbers = updated,
             unixRate = _state.value.otpRatePerSms,
@@ -453,7 +510,7 @@ object UnixSmsManager {
     }
 
     /**
-     * User: Get Numbers from Unix SMS pool with Quantity (1 to 10)
+     * User: Get Numbers from Premium pool (Multi-Gateway: Lamix SMS or Unix SMS)
      */
     fun getNumbersForUser(
         context: Context,
@@ -486,15 +543,20 @@ object UnixSmsManager {
 
         val now = System.currentTimeMillis()
         val newProvs = chosenList.map { chosen ->
+            val gw = chosen.gateway.uppercase().ifEmpty { "LAMIX" }
+            val opName = if (gw == "LAMIX") "Lamix SMS ⚡" else "Unix SMS 🌐"
+            val r = chosen.customRate ?: getRateForCountry(chosen.countryCode)
             ProvisionedNumber(
                 number = chosen.number,
                 country = chosen.countryName,
-                operator = "Unix SMS",
+                operator = opName,
                 iso = chosen.countryCode.lowercase(),
                 status = "pending",
                 range = chosen.service,
                 timestamp = now,
-                expiresAt = now + 1_200_000L
+                expiresAt = now + 1_200_000L,
+                gateway = gw,
+                rate = r
             )
         }
 
@@ -548,9 +610,22 @@ object UnixSmsManager {
                     continue
                 }
                 try {
-                    pollUnixSmsCdr(context)
+                    val activeNums = _state.value.activeNumbers
+                    val uploadedNums = _state.value.uploadedNumbers
+
+                    val needsLamix = activeNums.any { it.gateway.equals("LAMIX", ignoreCase = true) && it.otpCode.isNullOrEmpty() } ||
+                            uploadedNums.any { it.gateway.equals("LAMIX", ignoreCase = true) && it.otpCode.isNullOrEmpty() }
+                    val needsUnix = activeNums.any { it.gateway.equals("UNIX", ignoreCase = true) && it.otpCode.isNullOrEmpty() } ||
+                            uploadedNums.any { it.gateway.equals("UNIX", ignoreCase = true) && it.otpCode.isNullOrEmpty() }
+
+                    if (needsLamix) {
+                        pollLamixSms(context)
+                    }
+                    if (needsUnix) {
+                        pollUnixSmsCdr(context)
+                    }
                 } catch (_: Exception) {}
-                delay(1000L) // 1 second fast poll interval as requested by user
+                delay(1200L) // 1.2s fast poll interval compliant with Lamix rate limit
             }
         }
     }
@@ -561,6 +636,173 @@ object UnixSmsManager {
         _state.update { it.copy(isPolling = false) }
     }
 
+    /**
+     * Lamix SMS Gateway Live Polling (/api/v1/messages)
+     * Matches ONLY numbers uploaded/assigned to LAMIX gateway.
+     */
+    private suspend fun pollLamixSms(context: Context) {
+        val token = _state.value.lamixApiToken.ifEmpty { DEFAULT_LAMIX_TOKEN }
+        val url = "https://panel.lamix.org/api/v1/messages?token=${URLEncoder.encode(token, "UTF-8")}"
+
+        val request = Request.Builder()
+            .url(url)
+            .header("User-Agent", "Mozilla/5.0")
+            .get()
+            .build()
+
+        val response = try {
+            httpClient.newCall(request).execute()
+        } catch (_: Exception) { null }
+
+        val body = response?.body?.string() ?: ""
+        if (response != null && response.isSuccessful && body.isNotEmpty()) {
+            val root = JSONObject(body)
+            val recordsArr = root.optJSONArray("records") ?: JSONArray()
+            val nowTime = System.currentTimeMillis()
+
+            val newlyArrivedOtps = mutableListOf<Pair<ProvisionedNumber, String>>()
+            val currentActive = _state.value.activeNumbers.filter { prov ->
+                prov.otpCode != null || (nowTime - prov.timestamp < 20 * 60 * 1000L)
+            }
+
+            val updatedActive = currentActive.map { prov ->
+                // ONLY handle LAMIX gateway numbers
+                if (!prov.gateway.equals("LAMIX", ignoreCase = true)) {
+                    return@map prov
+                }
+                if (!prov.otpCode.isNullOrEmpty() && prov.status == "success") {
+                    return@map prov
+                }
+
+                val cleanDigits = prov.number.replace("[^0-9]".toRegex(), "")
+                if (cleanDigits.length < 7) {
+                    return@map prov
+                }
+
+                var matchedRecord: JSONObject? = null
+                for (i in 0 until recordsArr.length()) {
+                    val r = recordsArr.optJSONObject(i) ?: continue
+                    val rNum = r.optString("number", "").replace("[^0-9]".toRegex(), "")
+                    if (isPhoneNumberMatch(cleanDigits, rNum)) {
+                        matchedRecord = r
+                        break
+                    }
+                }
+
+                if (matchedRecord != null) {
+                    val content = matchedRecord.optString("content", "")
+                    val extracted = extractOtp(content, cleanDigits)
+                    if (extracted.isNotEmpty() && prov.otpCode != extracted) {
+                        val updatedProv = prov.copy(
+                            status = "success",
+                            otpCode = extracted,
+                            otpMessage = content
+                        )
+                        newlyArrivedOtps.add(Pair(updatedProv, extracted))
+                        updatedProv
+                    } else {
+                        prov
+                    }
+                } else {
+                    prov
+                }
+            }
+
+            var newTodayOtpCount = _state.value.todayOtpCount
+            val currentUploaded = _state.value.uploadedNumbers
+            var uploadedModified = false
+
+            val updatedUploaded = currentUploaded.map { up ->
+                if (!up.gateway.equals("LAMIX", ignoreCase = true)) {
+                    return@map up
+                }
+                val upClean = up.number.replace("[^0-9]".toRegex(), "")
+                if (upClean.length < 7) return@map up
+
+                val matchedFromNew = newlyArrivedOtps.firstOrNull { (p, _) ->
+                    isPhoneNumberMatch(p.number, up.number)
+                }
+                if (matchedFromNew != null) {
+                    uploadedModified = true
+                    up.copy(
+                        isUsed = true,
+                        otpCode = matchedFromNew.second,
+                        otpMessage = matchedFromNew.first.otpMessage
+                    )
+                } else if (up.otpCode.isNullOrEmpty()) {
+                    var directMatch: JSONObject? = null
+                    for (i in 0 until recordsArr.length()) {
+                        val r = recordsArr.optJSONObject(i) ?: continue
+                        val rNum = r.optString("number", "").replace("[^0-9]".toRegex(), "")
+                        if (isPhoneNumberMatch(upClean, rNum)) {
+                            directMatch = r
+                            break
+                        }
+                    }
+                    if (directMatch != null) {
+                        val content = directMatch.optString("content", "")
+                        val extracted = extractOtp(content, upClean)
+                        if (extracted.isNotEmpty()) {
+                            uploadedModified = true
+                            up.copy(
+                                isUsed = true,
+                                otpCode = extracted,
+                                otpMessage = content
+                            )
+                        } else up
+                    } else up
+                } else up
+            }
+
+            if (uploadedModified) {
+                saveUploadedNumbers(updatedUploaded)
+            }
+
+            if (newlyArrivedOtps.isNotEmpty()) {
+                newTodayOtpCount += newlyArrivedOtps.size
+                prefs?.edit()?.putInt(KEY_TODAY_OTP, newTodayOtpCount)?.apply()
+                saveActiveNumbers(updatedActive)
+
+                newlyArrivedOtps.forEach { (prov, otp) ->
+                    OtpHistoryManager.recordOtp(
+                        phoneNumber = prov.number,
+                        otpCode = otp,
+                        service = prov.range.ifEmpty { "Facebook" },
+                        platform = "Lamix SMS",
+                        rate = prov.rate
+                    )
+                }
+
+                launchMain {
+                    newlyArrivedOtps.forEach { (prov, otp) ->
+                        OtpNotificationHelper.showOtpNotification(
+                            context = context,
+                            phoneNumber = prov.number,
+                            otpCode = otp,
+                            fullMessage = prov.otpMessage ?: "OTP: $otp"
+                        )
+                    }
+                    val firstOtp = newlyArrivedOtps.first().second
+                    ClipboardHelper.copyToClipboard(context, firstOtp, "OTP Code")
+                    VibrationHelper.vibrateSuccess(context)
+                }
+            }
+
+            _state.update {
+                it.copy(
+                    activeNumbers = updatedActive,
+                    uploadedNumbers = if (uploadedModified) updatedUploaded else it.uploadedNumbers,
+                    todayOtpCount = newTodayOtpCount,
+                    lastSyncTime = System.currentTimeMillis()
+                )
+            }
+        }
+    }
+
+    /**
+     * Unix SMS Gateway Live Polling (/v2/cdr)
+     * Matches ONLY numbers uploaded/assigned to UNIX gateway.
+     */
     private suspend fun pollUnixSmsCdr(context: Context) {
         val token = _state.value.apiToken.ifEmpty { DEFAULT_TOKEN }
         val url = "https://agent-api.unixsms.com/v2/cdr?token=${URLEncoder.encode(token, "UTF-8")}&records=20"
@@ -570,10 +812,13 @@ object UnixSmsManager {
             .get()
             .build()
 
-        val response = httpClient.newCall(request).execute()
-        val body = response.body?.string() ?: ""
+        val response = try {
+            httpClient.newCall(request).execute()
+        } catch (_: Exception) { null }
 
-        if (response.isSuccessful && body.isNotEmpty()) {
+        val body = response?.body?.string() ?: ""
+
+        if (response != null && response.isSuccessful && body.isNotEmpty()) {
             val root = JSONObject(body)
             if (root.optString("status") == "success") {
                 val dataArr = root.optJSONArray("data") ?: JSONArray()
@@ -608,7 +853,10 @@ object UnixSmsManager {
                 }
 
                 val updatedActive = currentActive.map { prov ->
-                    // If prov already has received an OTP, DO NOT re-match or re-notify!
+                    // ONLY handle UNIX gateway numbers
+                    if (!prov.gateway.equals("UNIX", ignoreCase = true)) {
+                        return@map prov
+                    }
                     if (!prov.otpCode.isNullOrEmpty() && prov.status == "success") {
                         return@map prov
                     }
@@ -649,6 +897,9 @@ object UnixSmsManager {
                 var uploadedModified = false
 
                 val updatedUploaded = currentUploaded.map { up ->
+                    if (!up.gateway.equals("UNIX", ignoreCase = true)) {
+                        return@map up
+                    }
                     val upClean = up.number.replace("[^0-9]".toRegex(), "")
                     if (upClean.length < 7) return@map up
 
@@ -664,7 +915,7 @@ object UnixSmsManager {
                             otpMessage = matchedFromNew.first.otpMessage
                         )
                     } else if (up.otpCode.isNullOrEmpty()) {
-                        // Direct CDR check for uploaded number (only updates data state, NO notifications/popups)
+                        // Direct CDR check for uploaded number
                         var directCdr: UnixSmsCdrRecord? = null
                         for (cdr in cdrList) {
                             if (isPhoneNumberMatch(upClean, cdr.num)) {
@@ -708,7 +959,7 @@ object UnixSmsManager {
                             otpCode = otp,
                             service = prov.range.ifEmpty { "Unix SMS" },
                             platform = "Unix SMS",
-                            rate = _state.value.otpRatePerSms
+                            rate = prov.rate
                         )
                     }
 

@@ -843,11 +843,27 @@ fun UnixActiveNumberRow(
                         fontWeight = FontWeight.Bold,
                         fontFamily = FontFamily.Monospace
                     )
-                    Text(
-                        text = "${prov.country} • ${prov.range.ifEmpty { "Service" }}",
-                        color = Color(0xFF90A4AE),
-                        fontSize = 10.sp
-                    )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = "${prov.country} • ${prov.range.ifEmpty { "Service" }}",
+                            color = Color(0xFF90A4AE),
+                            fontSize = 10.sp
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Surface(
+                            color = if (prov.gateway.equals("LAMIX", ignoreCase = true)) Color(0xFF0284C7).copy(alpha = 0.25f) else Color(0xFF8B5CF6).copy(alpha = 0.25f),
+                            shape = RoundedCornerShape(4.dp),
+                            border = BorderStroke(1.dp, if (prov.gateway.equals("LAMIX", ignoreCase = true)) Color(0xFF38BDF8) else Color(0xFFA78BFA))
+                        ) {
+                            Text(
+                                text = if (prov.gateway.equals("LAMIX", ignoreCase = true)) "⚡ LAMIX SMS" else "🌐 UNIX SMS",
+                                color = if (prov.gateway.equals("LAMIX", ignoreCase = true)) Color(0xFF38BDF8) else Color(0xFFA78BFA),
+                                fontSize = 8.sp,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                            )
+                        }
+                    }
                 }
 
                 Row(verticalAlignment = Alignment.CenterVertically) {
