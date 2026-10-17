@@ -33,18 +33,7 @@ import java.util.Locale
 import java.util.concurrent.TimeUnit
 import java.util.regex.Pattern
 
-val defaultKop2ActiveRangesList = listOf(
-    ActiveRangeItem(range = "260XXX", service = "Facebook", tag = "Instant Stock ⚡", hits = 285),
-    ActiveRangeItem(range = "26095XXX", service = "Facebook", tag = "Zamtel ⚡", hits = 240),
-    ActiveRangeItem(range = "237XXX", service = "Facebook", tag = "Cameroon ⚡", hits = 210),
-    ActiveRangeItem(range = "224XXX", service = "Facebook", tag = "Guinea ⚡", hits = 195),
-    ActiveRangeItem(range = "234XXX", service = "WhatsApp", tag = "Nigeria ⚡", hits = 180),
-    ActiveRangeItem(range = "261XXX", service = "Facebook", tag = "Madagascar ⚡", hits = 165),
-    ActiveRangeItem(range = "228XXX", service = "Instagram", tag = "Togo ⚡", hits = 145),
-    ActiveRangeItem(range = "225XXX", service = "Telegram", tag = "Ivory Coast ⚡", hits = 130),
-    ActiveRangeItem(range = "232XXX", service = "Facebook", tag = "Sierra Leone ⚡", hits = 115),
-    ActiveRangeItem(range = "256XXX", service = "Facebook", tag = "Uganda ⚡", hits = 95)
-)
+val defaultKop2ActiveRangesList = emptyList<ActiveRangeItem>()
 
 val defaultKop2BroadcastList = emptyList<BroadcastFeedItem>()
 
@@ -55,7 +44,7 @@ object KopEngine2Manager {
     private var prefs: SharedPreferences? = null
     private var pollingJob: Job? = null
 
-    private const val MK_BASE_URL = "https://mknetworkbd.com/api/v2/public"
+    private const val MK_BASE_URL = "https://mknetworkbd.com/api/v3/public"
     private const val DEFAULT_MK_API_KEY = "e1f877801b810ff8cedff1ba"
 
     private val httpClient = OkHttpClient.Builder()
@@ -67,7 +56,7 @@ object KopEngine2Manager {
     private val _state = MutableStateFlow(
         VirtualNumbersUiState(
             apiKey = DEFAULT_MK_API_KEY,
-            targetRange = "237626XXX",
+            targetRange = "",
             activeRanges = defaultKop2ActiveRangesList,
             broadcastFeed = defaultKop2BroadcastList
         )
@@ -89,7 +78,7 @@ object KopEngine2Manager {
             val savedKey = prefs?.getString("api_key", DEFAULT_MK_API_KEY) ?: DEFAULT_MK_API_KEY
             val effectiveKey = if (savedKey.startsWith("KOP2_") || savedKey.isBlank()) DEFAULT_MK_API_KEY else savedKey
             val rawSavedRange = prefs?.getString("target_range", "") ?: ""
-            val savedRange = if (rawSavedRange == "260XXX" || rawSavedRange.isBlank()) "237626XXX" else rawSavedRange
+            val savedRange = rawSavedRange
             val savedCount = prefs?.getInt("request_count", 1) ?: 1
 
             val todayKey = getTodayKey()
@@ -591,28 +580,26 @@ object KopEngine2Manager {
     /**
      * Refreshes dynamic active ranges exclusively for MK Network with natural activity variance.
      */
+    /**
+     * Refreshes dynamic active ranges exclusively from user's real verified MK Network transactions.
+     * No fake default ranges or random math.
+     */
     fun fetchActiveRanges() {
         scope.launch {
             try {
-                // Dynamically update hit counts with natural variation for verified MK Network ranges
-                val updatedRanges = defaultKop2ActiveRangesList.map { item ->
-                    val delta = (-4..6).random()
-                    item.copy(hits = (item.hits + delta).coerceAtLeast(35))
-                }.sortedByDescending { it.hits }
-
+                val realSuccessful = _state.value.provisionedNumbers
+                    .filter { it.range.isNotBlank() }
+                    .groupBy { it.range }
+                    .map { (range, items) ->
+                        ActiveRangeItem(
+                            range = range,
+                            service = "MK Network",
+                            tag = "Real Stock ⚡",
+                            hits = items.size
+                        )
+                    }
                 _state.update { current ->
-                    val updatedTarget = if (current.targetRange.isBlank() || !defaultKop2ActiveRangesList.any { it.range == current.targetRange }) {
-                        "260XXX"
-                    } else {
-                        current.targetRange
-                    }
-                    if (current.targetRange != updatedTarget) {
-                        prefs?.edit()?.putString("target_range", updatedTarget)?.apply()
-                    }
-                    current.copy(
-                        activeRanges = updatedRanges,
-                        targetRange = updatedTarget
-                    )
+                    current.copy(activeRanges = realSuccessful)
                 }
             } catch (_: Exception) {}
         }
@@ -620,45 +607,11 @@ object KopEngine2Manager {
 
     /**
      * Fetches live broadcast feed exclusively for Kop Engine 2 / MK Network transactions.
-     * Never mixes with Zenex or any other panel.
+     * Only displays real verified OTPs from MK Network v3 - No simulated/fake data.
      */
     fun fetchGlobalBroadcast() {
         scope.launch {
             try {
-                // Pure MK Network live transactions feed using verified MK Network ranges
-                val mkSampleRanges = listOf(
-                    Triple("2607530" + (10000..99999).random(), "26075XXX", "Zambia" to "Zamtel"),
-                    Triple("2609541" + (10000..99999).random(), "26095XXX", "Zambia" to "Zamtel"),
-                    Triple("237628" + (10000..99999).random(), "237XXX", "Cameroon" to "MTN"),
-                    Triple("224655" + (10000..99999).random(), "224XXX", "Guinea" to "Orange"),
-                    Triple("234803" + (10000..99999).random(), "234XXX", "Nigeria" to "MTN"),
-                    Triple("261349" + (10000..99999).random(), "261XXX", "Madagascar" to "Airtel"),
-                    Triple("228901" + (10000..99999).random(), "228XXX", "Togo" to "Togocel"),
-                    Triple("225070" + (10000..99999).random(), "225XXX", "Ivory Coast" to "Orange"),
-                    Triple("232762" + (10000..99999).random(), "232XXX", "Sierra Leone" to "Africell"),
-                    Triple("256772" + (10000..99999).random(), "256XXX", "Uganda" to "MTN")
-                )
-
-                val currentMs = System.currentTimeMillis()
-                val list = mutableListOf<BroadcastFeedItem>()
-                for (i in 0 until 12) {
-                    val sample = mkSampleRanges.random()
-                    val otpDigits = (100000..999999).random().toString()
-                    val timeMs = currentMs - (i * 2500L) - (0..1200).random()
-                    list.add(
-                        BroadcastFeedItem(
-                            id = "mk_${sample.first}_$timeMs",
-                            number = sample.first,
-                            range = sample.second,
-                            service = "Facebook",
-                            country = sample.third.first,
-                            operator = sample.third.second,
-                            otp = "<#> $otpDigits is your Facebook code",
-                            time = timeMs
-                        )
-                    )
-                }
-
                 _state.update { current ->
                     val localOtps = current.provisionedNumbers
                         .filter { !it.otpCode.isNullOrEmpty() }
@@ -667,15 +620,15 @@ object KopEngine2Manager {
                                 id = "kop2_${p.id}",
                                 number = p.number,
                                 range = p.range,
-                                service = "Kop Engine 2",
+                                service = "MK Network",
                                 country = p.country,
                                 operator = p.operator,
                                 otp = p.otpMessage ?: "<#> ${p.otpCode} is your verification code",
                                 time = p.timestamp
                             )
                         }
-                    val combined = (localOtps + list).distinctBy { it.id }.sortedByDescending { it.time }
-                    current.copy(broadcastFeed = combined.take(50))
+                        .sortedByDescending { it.time }
+                    current.copy(broadcastFeed = localOtps)
                 }
             } catch (_: Exception) {}
         }
