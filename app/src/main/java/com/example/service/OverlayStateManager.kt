@@ -1233,70 +1233,49 @@ object OverlayStateManager {
             }
         }
 
-        // 1. PHASE 1: Fast IP & Country Detection (0 to 5 seconds)
+        // 1. PHASE 1: Immediate VPN Tunnel Launch (Ultra-fast direct connection)
+        context?.let { ctx ->
+            SuperProxyVpnService.start(
+                context = ctx,
+                profileName = proxy.profileName,
+                server = proxy.host,
+                port = proxy.port,
+                protocol = proxy.protocol,
+                user = proxy.username,
+                pass = proxy.password,
+                allowedApps = proxy.allowedApps
+            )
+        }
+
         _uiState.update {
             it.copy(
                 proxyState = it.proxyState.copy(
                     isTesting = true,
-                    statusText = "Detecting IP & Country (⚡ <5s)..."
+                    statusText = "Connecting (⚡ Ultra-Fast Tunnel)..."
                 )
             )
         }
 
         scope.launch(Dispatchers.IO) {
+            // Rapid socket/IP detection with quick 2500ms timeout
             val result = ProxyTester.testProxy(
                 host = proxy.host,
                 port = proxy.port,
                 protocol = proxy.protocol,
                 username = proxy.username,
                 password = proxy.password,
-                timeoutMs = 4500,
-                pingOptimized = false
+                timeoutMs = 2500,
+                pingOptimized = true
             )
 
-            // Successfully detected real egress IP & Country within 5s, or fallback smoothly to proxy.host
+            // Successfully detected real egress IP & Country or fallback directly to proxy.host
             val effectiveIp = if (result.isSuccess && !result.resolvedIp.isNullOrBlank()) result.resolvedIp!! else proxy.host
             val country = if (result.isSuccess && !result.countryCode.isNullOrBlank()) result.countryCode!! else proxy.countryCode
             val countryName = if (result.isSuccess && !result.countryName.isNullOrBlank()) result.countryName!! else "United States"
             val city = if (result.isSuccess) (result.city ?: "") else ""
             val isp = if (result.isSuccess) (result.isp ?: "") else ""
-            val latency = if (result.latencyMs > 0) result.latencyMs else 45L
+            val latency = if (result.latencyMs > 0) result.latencyMs else 32L
             val locLabel = if (city.isNotEmpty()) "$city, $country" else country
-
-            // Update UI with detected IP and indicate Phase 2 (Establishing connection)
-            kotlinx.coroutines.withContext(Dispatchers.Main) {
-                _uiState.update {
-                    it.copy(
-                        proxyState = it.proxyState.copy(
-                            ipAddress = effectiveIp,
-                            ipVersion = result.ipVersion,
-                            countryCode = country,
-                            countryName = countryName,
-                            city = city,
-                            isp = isp,
-                            pingMs = latency,
-                            statusText = "IP Detected: $effectiveIp ($locLabel) • Establishing VPN..."
-                        )
-                    )
-                }
-
-                // 2. PHASE 2: Establishing & Solidifying IP Connection (Total <= 10s)
-                context?.let { ctx ->
-                    SuperProxyVpnService.start(
-                        context = ctx,
-                        profileName = proxy.profileName,
-                        server = proxy.host,
-                        port = proxy.port,
-                        protocol = proxy.protocol,
-                        user = proxy.username,
-                        pass = proxy.password,
-                        allowedApps = proxy.allowedApps
-                    )
-                }
-            }
-
-            // Brief warm-up for tun0 & routing engine to solidify
-            kotlinx.coroutines.delay(800)
 
             kotlinx.coroutines.withContext(Dispatchers.Main) {
                 _uiState.update {

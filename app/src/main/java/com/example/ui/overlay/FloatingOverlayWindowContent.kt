@@ -65,6 +65,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.service.OverlayStateManager
 import com.example.service.OverlayUiState
+import com.example.service.KopEngine2Manager
 import com.example.service.UnixSmsManager
 import com.example.service.VirtualNumberManager
 import com.example.util.ClipboardHelper
@@ -1302,10 +1303,19 @@ fun VirtualNumbersOverlaySection(
     val selectedPanel by VirtualNumberManager.selectedPanel.collectAsState()
     val unixState by UnixSmsManager.state.collectAsState()
     val vnState by VirtualNumberManager.state.collectAsState()
+    val kop2State by KopEngine2Manager.state.collectAsState()
     var dropdownExpanded by remember { mutableStateOf(false) }
 
-    val activeCount = if (selectedPanel == 0) unixState.activeNumbers.size else vnState.provisionedNumbers.size
-    val panelName = if (selectedPanel == 0) "Unix" else "Zenex"
+    val activeCount = when (selectedPanel) {
+        0 -> unixState.activeNumbers.size
+        1 -> vnState.provisionedNumbers.size
+        else -> kop2State.provisionedNumbers.size
+    }
+    val panelName = when (selectedPanel) {
+        0 -> "Unix"
+        1 -> "Zenex"
+        else -> "Kop 2"
+    }
 
     Column(
         modifier = modifier.fillMaxWidth(),
@@ -1336,10 +1346,11 @@ fun VirtualNumbersOverlaySection(
                     .border(
                         1.dp,
                         Brush.verticalGradient(
-                            if (selectedPanel == 0)
-                                listOf(Color(0xFF00E5FF).copy(alpha = 0.8f), Color(0xFF0288D1).copy(alpha = 0.4f))
-                            else
-                                listOf(Color(0xFF00E676).copy(alpha = 0.8f), Color(0xFF00897B).copy(alpha = 0.4f))
+                            when (selectedPanel) {
+                                0 -> listOf(Color(0xFF00E5FF).copy(alpha = 0.8f), Color(0xFF0288D1).copy(alpha = 0.4f))
+                                1 -> listOf(Color(0xFF00E676).copy(alpha = 0.8f), Color(0xFF00897B).copy(alpha = 0.4f))
+                                else -> listOf(Color(0xFFFFD54F).copy(alpha = 0.8f), Color(0xFFF57C00).copy(alpha = 0.4f))
+                            }
                         ),
                         RoundedCornerShape(8.dp)
                     )
@@ -1359,15 +1370,23 @@ fun VirtualNumbersOverlaySection(
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
                             modifier = Modifier.clickable {
-                                // Quick toggle panel 0 <-> 1
-                                VirtualNumberManager.setSelectedPanel(if (selectedPanel == 0) 1 else 0)
+                                // Cycle panel: 0 -> 1 -> 2 -> 0
+                                VirtualNumberManager.setSelectedPanel((selectedPanel + 1) % 3)
                             }
                         ) {
                             Text(
-                                text = if (selectedPanel == 0) "⚡ 1. UNIX SMS" else "⚡ 2. ZENEX SMS",
+                                text = when (selectedPanel) {
+                                    0 -> "⚡ 1. UNIX SMS"
+                                    1 -> "⚡ 2. ZENEX SMS"
+                                    else -> "⚡ 3. KOP ENGINE 2"
+                                },
                                 fontSize = 8.5.sp,
                                 fontWeight = FontWeight.Black,
-                                color = if (selectedPanel == 0) Color(0xFF00E5FF) else Color(0xFF00E676)
+                                color = when (selectedPanel) {
+                                    0 -> Color(0xFF00E5FF)
+                                    1 -> Color(0xFF00E676)
+                                    else -> Color(0xFFFFD54F)
+                                }
                             )
                             Spacer(modifier = Modifier.width(3.dp))
                             Icon(
@@ -1379,7 +1398,11 @@ fun VirtualNumbersOverlaySection(
                         }
 
                         Text(
-                            text = if (selectedPanel == 0) "OTP: ${unixState.todayOtpCount}" else "OTP: ${vnState.todayOtpCount}",
+                            text = when (selectedPanel) {
+                                0 -> "OTP: ${unixState.todayOtpCount}"
+                                1 -> "OTP: ${vnState.todayOtpCount}"
+                                else -> "OTP: ${kop2State.todayOtpCount}"
+                            },
                             fontSize = 8.sp,
                             fontWeight = FontWeight.Bold,
                             color = Color(0xFF80DEEA)
@@ -1487,7 +1510,7 @@ fun VirtualNumbersOverlaySection(
                                 }
                             }
                         }
-                    } else {
+                    } else if (selectedPanel == 1) {
                         // ZENEX SMS: Auto-Populates Range Selected in App with Qty and Get Button
                         Row(
                             modifier = Modifier.fillMaxWidth(),
@@ -1578,13 +1601,112 @@ fun VirtualNumbersOverlaySection(
                                 }
                             }
                         }
+                    } else {
+                        // KOP ENGINE 2 (MK Network): Auto-Populates Range Selected in App with Qty and Get Button
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(3.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            // Target Range Input
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(26.dp)
+                                    .clip(RoundedCornerShape(4.dp))
+                                    .background(Color(0xFF060B12))
+                                    .border(0.8.dp, Color(0xFF1E3A56), RoundedCornerShape(4.dp))
+                                    .padding(horizontal = 4.dp),
+                                contentAlignment = Alignment.CenterStart
+                            ) {
+                                androidx.compose.foundation.text.BasicTextField(
+                                    value = kop2State.targetRange,
+                                    onValueChange = { KopEngine2Manager.setTargetRange(it) },
+                                    singleLine = true,
+                                    textStyle = androidx.compose.ui.text.TextStyle(
+                                        color = Color(0xFFFFD54F),
+                                        fontSize = 9.5.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        fontFamily = FontFamily.Monospace
+                                    ),
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                                if (kop2State.targetRange.isEmpty()) {
+                                    Text("260XXX", color = Color(0xFF546E7A), fontSize = 9.sp)
+                                }
+                            }
+
+                            // Quantity Selector
+                            Surface(
+                                color = Color(0xFF0B141E),
+                                shape = RoundedCornerShape(4.dp),
+                                border = androidx.compose.foundation.BorderStroke(0.8.dp, Color(0xFF1E3A56)),
+                                modifier = Modifier
+                                    .height(26.dp)
+                                    .clickable {
+                                        val next = if (kop2State.requestCount >= 10) 1 else kop2State.requestCount + 1
+                                        KopEngine2Manager.setRequestCount(next)
+                                    }
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 6.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = "Qty: ${kop2State.requestCount}",
+                                        color = Color(0xFFFFD54F),
+                                        fontSize = 9.5.sp,
+                                        fontWeight = FontWeight.ExtraBold
+                                    )
+                                }
+                            }
+
+                            // GET Action Button for Kop Engine 2
+                            Surface(
+                                shape = RoundedCornerShape(4.dp),
+                                color = Color(0xFFF59E0B),
+                                modifier = Modifier
+                                    .height(26.dp)
+                                    .clickable(enabled = !kop2State.isLoading) {
+                                        KopEngine2Manager.provisionNumbers(context)
+                                    }
+                            ) {
+                                Box(
+                                    modifier = Modifier.padding(horizontal = 6.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    if (kop2State.isLoading) {
+                                        CircularProgressIndicator(
+                                            color = Color.Black,
+                                            strokeWidth = 1.5.dp,
+                                            modifier = Modifier.size(12.dp)
+                                        )
+                                    } else {
+                                        Text(
+                                            text = "GET",
+                                            color = Color.Black,
+                                            fontWeight = FontWeight.Black,
+                                            fontSize = 10.sp
+                                        )
+                                    }
+                                }
+                            }
+                        }
                     }
 
-                    // Numbers & Live OTP List (Unix active or Zenex provisioned)
-                    val numbers = if (selectedPanel == 0) unixState.activeNumbers.take(4) else vnState.provisionedNumbers.take(4)
+                    // Numbers & Live OTP List (Unix, Zenex, or Kop Engine 2)
+                    val numbers = when (selectedPanel) {
+                        0 -> unixState.activeNumbers.take(4)
+                        1 -> vnState.provisionedNumbers.take(4)
+                        else -> kop2State.provisionedNumbers.take(4)
+                    }
                     if (numbers.isEmpty()) {
                         Text(
-                            text = if (selectedPanel == 0) "দেশ [${unixState.selectedCountry}] সংরক্ষিত • GET চাপুন" else "রেঞ্জ দিয়ে GET চাপুন",
+                            text = when (selectedPanel) {
+                                0 -> "দেশ [${unixState.selectedCountry}] সংরক্ষিত • GET চাপুন"
+                                1 -> "রেঞ্জ দিয়ে GET চাপুন (Zenex)"
+                                else -> "রেঞ্জ দিয়ে GET চাপুন (Kop 2)"
+                            },
                             color = Color(0xFF546E7A),
                             fontSize = 8.5.sp,
                             modifier = Modifier.align(Alignment.CenterHorizontally)
