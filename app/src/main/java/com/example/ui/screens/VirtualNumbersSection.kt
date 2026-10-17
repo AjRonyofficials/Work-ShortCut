@@ -210,11 +210,19 @@ fun VirtualNumbersSection(
                         Spacer(modifier = Modifier.width(8.dp))
                         Box {
                             Surface(
-                                color = if (selectedPanel == 0) Color(0xFF0284C7).copy(alpha = 0.25f) else Color(0xFF10B981).copy(alpha = 0.25f),
+                                color = when (selectedPanel) {
+                                    0 -> Color(0xFF0284C7).copy(alpha = 0.25f)
+                                    1 -> Color(0xFF10B981).copy(alpha = 0.25f)
+                                    else -> Color(0xFF8B5CF6).copy(alpha = 0.25f)
+                                },
                                 shape = RoundedCornerShape(8.dp),
                                 border = androidx.compose.foundation.BorderStroke(
                                     1.dp,
-                                    if (selectedPanel == 0) Color(0xFF38BDF8) else Color(0xFF34D399)
+                                    when (selectedPanel) {
+                                        0 -> Color(0xFF38BDF8)
+                                        1 -> Color(0xFF34D399)
+                                        else -> Color(0xFFA78BFA)
+                                    }
                                 ),
                                 modifier = Modifier.clickable { panelDropdownExpanded = true }
                             ) {

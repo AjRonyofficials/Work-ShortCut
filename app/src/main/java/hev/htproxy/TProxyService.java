@@ -1,18 +1,33 @@
 package hev.htproxy;
 
-public final class TProxyService {
+public class TProxyService {
+    private static boolean isLoaded = false;
+
     static {
         try {
             System.loadLibrary("hev-socks5-tunnel");
+            isLoaded = true;
         } catch (Throwable t) {
-            t.printStackTrace();
+            isLoaded = false;
         }
     }
 
-    private TProxyService() {}
+    public static void TProxyStartService(String configPath, int tunFd) {
+        if (isLoaded) {
+            try {
+                nativeStartService(configPath, tunFd);
+            } catch (Throwable ignored) {}
+        }
+    }
 
-    public static native boolean TProxyStartService(String configPath, int tunFd);
-    public static native boolean TProxyStopService();
-    public static native boolean TProxyIsRunning();
-    public static native long[] TProxyGetStats();
+    public static void TProxyStopService() {
+        if (isLoaded) {
+            try {
+                nativeStopService();
+            } catch (Throwable ignored) {}
+        }
+    }
+
+    private static native void nativeStartService(String configPath, int tunFd);
+    private static native void nativeStopService();
 }

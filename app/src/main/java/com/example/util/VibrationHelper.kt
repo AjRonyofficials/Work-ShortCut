@@ -8,63 +8,67 @@ import android.os.VibratorManager
 
 object VibrationHelper {
 
-    fun vibrateDuplicateAlert(context: Context) {
-        try {
-            val vibrator = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                val vibratorManager = context.getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as? VibratorManager
-                vibratorManager?.defaultVibrator
-            } else {
-                @Suppress("DEPRECATION")
-                context.getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator
-            }
-
-            vibrator?.let { v ->
-                if (v.hasVibrator()) {
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                        // Double sharp pulse for warning
-                        val timings = longArrayOf(0, 120, 80, 200)
-                        val amplitudes = intArrayOf(0, 255, 0, 255)
-                        val effect = VibrationEffect.createWaveform(timings, amplitudes, -1)
-                        v.vibrate(effect)
-                    } else {
-                        @Suppress("DEPRECATION")
-                        v.vibrate(longArrayOf(0, 120, 80, 200), -1)
-                    }
-                }
-            }
-        } catch (_: Exception) {
-            // Gracefully ignore if device does not support or permission missing
-        }
-    }
-
-    fun vibrateSuccess(context: Context) {
-        vibrateClick(context)
+    fun vibrateClick(context: Context) {
+        vibrate(context, 25L)
     }
 
     fun vibrateTactileClick(context: Context) {
         vibrateClick(context)
     }
 
-    fun vibrateClick(context: Context) {
+    fun vibrateDuplicateAlert(context: Context) {
+        vibrateError(context)
+    }
+
+    fun vibrateSuccess(context: Context) {
         try {
-            val vibrator = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            val vibrator = getVibrator(context) ?: return
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                val timings = longArrayOf(0, 40, 60, 50)
+                val amplitudes = intArrayOf(0, 180, 0, 255)
+                vibrator.vibrate(VibrationEffect.createWaveform(timings, amplitudes, -1))
+            } else {
+                @Suppress("DEPRECATION")
+                vibrator.vibrate(longArrayOf(0, 40, 60, 50), -1)
+            }
+        } catch (_: Exception) {}
+    }
+
+    fun vibrateError(context: Context) {
+        try {
+            val vibrator = getVibrator(context) ?: return
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                vibrator.vibrate(VibrationEffect.createOneShot(120L, VibrationEffect.DEFAULT_AMPLITUDE))
+            } else {
+                @Suppress("DEPRECATION")
+                vibrator.vibrate(120L)
+            }
+        } catch (_: Exception) {}
+    }
+
+    fun vibrate(context: Context, durationMs: Long = 40L) {
+        try {
+            val vibrator = getVibrator(context) ?: return
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                vibrator.vibrate(VibrationEffect.createOneShot(durationMs, VibrationEffect.DEFAULT_AMPLITUDE))
+            } else {
+                @Suppress("DEPRECATION")
+                vibrator.vibrate(durationMs)
+            }
+        } catch (_: Exception) {}
+    }
+
+    private fun getVibrator(context: Context): Vibrator? {
+        return try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                 val vibratorManager = context.getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as? VibratorManager
                 vibratorManager?.defaultVibrator
             } else {
                 @Suppress("DEPRECATION")
                 context.getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator
             }
-            vibrator?.let { v ->
-                if (v.hasVibrator()) {
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                        v.vibrate(VibrationEffect.createOneShot(25, VibrationEffect.DEFAULT_AMPLITUDE))
-                    } else {
-                        @Suppress("DEPRECATION")
-                        v.vibrate(25)
-                    }
-                }
-            }
         } catch (_: Exception) {
+            null
         }
     }
 }

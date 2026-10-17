@@ -3,39 +3,43 @@ package com.example.util
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
-import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
-import android.media.RingtoneManager
 import android.os.Build
-import android.widget.Toast
 import androidx.core.app.NotificationCompat
 import com.example.MainActivity
 
-class CopyOtpReceiver : BroadcastReceiver() {
-    override fun onReceive(context: Context, intent: Intent?) {
-        try {
-            val otpCode = intent?.getStringExtra("OTP_CODE") ?: return
-            ClipboardHelper.copyToClipboard(context, otpCode, "OTP Code")
-            Toast.makeText(context, "✓ OTP কপি হয়েছে: $otpCode", Toast.LENGTH_SHORT).show()
-            VibrationHelper.vibrateSuccess(context)
-        } catch (_: Throwable) {}
-    }
-}
-
 object OtpNotificationHelper {
 
-    private const val CHANNEL_ID = "otp_heads_up_channel_v5"
-    private const val CHANNEL_NAME = "OTP Incoming Alerts"
+    private const val CHANNEL_ID_OTP = "channel_otp_alerts"
+    private const val CHANNEL_NAME_OTP = "OTP & Verification Alerts"
+    private const val CHANNEL_ID_WITHDRAW = "channel_withdraw_alerts"
+    private const val CHANNEL_NAME_WITHDRAW = "Withdrawal Updates"
 
-    // Deduplication cache: Prevents the same phone + OTP from firing multiple notifications
-    private val recentlyNotifiedSignatures = java.util.Collections.synchronizedMap(
-        object : java.util.LinkedHashMap<String, Long>(50, 0.75f, true) {
-            override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Long>?): Boolean {
-                return size > 150
+    private fun ensureChannels(context: Context) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager ?: return
+            
+            val otpChannel = NotificationChannel(
+                CHANNEL_ID_OTP,
+                CHANNEL_NAME_OTP,
+                NotificationManager.IMPORTANCE_HIGH
+            ).apply {
+                description = "High priority notifications for received OTP codes"
+                enableVibration(true)
             }
+            manager.createNotificationChannel(otpChannel)
+
+            val withdrawChannel = NotificationChannel(
+                CHANNEL_ID_WITHDRAW,
+                CHANNEL_NAME_WITHDRAW,
+                NotificationManager.IMPORTANCE_DEFAULT
+            ).apply {
+                description = "Notifications for withdrawal requests and status"
+            }
+            manager.createNotificationChannel(withdrawChannel)
         }
-    )
+    }
 
     fun showOtpNotification(
         context: Context,
@@ -44,140 +48,31 @@ object OtpNotificationHelper {
         fullMessage: String
     ) {
         try {
-            val cleanOtp = otpCode.trim()
-            if (cleanOtp.isBlank() || cleanOtp.length < 3) return
+            ensureChannels(context)
+            val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager ?: return
 
-            val cleanPhone = phoneNumber.replace("[^0-9]".toRegex(), "")
-            if (cleanPhone.length < 6) return
-
-            // 0. Deduplication guard: ignore repeated calls for same number + OTP within 30 minutes
-            val signature = "${cleanPhone}_$cleanOtp"
-            val now = System.currentTimeMillis()
-            val lastNotified = recentlyNotifiedSignatures[signature]
-            if (lastNotified != null && (now - lastNotified) < 1_800_000L) {
-                return
-            }
-            recentlyNotifiedSignatures[signature] = now
-
-            val autoCopyEnabled = com.example.service.OverlayStateManager.uiState.value.autoCopyOtp
-            val soundVibEnabled = com.example.service.OverlayStateManager.uiState.value.otpSoundVibrationEnabled
-
-            // 1. Auto-Copy to Clipboard (Controlled by user setting 1)
-            if (autoCopyEnabled) {
-                try {
-                    ClipboardHelper.copyToClipboard(context, cleanOtp, "OTP Code")
-                } catch (_: Throwable) {}
-            }
-
-            // 2. Immediate Toast & In-App Top Popup Banner (safely posted to Main Thread)
-            android.os.Handler(android.os.Looper.getMainLooper()).post {
-                try {
-                    val toastMsg = if (autoCopyEnabled) "⚡ OTP কপি হয়েছে: $cleanOtp" else "📩 নতুন OTP এসেছে: $cleanOtp"
-                    Toast.makeText(context.applicationContext, toastMsg, Toast.LENGTH_SHORT).show()
-                    if (soundVibEnabled) {
-                        VibrationHelper.vibrateSuccess(context)
-                    }
-                } catch (_: Throwable) {}
-            }
-            try {
-                com.example.service.OverlayStateManager.showOtpPopup(phoneNumber, cleanOtp)
-            } catch (_: Throwable) {}
-
-            // 3. System Heads-Up Notification Popup
-            val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
-                ?: return
-
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                try {
-                    val channel = NotificationChannel(
-                        CHANNEL_ID,
-                        CHANNEL_NAME,
-                        NotificationManager.IMPORTANCE_HIGH
-                    ).apply {
-                        description = "Live Virtual Number OTP Incoming Alerts"
-                        enableVibration(soundVibEnabled)
-                        enableLights(true)
-                        if (soundVibEnabled) {
-                            vibrationPattern = longArrayOf(0, 250, 100, 250)
-                        } else {
-                            vibrationPattern = longArrayOf(0)
-                        }
-                        lockscreenVisibility = NotificationCompat.VISIBILITY_PUBLIC
-                        setShowBadge(true)
-                    }
-                    notificationManager.createNotificationChannel(channel)
-                } catch (_: Throwable) {}
-            }
-
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                if (androidx.core.content.ContextCompat.checkSelfPermission(
-                        context,
-                        android.Manifest.permission.POST_NOTIFICATIONS
-                    ) != android.content.pm.PackageManager.PERMISSION_GRANTED
-                ) {
-                    return
-                }
-            }
-
-            // Tap notification to open main app
-            val contentIntent = Intent(context, MainActivity::class.java).apply {
+            val intent = Intent(context, MainActivity::class.java).apply {
                 flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
-                putExtra("NAVIGATE_TO_TAB", "VIRTUAL_NUMBERS")
             }
-            val contentPendingIntent = PendingIntent.getActivity(
+            val pendingIntent = PendingIntent.getActivity(
                 context,
-                (cleanPhone.hashCode() and 0x7FFFFFFF) % 10000,
-                contentIntent,
-                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+                System.currentTimeMillis().toInt(),
+                intent,
+                PendingIntent.FLAG_UPDATE_CURRENT or (if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) PendingIntent.FLAG_IMMUTABLE else 0)
             )
 
-            // 1-Tap Copy Action
-            val copyIntent = Intent(context, CopyOtpReceiver::class.java).apply {
-                putExtra("OTP_CODE", cleanOtp)
-            }
-            val copyPendingIntent = PendingIntent.getBroadcast(
-                context,
-                (cleanOtp.hashCode() and 0x7FFFFFFF) % 10000 + 10000,
-                copyIntent,
-                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-            )
-
-            val soundUri = if (soundVibEnabled) RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION) else null
-
-            val notifBuilder = NotificationCompat.Builder(context, CHANNEL_ID)
+            val notification = NotificationCompat.Builder(context, CHANNEL_ID_OTP)
                 .setSmallIcon(android.R.drawable.ic_dialog_info)
-                .setContentTitle(if (autoCopyEnabled) "⚡ OTP Received & Copied: $cleanOtp" else "📩 OTP Received: $cleanOtp")
-                .setContentText("$phoneNumber: $fullMessage")
-                .setStyle(
-                    NotificationCompat.BigTextStyle()
-                        .bigText("Phone: $phoneNumber\nOTP: $cleanOtp\nMessage: $fullMessage")
-                )
-                .setPriority(NotificationCompat.PRIORITY_MAX)
-                .setCategory(NotificationCompat.CATEGORY_MESSAGE)
+                .setContentTitle("⚡ OTP Received: $otpCode")
+                .setContentText("From $phoneNumber: $fullMessage")
+                .setStyle(NotificationCompat.BigTextStyle().bigText("Number: $phoneNumber\nOTP: $otpCode\n\n$fullMessage"))
+                .setPriority(NotificationCompat.PRIORITY_HIGH)
                 .setAutoCancel(true)
-                .setContentIntent(contentPendingIntent)
-                .addAction(
-                    android.R.drawable.ic_menu_save,
-                    "COPY OTP ($cleanOtp)",
-                    copyPendingIntent
-                )
+                .setContentIntent(pendingIntent)
+                .build()
 
-            if (soundVibEnabled) {
-                notifBuilder.setSound(soundUri)
-                notifBuilder.setVibrate(longArrayOf(0, 250, 100, 250))
-                notifBuilder.setDefaults(NotificationCompat.DEFAULT_ALL)
-            } else {
-                notifBuilder.setSilent(true)
-            }
-
-            val notification = notifBuilder.build()
-
-            // Stable bounded ID per phone number (replaces instead of flooding status bar)
-            val notificationId = (cleanPhone.hashCode() and 0x7FFFFFFF) % 1000 + 1000
-            try {
-                notificationManager.notify(notificationId, notification)
-            } catch (_: Throwable) {}
-        } catch (_: Throwable) {}
+            manager.notify((System.currentTimeMillis() % 100000).toInt(), notification)
+        } catch (_: Exception) {}
     }
 
     fun showWithdrawNotification(
@@ -186,61 +81,28 @@ object OtpNotificationHelper {
         message: String
     ) {
         try {
-            val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
-                ?: return
+            ensureChannels(context)
+            val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager ?: return
 
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                if (androidx.core.content.ContextCompat.checkSelfPermission(
-                        context,
-                        android.Manifest.permission.POST_NOTIFICATIONS
-                    ) != android.content.pm.PackageManager.PERMISSION_GRANTED
-                ) {
-                    return
-                }
-            }
-
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                try {
-                    val channel = NotificationChannel(
-                        CHANNEL_ID,
-                        CHANNEL_NAME,
-                        NotificationManager.IMPORTANCE_HIGH
-                    ).apply {
-                        description = "Live Notifications & Alerts"
-                        enableVibration(true)
-                        enableLights(true)
-                        lockscreenVisibility = NotificationCompat.VISIBILITY_PUBLIC
-                    }
-                    notificationManager.createNotificationChannel(channel)
-                } catch (_: Throwable) {}
-            }
-
-            val contentIntent = Intent(context, MainActivity::class.java).apply {
-                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
-            }
-            val contentPendingIntent = PendingIntent.getActivity(
+            val intent = Intent(context, MainActivity::class.java)
+            val pendingIntent = PendingIntent.getActivity(
                 context,
-                9999,
-                contentIntent,
-                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+                0,
+                intent,
+                PendingIntent.FLAG_UPDATE_CURRENT or (if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) PendingIntent.FLAG_IMMUTABLE else 0)
             )
 
-            val soundUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
-            val notification = NotificationCompat.Builder(context, CHANNEL_ID)
+            val notification = NotificationCompat.Builder(context, CHANNEL_ID_WITHDRAW)
                 .setSmallIcon(android.R.drawable.ic_dialog_info)
                 .setContentTitle(title)
                 .setContentText(message)
                 .setStyle(NotificationCompat.BigTextStyle().bigText(message))
-                .setPriority(NotificationCompat.PRIORITY_HIGH)
-                .setSound(soundUri)
+                .setPriority(NotificationCompat.PRIORITY_DEFAULT)
                 .setAutoCancel(true)
-                .setContentIntent(contentPendingIntent)
+                .setContentIntent(pendingIntent)
                 .build()
 
-            val notificationId = 2001
-            try {
-                notificationManager.notify(notificationId, notification)
-            } catch (_: Throwable) {}
-        } catch (_: Throwable) {}
+            manager.notify((System.currentTimeMillis() % 100000).toInt(), notification)
+        } catch (_: Exception) {}
     }
 }
