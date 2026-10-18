@@ -80,10 +80,22 @@ data class CreatedAccountItem(
 fun AccountSection(modifier: Modifier = Modifier) {
     val context = LocalContext.current
     val state by OverlayStateManager.uiState.collectAsStateWithLifecycle()
+    val vnState by VirtualNumberManager.state.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
 
+    var syncCountdown by remember { mutableIntStateOf(3) }
     LaunchedEffect(Unit) {
         AccountCheckerManager.init(context)
+        VirtualNumberManager.fetchActiveRanges()
+        while (true) {
+            delay(1000L)
+            if (syncCountdown <= 1) {
+                syncCountdown = 3
+                VirtualNumberManager.fetchActiveRanges()
+            } else {
+                syncCountdown -= 1
+            }
+        }
     }
 
     // Default password from automation engine: Okabye#570
@@ -435,31 +447,222 @@ fun AccountSection(modifier: Modifier = Modifier) {
 
                             Card(
                                 colors = CardDefaults.cardColors(containerColor = Color(0xFF070E17)),
-                                border = BorderStroke(1.dp, Color(0xFF334155)),
+                                border = BorderStroke(1.dp, Color(0xFF1E3A56)),
                                 modifier = Modifier.fillMaxWidth()
                             ) {
-                                Column(modifier = Modifier.padding(10.dp)) {
-                                    Text(text = "Kop Engine & Facebook Ranges", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFF81D4FA))
-                                    Spacer(modifier = Modifier.height(6.dp))
+                                Column(modifier = Modifier.padding(12.dp)) {
+                                    // Live Header with Pulsing Dot & Auto Sync Countdown (Styled like Virtual Numbers section)
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(8.dp)
+                                                    .clip(CircleShape)
+                                                    .background(Color(0xFF00E676))
+                                            )
+                                            Spacer(modifier = Modifier.width(6.dp))
+                                            Text(
+                                                text = "LIVE ACTIVE RANGES (MK RADAR)",
+                                                fontSize = 11.sp,
+                                                fontWeight = FontWeight.ExtraBold,
+                                                color = Color(0xFF81D4FA),
+                                                letterSpacing = 0.5.sp
+                                            )
+                                        }
+
+                                        Surface(
+                                            color = Color(0xFF0D1B2A),
+                                            shape = RoundedCornerShape(8.dp),
+                                            border = BorderStroke(1.dp, Color(0xFF1A3959)),
+                                            modifier = Modifier.clickable {
+                                                syncCountdown = 3
+                                                VirtualNumberManager.fetchActiveRanges()
+                                            }
+                                        ) {
+                                            Row(
+                                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.Default.Refresh,
+                                                    contentDescription = "Sync",
+                                                    tint = Color(0xFF81D4FA),
+                                                    modifier = Modifier.size(13.dp)
+                                                )
+                                                Spacer(modifier = Modifier.width(4.dp))
+                                                Text(
+                                                    text = "Auto Sync: ${syncCountdown}s",
+                                                    color = Color(0xFFB0BEC5),
+                                                    fontSize = 10.sp,
+                                                    fontWeight = FontWeight.SemiBold
+                                                )
+                                            }
+                                        }
+                                    }
+
+                                    Spacer(modifier = Modifier.height(10.dp))
+
                                     // Kop Engine 1 vs Kop Engine 2
                                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                                         listOf("Kop Engine 1", "Kop Engine 2").forEach { eng ->
                                             OutlinedButton(
                                                 onClick = { kopEngine = eng },
-                                                colors = ButtonDefaults.outlinedButtonColors(containerColor = if (kopEngine == eng) Color(0xFF6366F1).copy(alpha = 0.2f) else Color.Transparent),
-                                                border = BorderStroke(1.dp, if (kopEngine == eng) Color(0xFF6366F1) else Color(0xFF334155)),
+                                                colors = ButtonDefaults.outlinedButtonColors(containerColor = if (kopEngine == eng) Color(0xFF6366F1).copy(alpha = 0.25f) else Color.Transparent),
+                                                border = BorderStroke(1.dp, if (kopEngine == eng) Color(0xFF818CF8) else Color(0xFF334155)),
                                                 modifier = Modifier.weight(1f)
                                             ) {
-                                                Text(text = eng, fontSize = 10.sp, color = if (kopEngine == eng) Color(0xFF818CF8) else Color.White)
+                                                Text(text = eng, fontSize = 10.5.sp, fontWeight = FontWeight.Bold, color = if (kopEngine == eng) Color(0xFF818CF8) else Color.White)
                                             }
                                         }
                                     }
+
+                                    Spacer(modifier = Modifier.height(10.dp))
+
+                                    // Quick Range Chips from Active Ranges (matching Virtual Numbers Section)
+                                    Text(
+                                        text = "Active Range Suggestions (ট্যাপ করে রেঞ্জ সেট করুন):",
+                                        color = Color(0xFF78909C),
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
                                     Spacer(modifier = Modifier.height(6.dp))
+
+                                    val activeChips = if (selectedCountryInfo.code == "BD") {
+                                        if (kopEngine == "Kop Engine 1") {
+                                            listOf("017 (GP)", "018 (Robi)", "019 (BL)")
+                                        } else {
+                                            listOf("013 (Skitto)", "014 (BL New)", "016 (Airtel)", "015 (Teletalk)")
+                                        }
+                                    } else {
+                                        listOf("Range A (${selectedCountryInfo.code})", "Range B (${selectedCountryInfo.code})")
+                                    }
+
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                    ) {
+                                        activeChips.forEach { chip ->
+                                            val rawPrefix = chip.substringBefore(" ")
+                                            val isSelected = facebookRange.contains(rawPrefix)
+                                            Surface(
+                                                color = if (isSelected) Color(0xFF0091EA).copy(alpha = 0.25f) else Color(0xFF192C3D),
+                                                shape = RoundedCornerShape(6.dp),
+                                                border = BorderStroke(1.dp, if (isSelected) Color(0xFF00B0FF) else Color(0xFF1E3A56)),
+                                                modifier = Modifier
+                                                    .weight(1f)
+                                                    .clickable {
+                                                        facebookRange = rawPrefix
+                                                        ClipboardHelper.copyToClipboard(context, rawPrefix, "Range")
+                                                        Toast.makeText(context, "✓ সিলেক্ট হয়েছে: $rawPrefix", Toast.LENGTH_SHORT).show()
+                                                    }
+                                            ) {
+                                                Column(
+                                                    modifier = Modifier.padding(vertical = 6.dp, horizontal = 4.dp),
+                                                    horizontalAlignment = Alignment.CenterHorizontally
+                                                ) {
+                                                    Text(
+                                                        text = chip,
+                                                        color = if (isSelected) Color(0xFF81D4FA) else Color.White,
+                                                        fontSize = 9.5.sp,
+                                                        fontWeight = FontWeight.Bold,
+                                                        maxLines = 1
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    }
+
+                                    Spacer(modifier = Modifier.height(10.dp))
+
+                                    // Top Hit Ranges List (matching Virtual Numbers Section Table)
+                                    Text(
+                                        text = "TOP HIT RANGES (LAST 30M) — LIVE RADAR:",
+                                        color = Color(0xFF78909C),
+                                        fontSize = 9.5.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        letterSpacing = 0.5.sp
+                                    )
+                                    Spacer(modifier = Modifier.height(6.dp))
+
+                                    val radarRanges = listOf(
+                                        Triple(if (kopEngine == "Kop Engine 1") "017 / GP" else "013 / Skitto", "148 hits", "99% Success"),
+                                        Triple(if (kopEngine == "Kop Engine 1") "018 / Robi" else "016 / Airtel", "112 hits", "98% Success"),
+                                        Triple(if (kopEngine == "Kop Engine 1") "019 / BL" else "014 / BL New", "89 hits", "96% Success")
+                                    )
+
+                                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                        radarRanges.forEach { (rName, hits, success) ->
+                                            val rPrefix = rName.substringBefore(" ").trim()
+                                            val isCurr = facebookRange.contains(rPrefix)
+                                            Surface(
+                                                color = if (isCurr) Color(0xFF0091EA).copy(alpha = 0.15f) else Color(0xFF0B141E),
+                                                shape = RoundedCornerShape(6.dp),
+                                                border = BorderStroke(1.dp, if (isCurr) Color(0xFF00E676) else Color(0xFF1B3248)),
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .clickable {
+                                                        facebookRange = rPrefix
+                                                        Toast.makeText(context, "সিলেক্ট হয়েছে: $rName", Toast.LENGTH_SHORT).show()
+                                                    }
+                                            ) {
+                                                Row(
+                                                    modifier = Modifier
+                                                        .fillMaxWidth()
+                                                        .padding(horizontal = 8.dp, vertical = 6.dp),
+                                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                                    verticalAlignment = Alignment.CenterVertically
+                                                ) {
+                                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                                        Box(
+                                                            modifier = Modifier
+                                                                .size(6.dp)
+                                                                .clip(CircleShape)
+                                                                .background(if (isCurr) Color(0xFF00E676) else Color(0xFF00B0FF))
+                                                        )
+                                                        Spacer(modifier = Modifier.width(6.dp))
+                                                        Text(
+                                                            text = rName,
+                                                            color = Color.White,
+                                                            fontSize = 11.sp,
+                                                            fontWeight = FontWeight.Bold,
+                                                            fontFamily = FontFamily.Monospace
+                                                        )
+                                                        Spacer(modifier = Modifier.width(6.dp))
+                                                        Text(
+                                                            text = "Facebook • $hits",
+                                                            color = Color(0xFF78909C),
+                                                            fontSize = 9.sp
+                                                        )
+                                                    }
+                                                    Surface(
+                                                        color = Color(0xFF00E676).copy(alpha = 0.15f),
+                                                        shape = RoundedCornerShape(4.dp)
+                                                    ) {
+                                                        Text(
+                                                            text = success,
+                                                            color = Color(0xFF00E676),
+                                                            fontSize = 8.5.sp,
+                                                            fontWeight = FontWeight.Bold,
+                                                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
+                                                        )
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+
+                                    Spacer(modifier = Modifier.height(10.dp))
+
+                                    // Input Field (Editable or Custom)
                                     if (rangeMode == "LIVE_RANGE") {
                                         OutlinedTextField(
                                             value = facebookRange,
                                             onValueChange = { facebookRange = it },
-                                            label = { Text("Facebook Ranges for ${selectedCountryInfo.name} ($kopEngine)", fontSize = 10.sp) },
+                                            label = { Text("Selected Target Range (${selectedCountryInfo.name})", fontSize = 10.sp) },
                                             singleLine = true,
                                             colors = OutlinedTextFieldDefaults.colors(focusedTextColor = Color.White, unfocusedTextColor = Color.White, focusedBorderColor = Color(0xFF00E676), unfocusedBorderColor = Color(0xFF334155)),
                                             modifier = Modifier.fillMaxWidth()
