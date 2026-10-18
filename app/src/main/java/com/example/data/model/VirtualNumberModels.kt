@@ -15,7 +15,8 @@ data class ProvisionedNumber(
     val failReason: String? = null,
     val requestId: Long? = null,
     val gateway: String = "LAMIX",
-    val rate: Double = 0.50
+    val rate: Double = 0.50,
+    val accountStatus: String = "UNCHECKED" // "OLD" (Red), "FRESH" (Green), "CHECKING", "UNCHECKED"
 )
 
 data class ActiveRangeItem(

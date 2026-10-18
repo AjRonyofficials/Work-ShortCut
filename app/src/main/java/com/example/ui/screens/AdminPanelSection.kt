@@ -124,6 +124,7 @@ import java.util.Date
 import com.example.service.VirtualNumberManager
 import com.example.service.WithdrawalManager
 import com.example.service.WithdrawalRequest
+import com.example.service.OtpHistoryManager
 import com.example.util.AllCountriesProvider
 
 data class AdminCountryInfo(
@@ -152,6 +153,7 @@ fun AdminPanelSection(
     val unixState by UnixSmsManager.state.collectAsState()
     val managedUsers by AuthManager.managedUsers.collectAsState()
     val withdrawState by WithdrawalManager.state.collectAsState()
+    val otpHistoryState by OtpHistoryManager.state.collectAsState()
     val zenexOtpRate by VirtualNumberManager.zenexOtpRate.collectAsState()
     val kop2OtpRate by KopEngine2Manager.kop2OtpRate.collectAsState()
 
@@ -161,6 +163,7 @@ fun AdminPanelSection(
         UnixSmsManager.init(context)
         AuthManager.init(context)
         WithdrawalManager.init(context)
+        OtpHistoryManager.init(context)
         VirtualNumberManager.init(context)
         KopEngine2Manager.init(context)
     }
@@ -415,6 +418,16 @@ fun AdminPanelSection(
                         canUploadNumbers = if (isPrimeAdmin) true else subAdminPerms.canUploadNumbers,
                         canDeleteNumbers = if (isPrimeAdmin) true else subAdminPerms.canDeleteNumbers,
                         canUpdateOtpRate = if (isPrimeAdmin) true else subAdminPerms.canUpdateOtpRate
+                    )
+                }
+                item {
+                    AdminDataMaintenanceCard(
+                        context = context,
+                        otpRecordCount = otpHistoryState.recentRecords.size,
+                        totalOtpAllTime = otpHistoryState.totalOtpsAllTime,
+                        withdrawalCount = withdrawState.allRequests.size,
+                        uploadedNumberCount = unixState.uploadedNumbers.size,
+                        canManage = if (isPrimeAdmin) true else subAdminPerms.canDeleteNumbers
                     )
                 }
             }
@@ -2172,6 +2185,175 @@ fun AdminUnixSmsCard(
 
                 Spacer(modifier = Modifier.height(10.dp))
 
+                // 3.5. Batch Deletion & Quick Maintenance Actions
+                var showCountryDeleteConfirmDialog by remember { mutableStateOf(false) }
+                var showClearAllConfirmDialog by remember { mutableStateOf(false) }
+
+                val targetDeleteCount = remember(selectedUploadedCountryFilter, unixState.uploadedNumbers) {
+                    if (selectedUploadedCountryFilter == "ALL") unixState.uploadedNumbers.size
+                    else unixState.uploadedNumbers.count { it.countryCode.equals(selectedUploadedCountryFilter, ignoreCase = true) }
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    // Delete for selected country (or all if ALL selected)
+                    Button(
+                        onClick = {
+                            if (targetDeleteCount > 0) {
+                                showCountryDeleteConfirmDialog = true
+                            } else {
+                                Toast.makeText(context, "ডিলিট করার মতো কোনো নাম্বার নেই", Toast.LENGTH_SHORT).show()
+                            }
+                        },
+                        enabled = canDeleteNumbers && targetDeleteCount > 0,
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFDC2626)),
+                        shape = RoundedCornerShape(8.dp),
+                        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 4.dp),
+                        modifier = Modifier.weight(1.3f).height(38.dp)
+                    ) {
+                        Icon(Icons.Default.Delete, contentDescription = null, modifier = Modifier.size(13.dp))
+                        Spacer(modifier = Modifier.width(3.dp))
+                        Text(
+                            text = if (selectedUploadedCountryFilter == "ALL") "ক্লিয়ার অল ($targetDeleteCount)"
+                            else "ডিলিট $selectedUploadedCountryFilter ($targetDeleteCount)",
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1
+                        )
+                    }
+
+                    // Auto Purge Corrupted / Invalid Numbers
+                    OutlinedButton(
+                        onClick = {
+                            val purged = UnixSmsManager.purgeInvalidUploadedNumbers { ok ->
+                                Toast.makeText(context, "✓ ডাটাবেস ও ক্লাউড সিঙ্ক সম্পন্ন হয়েছে", Toast.LENGTH_SHORT).show()
+                            }
+                            Toast.makeText(context, "⚡ $purged টি ভুল/নাল নাম্বার মুছে ফেলা হয়েছে!", Toast.LENGTH_SHORT).show()
+                        },
+                        enabled = canDeleteNumbers,
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFFF59E0B)),
+                        border = BorderStroke(1.dp, Color(0xFFF59E0B).copy(alpha = 0.5f)),
+                        shape = RoundedCornerShape(8.dp),
+                        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 4.dp),
+                        modifier = Modifier.weight(1.1f).height(38.dp)
+                    ) {
+                        Icon(Icons.Default.DeleteSweep, contentDescription = null, modifier = Modifier.size(13.dp))
+                        Spacer(modifier = Modifier.width(3.dp))
+                        Text("অটো ক্লিন ভুল", fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                    }
+
+                    // Clear ALL numbers button (if not already selecting ALL)
+                    if (selectedUploadedCountryFilter != "ALL") {
+                        Button(
+                            onClick = { showClearAllConfirmDialog = true },
+                            enabled = canDeleteNumbers && unixState.uploadedNumbers.isNotEmpty(),
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF7F1D1D)),
+                            shape = RoundedCornerShape(8.dp),
+                            contentPadding = PaddingValues(horizontal = 6.dp, vertical = 4.dp),
+                            modifier = Modifier.weight(1.1f).height(38.dp)
+                        ) {
+                            Icon(Icons.Default.DeleteSweep, contentDescription = null, modifier = Modifier.size(13.dp))
+                            Spacer(modifier = Modifier.width(3.dp))
+                            Text("সব ক্লিয়ার", fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+
+                // Batch Deletion Confirmation Dialogs
+                if (showCountryDeleteConfirmDialog) {
+                    AlertDialog(
+                        onDismissRequest = { showCountryDeleteConfirmDialog = false },
+                        title = {
+                            Text(
+                                text = "⚠️ নাম্বার ডিলিট ও ডাটাবেস লাইভ সিঙ্ক",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 14.sp
+                            )
+                        },
+                        text = {
+                            Text(
+                                text = if (selectedUploadedCountryFilter == "ALL") {
+                                    "আপনি কি নিশ্চিত যে সমস্ত ($targetDeleteCount টি) নাম্বার ডাটাবেস ও সকল ইউজারদের অ্যাপ থেকে সম্পূর্ণ ডিলিট করতে চান?"
+                                } else {
+                                    "আপনি কি নিশ্চিত যে $selectedUploadedCountryFilter দেশের সকল ($targetDeleteCount টি) নাম্বার ডাটাবেস ও সকল ইউজারদের থেকে মুছে ফেলতে চান?"
+                                },
+                                fontSize = 12.sp
+                            )
+                        },
+                        confirmButton = {
+                            Button(
+                                onClick = {
+                                    val targetFilter = selectedUploadedCountryFilter
+                                    showCountryDeleteConfirmDialog = false
+                                    UnixSmsManager.deleteNumbersByCountry(targetFilter) { success ->
+                                        Toast.makeText(
+                                            context,
+                                            if (success) "✓ $targetFilter এর সকল নাম্বার ডাটাবেস ও সকল ইউজারদের থেকে মুছে লাইভ সিঙ্ক করা হয়েছে!"
+                                            else "✓ নাম্বার রিমুভ ও ক্লাউডে পুশ করা হয়েছে",
+                                            Toast.LENGTH_LONG
+                                        ).show()
+                                    }
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFDC2626))
+                            ) {
+                                Text("হ্যাঁ, ডিলিট করুন")
+                            }
+                        },
+                        dismissButton = {
+                            OutlinedButton(onClick = { showCountryDeleteConfirmDialog = false }) {
+                                Text("বাতিল")
+                            }
+                        }
+                    )
+                }
+
+                if (showClearAllConfirmDialog) {
+                    AlertDialog(
+                        onDismissRequest = { showClearAllConfirmDialog = false },
+                        title = {
+                            Text(
+                                text = "🚨 সমস্ত নাম্বার ক্লিয়ার (Clear ALL)",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 14.sp,
+                                color = Color(0xFFEF4444)
+                            )
+                        },
+                        text = {
+                            Text(
+                                text = "আপনি কি নিশ্চিত যে ডাটাবেস থেকে সব দেশের মোট ${unixState.uploadedNumbers.size} টি আপলোড করা নাম্বার সম্পূর্ণ মুছে ফেলতে চান? সকল ইউজারের অ্যাপ থেকেও সাথে সাথে মুছে যাবে।",
+                                fontSize = 12.sp
+                            )
+                        },
+                        confirmButton = {
+                            Button(
+                                onClick = {
+                                    showClearAllConfirmDialog = false
+                                    UnixSmsManager.clearAllUploadedNumbers { success ->
+                                        Toast.makeText(
+                                            context,
+                                            if (success) "✓ সমস্ত নাম্বার ডাটাবেস ও সকল ডিভাইস থেকে সম্পূর্ণ ক্লিয়ার হয়েছে!"
+                                            else "✓ সমস্ত নাম্বার লোকাল ও ক্লাউড থেকে ক্লিয়ার করা হয়েছে",
+                                            Toast.LENGTH_LONG
+                                        ).show()
+                                    }
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFDC2626))
+                            ) {
+                                Text("হ্যাঁ, সব ক্লিয়ার করুন")
+                            }
+                        },
+                        dismissButton = {
+                            OutlinedButton(onClick = { showClearAllConfirmDialog = false }) {
+                                Text("বাতিল")
+                            }
+                        }
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(10.dp))
+
                 // 4. Numbers List
                 if (filteredNumbers.isEmpty()) {
                     Box(
@@ -2194,8 +2376,14 @@ fun AdminUnixSmsCard(
                                 item = item,
                                 canDelete = canDeleteNumbers,
                                 onDelete = {
-                                    UnixSmsManager.deleteSingleNumber(item.id)
-                                    Toast.makeText(context, "ডিলিট করা হয়েছে: ${item.number}", Toast.LENGTH_SHORT).show()
+                                    UnixSmsManager.deleteSingleNumber(item.id) { success ->
+                                        Toast.makeText(
+                                            context,
+                                            if (success) "✓ ডাটাবেস ও ইউজারদের থেকে মুছে লাইভ সিঙ্ক হয়েছে: ${item.number}"
+                                            else "ডিলিট করা হয়েছে: ${item.number}",
+                                            Toast.LENGTH_SHORT
+                                        ).show()
+                                    }
                                 },
                                 onCopy = {
                                     ClipboardHelper.copyToClipboard(context, item.number, "Phone Number")
@@ -2220,6 +2408,217 @@ fun AdminUnixSmsCard(
                         }
                     }
                 }
+            }
+        }
+    }
+}
+
+@Composable
+fun AdminDataMaintenanceCard(
+    context: Context,
+    otpRecordCount: Int,
+    totalOtpAllTime: Int,
+    withdrawalCount: Int,
+    uploadedNumberCount: Int,
+    canManage: Boolean = true
+) {
+    var showConfirmOtpPurge by remember { mutableStateOf(false) }
+    var showConfirmWithdrawPurge by remember { mutableStateOf(false) }
+
+    Card(
+        colors = CardDefaults.cardColors(containerColor = Color(0xFF0F172A)),
+        shape = RoundedCornerShape(16.dp),
+        border = BorderStroke(1.dp, Color(0xFF334155)),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(modifier = Modifier.padding(14.dp)) {
+            // Header
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Default.DeleteSweep,
+                        contentDescription = null,
+                        tint = Color(0xFFF59E0B),
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "ডাটাবেস ও হিস্ট্রি ক্লিনিং (Data Maintenance)",
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White
+                    )
+                }
+                Surface(
+                    color = Color(0xFFF59E0B).copy(alpha = 0.15f),
+                    shape = RoundedCornerShape(6.dp)
+                ) {
+                    Text(
+                        text = "Auto-Cleaner",
+                        color = Color(0xFFF59E0B),
+                        fontSize = 9.5.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                text = "২ মাসের বেশি পুরোনো ডাটা এবং ভুল/উল্টাপাল্টা ডাটা স্বয়ংক্রিয়ভাবে মুছে ডাটাবেসকে ফাস্ট ও হালকা রাখুন।",
+                fontSize = 11.sp,
+                color = Color(0xFF94A3B8)
+            )
+
+            Spacer(modifier = Modifier.height(10.dp))
+
+            // Current Stats Row
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Surface(
+                    color = Color(0xFF1E293B),
+                    shape = RoundedCornerShape(8.dp),
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Column(
+                        modifier = Modifier.padding(8.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Text("OTP হিস্ট্রি", fontSize = 10.sp, color = Color(0xFF94A3B8))
+                        Text("$otpRecordCount টি", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color(0xFF38BDF8))
+                    }
+                }
+                Surface(
+                    color = Color(0xFF1E293B),
+                    shape = RoundedCornerShape(8.dp),
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Column(
+                        modifier = Modifier.padding(8.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Text("উইথড্র হিস্ট্রি", fontSize = 10.sp, color = Color(0xFF94A3B8))
+                        Text("$withdrawalCount টি", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color(0xFF10B981))
+                    }
+                }
+                Surface(
+                    color = Color(0xFF1E293B),
+                    shape = RoundedCornerShape(8.dp),
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Column(
+                        modifier = Modifier.padding(8.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Text("ডাটাবেস নাম্বার", fontSize = 10.sp, color = Color(0xFF94A3B8))
+                        Text("$uploadedNumberCount টি", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color(0xFFF59E0B))
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            // 1. One-Tap Auto Purge Corrupted/Invalid Data
+            Button(
+                onClick = {
+                    val pOtp = OtpHistoryManager.purgeCorruptedOtpRecords()
+                    val pWith = WithdrawalManager.purgeCorruptedWithdrawals()
+                    val pNum = UnixSmsManager.purgeInvalidUploadedNumbers()
+                    Toast.makeText(
+                        context,
+                        "⚡ উল্টাপাল্টা ডাটা ক্লিন সম্পন্ন! (OTP: $pOtp, উইথড্র: $pWith, নাম্বার: $pNum)",
+                        Toast.LENGTH_LONG
+                    ).show()
+                },
+                enabled = canManage,
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFF59E0B)),
+                shape = RoundedCornerShape(10.dp),
+                modifier = Modifier.fillMaxWidth().height(42.dp)
+            ) {
+                Icon(Icons.Default.DeleteSweep, contentDescription = null, modifier = Modifier.size(16.dp))
+                Spacer(modifier = Modifier.width(6.dp))
+                Text("⚡ অটো ক্লিন উল্টাপাল্টা ও করাপ্টেড ডাটা", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // 2. 60+ Days Old Cleanups (OTP & Withdraw)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                // Delete OTPs > 2 Months (60 days)
+                OutlinedButton(
+                    onClick = { showConfirmOtpPurge = true },
+                    enabled = canManage,
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFFEF4444)),
+                    border = BorderStroke(1.dp, Color(0xFFEF4444).copy(alpha = 0.5f)),
+                    shape = RoundedCornerShape(10.dp),
+                    modifier = Modifier.weight(1f).height(40.dp)
+                ) {
+                    Icon(Icons.Default.Delete, contentDescription = null, modifier = Modifier.size(14.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("২+ মাসের OTP মুছুন", fontSize = 10.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+                }
+
+                // Delete Withdraws > 2 Months (60 days)
+                OutlinedButton(
+                    onClick = { showConfirmWithdrawPurge = true },
+                    enabled = canManage,
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFFEF4444)),
+                    border = BorderStroke(1.dp, Color(0xFFEF4444).copy(alpha = 0.5f)),
+                    shape = RoundedCornerShape(10.dp),
+                    modifier = Modifier.weight(1f).height(40.dp)
+                ) {
+                    Icon(Icons.Default.Delete, contentDescription = null, modifier = Modifier.size(14.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("২+ মাসের উইথড্র মুছুন", fontSize = 10.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+                }
+            }
+
+            // Confirm Dialogs
+            if (showConfirmOtpPurge) {
+                AlertDialog(
+                    onDismissRequest = { showConfirmOtpPurge = false },
+                    title = { Text("⚠️ ২ মাসের পুরোনো OTP হিস্ট্রি ডিলিট") },
+                    text = { Text("আপনি কি নিশ্চিত যে ৬০ দিন (২ মাস) এর বেশি পুরোনো সকল OTP হিস্টোরি স্থায়ীভাবে মুছে ফেলতে চান?") },
+                    confirmButton = {
+                        Button(
+                            onClick = {
+                                val removed = OtpHistoryManager.purgeOldOtpRecords(60)
+                                showConfirmOtpPurge = false
+                                Toast.makeText(context, "✓ $removed টি পুরোনো OTP রেকর্ড ডিলিট করা হয়েছে!", Toast.LENGTH_SHORT).show()
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFEF4444))
+                        ) { Text("হ্যাঁ, ডিলিট করুন") }
+                    },
+                    dismissButton = { OutlinedButton(onClick = { showConfirmOtpPurge = false }) { Text("বাতিল") } }
+                )
+            }
+
+            if (showConfirmWithdrawPurge) {
+                AlertDialog(
+                    onDismissRequest = { showConfirmWithdrawPurge = false },
+                    title = { Text("⚠️ ২ মাসের পুরোনো উইথড্র হিস্ট্রি ডিলিট") },
+                    text = { Text("আপনি কি নিশ্চিত যে ৬০ দিন (২ মাস) এর বেশি পুরোনো সমাপ্ত/অনুমোদিত উইথড্র রেকর্ড মুছে ফেলতে চান? (পেন্ডিং রিকুয়েস্ট সংরক্ষিত থাকবে)") },
+                    confirmButton = {
+                        Button(
+                            onClick = {
+                                val removed = WithdrawalManager.purgeOldWithdrawalRequests(60)
+                                showConfirmWithdrawPurge = false
+                                Toast.makeText(context, "✓ $removed টি পুরোনো উইথড্র রেকর্ড ডিলিট করা হয়েছে!", Toast.LENGTH_SHORT).show()
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFEF4444))
+                        ) { Text("হ্যাঁ, ডিলিট করুন") }
+                    },
+                    dismissButton = { OutlinedButton(onClick = { showConfirmWithdrawPurge = false }) { Text("বাতিল") } }
+                )
             }
         }
     }

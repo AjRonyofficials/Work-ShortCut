@@ -123,6 +123,7 @@ object VirtualNumberManager {
     private val otpRegex = Pattern.compile("\\b\\d{4,8}\\b")
 
     fun init(context: Context) {
+        AccountCheckerManager.init(context)
         if (prefs == null) {
             prefs = context.getSharedPreferences("virtual_numbers_prefs", Context.MODE_PRIVATE)
             val savedPanel = prefs?.getInt("selected_panel_index", 0) ?: 0
@@ -244,6 +245,7 @@ object VirtualNumberManager {
                 obj.put("timestamp", p.timestamp)
                 obj.put("expiresAt", p.expiresAt)
                 obj.put("range", p.range)
+                obj.put("accountStatus", p.accountStatus)
                 arr.put(obj)
             }
             prefs?.edit()?.putString("user_saved_numbers_json", arr.toString())?.apply()
@@ -270,7 +272,8 @@ object VirtualNumberManager {
                         failReason = obj.optString("failReason").ifEmpty { null },
                         timestamp = obj.optLong("timestamp", System.currentTimeMillis()),
                         expiresAt = obj.optLong("expiresAt", System.currentTimeMillis() + 1_200_000L),
-                        range = obj.optString("range")
+                        range = obj.optString("range"),
+                        accountStatus = obj.optString("accountStatus", "UNCHECKED")
                     )
                 )
             }
@@ -301,8 +304,36 @@ object VirtualNumberManager {
         _state.update { it.copy(isNational = isNational, removePlus = removePlus) }
     }
 
+    fun recheckNumberAccount(context: Context, id: String) {
+        val target = _state.value.provisionedNumbers.firstOrNull { it.id == id } ?: return
+        _state.update { curr ->
+            curr.copy(
+                provisionedNumbers = curr.provisionedNumbers.map {
+                    if (it.id == id) it.copy(accountStatus = "CHECKING") else it
+                }
+            )
+        }
+        AccountCheckerManager.checkNumberAsync(target.number, forceRefresh = true) { result ->
+            _state.update { curr ->
+                val updated = curr.provisionedNumbers.map {
+                    if (it.id == id) it.copy(accountStatus = result.status) else it
+                }
+                saveUserProvisionedNumbers(updated)
+                curr.copy(provisionedNumbers = updated)
+            }
+            mainHandler.post {
+                Toast.makeText(
+                    context,
+                    "${target.number}: ${result.badgeLabel}",
+                    Toast.LENGTH_SHORT
+                ).show()
+            }
+        }
+    }
+
     /**
-     * Provisions virtual numbers sequentially based on requestCount (1 to 10).
+     * Provisions virtual numbers sequentially based on requestCount (1 to 10),
+     * running `account_checker.py` verification and background auto-retry if Option 1 (Fresh Only) or Option 2 (Old Only) is enabled.
      */
     fun provisionNumbers(
         context: Context,
@@ -310,6 +341,7 @@ object VirtualNumberManager {
         count: Int = _state.value.requestCount,
         onComplete: (Boolean, String) -> Unit = { _, _ -> }
     ) {
+        AccountCheckerManager.init(context)
         val apiKey = _state.value.apiKey.ifEmpty { "ZNX_SDY9RBKGG8DO84EWZOMWEH2S" }
         if (range.isBlank()) {
             Toast.makeText(context, "Range প্রদান করুন (e.g. 237620XXX)", Toast.LENGTH_SHORT).show()
@@ -323,66 +355,126 @@ object VirtualNumberManager {
             var successCount = 0
             val newNumbers = mutableListOf<ProvisionedNumber>()
             var lastMsg = ""
+            val checkerState = AccountCheckerManager.state.value
+            val checkerEnabled = checkerState.isEnabled
+            val mode = checkerState.mode
+            val maxAttempts = if (checkerEnabled && mode != AccountCheckerMode.BOTH) checkerState.maxRetries else 1
 
             for (i in 0 until count) {
-                try {
-                    val url = "https://api.zenexnetwork.com/v1/getnum"
-                    val jsonBody = JSONObject().apply {
-                        put("range", range)
-                        put("is_national", _state.value.isNational)
-                        put("remove_plus", _state.value.removePlus)
+                var matchedItem: ProvisionedNumber? = null
+                var fallbackCandidate: ProvisionedNumber? = null
+
+                for (attempt in 1..maxAttempts) {
+                    if (checkerEnabled && maxAttempts > 1 && attempt > 1) {
+                        val targetLabel = if (mode == AccountCheckerMode.FRESH_ONLY) "FRESH (Green)" else "OLD (Red)"
+                        AccountCheckerManager.setRetryStatus(
+                            true,
+                            "🔄 ব্যাকগ্রাউন্ডে $targetLabel নম্বর খোঁজা হচ্ছে... (রি-ট্রাই #$attempt/$maxAttempts)"
+                        )
+                    } else if (checkerEnabled) {
+                        AccountCheckerManager.setRetryStatus(
+                            true,
+                            "🔍 account_checker.py দিয়ে নম্বর চেক করা হচ্ছে..."
+                        )
                     }
 
-                    val request = Request.Builder()
-                        .url(url)
-                        .addHeader("mapikey", apiKey)
-                        .addHeader("Content-Type", "application/json")
-                        .post(jsonBody.toString().toRequestBody("application/json".toMediaType()))
-                        .build()
-
-                    val response = httpClient.newCall(request).execute()
-                    val responseStr = response.body?.string() ?: ""
-
-                    if (response.isSuccessful && responseStr.isNotEmpty()) {
-                        val json = JSONObject(responseStr)
-                        val dataObj = json.optJSONObject("data")
-                        if (dataObj != null) {
-                            val num = dataObj.optString("number").ifEmpty {
-                                dataObj.optString("copy").ifEmpty { dataObj.optString("full_number") }
-                            }
-                            val country = dataObj.optString("country", "Global")
-                            val operator = dataObj.optString("operator", "Mobile")
-                            val iso = dataObj.optString("iso", "gb")
-                            val status = dataObj.optString("status", "pending")
-
-                            if (num.isNotEmpty()) {
-                                val now = System.currentTimeMillis()
-                                val item = ProvisionedNumber(
-                                    number = num,
-                                    country = country,
-                                    operator = operator,
-                                    iso = iso,
-                                    status = status,
-                                    range = range,
-                                    timestamp = now,
-                                    expiresAt = now + 1_200_000L // 20 minutes timeout (Zenex panel standard)
-                                )
-                                newNumbers.add(item)
-                                successCount++
-                            }
+                    try {
+                        val url = "https://api.zenexnetwork.com/v1/getnum"
+                        val jsonBody = JSONObject().apply {
+                            put("range", range)
+                            put("is_national", _state.value.isNational)
+                            put("remove_plus", _state.value.removePlus)
                         }
-                        lastMsg = json.optString("message", "Number provisioned")
-                    } else {
-                        lastMsg = "Error ${response.code}: $responseStr"
+
+                        val request = Request.Builder()
+                            .url(url)
+                            .addHeader("mapikey", apiKey)
+                            .addHeader("Content-Type", "application/json")
+                            .post(jsonBody.toString().toRequestBody("application/json".toMediaType()))
+                            .build()
+
+                        val response = httpClient.newCall(request).execute()
+                        val responseStr = response.body?.string() ?: ""
+
+                        if (response.isSuccessful && responseStr.isNotEmpty()) {
+                            val json = JSONObject(responseStr)
+                            val dataObj = json.optJSONObject("data")
+                            if (dataObj != null) {
+                                val num = dataObj.optString("number").ifEmpty {
+                                    dataObj.optString("copy").ifEmpty { dataObj.optString("full_number") }
+                                }
+                                val country = dataObj.optString("country", "Global")
+                                val operator = dataObj.optString("operator", "Mobile")
+                                val iso = dataObj.optString("iso", "gb")
+                                val status = dataObj.optString("status", "pending")
+
+                                if (num.isNotEmpty()) {
+                                    val now = System.currentTimeMillis()
+                                    if (checkerEnabled) {
+                                        val checkRes = AccountCheckerManager.checkPhoneNumber(num)
+                                        val candidate = ProvisionedNumber(
+                                            number = num,
+                                            country = country,
+                                            operator = operator,
+                                            iso = iso,
+                                            status = status,
+                                            range = range,
+                                            timestamp = now,
+                                            expiresAt = now + 1_200_000L,
+                                            accountStatus = checkRes.status
+                                        )
+                                        fallbackCandidate = candidate
+                                        if (AccountCheckerManager.matchesSelectedMode(checkRes)) {
+                                            matchedItem = candidate
+                                            lastMsg = "${checkRes.badgeLabel} • $num"
+                                            break
+                                        } else {
+                                            // Did not match mode (e.g. got OLD when wanting FRESH, or got FRESH when wanting OLD)
+                                            lastMsg = "Retrying (${checkRes.status})..."
+                                        }
+                                    } else {
+                                        matchedItem = ProvisionedNumber(
+                                            number = num,
+                                            country = country,
+                                            operator = operator,
+                                            iso = iso,
+                                            status = status,
+                                            range = range,
+                                            timestamp = now,
+                                            expiresAt = now + 1_200_000L,
+                                            accountStatus = "UNCHECKED"
+                                        )
+                                        lastMsg = json.optString("message", "Number provisioned")
+                                        break
+                                    }
+                                }
+                            } else {
+                                lastMsg = json.optString("message", "No number data")
+                            }
+                        } else {
+                            lastMsg = "Error ${response.code}: $responseStr"
+                        }
+                    } catch (e: Exception) {
+                        lastMsg = e.message ?: "Network error"
                     }
-                } catch (e: Exception) {
-                    lastMsg = e.message ?: "Network error"
+
+                    if (attempt < maxAttempts) {
+                        delay(250L)
+                    }
+                }
+
+                val finalItem = matchedItem ?: fallbackCandidate
+                if (finalItem != null) {
+                    newNumbers.add(finalItem)
+                    successCount++
                 }
 
                 if (i < count - 1) {
-                    delay(300L) // polite pacing between multi-requests
+                    delay(300L)
                 }
             }
+
+            AccountCheckerManager.setRetryStatus(false, null)
 
             _state.update { current ->
                 val combined = newNumbers + current.provisionedNumbers
@@ -404,9 +496,16 @@ object VirtualNumberManager {
 
             mainHandler.post {
                 if (successCount > 0) {
+                    val firstBadge = newNumbers.firstOrNull()?.let {
+                        when (it.accountStatus) {
+                            "OLD" -> " [🔴 OLD ACCOUNT]"
+                            "FRESH" -> " [🟢 NEW / FRESH]"
+                            else -> ""
+                        }
+                    } ?: ""
                     Toast.makeText(
                         context,
-                        "✓ $successCount টি ভার্চুয়াল নম্বর রেডি!",
+                        "✓ $successCount টি নম্বর রেডি ও অটো কপি হয়েছে!$firstBadge",
                         Toast.LENGTH_SHORT
                     ).show()
                     VibrationHelper.vibrateSuccess(context)

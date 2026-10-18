@@ -553,6 +553,8 @@ fun ExcelCollectorSection(
                         val nextId = (sortedRows.maxOfOrNull { it.id } ?: 0L) + 1L
                         val newRow = ExcelRowEntity(id = nextId)
                         scope.launch { repository?.insertExcelRow(newRow) }
+                        OverlayStateManager.updateAllColumnRowsTo(nextId.toInt())
+                        Toast.makeText(context, "Row #$nextId যোগ করা হয়েছে! Overlay Row #$nextId এ সেট করা হয়েছে।", Toast.LENGTH_SHORT).show()
                         editingRow = newRow
                         editColA = ""
                         editColB = ""
@@ -961,8 +963,10 @@ fun ExcelCollectorSection(
                         if (row.id == state.duplicateHighlightRow) {
                             OverlayStateManager.clearDuplicateHighlight()
                         }
+                        val nextRowId = row.id + 1
+                        OverlayStateManager.onExcelRowSavedOrEdited(row.id, autoAdvanceToNext = true)
                         editingRow = null
-                        Toast.makeText(context, "Row #${row.id} updated successfully!", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(context, "✓ Row #${row.id} সেভ হয়েছে! Overlay অটো Row #$nextRowId তে আপডেট হয়েছে!", Toast.LENGTH_SHORT).show()
                     },
                     modifier = Modifier.testTag("save_edit_row_button")
                 ) {

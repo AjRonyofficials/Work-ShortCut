@@ -355,6 +355,11 @@ fun VirtualNumbersSection(
             }
         }
 
+        // ACCOUNT CHECKER (checker.py) BAR — ON/OFF & 3 Modes (1. Fresh Only, 2. Old Only, 3. Both)
+        item {
+            com.example.ui.components.VirtualNumberAccountCheckerBar()
+        }
+
         if (!hasNotificationPermission) {
             item {
                 Card(
@@ -1471,21 +1476,35 @@ private fun ProvisionedNumberCard(
     now: Long,
     context: Context
 ) {
+    val isOldAccount = item.accountStatus.equals("OLD", ignoreCase = true)
+    val isFreshAccount = item.accountStatus.equals("FRESH", ignoreCase = true)
+
+    val cardContainerColor = when {
+        item.status == "success" -> Color(0xFF0A2E1F)
+        isOldAccount -> Color(0xFF281117)
+        isFreshAccount -> Color(0xFF0B251B)
+        else -> Color(0xFF111D2A)
+    }
+
+    val cardBorderColor = when {
+        isOldAccount -> Color(0xFFFF5252)
+        isFreshAccount -> Color(0xFF00E676)
+        item.status == "success" -> Color(0xFF00E676).copy(alpha = 0.6f)
+        item.status == "failed" -> Color(0xFFFF5252).copy(alpha = 0.4f)
+        else -> Color(0xFF1E3A56)
+    }
+
     Card(
-        colors = CardDefaults.cardColors(containerColor = Color(0xFF111D2A)),
+        colors = CardDefaults.cardColors(containerColor = cardContainerColor),
         shape = RoundedCornerShape(12.dp),
         border = androidx.compose.foundation.BorderStroke(
-            1.dp,
-            when (item.status) {
-                "success" -> Color(0xFF00E676).copy(alpha = 0.5f)
-                "failed" -> Color(0xFFFF5252).copy(alpha = 0.4f)
-                else -> Color(0xFF1E3A56)
-            }
+            if (isOldAccount || isFreshAccount) 1.5.dp else 1.dp,
+            cardBorderColor
         ),
         modifier = Modifier.fillMaxWidth()
     ) {
         Column(modifier = Modifier.padding(12.dp)) {
-            // Header Row: Left (Number + Country badge) | Right (Status Pill + Time Ago + Mobile)
+            // Header Row: Left (Number + Country badge + Red/Green Account Badge) | Right (Status Pill + Time Ago + Mobile)
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -1496,9 +1515,13 @@ private fun ProvisionedNumberCard(
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
                             text = item.number,
-                            color = Color.White,
+                            color = when {
+                                isOldAccount -> Color(0xFFFF6B6B)
+                                isFreshAccount -> Color(0xFF00E676)
+                                else -> Color.White
+                            },
                             fontSize = 15.sp,
-                            fontWeight = FontWeight.Bold,
+                            fontWeight = FontWeight.ExtraBold,
                             fontFamily = FontFamily.Monospace,
                             modifier = Modifier.clickable {
                                 ClipboardHelper.copyToClipboard(context, item.number, "Phone Number")
@@ -1532,7 +1555,19 @@ private fun ProvisionedNumberCard(
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(4.dp))
+                    Spacer(modifier = Modifier.height(5.dp))
+
+                    // Account Checker Highlight Badge (RED = OLD Account | GREEN = NEW / FRESH)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        com.example.ui.components.AccountStatusHighlightBadge(
+                            accountStatus = item.accountStatus,
+                            onRecheckClick = {
+                                VirtualNumberManager.recheckNumberAccount(context, item.id)
+                            }
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(5.dp))
 
                     // Left Side Description by Status
                     when (item.status) {

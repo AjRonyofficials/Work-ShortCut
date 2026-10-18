@@ -89,18 +89,20 @@ object GlobalCloudSyncService {
             val req = Request.Builder()
                 .url("$SUPABASE_BASE_URL/app_settings?id=eq.1&select=*")
                 .header("apikey", SUPABASE_KEY)
+                .header("Authorization", "Bearer $SUPABASE_KEY")
                 .get()
                 .build()
-            val resp = httpClient.newCall(req).execute()
-            if (resp.isSuccessful) {
+
+            httpClient.newCall(req).execute().use { resp ->
+                if (!resp.isSuccessful) return
                 val bodyStr = resp.body?.string() ?: return
                 val arr = JSONArray(bodyStr)
                 if (arr.length() == 0) return
                 val data = arr.getJSONObject(0)
 
                 val cloudTimestamp = data.optLong("updated_at", 0L)
-                // If local just pushed within 2 seconds, avoid race overwrite
-                if (System.currentTimeMillis() - lastLocalPushTimestamp < 2000L) {
+                // If local just pushed within 8 seconds, avoid race overwrite
+                if (System.currentTimeMillis() - lastLocalPushTimestamp < 8000L) {
                     return
                 }
 
@@ -112,7 +114,7 @@ object GlobalCloudSyncService {
 
                 // 1. Sync Uploaded Numbers
                 val numbersJson = data.optString("numbers_json", "")
-                if (numbersJson.isNotEmpty()) {
+                if (numbersJson.isNotEmpty() && numbersJson != "[]") {
                     try {
                         val numArr = JSONArray(numbersJson)
                         val cloudNumbers = mutableListOf<UploadedNumberItem>()
@@ -177,6 +179,72 @@ object GlobalCloudSyncService {
     }
 
     /**
+     * Synchronously / directly pushes uploaded numbers to Supabase and returns success status.
+     */
+    suspend fun pushToCloudSync(
+        uploadedNumbers: List<UploadedNumberItem>,
+        unixRate: Double,
+        zenexRate: Double,
+        kop2Rate: Double = KopEngine2Manager.kop2OtpRate.value,
+        countryRates: Map<String, Double> = emptyMap()
+    ): Boolean = kotlinx.coroutines.withContext(Dispatchers.IO) {
+        val patchTimestamp = System.currentTimeMillis()
+        lastLocalPushTimestamp = patchTimestamp
+        try {
+            val numArr = JSONArray()
+            // Up to 300 numbers to maintain fast transmission
+            for (item in uploadedNumbers.take(300)) {
+                val o = JSONObject()
+                o.put("id", item.id)
+                o.put("number", item.number)
+                o.put("countryCode", item.countryCode)
+                o.put("countryName", item.countryName)
+                o.put("flag", item.flag)
+                o.put("service", item.service)
+                o.put("gateway", item.gateway)
+                if (item.customRate != null) o.put("customRate", item.customRate)
+                o.put("addedAt", item.addedAt)
+                o.put("isUsed", item.isUsed)
+                item.otpCode?.let { o.put("otpCode", it) }
+                item.otpMessage?.let { o.put("otpMessage", it) }
+                numArr.put(o)
+            }
+
+            val patchPayload = JSONObject().apply {
+                put("otp_rate", unixRate)
+                put("zenex_rate", zenexRate)
+                put("kop2_rate", kop2Rate)
+                put("numbers_json", numArr.toString())
+                put("updated_at", patchTimestamp)
+            }
+
+            val body = patchPayload.toString().toRequestBody("application/json; charset=utf-8".toMediaTypeOrNull())
+            val req = Request.Builder()
+                .url("$SUPABASE_BASE_URL/app_settings?id=eq.1")
+                .header("apikey", SUPABASE_KEY)
+                .header("Authorization", "Bearer $SUPABASE_KEY")
+                .header("Content-Type", "application/json")
+                .header("Prefer", "return=minimal")
+                .patch(body)
+                .build()
+
+            val success = httpClient.newCall(req).execute().use { resp ->
+                resp.isSuccessful
+            }
+            if (success) {
+                lastObservedServerTimestamp = patchTimestamp
+                Log.d(TAG, "Pushed ${numArr.length()} numbers & rates to Supabase successfully.")
+            } else {
+                Log.e(TAG, "Supabase patch returned unsuccess status.")
+            }
+            success
+        } catch (e: Exception) {
+            Log.e(TAG, "Error pushing to cloud: ${e.message}")
+            false
+        }
+    }
+
+    /**
      * Called whenever Admin uploads numbers, deletes numbers, or changes rates.
      * Pushes state to Supabase PostgreSQL immediately so all 10,000+ users receive it.
      */
@@ -185,50 +253,13 @@ object GlobalCloudSyncService {
         unixRate: Double,
         zenexRate: Double,
         kop2Rate: Double = KopEngine2Manager.kop2OtpRate.value,
-        countryRates: Map<String, Double>
+        countryRates: Map<String, Double> = emptyMap(),
+        onComplete: ((Boolean) -> Unit)? = null
     ) {
-        lastLocalPushTimestamp = System.currentTimeMillis()
         scope.launch {
-            try {
-                val numArr = JSONArray()
-                // Take up to 300 numbers to maintain lightweight payload
-                for (item in uploadedNumbers.take(300)) {
-                    val o = JSONObject()
-                    o.put("id", item.id)
-                    o.put("number", item.number)
-                    o.put("countryCode", item.countryCode)
-                    o.put("countryName", item.countryName)
-                    o.put("flag", item.flag)
-                    o.put("service", item.service)
-                    o.put("gateway", item.gateway)
-                    if (item.customRate != null) o.put("customRate", item.customRate)
-                    o.put("addedAt", item.addedAt)
-                    o.put("isUsed", item.isUsed)
-                    item.otpCode?.let { o.put("otpCode", it) }
-                    item.otpMessage?.let { o.put("otpMessage", it) }
-                    numArr.put(o)
-                }
-
-                val patchPayload = JSONObject().apply {
-                    put("otp_rate", unixRate)
-                    put("zenex_rate", zenexRate)
-                    put("kop2_rate", kop2Rate)
-                    put("numbers_json", numArr.toString())
-                    put("updated_at", System.currentTimeMillis())
-                }
-
-                val body = patchPayload.toString().toRequestBody("application/json; charset=utf-8".toMediaTypeOrNull())
-                val req = Request.Builder()
-                    .url("$SUPABASE_BASE_URL/app_settings?id=eq.1")
-                    .header("apikey", SUPABASE_KEY)
-                    .header("Content-Type", "application/json")
-                    .header("Prefer", "return=minimal")
-                    .patch(body)
-                    .build()
-                httpClient.newCall(req).execute()
-                Log.d(TAG, "Pushed ${numArr.length()} numbers & rates to Supabase successfully.")
-            } catch (e: Exception) {
-                Log.e(TAG, "Error pushing to cloud: ${e.message}")
+            val ok = pushToCloudSync(uploadedNumbers, unixRate, zenexRate, kop2Rate, countryRates)
+            kotlinx.coroutines.withContext(Dispatchers.Main) {
+                onComplete?.invoke(ok)
             }
         }
     }
@@ -238,25 +269,31 @@ object GlobalCloudSyncService {
         zenexRate: Double = VirtualNumberManager.zenexOtpRate.value,
         kop2Rate: Double = KopEngine2Manager.kop2OtpRate.value
     ) {
-        lastLocalPushTimestamp = System.currentTimeMillis()
+        val patchTimestamp = System.currentTimeMillis()
+        lastLocalPushTimestamp = patchTimestamp
         scope.launch {
             try {
                 val patchPayload = JSONObject().apply {
                     put("otp_rate", unixRate)
                     put("zenex_rate", zenexRate)
                     put("kop2_rate", kop2Rate)
-                    put("updated_at", System.currentTimeMillis())
+                    put("updated_at", patchTimestamp)
                 }
                 val body = patchPayload.toString().toRequestBody("application/json; charset=utf-8".toMediaTypeOrNull())
                 val req = Request.Builder()
                     .url("$SUPABASE_BASE_URL/app_settings?id=eq.1")
                     .header("apikey", SUPABASE_KEY)
+                    .header("Authorization", "Bearer $SUPABASE_KEY")
                     .header("Content-Type", "application/json")
                     .header("Prefer", "return=minimal")
                     .patch(body)
                     .build()
-                httpClient.newCall(req).execute()
-                Log.d(TAG, "Pushed rate settings to Supabase successfully: Unix=$unixRate, Zenex=$zenexRate, Kop2=$kop2Rate")
+                httpClient.newCall(req).execute().use { resp ->
+                    if (resp.isSuccessful) {
+                        lastObservedServerTimestamp = patchTimestamp
+                        Log.d(TAG, "Pushed rate settings to Supabase successfully: Unix=$unixRate, Zenex=$zenexRate, Kop2=$kop2Rate")
+                    }
+                }
             } catch (e: Exception) {
                 Log.e(TAG, "Error pushing rates to cloud: ${e.message}")
             }

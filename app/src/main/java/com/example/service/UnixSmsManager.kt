@@ -2,6 +2,9 @@ package com.example.service
 
 import android.content.Context
 import android.content.SharedPreferences
+import android.os.Handler
+import android.os.Looper
+import android.widget.Toast
 import com.example.data.model.ProvisionedNumber
 import com.example.util.ClipboardHelper
 import com.example.util.OtpNotificationHelper
@@ -84,6 +87,7 @@ data class UnixSmsState(
 
 object UnixSmsManager {
 
+    private val mainHandler = Handler(Looper.getMainLooper())
     private const val PREFS_NAME = "unix_sms_manager_prefs"
     private const val KEY_API_TOKEN = "unix_api_token"
     private const val KEY_LAMIX_API_TOKEN = "lamix_api_token"
@@ -185,8 +189,10 @@ object UnixSmsManager {
             }
         }
         if (cloudList.isEmpty()) {
-            _state.update { it.copy(uploadedNumbers = emptyList()) }
+            val keptActive = _state.value.activeNumbers.filter { !it.otpCode.isNullOrEmpty() }
+            _state.update { it.copy(uploadedNumbers = emptyList(), activeNumbers = keptActive) }
             saveUploadedNumbers(emptyList())
+            saveActiveNumbers(keptActive)
             return
         }
         val current = _state.value.uploadedNumbers
@@ -328,7 +334,8 @@ object UnixSmsManager {
                         timestamp = o.optLong("timestamp", System.currentTimeMillis()),
                         expiresAt = o.optLong("expiresAt", System.currentTimeMillis() + 1_200_000L),
                         gateway = o.optString("gateway", "LAMIX"),
-                        rate = o.optDouble("rate", 0.50)
+                        rate = o.optDouble("rate", 0.50),
+                        accountStatus = o.optString("accountStatus", "UNCHECKED")
                     )
                 )
             }
@@ -353,6 +360,7 @@ object UnixSmsManager {
             o.put("expiresAt", item.expiresAt)
             o.put("gateway", item.gateway)
             o.put("rate", item.rate)
+            o.put("accountStatus", item.accountStatus)
             arr.put(o)
         }
         prefs?.edit()?.putString(KEY_ACTIVE_NUMBERS, arr.toString())?.apply()
@@ -451,40 +459,41 @@ object UnixSmsManager {
 
     /**
      * Admin: Delete numbers by specific Country or All
-     * Automatically and instantly syncs deletion to all user devices.
+     * Automatically and instantly syncs deletion to Supabase and all user devices.
      */
-    fun deleteNumbersByCountry(countryCode: String) {
+    fun deleteNumbersByCountry(countryCode: String, onComplete: ((Boolean) -> Unit)? = null) {
         val updated = if (countryCode.equals("ALL", ignoreCase = true)) {
             emptyList()
         } else {
             _state.value.uploadedNumbers.filterNot { it.countryCode.equals(countryCode, ignoreCase = true) }
         }
         val updatedActive = if (countryCode.equals("ALL", ignoreCase = true)) {
-            _state.value.activeNumbers.filter { it.status == "success" }
+            _state.value.activeNumbers.filter { it.status == "success" || !it.otpCode.isNullOrEmpty() }
         } else {
-            _state.value.activeNumbers.filterNot { it.iso.equals(countryCode, ignoreCase = true) && it.status != "success" }
+            _state.value.activeNumbers.filterNot { it.iso.equals(countryCode, ignoreCase = true) && it.status != "success" && it.otpCode.isNullOrEmpty() }
         }
         _state.update { it.copy(uploadedNumbers = updated, activeNumbers = updatedActive) }
         saveUploadedNumbers(updated)
         saveActiveNumbers(updatedActive)
-        // Push globally so numbers are deleted on user devices too
+        // Push globally to Supabase immediately so numbers are deleted everywhere
         GlobalCloudSyncService.pushToCloud(
             uploadedNumbers = updated,
             unixRate = _state.value.otpRatePerSms,
             zenexRate = VirtualNumberManager.zenexOtpRate.value,
-            countryRates = _state.value.countryRates
+            countryRates = _state.value.countryRates,
+            onComplete = onComplete
         )
     }
 
     /**
      * Admin: Delete a single number.
-     * Automatically and instantly syncs deletion to all user devices.
+     * Automatically and instantly syncs deletion to Supabase and all user devices.
      */
-    fun deleteSingleNumber(id: String) {
+    fun deleteSingleNumber(id: String, onComplete: ((Boolean) -> Unit)? = null) {
         val toDelete = _state.value.uploadedNumbers.firstOrNull { it.id == id }
         val updated = _state.value.uploadedNumbers.filterNot { it.id == id }
         val updatedActive = if (toDelete != null) {
-            _state.value.activeNumbers.filterNot { isPhoneNumberMatch(it.number, toDelete.number) && it.status != "success" }
+            _state.value.activeNumbers.filterNot { isPhoneNumberMatch(it.number, toDelete.number) && it.status != "success" && it.otpCode.isNullOrEmpty() }
         } else _state.value.activeNumbers
 
         _state.update { it.copy(uploadedNumbers = updated, activeNumbers = updatedActive) }
@@ -495,8 +504,45 @@ object UnixSmsManager {
             uploadedNumbers = updated,
             unixRate = _state.value.otpRatePerSms,
             zenexRate = VirtualNumberManager.zenexOtpRate.value,
-            countryRates = _state.value.countryRates
+            countryRates = _state.value.countryRates,
+            onComplete = onComplete
         )
+    }
+
+    /**
+     * Admin: Clear ALL uploaded numbers completely from database and local storage.
+     */
+    fun clearAllUploadedNumbers(onComplete: ((Boolean) -> Unit)? = null) {
+        deleteNumbersByCountry("ALL", onComplete)
+    }
+
+    /**
+     * Auto-purges invalid / malformed / corrupted numbers (fewer than 7 digits, blank, or malformed)
+     * and syncs the clean list directly with the cloud database.
+     */
+    fun purgeInvalidUploadedNumbers(onComplete: ((Boolean) -> Unit)? = null): Int {
+        val current = _state.value.uploadedNumbers
+        val initialSize = current.size
+        val cleaned = current.filter { item ->
+            val digits = item.number.replace("[^0-9]".toRegex(), "")
+            digits.length in 7..16 && item.countryCode.isNotBlank() && item.countryName.isNotBlank()
+        }.distinctBy { it.number.replace("[^0-9]".toRegex(), "") }
+
+        val removed = initialSize - cleaned.size
+        if (removed > 0) {
+            _state.update { it.copy(uploadedNumbers = cleaned) }
+            saveUploadedNumbers(cleaned)
+            GlobalCloudSyncService.pushToCloud(
+                uploadedNumbers = cleaned,
+                unixRate = _state.value.otpRatePerSms,
+                zenexRate = VirtualNumberManager.zenexOtpRate.value,
+                countryRates = _state.value.countryRates,
+                onComplete = onComplete
+            )
+        } else {
+            onComplete?.invoke(true)
+        }
+        return removed
     }
 
     fun setSelectedCountry(countryCode: String) {
@@ -509,8 +555,36 @@ object UnixSmsManager {
         _state.update { it.copy(requestCount = safe) }
     }
 
+    fun recheckNumberAccount(context: Context, id: String) {
+        val target = _state.value.activeNumbers.firstOrNull { it.id == id } ?: return
+        _state.update { curr ->
+            curr.copy(
+                activeNumbers = curr.activeNumbers.map {
+                    if (it.id == id) it.copy(accountStatus = "CHECKING") else it
+                }
+            )
+        }
+        AccountCheckerManager.checkNumberAsync(target.number, forceRefresh = true) { result ->
+            _state.update { curr ->
+                val updated = curr.activeNumbers.map {
+                    if (it.id == id) it.copy(accountStatus = result.status) else it
+                }
+                saveActiveNumbers(updated)
+                curr.copy(activeNumbers = updated)
+            }
+            mainHandler.post {
+                Toast.makeText(
+                    context,
+                    "${target.number}: ${result.badgeLabel}",
+                    Toast.LENGTH_SHORT
+                ).show()
+            }
+        }
+    }
+
     /**
      * User: Get Numbers from Premium pool (Multi-Gateway: Lamix SMS or Unix SMS)
+     * Integrates `account_checker.py` verification and background auto-retry when Option 1 (Fresh Only) or Option 2 (Old Only) is enabled.
      */
     fun getNumbersForUser(
         context: Context,
@@ -519,6 +593,7 @@ object UnixSmsManager {
         count: Int = _state.value.requestCount,
         onResult: (Boolean, String) -> Unit
     ) {
+        AccountCheckerManager.init(context)
         val safeCount = count.coerceIn(1, 10)
         val available = _state.value.uploadedNumbers.filter {
             !it.isUsed &&
@@ -532,57 +607,118 @@ object UnixSmsManager {
             return
         }
 
-        val chosenList = available.take(safeCount)
-        val chosenIds = chosenList.map { it.id }.toSet()
+        scope.launch {
+            val checkerState = AccountCheckerManager.state.value
+            val checkerEnabled = checkerState.isEnabled
+            val mode = checkerState.mode
 
-        // Mark as used
-        val updatedUploaded = _state.value.uploadedNumbers.map {
-            if (it.id in chosenIds) it.copy(isUsed = true) else it
-        }
-        saveUploadedNumbers(updatedUploaded)
+            val chosenPairs = mutableListOf<Pair<UploadedNumberItem, String>>() // item to accountStatus
 
-        val now = System.currentTimeMillis()
-        val newProvs = chosenList.map { chosen ->
-            val gw = chosen.gateway.uppercase().ifEmpty { "LAMIX" }
-            val opName = if (gw == "LAMIX") "Lamix SMS ⚡" else "Unix SMS 🌐"
-            val r = chosen.customRate ?: getRateForCountry(chosen.countryCode)
-            ProvisionedNumber(
-                number = chosen.number,
-                country = chosen.countryName,
-                operator = opName,
-                iso = chosen.countryCode.lowercase(),
-                status = "pending",
-                range = chosen.service,
-                timestamp = now,
-                expiresAt = now + 1_200_000L,
-                gateway = gw,
-                rate = r
-            )
-        }
+            if (!checkerEnabled) {
+                available.take(safeCount).forEach { item ->
+                    chosenPairs.add(item to "UNCHECKED")
+                }
+            } else if (mode == AccountCheckerMode.BOTH) {
+                AccountCheckerManager.setRetryStatus(true, "🔍 account_checker.py দিয়ে নম্বর চেক করা হচ্ছে...")
+                for (item in available.take(safeCount)) {
+                    val res = AccountCheckerManager.checkPhoneNumber(item.number)
+                    chosenPairs.add(item to res.status)
+                }
+                AccountCheckerManager.setRetryStatus(false, null)
+            } else {
+                // Mode 1 (FRESH_ONLY) or Mode 2 (OLD_ONLY) -> scan candidates in background & auto-retry until matched!
+                val targetLabel = if (mode == AccountCheckerMode.FRESH_ONLY) "FRESH (Green)" else "OLD (Red)"
+                val fallbackList = mutableListOf<Pair<UploadedNumberItem, String>>()
+                var attempt = 0
+                val maxPoolScan = minOf(available.size, safeCount * checkerState.maxRetries.coerceAtLeast(3))
 
-        val updatedActive = newProvs + _state.value.activeNumbers
-        saveActiveNumbers(updatedActive)
+                for (candidate in available.take(maxPoolScan)) {
+                    attempt++
+                    AccountCheckerManager.setRetryStatus(
+                        true,
+                        "🔄 ব্যাকগ্রাউন্ডে $targetLabel নম্বর চেক ও রি-ট্রাই হচ্ছে... (#$attempt)"
+                    )
+                    val res = AccountCheckerManager.checkPhoneNumber(candidate.number)
+                    if (AccountCheckerManager.matchesSelectedMode(res)) {
+                        chosenPairs.add(candidate to res.status)
+                        if (chosenPairs.size >= safeCount) break
+                    } else {
+                        fallbackList.add(candidate to res.status)
+                    }
+                }
+                AccountCheckerManager.setRetryStatus(false, null)
 
-        _state.update {
-            it.copy(
-                uploadedNumbers = updatedUploaded,
-                activeNumbers = updatedActive
-            )
-        }
+                // If pool had fewer matching numbers than requested, fill remaining from checked fallback so user still gets numbers with accurate highlight
+                if (chosenPairs.size < safeCount && fallbackList.isNotEmpty()) {
+                    val needed = safeCount - chosenPairs.size
+                    chosenPairs.addAll(fallbackList.take(needed))
+                }
+            }
 
-        if (chosenList.isNotEmpty()) {
-            val allNumbersText = chosenList.joinToString("\n") { it.number.replace("+", "").trim() }
-            ClipboardHelper.copyToClipboard(context, allNumbersText, "Unix SMS Numbers")
-        }
-        VibrationHelper.vibrateSuccess(context)
+            val chosenIds = chosenPairs.map { it.first.id }.toSet()
 
-        // Make sure polling is active
-        startFastOtpPolling(context)
+            // Mark as used
+            val updatedUploaded = _state.value.uploadedNumbers.map {
+                if (it.id in chosenIds) it.copy(isUsed = true) else it
+            }
+            saveUploadedNumbers(updatedUploaded)
 
-        if (chosenList.size > 1) {
-            onResult(true, "✓ ${chosenList.size} টি নম্বর রেডি! সবগুলো নম্বর ক্লিপবোর্ডে কপি হয়েছে।")
-        } else {
-            onResult(true, "নম্বর ${chosenList.first().number} রেডি! ক্লিপবোর্ডে কপি হয়েছে।")
+            val now = System.currentTimeMillis()
+            val newProvs = chosenPairs.map { (chosen, accStatus) ->
+                val gw = chosen.gateway.uppercase().ifEmpty { "LAMIX" }
+                val opName = if (gw == "LAMIX") "Lamix SMS ⚡" else "Unix SMS 🌐"
+                val r = chosen.customRate ?: getRateForCountry(chosen.countryCode)
+                ProvisionedNumber(
+                    number = chosen.number,
+                    country = chosen.countryName,
+                    operator = opName,
+                    iso = chosen.countryCode.lowercase(),
+                    status = "pending",
+                    range = chosen.service,
+                    timestamp = now,
+                    expiresAt = now + 1_200_000L,
+                    gateway = gw,
+                    rate = r,
+                    accountStatus = accStatus
+                )
+            }
+
+            val updatedActive = newProvs + _state.value.activeNumbers
+            saveActiveNumbers(updatedActive)
+
+            _state.update {
+                it.copy(
+                    uploadedNumbers = updatedUploaded,
+                    activeNumbers = updatedActive
+                )
+            }
+
+            mainHandler.post {
+                if (chosenPairs.isNotEmpty()) {
+                    val allNumbersText = chosenPairs.joinToString("\n") { it.first.number.replace("+", "").trim() }
+                    ClipboardHelper.copyToClipboard(context, allNumbersText, "Unix SMS Numbers")
+                }
+                VibrationHelper.vibrateSuccess(context)
+
+                // Make sure polling is active
+                startFastOtpPolling(context)
+
+                val badgeInfo = newProvs.firstOrNull()?.let {
+                    when (it.accountStatus) {
+                        "OLD" -> " [🔴 OLD ACCOUNT]"
+                        "FRESH" -> " [🟢 NEW / FRESH]"
+                        else -> ""
+                    }
+                } ?: ""
+
+                if (chosenPairs.size > 1) {
+                    onResult(true, "✓ ${chosenPairs.size} টি নম্বর রেডি ও কপি হয়েছে!$badgeInfo")
+                } else if (chosenPairs.isNotEmpty()) {
+                    onResult(true, "✓ নম্বর ${chosenPairs.first().first.number} রেডি ও কপি হয়েছে!$badgeInfo")
+                } else {
+                    onResult(false, "কোনো উপযুক্ত নম্বর পাওয়া যায়নি।")
+                }
+            }
         }
     }
 

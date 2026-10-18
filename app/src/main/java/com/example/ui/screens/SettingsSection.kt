@@ -129,6 +129,9 @@ fun SettingsSection(
             }
         }
 
+        // Virtual Number Account Checker (account_checker.py) ON/OFF & 3 Filter Modes (Fresh Only, Old Only, Both)
+        com.example.ui.components.SettingsAccountCheckerCard()
+
         // Smart Automation & Workflow Controls (Option 1 & Option 6 User Toggles)
         Card(
             modifier = Modifier.fillMaxWidth(),

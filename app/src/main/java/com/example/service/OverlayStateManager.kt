@@ -673,6 +673,34 @@ object OverlayStateManager {
         prefs?.edit()?.putInt("sheet_row_${columnKey.uppercase()}", safeRow)?.apply()
     }
 
+    /**
+     * Updates all column pointers (A, B, C, D, E, F) to a target row number.
+     * Ensures the floating overlay immediately displays this row for all column buttons.
+     */
+    fun updateAllColumnRowsTo(rowNumber: Int) {
+        val safeRow = rowNumber.coerceAtLeast(1)
+        val map = mutableMapOf<String, Int>()
+        listOf("A", "B", "C", "D", "E", "F").forEach { col ->
+            map[col] = safeRow
+        }
+        _uiState.update { it.copy(columnRowMap = map) }
+        prefs?.edit()?.apply {
+            listOf("A", "B", "C", "D", "E", "F").forEach { col ->
+                putInt("sheet_row_$col", safeRow)
+            }
+        }?.apply()
+    }
+
+    /**
+     * Called whenever an Excel row is edited or added from inside the app.
+     * Automatically syncs the floating overlay to the next row (or current row),
+     * fulfilling the requirement that any in-app Excel edit automatically updates the overlay.
+     */
+    fun onExcelRowSavedOrEdited(savedRowId: Long, autoAdvanceToNext: Boolean = true) {
+        val targetNextRow = if (autoAdvanceToNext) (savedRowId + 1).toInt() else savedRowId.toInt()
+        updateAllColumnRowsTo(targetNextRow)
+    }
+
     fun resetAllColumnRowsToOne() {
         val resetMap = mapOf("A" to 1, "B" to 1, "C" to 1, "D" to 1, "E" to 1, "F" to 1)
         _uiState.update { it.copy(columnRowMap = resetMap) }

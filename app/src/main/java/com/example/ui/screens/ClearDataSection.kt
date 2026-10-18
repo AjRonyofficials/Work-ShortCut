@@ -64,6 +64,8 @@ import androidx.compose.runtime.collectAsState
 import com.example.service.OverlayStateManager
 import com.example.service.OverlayUiState
 import com.example.service.UnixSmsManager
+import com.example.service.OtpHistoryManager
+import com.example.service.WithdrawalManager
 import com.example.ui.theme.AlertRed
 import com.example.ui.theme.BrandAmber
 import com.example.ui.theme.BrandRose
@@ -428,13 +430,16 @@ fun ClearDataSection(
                             confirmButton = {
                                 Button(
                                     onClick = {
-                                        UnixSmsManager.deleteNumbersByCountry(selectedCountryToClear)
+                                        val targetCountry = selectedCountryToClear
                                         showConfirmDialog = false
-                                        Toast.makeText(
-                                            context,
-                                            "✓ $selectedCountryToClear এর নাম্বার ডাটাবেস ও ইউজারদের থেকে মুছে লাইভ সিঙ্ক করা হয়েছে!",
-                                            Toast.LENGTH_LONG
-                                        ).show()
+                                        UnixSmsManager.deleteNumbersByCountry(targetCountry) { success ->
+                                            Toast.makeText(
+                                                context,
+                                                if (success) "✓ $targetCountry এর নাম্বার ডাটাবেস ও সকল ইউজারদের অ্যাপ থেকে মুছে লাইভ সিঙ্ক সম্পন্ন হয়েছে!"
+                                                else "✓ লোকাল ও ক্লাউড ডাটাবেস আপডেট হয়েছে",
+                                                Toast.LENGTH_LONG
+                                            ).show()
+                                        }
                                     },
                                     colors = ButtonDefaults.buttonColors(containerColor = AlertRed)
                                 ) {
@@ -447,6 +452,109 @@ fun ClearDataSection(
                                 }
                             }
                         )
+                    }
+                }
+            }
+        }
+
+        // Database Maintenance & 60+ Days History Auto-Cleanup
+        item {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                ),
+                border = androidx.compose.foundation.BorderStroke(1.dp, BrandAmber.copy(alpha = 0.35f))
+            ) {
+                Column(modifier = Modifier.padding(14.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Default.CleaningServices,
+                                contentDescription = null,
+                                tint = BrandAmber,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "Auto Clean 60+ Days Data & Garbage",
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+
+                        Surface(
+                            color = BrandAmber.copy(alpha = 0.15f),
+                            shape = RoundedCornerShape(6.dp)
+                        ) {
+                            Text(
+                                text = "Maintenance",
+                                color = BrandAmber,
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text(
+                        text = "২ মাসের (৬০ দিন) পুরোনো OTP হিস্ট্রি, উইথড্র রেকর্ড ও ভুল/উল্টাপাল্টা ডাটা এক ক্লিকে মুছে ফেলুন।",
+                        fontSize = 11.5.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        // Purge Corrupted Data
+                        Button(
+                            onClick = {
+                                val pOtp = OtpHistoryManager.purgeCorruptedOtpRecords()
+                                val pWith = WithdrawalManager.purgeCorruptedWithdrawals()
+                                val pNum = UnixSmsManager.purgeInvalidUploadedNumbers()
+                                Toast.makeText(
+                                    context,
+                                    "⚡ $pOtp টি OTP, $pWith টি উইথড্র ও $pNum টি নাম্বার ক্লিন করা হয়েছে!",
+                                    Toast.LENGTH_SHORT
+                                ).show()
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = BrandAmber),
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier.weight(1f).height(42.dp)
+                        ) {
+                            Icon(Icons.Default.CleaningServices, contentDescription = null, modifier = Modifier.size(15.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("উল্টাপাল্টা ডাটা ক্লিন", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        }
+
+                        // Purge 60+ Days Old Data
+                        Button(
+                            onClick = {
+                                val oOtp = OtpHistoryManager.purgeOldOtpRecords(60)
+                                val oWith = WithdrawalManager.purgeOldWithdrawalRequests(60)
+                                Toast.makeText(
+                                    context,
+                                    "✓ ২ মাসের পুরোনো $oOtp টি OTP ও $oWith টি উইথড্র ডিলিট হয়েছে!",
+                                    Toast.LENGTH_LONG
+                                ).show()
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = AlertRed),
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier.weight(1f).height(42.dp)
+                        ) {
+                            Icon(Icons.Default.Delete, contentDescription = null, modifier = Modifier.size(15.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("২+ মাসের ডাটা মুছুন", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        }
                     }
                 }
             }

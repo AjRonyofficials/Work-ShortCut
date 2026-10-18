@@ -331,4 +331,42 @@ object WithdrawalManager {
             refreshBalances()
         }
     }
+
+    /**
+     * Purge withdrawal records older than specified days (default 60 days = 2 months).
+     * Keeps PENDING requests safe, purges only completed/rejected older records.
+     */
+    fun purgeOldWithdrawalRequests(olderThanDays: Int = 60): Int {
+        val cutoff = System.currentTimeMillis() - (olderThanDays * 24L * 60L * 60L * 1000L)
+        val initialSize = _state.value.allRequests.size
+        val filtered = _state.value.allRequests.filter { req ->
+            req.status == "PENDING" || req.requestTimestamp >= cutoff
+        }
+        val removed = initialSize - filtered.size
+        if (removed > 0) {
+            saveRequests(filtered)
+            val baseCredit = prefs?.getFloat(KEY_BASE_CREDIT, 0.0f)?.toDouble() ?: 0.0
+            recomputeBalances(filtered, baseCredit)
+        }
+        return removed
+    }
+
+    /**
+     * Purge corrupted or malformed withdrawal records
+     */
+    fun purgeCorruptedWithdrawals(): Int {
+        val initialSize = _state.value.allRequests.size
+        val filtered = _state.value.allRequests.filter { req ->
+            req.accountNumber.isNotBlank() && req.accountNumber.length >= 4 &&
+            req.amount > 0.0 && !req.amount.isNaN() &&
+            req.userEmail.isNotBlank() && req.requestTimestamp > 0L
+        }
+        val removed = initialSize - filtered.size
+        if (removed > 0) {
+            saveRequests(filtered)
+            val baseCredit = prefs?.getFloat(KEY_BASE_CREDIT, 0.0f)?.toDouble() ?: 0.0
+            recomputeBalances(filtered, baseCredit)
+        }
+        return removed
+    }
 }

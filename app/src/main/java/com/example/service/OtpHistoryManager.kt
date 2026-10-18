@@ -437,4 +437,52 @@ object OtpHistoryManager {
             prefs?.edit()?.putInt(KEY_TOTAL_COUNT, totalOtps)?.apply()
         }
     }
+
+    /**
+     * Purge OTP records older than specified days (default 60 days = 2 months)
+     */
+    fun purgeOldOtpRecords(olderThanDays: Int = 60): Int {
+        val cutoff = System.currentTimeMillis() - (olderThanDays * 24L * 60L * 60L * 1000L)
+        val currentRecords = _state.value.recentRecords
+        val initialSize = currentRecords.size
+        val filtered = currentRecords.filter { it.timestamp >= cutoff }
+        val removed = initialSize - filtered.size
+        if (removed > 0) {
+            val newTotal = maxOf(0, _state.value.totalOtpsAllTime - removed)
+            saveRecords(filtered, newTotal)
+            recalculateSummaries(filtered, newTotal)
+        }
+        return removed
+    }
+
+    /**
+     * Purge corrupted or malformed OTP records (empty otp, invalid phone, corrupt timestamp)
+     */
+    fun purgeCorruptedOtpRecords(): Int {
+        val now = System.currentTimeMillis()
+        val currentRecords = _state.value.recentRecords
+        val initialSize = currentRecords.size
+        val filtered = currentRecords.filter { r ->
+            r.otpCode.isNotBlank() && r.otpCode != "null" && r.otpCode.length >= 3 &&
+            r.phoneNumber.isNotBlank() && r.phoneNumber.replace("[^0-9]".toRegex(), "").length >= 7 &&
+            r.timestamp in 1L..(now + 86400000L)
+        }
+        val removed = initialSize - filtered.size
+        if (removed > 0) {
+            val newTotal = maxOf(0, _state.value.totalOtpsAllTime - removed)
+            saveRecords(filtered, newTotal)
+            recalculateSummaries(filtered, newTotal)
+        }
+        return removed
+    }
+
+    /**
+     * Clear all OTP history on demand
+     */
+    fun clearAllOtpHistory(): Int {
+        val count = _state.value.recentRecords.size
+        saveRecords(emptyList(), 0)
+        recalculateSummaries(emptyList(), 0)
+        return count
+    }
 }
