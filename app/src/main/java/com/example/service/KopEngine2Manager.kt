@@ -886,6 +886,72 @@ object KopEngine2Manager {
         } catch (_: Exception) {}
     }
 
+    suspend fun requestSingleNumberForAccount(context: Context, range: String): ProvisionedNumber? = kotlinx.coroutines.withContext(Dispatchers.IO) {
+        val effectiveRange = range.trim().ifEmpty {
+            _state.value.targetRange.ifEmpty {
+                _state.value.activeRanges.firstOrNull()?.range ?: "260950XXX"
+            }
+        }
+        val apiKey = _state.value.apiKey.ifEmpty { DEFAULT_MK_API_KEY }
+        try {
+            val url = "$MK_BASE_URL/getnum/number"
+            val jsonBody = JSONObject().apply {
+                put("range", effectiveRange)
+            }
+            val request = Request.Builder()
+                .url(url)
+                .addHeader("mknetwork-key", apiKey)
+                .addHeader("Content-Type", "application/json")
+                .post(jsonBody.toString().toRequestBody("application/json".toMediaType()))
+                .build()
+
+            val response = try {
+                httpClient.newCall(request).execute()
+            } catch (_: Exception) {
+                null
+            }
+            val responseStr = response?.body?.string() ?: ""
+            if (response != null && response.isSuccessful && responseStr.isNotEmpty()) {
+                val json = JSONObject(responseStr)
+                val dataObj = json.optJSONObject("data")
+                if (dataObj != null) {
+                    val rawNum = dataObj.optString("number").ifEmpty {
+                        dataObj.optString("full_number")
+                    }
+                    val reqId = dataObj.optLong("request_id", 0L)
+                    val country = dataObj.optString("country", "Zambia")
+                    val operator = dataObj.optString("operator", "Zamtel")
+                    val status = dataObj.optString("status", "pending")
+                    val secondsRemaining = dataObj.optLong("seconds_remaining", 900L)
+                    if (rawNum.isNotEmpty()) {
+                        val now = System.currentTimeMillis()
+                        val formattedNum = if (!rawNum.startsWith("+")) "+$rawNum" else rawNum
+                        val prov = ProvisionedNumber(
+                            number = formattedNum,
+                            country = country,
+                            operator = operator,
+                            iso = getIsoForCountry(country),
+                            status = status,
+                            range = effectiveRange,
+                            timestamp = now,
+                            expiresAt = now + (secondsRemaining * 1000L).coerceAtLeast(15 * 60 * 1000L),
+                            requestId = if (reqId > 0L) reqId else null,
+                            accountStatus = "UNCHECKED"
+                        )
+                        _state.update { curr ->
+                            val updated = (listOf(prov) + curr.provisionedNumbers).distinctBy { it.number }.take(50)
+                            saveUserProvisionedNumbers(updated)
+                            curr.copy(provisionedNumbers = updated)
+                        }
+                        mainHandler.post { startAutoPolling(context, autoCopy = true) }
+                        return@withContext prov
+                    }
+                }
+            }
+        } catch (_: Exception) {}
+        null
+    }
+
     fun isPhoneNumberMatch(num1: String, num2: String): Boolean {
         val d1 = num1.replace("[^0-9]".toRegex(), "")
         val d2 = num2.replace("[^0-9]".toRegex(), "")

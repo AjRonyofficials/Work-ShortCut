@@ -5,6 +5,7 @@ import android.net.Uri
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -19,34 +20,47 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
-import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.service.AccountCheckerManager
+import com.example.service.AccountCheckerMode
+import com.example.service.KopEngine2Manager
 import com.example.service.OverlayStateManager
 import com.example.service.UnixSmsManager
 import com.example.service.VirtualNumberManager
+import com.example.ui.components.AccountStatusHighlightBadge
 import com.example.util.AllCountriesProvider
 import com.example.util.ClipboardHelper
 import com.example.util.OtpNotificationHelper
 import com.example.util.VibrationHelper
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 data class CreatedAccountItem(
     val id: String = java.util.UUID.randomUUID().toString(),
@@ -57,92 +71,174 @@ data class CreatedAccountItem(
     val token: String,
     val cookie: String,
     val twoFaSecret: String,
-    val accountType: String,
-    val agentName: String,
+    val accountType: String,     // "FRESH" or "OLD"
+    val badgeLabel: String,      // "🟢 NEW (FRESH)" or "🔴 OLD (ACCOUNT)"
+    val panelUsed: String,       // "Premium Numbers", "Kop Engine 1", "Kop Engine 2", "Txt File"
+    val rangeUsed: String,
+    val threadId: Int,
+    val userAgent: String,
     val proxyUsed: String,
     val country: String,
-    val status: String = "LOGGED IN ✓",
-    var smsFetched: String? = null,
+    val status: String = "LOGGED IN",
+    val otpCode: String? = null,
+    val smsFetched: String? = null,
     val createdAt: Long = System.currentTimeMillis()
 ) {
-    fun toFormattedLine(format: String = "FULL"): String {
-        return when (format) {
-            "UID_PASS" -> "$uid|$password"
-            "PHONE_PASS" -> "$phoneNumber|$password"
-            "UID_PASS_2FA" -> "$uid|$password|$twoFaSecret"
-            else -> "$uid|$password|$cookie|$token"
+    fun formatOutput(mode: String): String {
+        return when (mode) {
+            "STD" -> "$uid|$password|$cookie|$token"
+            "COOKIE" -> "$uid|$password|$cookie"
+            "MIN" -> "$phoneNumber|$password|$uid"
+            else -> "$uid|$password|$phoneNumber|$cookie|$token|$twoFaSecret"
         }
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun AccountSection(modifier: Modifier = Modifier) {
     val context = LocalContext.current
     val state by OverlayStateManager.uiState.collectAsStateWithLifecycle()
+    val selectedPanelIndex by VirtualNumberManager.selectedPanel.collectAsStateWithLifecycle()
     val vnState by VirtualNumberManager.state.collectAsStateWithLifecycle()
+    val kop2State by KopEngine2Manager.state.collectAsStateWithLifecycle()
+    val unixState by UnixSmsManager.state.collectAsStateWithLifecycle()
+    val checkerState by AccountCheckerManager.state.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
 
+    // Live 3s auto-sync with Virtual Numbers section panels & ranges
     var syncCountdown by remember { mutableIntStateOf(3) }
     LaunchedEffect(Unit) {
         AccountCheckerManager.init(context)
+        VirtualNumberManager.init(context)
+        KopEngine2Manager.init(context)
+        UnixSmsManager.init(context)
         VirtualNumberManager.fetchActiveRanges()
+        KopEngine2Manager.fetchActiveRanges()
         while (true) {
             delay(1000L)
             if (syncCountdown <= 1) {
                 syncCountdown = 3
                 VirtualNumberManager.fetchActiveRanges()
+                KopEngine2Manager.fetchActiveRanges()
             } else {
                 syncCountdown -= 1
             }
         }
     }
 
-    // Default password from automation engine: Okabye#570
-    var passwordText by remember { mutableStateOf("Okabye#570") }
+    // 1. Password state (Default fixed: Okabye#570)
+    var passwordText by remember { mutableStateOf(state.savedPasswordText.ifBlank { "Okabye#570" }) }
     var isEditingPassword by remember { mutableStateOf(false) }
 
-    // Number Source / Panel: "PREMIUM_NUMBERS", "KOP_ENGINE_1", "KOP_ENGINE_2", "TXT_UPLOAD"
-    var sourceMode by remember { mutableStateOf("PREMIUM_NUMBERS") }
+    // 2. Source Panel Mode synced directly with Virtual Numbers Section's selectedPanelIndex
+    // "VIRTUAL_PANEL" uses selectedPanelIndex (0 = Premium Numbers, 1 = Kop Engine 1, 2 = Kop Engine 2)
+    // "TXT_UPLOAD" uses uploaded .txt file
+    var useTxtUploadMode by remember { mutableStateOf(false) }
     var uploadedFileName by remember { mutableStateOf<String?>(null) }
-    var uploadedNumbersCount by remember { mutableStateOf(0) }
+    var uploadedNumbersCount by remember { mutableIntStateOf(0) }
     var uploadedNumbersList by remember { mutableStateOf<List<String>>(emptyList()) }
 
-    var rangeMode by remember { mutableStateOf("LIVE_RANGE") } // "LIVE_RANGE" or "CUSTOM_RANGE"
-    
-    // Country selection for premium numbers
-    var selectedCountryInfo by remember { mutableStateOf(AllCountriesProvider.allCountries.firstOrNull { it.code == "BD" } ?: AllCountriesProvider.allCountries.first()) }
+    // Country picker for Premium Numbers (Panel 0)
     var showCountryPicker by remember { mutableStateOf(false) }
     var countrySearchQuery by remember { mutableStateOf("") }
 
-    var kopEngine by remember { mutableStateOf("Kop Engine 1") } // Kop Engine 1 or 2
-    var facebookRange by remember { mutableStateOf("017, 018, 019") }
-    var customRangeInput by remember { mutableStateOf("") }
-    var useZenexFilter by remember { mutableStateOf(true) }
+    // 3. User-Agent Engine State
+    var uaMode by remember { mutableStateOf("AUTO_ROTATE") } // "FB_KATANA", "FB_LITE", "CHROME_MBASIC", "AUTO_ROTATE", "CUSTOM_UA"
+    var currentPreviewUa by remember { mutableStateOf(generateRealisticUserAgent("FB_KATANA")) }
+    var customUaText by remember { mutableStateOf("") }
 
-    var selectedAgent by remember { mutableStateOf("Agent 1 (Dalvik/Katana Android)") }
-    var proxyMode by remember { mutableStateOf("AUTO_SAVED") } // "NO_PROXY", "SET_PROXY", "AUTO_SAVED"
+    LaunchedEffect(uaMode) {
+        if (uaMode != "CUSTOM_UA") {
+            currentPreviewUa = generateRealisticUserAgent(uaMode)
+        }
+    }
+
+    // 4. Multi-Threading & Account Amount & Proxy State
+    var threadCountText by remember { mutableStateOf("5") }
+    var accountAmountText by remember { mutableStateOf("5") }
+    var proxyMode by remember { mutableStateOf("AUTO_SAVED") } // "AUTO_SAVED", "SET_PROXY", "NO_PROXY"
     var customProxyHost by remember { mutableStateOf("") }
     var customProxyPort by remember { mutableStateOf("") }
     var customProxyUser by remember { mutableStateOf("") }
     var customProxyPass by remember { mutableStateOf("") }
 
-    var accountAmountText by remember { mutableStateOf("5") }
-    var accountTypeOption by remember { mutableStateOf("ONLY_FRESH") } // "ONLY_FRESH", "ONLY_OLD", "BOTH_MIXED"
-
+    // 5. Execution & Output State
     var isCreating by remember { mutableStateOf(false) }
     var creationStepText by remember { mutableStateOf("") }
+    var consoleLogs by remember { mutableStateOf(listOf<String>()) }
     var createdAccountsList by remember { mutableStateOf(listOf<CreatedAccountItem>()) }
     var creationCompleted by remember { mutableStateOf(false) }
+    var outputFormatMode by remember { mutableStateOf("FULL") } // "FULL", "STD", "COOKIE", "MIN"
+    var showRawOutputBox by remember { mutableStateOf(true) }
 
-    // Dynamically update Facebook ranges based on selected country and Kop Engine
-    LaunchedEffect(selectedCountryInfo.code, kopEngine) {
-        facebookRange = when (selectedCountryInfo.code) {
-            "BD" -> if (kopEngine == "Kop Engine 1") "017, 018, 019" else "013, 014, 015, 016"
-            "US" -> if (kopEngine == "Kop Engine 1") "212, 310, 415, 646" else "718, 917, 347, 516"
-            "GB" -> if (kopEngine == "Kop Engine 1") "074, 075, 077" else "078, 079, 073"
-            "IN" -> if (kopEngine == "Kop Engine 1") "98, 97, 96, 95" else "94, 93, 91, 90"
-            else -> if (kopEngine == "Kop Engine 1") "10, 11, 12, 13" else "14, 15, 16, 17"
+    // Auto-match incoming OTPs from all 3 Virtual Number panels to created accounts in real time!
+    LaunchedEffect(
+        unixState.activeNumbers,
+        unixState.uploadedNumbers,
+        vnState.provisionedNumbers,
+        vnState.broadcastFeed,
+        kop2State.provisionedNumbers,
+        kop2State.broadcastFeed
+    ) {
+        if (createdAccountsList.isEmpty()) return@LaunchedEffect
+        var updatedAny = false
+        var latestOtpToCopy: Pair<String, String>? = null
+
+        val updatedList = createdAccountsList.map { acc ->
+            if (!acc.otpCode.isNullOrEmpty()) return@map acc
+
+            // Check Panel 0 (UnixSmsManager)
+            val unixMatch = unixState.activeNumbers.firstOrNull {
+                !it.otpCode.isNullOrEmpty() && UnixSmsManager.isPhoneNumberMatch(it.number, acc.phoneNumber)
+            } ?: unixState.uploadedNumbers.firstOrNull {
+                !it.otpCode.isNullOrEmpty() && UnixSmsManager.isPhoneNumberMatch(it.number, acc.phoneNumber)
+            }?.let { up ->
+                com.example.data.model.ProvisionedNumber(
+                    number = up.number,
+                    country = up.countryName,
+                    operator = up.gateway,
+                    iso = up.countryCode,
+                    status = "success",
+                    otpCode = up.otpCode,
+                    otpMessage = up.otpMessage
+                )
+            }
+
+            // Check Panel 1 (VirtualNumberManager / Kop Engine 1)
+            val vnMatch = vnState.provisionedNumbers.firstOrNull {
+                !it.otpCode.isNullOrEmpty() && VirtualNumberManager.isPhoneNumberMatch(it.number, acc.phoneNumber)
+            }
+
+            // Check Panel 2 (KopEngine2Manager / Kop Engine 2)
+            val kop2Match = kop2State.provisionedNumbers.firstOrNull {
+                !it.otpCode.isNullOrEmpty() && KopEngine2Manager.isPhoneNumberMatch(it.number, acc.phoneNumber)
+            }
+
+            val matchedProv = unixMatch ?: vnMatch ?: kop2Match
+            if (matchedProv != null && !matchedProv.otpCode.isNullOrEmpty()) {
+                updatedAny = true
+                val code = matchedProv.otpCode!!
+                val fullMsg = matchedProv.otpMessage ?: "<#> $code is your Facebook confirmation code"
+                latestOtpToCopy = code to acc.phoneNumber
+                acc.copy(otpCode = code, smsFetched = fullMsg)
+            } else {
+                acc
+            }
+        }
+
+        if (updatedAny) {
+            createdAccountsList = updatedList
+            latestOtpToCopy?.let { (code, phone) ->
+                ClipboardHelper.copyToClipboard(context, code, "OTP Code")
+                VibrationHelper.vibrateSuccess(context)
+                OtpNotificationHelper.showOtpNotification(
+                    context = context,
+                    phoneNumber = phone,
+                    otpCode = code,
+                    fullMessage = "Facebook OTP: $code for $phone"
+                )
+            }
         }
     }
 
@@ -157,7 +253,8 @@ fun AccountSection(modifier: Modifier = Modifier) {
                 uploadedNumbersList = lines
                 uploadedNumbersCount = lines.size
                 uploadedFileName = uri.lastPathSegment ?: "numbers.txt"
-                Toast.makeText(context, "✓ Loaded $uploadedNumbersCount numbers from txt file", Toast.LENGTH_SHORT).show()
+                useTxtUploadMode = true
+                Toast.makeText(context, "✓ Loaded $uploadedNumbersCount numbers from $uploadedFileName", Toast.LENGTH_SHORT).show()
             } catch (e: Exception) {
                 Toast.makeText(context, "Failed to read file: ${e.message}", Toast.LENGTH_SHORT).show()
             }
@@ -169,8 +266,9 @@ fun AccountSection(modifier: Modifier = Modifier) {
             .fillMaxSize()
             .background(Color(0xFF070E17))
             .padding(14.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp)
+        verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
+        // HEADER BANNER
         item {
             Card(
                 colors = CardDefaults.cardColors(containerColor = Color(0xFF101926)),
@@ -181,47 +279,89 @@ fun AccountSection(modifier: Modifier = Modifier) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(16.dp),
+                        .padding(14.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Box(
                             modifier = Modifier
-                                .size(44.dp)
-                                .clip(CircleShape)
-                                .background(Brush.linearGradient(listOf(Color(0xFF00E676), Color(0xFF00A859)))),
+                                .size(42.dp)
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(Color(0xFF00E676).copy(alpha = 0.15f)),
                             contentAlignment = Alignment.Center
                         ) {
-                            Icon(Icons.Filled.Person, contentDescription = null, tint = Color.Black, modifier = Modifier.size(24.dp))
+                            Icon(
+                                imageVector = Icons.Default.ManageAccounts,
+                                contentDescription = "Account Engine",
+                                tint = Color(0xFF00E676),
+                                modifier = Modifier.size(24.dp)
+                            )
                         }
                         Spacer(modifier = Modifier.width(12.dp))
                         Column {
                             Text(
-                                text = "AUTOMATED ACCOUNT CREATION WORKSTATION",
-                                fontSize = 13.sp,
+                                text = "FB AUTO CREATE & CHECKER",
+                                fontSize = 15.sp,
                                 fontWeight = FontWeight.ExtraBold,
-                                color = Color(0xFF00E676),
+                                color = Color.White,
                                 letterSpacing = 0.5.sp
                             )
                             Text(
-                                text = "Termux-Grade Engine • Account Checker • Kop Engine 1,2 • OTP Auto-Copy",
+                                text = "Synced with Virtual Numbers • Multi-Thread • Auto OTP",
                                 fontSize = 10.5.sp,
-                                color = Color(0xFF90A4AE)
+                                color = Color(0xFF00E676)
                             )
                         }
+                    }
+
+                    Surface(
+                        color = Color(0xFF0D1B2A),
+                        shape = RoundedCornerShape(8.dp),
+                        border = BorderStroke(1.dp, Color(0xFF1E3A56))
+                    ) {
+                        Text(
+                            text = "Sync: ${syncCountdown}s",
+                            color = Color(0xFF38BDF8),
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                        )
                     }
                 }
             }
         }
 
-        if (!creationCompleted) {
-            // 1. Password Saved Option (All time fixed, editable)
+        if (!state.accountSectionEnabled) {
+            item {
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFF2B1216)),
+                    shape = RoundedCornerShape(14.dp),
+                    border = BorderStroke(1.dp, Color(0xFFFF5252)),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(
+                        modifier = Modifier.padding(20.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Icon(Icons.Default.Lock, contentDescription = "Disabled", tint = Color(0xFFFF5252), modifier = Modifier.size(36.dp))
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = "Account Creation Disabled by Admin",
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFFFF5252)
+                        )
+                    }
+                }
+            }
+        } else {
+            // 1. PASSWORD SAVED OPTION
             item {
                 Card(
                     colors = CardDefaults.cardColors(containerColor = Color(0xFF101926)),
                     shape = RoundedCornerShape(14.dp),
-                    border = BorderStroke(1.dp, Color(0xFF334155)),
+                    border = BorderStroke(1.dp, Color(0xFF1E293B)),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Column(modifier = Modifier.padding(14.dp)) {
@@ -230,22 +370,588 @@ fun AccountSection(modifier: Modifier = Modifier) {
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(Icons.Default.Lock, contentDescription = null, tint = Color(0xFF00E676), modifier = Modifier.size(18.dp))
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text(text = "1. Password Saved Option (Fixed & Editable)", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                            }
-                            TextButton(onClick = { isEditingPassword = !isEditingPassword }) {
-                                Text(text = if (isEditingPassword) "Done" else "Change / Edit", color = Color(0xFF00E676), fontSize = 11.sp)
-                            }
+                            Text(
+                                text = "1. Saved Account Password",
+                                color = Color.White,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                text = "Default Fixed: Okabye#570",
+                                color = Color(0xFF00E676),
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.SemiBold
+                            )
                         }
                         Spacer(modifier = Modifier.height(8.dp))
-                        if (isEditingPassword) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
                             OutlinedTextField(
                                 value = passwordText,
-                                onValueChange = { passwordText = it },
-                                label = { Text("Account Password", fontSize = 11.sp) },
+                                onValueChange = {
+                                    passwordText = it
+                                },
+                                enabled = isEditingPassword,
                                 singleLine = true,
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    focusedTextColor = Color.White,
+                                    unfocusedTextColor = Color.White,
+                                    disabledTextColor = Color(0xFF00E676),
+                                    focusedBorderColor = Color(0xFF00E676),
+                                    unfocusedBorderColor = Color(0xFF334155),
+                                    disabledBorderColor = Color(0xFF1E293B)
+                                ),
+                                modifier = Modifier.weight(1f)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            IconButton(
+                                onClick = {
+                                    ClipboardHelper.copyToClipboard(context, passwordText, "Password")
+                                    Toast.makeText(context, "Password Copied!", Toast.LENGTH_SHORT).show()
+                                }
+                            ) {
+                                Icon(Icons.Default.ContentCopy, contentDescription = "Copy Password", tint = Color(0xFF38BDF8))
+                            }
+                            IconButton(
+                                onClick = {
+                                    isEditingPassword = !isEditingPassword
+                                    if (!isEditingPassword) {
+                                        OverlayStateManager.setSavedPasswordText(context, passwordText)
+                                    }
+                                }
+                            ) {
+                                Icon(
+                                    imageVector = if (isEditingPassword) Icons.Default.Check else Icons.Default.Edit,
+                                    contentDescription = "Edit Password",
+                                    tint = if (isEditingPassword) Color(0xFF00E676) else Color(0xFF94A3B8)
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            // 2. PANEL & LIVE RANGE AUTO-SYNC WITH VIRTUAL NUMBERS SECTION
+            item {
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFF101926)),
+                    shape = RoundedCornerShape(14.dp),
+                    border = BorderStroke(1.dp, Color(0xFF1E3A56)),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.padding(14.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "2. Virtual Number Panel & Range (Auto-Synced)",
+                                color = Color.White,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Surface(
+                                color = Color(0xFF00E676).copy(alpha = 0.15f),
+                                shape = RoundedCornerShape(6.dp)
+                            ) {
+                                Text(
+                                    text = "LIVE SYNC",
+                                    color = Color(0xFF00E676),
+                                    fontSize = 9.sp,
+                                    fontWeight = FontWeight.ExtraBold,
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        // Panel Selector Row (Synced directly with VirtualNumberManager.selectedPanel)
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(5.dp)
+                        ) {
+                            // Panel 0: Premium Numbers
+                            val isPrem = !useTxtUploadMode && selectedPanelIndex == 0
+                            Button(
+                                onClick = {
+                                    useTxtUploadMode = false
+                                    VirtualNumberManager.setSelectedPanel(0)
+                                },
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = if (isPrem) Color(0xFF0284C7) else Color(0xFF1E293B)
+                                ),
+                                shape = RoundedCornerShape(8.dp),
+                                contentPadding = PaddingValues(horizontal = 4.dp, vertical = 6.dp),
+                                modifier = Modifier.weight(1.1f)
+                            ) {
+                                Text(
+                                    text = "Premium",
+                                    color = Color.White,
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    maxLines = 1
+                                )
+                            }
+
+                            // Panel 1: Kop Engine 1 (Api Number)
+                            val isKop1 = !useTxtUploadMode && selectedPanelIndex == 1
+                            Button(
+                                onClick = {
+                                    useTxtUploadMode = false
+                                    VirtualNumberManager.setSelectedPanel(1)
+                                    VirtualNumberManager.fetchActiveRanges()
+                                },
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = if (isKop1) Color(0xFF10B981) else Color(0xFF1E293B)
+                                ),
+                                shape = RoundedCornerShape(8.dp),
+                                contentPadding = PaddingValues(horizontal = 4.dp, vertical = 6.dp),
+                                modifier = Modifier.weight(1.15f)
+                            ) {
+                                Text(
+                                    text = "Kop Engine 1",
+                                    color = if (isKop1) Color.Black else Color.White,
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    maxLines = 1
+                                )
+                            }
+
+                            // Panel 2: Kop Engine 2 (Api Number)
+                            val isKop2 = !useTxtUploadMode && selectedPanelIndex == 2
+                            Button(
+                                onClick = {
+                                    useTxtUploadMode = false
+                                    VirtualNumberManager.setSelectedPanel(2)
+                                    KopEngine2Manager.fetchActiveRanges()
+                                },
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = if (isKop2) Color(0xFF06B6D4) else Color(0xFF1E293B)
+                                ),
+                                shape = RoundedCornerShape(8.dp),
+                                contentPadding = PaddingValues(horizontal = 4.dp, vertical = 6.dp),
+                                modifier = Modifier.weight(1.15f)
+                            ) {
+                                Text(
+                                    text = "Kop Engine 2",
+                                    color = if (isKop2) Color.Black else Color.White,
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    maxLines = 1
+                                )
+                            }
+
+                            // Option 4: Txt File
+                            Button(
+                                onClick = {
+                                    if (state.uploadNumberTxtLocked) {
+                                        Toast.makeText(context, "🔒 Upload Txt is locked by Admin.", Toast.LENGTH_SHORT).show()
+                                    } else {
+                                        txtFileLauncher.launch("text/plain")
+                                    }
+                                },
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = if (useTxtUploadMode) Color(0xFF00E676) else Color(0xFF1E293B)
+                                ),
+                                shape = RoundedCornerShape(8.dp),
+                                contentPadding = PaddingValues(horizontal = 4.dp, vertical = 6.dp),
+                                modifier = Modifier.weight(0.9f)
+                            ) {
+                                Text(
+                                    text = if (state.uploadNumberTxtLocked) "🔒 Txt" else "📁 Txt",
+                                    color = if (useTxtUploadMode) Color.Black else Color.White,
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    maxLines = 1
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(10.dp))
+
+                        if (useTxtUploadMode) {
+                            Surface(
+                                color = Color(0xFF070E17),
+                                shape = RoundedCornerShape(10.dp),
+                                border = BorderStroke(1.dp, Color(0xFF00E676)),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(12.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column {
+                                        Text(
+                                            text = "📁 Active Txt File: ${uploadedFileName ?: "numbers.txt"}",
+                                            color = Color(0xFF00E676),
+                                            fontSize = 12.sp,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                        Text(
+                                            text = "$uploadedNumbersCount phone numbers loaded for account creation",
+                                            color = Color(0xFF94A3B8),
+                                            fontSize = 10.5.sp
+                                        )
+                                    }
+                                    TextButton(onClick = { txtFileLauncher.launch("text/plain") }) {
+                                        Text("Change", color = Color(0xFF38BDF8), fontSize = 11.sp)
+                                    }
+                                }
+                            }
+                        } else if (selectedPanelIndex == 0) {
+                            // PANEL 0: PREMIUM NUMBERS (UnixSmsManager)
+                            val selectedCountryCode = unixState.selectedCountry
+                            val availablePoolCount = unixState.uploadedNumbers.count {
+                                !it.isUsed && (selectedCountryCode == "ALL" || it.countryCode.equals(selectedCountryCode, ignoreCase = true))
+                            }
+                            val activeTakenCount = unixState.activeNumbers.size
+
+                            Surface(
+                                color = Color(0xFF0B141E),
+                                shape = RoundedCornerShape(10.dp),
+                                border = BorderStroke(1.dp, Color(0xFF0284C7)),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Column(modifier = Modifier.padding(12.dp)) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Box(modifier = Modifier.size(8.dp).clip(CircleShape).background(Color(0xFF38BDF8)))
+                                            Spacer(modifier = Modifier.width(6.dp))
+                                            Text(
+                                                text = "ACTIVE PANEL: PREMIUM NUMBERS",
+                                                color = Color(0xFF38BDF8),
+                                                fontSize = 11.5.sp,
+                                                fontWeight = FontWeight.ExtraBold
+                                            )
+                                        }
+                                        Surface(
+                                            color = Color(0xFF00E676).copy(alpha = 0.2f),
+                                            shape = RoundedCornerShape(4.dp)
+                                        ) {
+                                            Text(
+                                                text = "Pool: $availablePoolCount | Active: $activeTakenCount",
+                                                color = Color(0xFF00E676),
+                                                fontSize = 9.5.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                            )
+                                        }
+                                    }
+
+                                    Spacer(modifier = Modifier.height(8.dp))
+
+                                    // Country Selector synced with UnixSmsManager.selectedCountry
+                                    OutlinedCard(
+                                        onClick = { showCountryPicker = true },
+                                        colors = CardDefaults.outlinedCardColors(containerColor = Color(0xFF070E17)),
+                                        border = BorderStroke(1.dp, Color(0xFF1E3A56)),
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 9.dp),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.SpaceBetween
+                                        ) {
+                                            val cInfo = AllCountriesProvider.allCountries.firstOrNull {
+                                                it.code.equals(selectedCountryCode, ignoreCase = true)
+                                            }
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                Text(text = cInfo?.flag ?: "🌐", fontSize = 18.sp)
+                                                Spacer(modifier = Modifier.width(8.dp))
+                                                Column {
+                                                    Text(text = "Selected Country (Synced with Virtual Numbers):", fontSize = 9.5.sp, color = Color(0xFF90A4AE))
+                                                    Text(
+                                                        text = if (selectedCountryCode == "ALL") "ALL COUNTRIES (Auto Pool)" else "${cInfo?.name ?: selectedCountryCode} (${cInfo?.dialCode ?: ""})",
+                                                        fontSize = 12.sp,
+                                                        fontWeight = FontWeight.Bold,
+                                                        color = Color.White
+                                                    )
+                                                }
+                                            }
+                                            Icon(Icons.Default.ArrowDropDown, contentDescription = null, tint = Color(0xFF38BDF8))
+                                        }
+                                    }
+                                }
+                            }
+                        } else if (selectedPanelIndex == 1) {
+                            // PANEL 1: KOP ENGINE 1 (Zenex Network Live Ranges & Target Range)
+                            Surface(
+                                color = Color(0xFF0B141E),
+                                shape = RoundedCornerShape(10.dp),
+                                border = BorderStroke(1.dp, Color(0xFF10B981)),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Column(modifier = Modifier.padding(12.dp)) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Box(modifier = Modifier.size(8.dp).clip(CircleShape).background(Color(0xFF10B981)))
+                                            Spacer(modifier = Modifier.width(6.dp))
+                                            Text(
+                                                text = "KOP ENGINE 1 (API NUMBER) — LIVE RANGE",
+                                                color = Color(0xFF34D399),
+                                                fontSize = 11.sp,
+                                                fontWeight = FontWeight.ExtraBold
+                                            )
+                                        }
+                                        Text(
+                                            text = "Active Numbers: ${vnState.provisionedNumbers.size}",
+                                            color = Color(0xFF81D4FA),
+                                            fontSize = 10.sp,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                    }
+
+                                    Spacer(modifier = Modifier.height(8.dp))
+
+                                    // Target Range Input synced with VirtualNumberManager.state.targetRange
+                                    OutlinedTextField(
+                                        value = vnState.targetRange,
+                                        onValueChange = { VirtualNumberManager.setTargetRange(it) },
+                                        label = { Text("Target Range (Synced with Virtual Numbers Kop 1)", fontSize = 10.sp) },
+                                        placeholder = { Text("e.g. 237627XXX", fontSize = 11.sp) },
+                                        singleLine = true,
+                                        colors = OutlinedTextFieldDefaults.colors(
+                                            focusedTextColor = Color.White,
+                                            unfocusedTextColor = Color.White,
+                                            focusedBorderColor = Color(0xFF10B981),
+                                            unfocusedBorderColor = Color(0xFF1E3A56)
+                                        ),
+                                        modifier = Modifier.fillMaxWidth()
+                                    )
+
+                                    if (vnState.activeRanges.isNotEmpty()) {
+                                        Spacer(modifier = Modifier.height(8.dp))
+                                        Text(
+                                            text = "Live Active Ranges from Virtual Numbers (ট্যাপ করে সিলেক্ট করুন):",
+                                            color = Color(0xFF94A3B8),
+                                            fontSize = 10.sp,
+                                            fontWeight = FontWeight.SemiBold
+                                        )
+                                        Spacer(modifier = Modifier.height(5.dp))
+                                        FlowRow(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                            verticalArrangement = Arrangement.spacedBy(5.dp)
+                                        ) {
+                                            vnState.activeRanges.take(8).forEach { item ->
+                                                val isSelected = vnState.targetRange == item.range
+                                                Surface(
+                                                    color = if (isSelected) Color(0xFF10B981).copy(alpha = 0.25f) else Color(0xFF152232),
+                                                    shape = RoundedCornerShape(6.dp),
+                                                    border = BorderStroke(
+                                                        1.dp,
+                                                        if (isSelected) Color(0xFF10B981) else Color(0xFF1E3A56)
+                                                    ),
+                                                    modifier = Modifier.clickable {
+                                                        VirtualNumberManager.setTargetRange(item.range)
+                                                        Toast.makeText(context, "✓ Kop 1 Range Set: ${item.range}", Toast.LENGTH_SHORT).show()
+                                                    }
+                                                ) {
+                                                    Text(
+                                                        text = "${item.range} (${item.service}${if (item.hits > 0) " • ${item.hits}" else ""})",
+                                                        color = if (isSelected) Color(0xFF34D399) else Color.White,
+                                                        fontSize = 10.sp,
+                                                        fontWeight = FontWeight.Bold,
+                                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        } else {
+                            // PANEL 2: KOP ENGINE 2 (MK Network v3 Live Radar Ranges & Target Range)
+                            Surface(
+                                color = Color(0xFF0B141E),
+                                shape = RoundedCornerShape(10.dp),
+                                border = BorderStroke(1.dp, Color(0xFF06B6D4)),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Column(modifier = Modifier.padding(12.dp)) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Box(modifier = Modifier.size(8.dp).clip(CircleShape).background(Color(0xFF06B6D4)))
+                                            Spacer(modifier = Modifier.width(6.dp))
+                                            Text(
+                                                text = "KOP ENGINE 2 (MK API) — LIVE RADAR RANGE",
+                                                color = Color(0xFF38BDF8),
+                                                fontSize = 11.sp,
+                                                fontWeight = FontWeight.ExtraBold
+                                            )
+                                        }
+                                        Text(
+                                            text = "Active Numbers: ${kop2State.provisionedNumbers.size}",
+                                            color = Color(0xFF38BDF8),
+                                            fontSize = 10.sp,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                    }
+
+                                    Spacer(modifier = Modifier.height(8.dp))
+
+                                    // Target Range Input synced with KopEngine2Manager.state.targetRange
+                                    OutlinedTextField(
+                                        value = kop2State.targetRange,
+                                        onValueChange = { KopEngine2Manager.setTargetRange(it) },
+                                        label = { Text("Target Range (Synced with Virtual Numbers Kop 2)", fontSize = 10.sp) },
+                                        placeholder = { Text("e.g. 260950XXX", fontSize = 11.sp) },
+                                        singleLine = true,
+                                        colors = OutlinedTextFieldDefaults.colors(
+                                            focusedTextColor = Color.White,
+                                            unfocusedTextColor = Color.White,
+                                            focusedBorderColor = Color(0xFF06B6D4),
+                                            unfocusedBorderColor = Color(0xFF1E3A56)
+                                        ),
+                                        modifier = Modifier.fillMaxWidth()
+                                    )
+
+                                    if (kop2State.activeRanges.isNotEmpty()) {
+                                        Spacer(modifier = Modifier.height(8.dp))
+                                        Text(
+                                            text = "Live Active Signals / Ranges from Kop Engine 2 (ট্যাপ করে সিলেক্ট করুন):",
+                                            color = Color(0xFF94A3B8),
+                                            fontSize = 10.sp,
+                                            fontWeight = FontWeight.SemiBold
+                                        )
+                                        Spacer(modifier = Modifier.height(5.dp))
+                                        FlowRow(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                            verticalArrangement = Arrangement.spacedBy(5.dp)
+                                        ) {
+                                            kop2State.activeRanges.take(8).forEach { item ->
+                                                val isSelected = kop2State.targetRange == item.range
+                                                Surface(
+                                                    color = if (isSelected) Color(0xFF0284C7).copy(alpha = 0.35f) else Color(0xFF152232),
+                                                    shape = RoundedCornerShape(6.dp),
+                                                    border = BorderStroke(
+                                                        1.dp,
+                                                        if (isSelected) Color(0xFF38BDF8) else Color(0xFF1E3A56)
+                                                    ),
+                                                    modifier = Modifier.clickable {
+                                                        KopEngine2Manager.setTargetRange(item.range)
+                                                        Toast.makeText(context, "✓ Kop 2 Range Set: ${item.range}", Toast.LENGTH_SHORT).show()
+                                                    }
+                                                ) {
+                                                    val label = if (item.hits > 0) "${item.range} (${item.service} • ${item.hits})" else "${item.range} (${item.service})"
+                                                    Text(
+                                                        text = label,
+                                                        color = if (isSelected) Color.White else Color(0xFFCBD5E1),
+                                                        fontSize = 10.sp,
+                                                        fontWeight = FontWeight.Bold,
+                                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // 3. USER-AGENT ENGINE (KATANA / LITE / MBASIC / AUTO ROTATE / CUSTOM)
+            item {
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFF101926)),
+                    shape = RoundedCornerShape(14.dp),
+                    border = BorderStroke(1.dp, Color(0xFF1E293B)),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.padding(14.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "3. User-Agent (UA) Fingerprint Engine",
+                                color = Color.White,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Surface(
+                                color = Color(0xFF0D1B2A),
+                                shape = RoundedCornerShape(6.dp),
+                                border = BorderStroke(1.dp, Color(0xFF38BDF8).copy(alpha = 0.5f)),
+                                modifier = Modifier.clickable {
+                                    currentPreviewUa = generateRealisticUserAgent(uaMode)
+                                    Toast.makeText(context, "🔄 New User-Agent Generated!", Toast.LENGTH_SHORT).show()
+                                }
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(Icons.Default.Refresh, contentDescription = null, tint = Color(0xFF38BDF8), modifier = Modifier.size(12.dp))
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text("Rotate UA", color = Color(0xFF38BDF8), fontSize = 9.5.sp, fontWeight = FontWeight.Bold)
+                                }
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        val uaModes = listOf(
+                            "AUTO_ROTATE" to "🔄 Auto Rotate (Per Thread)",
+                            "FB_KATANA" to "📱 FB Katana (FB4A)",
+                            "FB_LITE" to "⚡ FB Lite (Dalvik)",
+                            "CHROME_MBASIC" to "🌐 Chrome mbasic",
+                            "CUSTOM_UA" to "✏️ Custom UA"
+                        )
+
+                        FlowRow(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            uaModes.forEach { (key, label) ->
+                                val isSel = uaMode == key
+                                Surface(
+                                    color = if (isSel) Color(0xFF00E676).copy(alpha = 0.2f) else Color(0xFF152232),
+                                    shape = RoundedCornerShape(8.dp),
+                                    border = BorderStroke(1.dp, if (isSel) Color(0xFF00E676) else Color(0xFF334155)),
+                                    modifier = Modifier.clickable { uaMode = key }
+                                ) {
+                                    Text(
+                                        text = label,
+                                        color = if (isSel) Color(0xFF00E676) else Color.White,
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        modifier = Modifier.padding(horizontal = 9.dp, vertical = 5.dp)
+                                    )
+                                }
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        if (uaMode == "CUSTOM_UA") {
+                            OutlinedTextField(
+                                value = customUaText,
+                                onValueChange = { customUaText = it },
+                                label = { Text("Enter Custom User-Agent String", fontSize = 10.sp) },
+                                placeholder = { Text("Mozilla/5.0 (Linux; Android 14...) [FBAN/FB4A...]", fontSize = 10.sp) },
                                 colors = OutlinedTextFieldDefaults.colors(
                                     focusedTextColor = Color.White,
                                     unfocusedTextColor = Color.White,
@@ -262,452 +968,27 @@ fun AccountSection(modifier: Modifier = Modifier) {
                                 modifier = Modifier.fillMaxWidth()
                             ) {
                                 Row(
-                                    modifier = Modifier.padding(12.dp),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Text(text = passwordText, color = Color(0xFF00E676), fontSize = 14.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
-                                    IconButton(onClick = {
-                                        ClipboardHelper.copyToClipboard(context, passwordText, "Password")
-                                        Toast.makeText(context, "✓ Password copied", Toast.LENGTH_SHORT).show()
-                                    }, modifier = Modifier.size(24.dp)) {
-                                        Icon(Icons.Default.ContentCopy, contentDescription = "Copy", tint = Color(0xFF90A4AE), modifier = Modifier.size(16.dp))
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-            // 2. Number Source (Premium Numbers Panel, Live Range, or Txt Upload)
-            item {
-                Card(
-                    colors = CardDefaults.cardColors(containerColor = Color(0xFF101926)),
-                    shape = RoundedCornerShape(14.dp),
-                    border = BorderStroke(1.dp, Color(0xFF334155)),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Column(modifier = Modifier.padding(14.dp)) {
-                        Text(text = "2. Number Source & Panel Selection", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                        Spacer(modifier = Modifier.height(8.dp))
-                        // Panel Selection matching Virtual Numbers section exactly
-                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-                            // Panel 0: Premium Numbers
-                            Button(
-                                onClick = { 
-                                    sourceMode = "PREMIUM_NUMBERS"
-                                    VirtualNumberManager.setSelectedPanel(0)
-                                },
-                                colors = ButtonDefaults.buttonColors(
-                                    containerColor = if (sourceMode == "PREMIUM_NUMBERS") Color(0xFF00E676) else Color(0xFF1E293B)
-                                ),
-                                shape = RoundedCornerShape(8.dp),
-                                contentPadding = PaddingValues(horizontal = 4.dp, vertical = 6.dp),
-                                modifier = Modifier.weight(1.1f)
-                            ) {
-                                Icon(Icons.Default.Star, contentDescription = null, tint = if (sourceMode == "PREMIUM_NUMBERS") Color.Black else Color(0xFFFFD54F), modifier = Modifier.size(14.dp))
-                                Spacer(modifier = Modifier.width(3.dp))
-                                Text(text = "Premium", color = if (sourceMode == "PREMIUM_NUMBERS") Color.Black else Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold)
-                            }
-                            // Panel 1: Kop Engine 1 (Api Number)
-                            Button(
-                                onClick = { 
-                                    sourceMode = "KOP_ENGINE_1"
-                                    kopEngine = "Kop Engine 1"
-                                    VirtualNumberManager.setSelectedPanel(1)
-                                    if (selectedCountryInfo.code == "BD") {
-                                        facebookRange = "017, 018, 019"
-                                    }
-                                },
-                                colors = ButtonDefaults.buttonColors(
-                                    containerColor = if (sourceMode == "KOP_ENGINE_1") Color(0xFF00E676) else Color(0xFF1E293B)
-                                ),
-                                shape = RoundedCornerShape(8.dp),
-                                contentPadding = PaddingValues(horizontal = 4.dp, vertical = 6.dp),
-                                modifier = Modifier.weight(1.1f)
-                            ) {
-                                Icon(Icons.Default.Bolt, contentDescription = null, tint = if (sourceMode == "KOP_ENGINE_1") Color.Black else Color(0xFF38BDF8), modifier = Modifier.size(14.dp))
-                                Spacer(modifier = Modifier.width(3.dp))
-                                Text(text = "Kop Eng 1", color = if (sourceMode == "KOP_ENGINE_1") Color.Black else Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold)
-                            }
-                            // Panel 2: Kop Engine 2 (Api Number)
-                            Button(
-                                onClick = { 
-                                    sourceMode = "KOP_ENGINE_2"
-                                    kopEngine = "Kop Engine 2"
-                                    VirtualNumberManager.setSelectedPanel(2)
-                                    if (selectedCountryInfo.code == "BD") {
-                                        facebookRange = "013, 014, 016, 015"
-                                    }
-                                },
-                                colors = ButtonDefaults.buttonColors(
-                                    containerColor = if (sourceMode == "KOP_ENGINE_2") Color(0xFF00E676) else Color(0xFF1E293B)
-                                ),
-                                shape = RoundedCornerShape(8.dp),
-                                contentPadding = PaddingValues(horizontal = 4.dp, vertical = 6.dp),
-                                modifier = Modifier.weight(1.1f)
-                            ) {
-                                Icon(Icons.Default.Sensors, contentDescription = null, tint = if (sourceMode == "KOP_ENGINE_2") Color.Black else Color(0xFFA78BFA), modifier = Modifier.size(14.dp))
-                                Spacer(modifier = Modifier.width(3.dp))
-                                Text(text = "Kop Eng 2", color = if (sourceMode == "KOP_ENGINE_2") Color.Black else Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold)
-                            }
-                            // Option 4: Txt File Upload
-                            Button(
-                                onClick = {
-                                    if (state.uploadNumberTxtLocked) {
-                                        Toast.makeText(context, "🔒 Upload Number Txt is locked by Admin. Please ask Admin to unlock.", Toast.LENGTH_LONG).show()
-                                    } else {
-                                        sourceMode = "TXT_UPLOAD"
-                                        txtFileLauncher.launch("text/plain")
-                                    }
-                                },
-                                colors = ButtonDefaults.buttonColors(
-                                    containerColor = if (sourceMode == "TXT_UPLOAD") Color(0xFF00E676) else Color(0xFF1E293B)
-                                ),
-                                shape = RoundedCornerShape(8.dp),
-                                contentPadding = PaddingValues(horizontal = 4.dp, vertical = 6.dp),
-                                modifier = Modifier.weight(0.95f)
-                            ) {
-                                Icon(Icons.Default.UploadFile, contentDescription = null, tint = if (sourceMode == "TXT_UPLOAD") Color.Black else Color.White, modifier = Modifier.size(14.dp))
-                                Spacer(modifier = Modifier.width(3.dp))
-                                Text(text = if (state.uploadNumberTxtLocked) "🔒 Lock" else "Txt File", color = if (sourceMode == "TXT_UPLOAD") Color.Black else Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold)
-                            }
-                        }
-
-                        if (sourceMode == "TXT_UPLOAD" && uploadedFileName != null) {
-                            Spacer(modifier = Modifier.height(8.dp))
-                            Text(text = "📁 File: $uploadedFileName ($uploadedNumbersCount numbers ready)", fontSize = 11.sp, color = Color(0xFF00E676))
-                        }
-
-                        // Country Selector (for Premium Numbers, Kop Engine 1, and Kop Engine 2)
-                        if (sourceMode != "TXT_UPLOAD") {
-                            Spacer(modifier = Modifier.height(10.dp))
-                            OutlinedCard(
-                                onClick = { showCountryPicker = true },
-                                colors = CardDefaults.outlinedCardColors(containerColor = Color(0xFF070E17)),
-                                border = BorderStroke(1.dp, Color(0xFF00E676)),
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                Row(
-                                    modifier = Modifier.padding(12.dp),
+                                    modifier = Modifier.padding(9.dp),
                                     verticalAlignment = Alignment.CenterVertically,
                                     horizontalArrangement = Arrangement.SpaceBetween
                                 ) {
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Text(text = selectedCountryInfo.flag, fontSize = 20.sp)
-                                        Spacer(modifier = Modifier.width(10.dp))
-                                        Column {
-                                            Text(text = "Country Selection (${when(sourceMode) { "PREMIUM_NUMBERS" -> "Premium Panel"; "KOP_ENGINE_1" -> "Kop Engine 1"; else -> "Kop Engine 2" }})", fontSize = 10.sp, color = Color(0xFF90A4AE))
-                                            Text(text = "${selectedCountryInfo.name} (${selectedCountryInfo.dialCode})", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color.White)
-                                        }
-                                    }
-                                    Icon(Icons.Default.ArrowDropDown, contentDescription = "Select Country", tint = Color(0xFF00E676))
-                                }
-                            }
-                        }
-
-                        // 1. PANEL: PREMIUM NUMBERS (FAST 1s)
-                        if (sourceMode == "PREMIUM_NUMBERS") {
-                            Spacer(modifier = Modifier.height(10.dp))
-                            Card(
-                                colors = CardDefaults.cardColors(containerColor = Color(0xFF070E17)),
-                                border = BorderStroke(1.dp, Color(0xFF0284C7)),
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                Column(modifier = Modifier.padding(12.dp)) {
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.SpaceBetween,
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Row(verticalAlignment = Alignment.CenterVertically) {
-                                            Box(modifier = Modifier.size(8.dp).clip(CircleShape).background(Color(0xFF38BDF8)))
-                                            Spacer(modifier = Modifier.width(6.dp))
-                                            Text(text = "PANEL: PREMIUM NUMBERS", fontSize = 11.5.sp, fontWeight = FontWeight.ExtraBold, color = Color(0xFF38BDF8))
-                                        }
-                                        Surface(color = Color(0xFF00E676).copy(alpha = 0.2f), shape = RoundedCornerShape(4.dp)) {
-                                            Text(text = "FAST 1s", color = Color(0xFF00E676), fontSize = 9.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp))
-                                        }
-                                    }
-                                    Spacer(modifier = Modifier.height(8.dp))
-                                    val unixState = UnixSmsManager.state.collectAsStateWithLifecycle().value
-                                    val poolCount = unixState.uploadedNumbers.count { it.countryCode.equals(selectedCountryInfo.code, ignoreCase = true) }
                                     Text(
-                                        text = "⚡ Uploaded Pool for ${selectedCountryInfo.name}: $poolCount numbers ready",
-                                        fontSize = 11.sp,
-                                        fontWeight = FontWeight.SemiBold,
-                                        color = if (poolCount > 0) Color(0xFF00E676) else Color(0xFFFFD54F)
-                                    )
-                                    Spacer(modifier = Modifier.height(4.dp))
-                                    Text(
-                                        text = "নম্বর তৈরি করার সময় স্বয়ংক্রিয়ভাবে প্রিমিয়াম প্যানেলের এক্টিভ নম্বর ব্যবহার হবে এবং ফুল এসএমএস সাথে সাথে দেখাবে।",
-                                        fontSize = 10.sp,
-                                        color = Color(0xFF90A4AE)
-                                    )
-                                }
-                            }
-                        }
-
-                        // 2. PANEL: KOP ENGINE 1 or KOP ENGINE 2 (LIVE FACEBOOK RADAR)
-                        if (sourceMode == "KOP_ENGINE_1" || sourceMode == "KOP_ENGINE_2") {
-                            val isKop1 = sourceMode == "KOP_ENGINE_1"
-                            Spacer(modifier = Modifier.height(10.dp))
-                            // Range mode selector: Live Range vs Custom Range
-                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                OutlinedButton(
-                                    onClick = { rangeMode = "LIVE_RANGE" },
-                                    colors = ButtonDefaults.outlinedButtonColors(containerColor = if (rangeMode == "LIVE_RANGE") Color(0xFF00E676).copy(alpha = 0.2f) else Color.Transparent),
-                                    border = BorderStroke(1.dp, if (rangeMode == "LIVE_RANGE") Color(0xFF00E676) else Color(0xFF334155)),
-                                    modifier = Modifier.weight(1f)
-                                ) {
-                                    Text(text = "Live Facebook Range", fontSize = 11.sp, color = if (rangeMode == "LIVE_RANGE") Color(0xFF00E676) else Color.White)
-                                }
-                                OutlinedButton(
-                                    onClick = { rangeMode = "CUSTOM_RANGE" },
-                                    colors = ButtonDefaults.outlinedButtonColors(containerColor = if (rangeMode == "CUSTOM_RANGE") Color(0xFF00E676).copy(alpha = 0.2f) else Color.Transparent),
-                                    border = BorderStroke(1.dp, if (rangeMode == "CUSTOM_RANGE") Color(0xFF00E676) else Color(0xFF334155)),
-                                    modifier = Modifier.weight(1f)
-                                ) {
-                                    Text(text = "Custom Range", fontSize = 11.sp, color = if (rangeMode == "CUSTOM_RANGE") Color(0xFF00E676) else Color.White)
-                                }
-                            }
-
-                            Spacer(modifier = Modifier.height(8.dp))
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Checkbox(
-                                    checked = useZenexFilter,
-                                    onCheckedChange = { useZenexFilter = it },
-                                    colors = CheckboxDefaults.colors(checkedColor = Color(0xFF00E676))
-                                )
-                                Text(text = "Auto-filter dead/taken numbers (clean pool)", color = Color(0xFF90A4AE), fontSize = 11.sp)
-                            }
-                            Spacer(modifier = Modifier.height(6.dp))
-
-                            Card(
-                                colors = CardDefaults.cardColors(containerColor = Color(0xFF070E17)),
-                                border = BorderStroke(1.dp, if (isKop1) Color(0xFF1E3A56) else Color(0xFF3B2D54)),
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                Column(modifier = Modifier.padding(12.dp)) {
-                                    // Live Header with Pulsing Dot & Auto Sync Countdown (Styled like Virtual Numbers section)
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.SpaceBetween,
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Row(verticalAlignment = Alignment.CenterVertically) {
-                                            Box(
-                                                modifier = Modifier
-                                                    .size(8.dp)
-                                                    .clip(CircleShape)
-                                                    .background(if (isKop1) Color(0xFF34D399) else Color(0xFFA78BFA))
-                                            )
-                                            Spacer(modifier = Modifier.width(6.dp))
-                                            Text(
-                                                text = if (isKop1) "LIVE PANEL: KOP ENGINE 1 (NETWORK)" else "LIVE PANEL: KOP ENGINE 2 (API NUMBER)",
-                                                fontSize = 11.sp,
-                                                fontWeight = FontWeight.ExtraBold,
-                                                color = if (isKop1) Color(0xFF34D399) else Color(0xFFA78BFA),
-                                                letterSpacing = 0.5.sp
-                                            )
-                                        }
-
-                                        Surface(
-                                            color = Color(0xFF0D1B2A),
-                                            shape = RoundedCornerShape(8.dp),
-                                            border = BorderStroke(1.dp, Color(0xFF1A3959)),
-                                            modifier = Modifier.clickable {
-                                                syncCountdown = 3
-                                                VirtualNumberManager.fetchActiveRanges()
-                                            }
-                                        ) {
-                                            Row(
-                                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
-                                                verticalAlignment = Alignment.CenterVertically
-                                            ) {
-                                                Icon(
-                                                    imageVector = Icons.Default.Refresh,
-                                                    contentDescription = "Sync",
-                                                    tint = Color(0xFF81D4FA),
-                                                    modifier = Modifier.size(13.dp)
-                                                )
-                                                Spacer(modifier = Modifier.width(4.dp))
-                                                Text(
-                                                    text = "Auto Sync: ${syncCountdown}s",
-                                                    color = Color(0xFFB0BEC5),
-                                                    fontSize = 10.sp,
-                                                    fontWeight = FontWeight.SemiBold
-                                                )
-                                            }
-                                        }
-                                    }
-
-                                    Spacer(modifier = Modifier.height(10.dp))
-
-                                    // Active Suggestions Chips (Kop Engine 1: 017 GP, 018 Robi, 019 BL | Kop Engine 2: 013 Skitto, 014 BL New, 016 Airtel, 015 Teletalk)
-                                    Text(
-                                        text = "Active Suggestions Chips (ফেসবুকের টপ রেঞ্জ):",
-                                        color = Color(0xFF78909C),
-                                        fontSize = 10.sp,
-                                        fontWeight = FontWeight.SemiBold
-                                    )
-                                    Spacer(modifier = Modifier.height(6.dp))
-
-                                    val activeChips = if (selectedCountryInfo.code == "BD") {
-                                        if (isKop1) {
-                                            listOf("017 (GP)", "018 (Robi)", "019 (BL)")
-                                        } else {
-                                            listOf("013 (Skitto)", "014 (BL New)", "016 (Airtel)", "015 (Teletalk)")
-                                        }
-                                    } else {
-                                        listOf("Range A (${selectedCountryInfo.code})", "Range B (${selectedCountryInfo.code})")
-                                    }
-
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                                    ) {
-                                        activeChips.forEach { chip ->
-                                            val rawPrefix = chip.substringBefore(" ")
-                                            val isSelected = facebookRange.contains(rawPrefix)
-                                            Surface(
-                                                color = if (isSelected) (if (isKop1) Color(0xFF0091EA).copy(alpha = 0.25f) else Color(0xFF8B5CF6).copy(alpha = 0.25f)) else Color(0xFF192C3D),
-                                                shape = RoundedCornerShape(6.dp),
-                                                border = BorderStroke(1.dp, if (isSelected) (if (isKop1) Color(0xFF00B0FF) else Color(0xFFA78BFA)) else Color(0xFF1E3A56)),
-                                                modifier = Modifier
-                                                    .weight(1f)
-                                                    .clickable {
-                                                        facebookRange = rawPrefix
-                                                        ClipboardHelper.copyToClipboard(context, rawPrefix, "Range")
-                                                        Toast.makeText(context, "✓ সিলেক্ট হয়েছে: $chip", Toast.LENGTH_SHORT).show()
-                                                    }
-                                            ) {
-                                                Column(
-                                                    modifier = Modifier.padding(vertical = 6.dp, horizontal = 4.dp),
-                                                    horizontalAlignment = Alignment.CenterHorizontally
-                                                ) {
-                                                    Text(
-                                                        text = chip,
-                                                        color = if (isSelected) (if (isKop1) Color(0xFF81D4FA) else Color(0xFFC4B5FD)) else Color.White,
-                                                        fontSize = 9.5.sp,
-                                                        fontWeight = FontWeight.Bold,
-                                                        maxLines = 1
-                                                    )
-                                                }
-                                            }
-                                        }
-                                    }
-
-                                    Spacer(modifier = Modifier.height(10.dp))
-
-                                    // Top Hit Ranges List (matching Virtual Numbers Section Table)
-                                    Text(
-                                        text = "TOP HIT RANGES (LAST 30M) — LIVE RADAR:",
-                                        color = Color(0xFF78909C),
+                                        text = currentPreviewUa,
+                                        color = Color(0xFF94A3B8),
                                         fontSize = 9.5.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        letterSpacing = 0.5.sp
+                                        fontFamily = FontFamily.Monospace,
+                                        maxLines = 2,
+                                        overflow = TextOverflow.Ellipsis,
+                                        modifier = Modifier.weight(1f)
                                     )
-                                    Spacer(modifier = Modifier.height(6.dp))
-
-                                    val radarRanges = if (isKop1) {
-                                        listOf(
-                                            Triple("017 / GP", "148 hits", "99% Success"),
-                                            Triple("018 / Robi", "112 hits", "98% Success"),
-                                            Triple("019 / BL", "89 hits", "96% Success")
-                                        )
-                                    } else {
-                                        listOf(
-                                            Triple("013 / Skitto", "124 hits", "99% Success"),
-                                            Triple("014 / BL New", "96 hits", "97% Success"),
-                                            Triple("016 / Airtel", "88 hits", "96% Success"),
-                                            Triple("015 / Teletalk", "72 hits", "95% Success")
-                                        )
-                                    }
-
-                                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                                        radarRanges.forEach { (rName, hits, success) ->
-                                            val rPrefix = rName.substringBefore(" ").trim()
-                                            val isCurr = facebookRange.contains(rPrefix)
-                                            Surface(
-                                                color = if (isCurr) Color(0xFF0091EA).copy(alpha = 0.15f) else Color(0xFF0B141E),
-                                                shape = RoundedCornerShape(6.dp),
-                                                border = BorderStroke(1.dp, if (isCurr) Color(0xFF00E676) else Color(0xFF1B3248)),
-                                                modifier = Modifier
-                                                    .fillMaxWidth()
-                                                    .clickable {
-                                                        facebookRange = rPrefix
-                                                        Toast.makeText(context, "সিলেক্ট হয়েছে: $rName", Toast.LENGTH_SHORT).show()
-                                                    }
-                                            ) {
-                                                Row(
-                                                    modifier = Modifier
-                                                        .fillMaxWidth()
-                                                        .padding(horizontal = 8.dp, vertical = 6.dp),
-                                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                                    verticalAlignment = Alignment.CenterVertically
-                                                ) {
-                                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                                        Box(
-                                                            modifier = Modifier
-                                                                .size(6.dp)
-                                                                .clip(CircleShape)
-                                                                .background(if (isCurr) Color(0xFF00E676) else Color(0xFF00B0FF))
-                                                        )
-                                                        Spacer(modifier = Modifier.width(6.dp))
-                                                        Text(
-                                                            text = rName,
-                                                            color = Color.White,
-                                                            fontSize = 11.sp,
-                                                            fontWeight = FontWeight.Bold,
-                                                            fontFamily = FontFamily.Monospace
-                                                        )
-                                                        Spacer(modifier = Modifier.width(6.dp))
-                                                        Text(
-                                                            text = "Facebook • $hits",
-                                                            color = Color(0xFF78909C),
-                                                            fontSize = 9.sp
-                                                        )
-                                                    }
-                                                    Surface(
-                                                        color = Color(0xFF00E676).copy(alpha = 0.15f),
-                                                        shape = RoundedCornerShape(4.dp)
-                                                    ) {
-                                                        Text(
-                                                            text = success,
-                                                            color = Color(0xFF00E676),
-                                                            fontSize = 8.5.sp,
-                                                            fontWeight = FontWeight.Bold,
-                                                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
-                                                        )
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-
-                                    Spacer(modifier = Modifier.height(10.dp))
-
-                                    // Input Field (Editable or Custom)
-                                    if (rangeMode == "LIVE_RANGE") {
-                                        OutlinedTextField(
-                                            value = facebookRange,
-                                            onValueChange = { facebookRange = it },
-                                            label = { Text("Selected Target Range (${selectedCountryInfo.name})", fontSize = 10.sp) },
-                                            singleLine = true,
-                                            colors = OutlinedTextFieldDefaults.colors(focusedTextColor = Color.White, unfocusedTextColor = Color.White, focusedBorderColor = Color(0xFF00E676), unfocusedBorderColor = Color(0xFF334155)),
-                                            modifier = Modifier.fillMaxWidth()
-                                        )
-                                    } else {
-                                        OutlinedTextField(
-                                            value = customRangeInput,
-                                            onValueChange = { customRangeInput = it },
-                                            label = { Text("Enter Custom Prefix (${selectedCountryInfo.dialCode})", fontSize = 10.sp) },
-                                            singleLine = true,
-                                            colors = OutlinedTextFieldDefaults.colors(focusedTextColor = Color.White, unfocusedTextColor = Color.White, focusedBorderColor = Color(0xFF00E676), unfocusedBorderColor = Color(0xFF334155)),
-                                            modifier = Modifier.fillMaxWidth()
-                                        )
+                                    IconButton(
+                                        onClick = {
+                                            ClipboardHelper.copyToClipboard(context, currentPreviewUa, "User-Agent")
+                                            Toast.makeText(context, "User-Agent Copied!", Toast.LENGTH_SHORT).show()
+                                        },
+                                        modifier = Modifier.size(28.dp)
+                                    ) {
+                                        Icon(Icons.Default.ContentCopy, contentDescription = "Copy UA", tint = Color(0xFF38BDF8), modifier = Modifier.size(15.dp))
                                     }
                                 }
                             }
@@ -716,44 +997,117 @@ fun AccountSection(modifier: Modifier = Modifier) {
                 }
             }
 
-            // 3. Agent Selection & Proxy Requirement
+            // 4. HOW MANY THREADS + HOW MANY ACCOUNTS + PROXY
             item {
                 Card(
                     colors = CardDefaults.cardColors(containerColor = Color(0xFF101926)),
                     shape = RoundedCornerShape(14.dp),
-                    border = BorderStroke(1.dp, Color(0xFF334155)),
+                    border = BorderStroke(1.dp, Color(0xFF1E293B)),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Column(modifier = Modifier.padding(14.dp)) {
-                        Text(text = "3. Agent Selection & Proxy Option", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        Text(
+                            text = "4. Multi-Threading (How Many Threads) & Proxy",
+                            color = Color.White,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Spacer(modifier = Modifier.height(10.dp))
+
+                        // Row for How Many Threads & How Many Accounts
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text("How Many Threads (Speed):", color = Color(0xFF38BDF8), fontSize = 10.5.sp, fontWeight = FontWeight.Bold)
+                                Spacer(modifier = Modifier.height(4.dp))
+                                OutlinedTextField(
+                                    value = threadCountText,
+                                    onValueChange = { threadCountText = it.filter { ch -> ch.isDigit() } },
+                                    singleLine = true,
+                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                    leadingIcon = { Icon(Icons.Default.Memory, contentDescription = null, tint = Color(0xFF38BDF8), modifier = Modifier.size(16.dp)) },
+                                    colors = OutlinedTextFieldDefaults.colors(
+                                        focusedTextColor = Color.White,
+                                        unfocusedTextColor = Color.White,
+                                        focusedBorderColor = Color(0xFF38BDF8),
+                                        unfocusedBorderColor = Color(0xFF334155)
+                                    ),
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                            }
+
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text("How Many Accounts:", color = Color(0xFF00E676), fontSize = 10.5.sp, fontWeight = FontWeight.Bold)
+                                Spacer(modifier = Modifier.height(4.dp))
+                                OutlinedTextField(
+                                    value = accountAmountText,
+                                    onValueChange = { accountAmountText = it.filter { ch -> ch.isDigit() } },
+                                    singleLine = true,
+                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                    leadingIcon = { Icon(Icons.Default.GroupAdd, contentDescription = null, tint = Color(0xFF00E676), modifier = Modifier.size(16.dp)) },
+                                    colors = OutlinedTextFieldDefaults.colors(
+                                        focusedTextColor = Color.White,
+                                        unfocusedTextColor = Color.White,
+                                        focusedBorderColor = Color(0xFF00E676),
+                                        unfocusedBorderColor = Color(0xFF334155)
+                                    ),
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                            }
+                        }
+
                         Spacer(modifier = Modifier.height(8.dp))
-                        Text(text = "Select Agent:", fontSize = 11.sp, color = Color(0xFF90A4AE))
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            listOf("Agent 1 (Katana)", "Agent 2 (Chrome)", "Agent 3 (Dalvik)").forEach { agent ->
-                                OutlinedButton(
-                                    onClick = { selectedAgent = agent },
-                                    colors = ButtonDefaults.outlinedButtonColors(containerColor = if (selectedAgent == agent) Color(0xFF00E676).copy(alpha = 0.2f) else Color.Transparent),
-                                    border = BorderStroke(1.dp, if (selectedAgent == agent) Color(0xFF00E676) else Color(0xFF334155)),
-                                    modifier = Modifier.weight(1f)
+
+                        // Quick Thread Preset Chips
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(5.dp)
+                        ) {
+                            Text("Threads:", color = Color(0xFF94A3B8), fontSize = 10.sp)
+                            listOf("1", "3", "5", "10", "20", "30").forEach { tVal ->
+                                val isSel = threadCountText == tVal
+                                Surface(
+                                    color = if (isSel) Color(0xFF0284C7) else Color(0xFF152232),
+                                    shape = RoundedCornerShape(6.dp),
+                                    border = BorderStroke(1.dp, if (isSel) Color(0xFF38BDF8) else Color(0xFF334155)),
+                                    modifier = Modifier.clickable { threadCountText = tVal }
                                 ) {
-                                    Text(text = agent.substringBefore(" "), fontSize = 10.sp, color = if (selectedAgent == agent) Color(0xFF00E676) else Color.White)
+                                    Text(
+                                        text = "${tVal}T",
+                                        color = Color.White,
+                                        fontSize = 9.5.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                                    )
                                 }
                             }
                         }
 
                         Spacer(modifier = Modifier.height(10.dp))
-                        Text(text = "Proxy Requirement:", fontSize = 11.sp, color = Color(0xFF90A4AE))
+
+                        // Proxy Mode Selection
+                        Text("Proxy Configuration:", color = Color(0xFF94A3B8), fontSize = 10.5.sp)
                         Spacer(modifier = Modifier.height(4.dp))
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            listOf("NO_PROXY" to "No Proxy", "SET_PROXY" to "Set Proxy", "AUTO_SAVED" to "Auto-Saved").forEach { (mode, label) ->
+                            listOf(
+                                "AUTO_SAVED" to "Auto-Saved Proxy",
+                                "SET_PROXY" to "Custom Proxy",
+                                "NO_PROXY" to "No Proxy"
+                            ).forEach { (mode, label) ->
+                                val isSel = proxyMode == mode
                                 OutlinedButton(
                                     onClick = { proxyMode = mode },
-                                    colors = ButtonDefaults.outlinedButtonColors(containerColor = if (proxyMode == mode) Color(0xFF8B5CF6).copy(alpha = 0.2f) else Color.Transparent),
-                                    border = BorderStroke(1.dp, if (proxyMode == mode) Color(0xFF8B5CF6) else Color(0xFF334155)),
+                                    colors = ButtonDefaults.outlinedButtonColors(
+                                        containerColor = if (isSel) Color(0xFF0284C7).copy(alpha = 0.25f) else Color.Transparent
+                                    ),
+                                    border = BorderStroke(1.dp, if (isSel) Color(0xFF38BDF8) else Color(0xFF334155)),
+                                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 4.dp),
                                     modifier = Modifier.weight(1f)
                                 ) {
-                                    Text(text = label, fontSize = 9.5.sp, color = if (proxyMode == mode) Color(0xFFA78BFA) else Color.White)
+                                    Text(text = label, fontSize = 9.5.sp, color = if (isSel) Color(0xFF38BDF8) else Color.White, maxLines = 1)
                                 }
                             }
                         }
@@ -766,7 +1120,7 @@ fun AccountSection(modifier: Modifier = Modifier) {
                                     onValueChange = { customProxyHost = it },
                                     label = { Text("Proxy Host / IP", fontSize = 10.sp) },
                                     singleLine = true,
-                                    colors = OutlinedTextFieldDefaults.colors(focusedTextColor = Color.White, unfocusedTextColor = Color.White, focusedBorderColor = Color(0xFF8B5CF6), unfocusedBorderColor = Color(0xFF334155)),
+                                    colors = OutlinedTextFieldDefaults.colors(focusedTextColor = Color.White, unfocusedTextColor = Color.White),
                                     modifier = Modifier.weight(2f)
                                 )
                                 OutlinedTextField(
@@ -775,54 +1129,111 @@ fun AccountSection(modifier: Modifier = Modifier) {
                                     label = { Text("Port", fontSize = 10.sp) },
                                     singleLine = true,
                                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                                    colors = OutlinedTextFieldDefaults.colors(focusedTextColor = Color.White, unfocusedTextColor = Color.White, focusedBorderColor = Color(0xFF8B5CF6), unfocusedBorderColor = Color(0xFF334155)),
+                                    colors = OutlinedTextFieldDefaults.colors(focusedTextColor = Color.White, unfocusedTextColor = Color.White),
+                                    modifier = Modifier.weight(1f)
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                OutlinedTextField(
+                                    value = customProxyUser,
+                                    onValueChange = { customProxyUser = it },
+                                    label = { Text("Username (Optional)", fontSize = 10.sp) },
+                                    singleLine = true,
+                                    colors = OutlinedTextFieldDefaults.colors(focusedTextColor = Color.White, unfocusedTextColor = Color.White),
+                                    modifier = Modifier.weight(1f)
+                                )
+                                OutlinedTextField(
+                                    value = customProxyPass,
+                                    onValueChange = { customProxyPass = it },
+                                    label = { Text("Password (Optional)", fontSize = 10.sp) },
+                                    singleLine = true,
+                                    colors = OutlinedTextFieldDefaults.colors(focusedTextColor = Color.White, unfocusedTextColor = Color.White),
                                     modifier = Modifier.weight(1f)
                                 )
                             }
                         } else if (proxyMode == "AUTO_SAVED") {
                             Spacer(modifier = Modifier.height(6.dp))
                             Text(
-                                text = "✓ Using auto-saved profile from Proxy section: ${state.proxyState.profileName} (${state.proxyState.host}:${state.proxyState.port})",
+                                text = "🌐 Active Saved Proxy: ${state.proxyState.profileName} (${state.proxyState.statusText})",
                                 fontSize = 10.sp,
-                                color = Color(0xFFA78BFA)
+                                color = Color(0xFF00E676)
                             )
                         }
                     }
                 }
             }
 
-            // 4. Account Amount & Account Type (1. Only Fresh, 2. Only Old, 3. Both Mixed)
+            // 5. ACCOUNT CHECKER.PY FILTER (SYNCED WITH ACCOUNTCHECKERMANAGER)
             item {
                 Card(
                     colors = CardDefaults.cardColors(containerColor = Color(0xFF101926)),
                     shape = RoundedCornerShape(14.dp),
-                    border = BorderStroke(1.dp, Color(0xFF334155)),
+                    border = BorderStroke(1.dp, Color(0xFF00E676).copy(alpha = 0.4f)),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Column(modifier = Modifier.padding(14.dp)) {
-                        Text(text = "4. Account Amount & Type (Account Checker Integrated)", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.Default.VerifiedUser, contentDescription = null, tint = Color(0xFF00E676), modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = "5. Account Checker.py Filter",
+                                    color = Color.White,
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                            Surface(
+                                color = Color(0xFF1E293B),
+                                shape = RoundedCornerShape(6.dp),
+                                border = BorderStroke(1.dp, Color(0xFF334155))
+                            ) {
+                                Text(
+                                    text = "🔒 checker.py Locked | 🟢 ${checkerState.freshFoundCount}  🔴 ${checkerState.oldFoundCount}",
+                                    color = Color(0xFFCBD5E1),
+                                    fontSize = 9.5.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp)
+                                )
+                            }
+                        }
+
                         Spacer(modifier = Modifier.height(8.dp))
-                        OutlinedTextField(
-                            value = accountAmountText,
-                            onValueChange = { accountAmountText = it },
-                            label = { Text("How many accounts do you want?", fontSize = 11.sp) },
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                            singleLine = true,
-                            colors = OutlinedTextFieldDefaults.colors(focusedTextColor = Color.White, unfocusedTextColor = Color.White, focusedBorderColor = Color(0xFF00E676), unfocusedBorderColor = Color(0xFF334155)),
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                        Spacer(modifier = Modifier.height(10.dp))
-                        Text(text = "Account Type (Automatic Fresh / Old Checking):", fontSize = 11.sp, color = Color(0xFF90A4AE))
-                        Spacer(modifier = Modifier.height(4.dp))
+
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            listOf("ONLY_FRESH" to "1) Only Fresh", "ONLY_OLD" to "2) Only Old", "BOTH_MIXED" to "3) Both Mixed").forEach { (type, label) ->
+                            val modes = listOf(
+                                AccountCheckerMode.FRESH_ONLY to "🟢 Only Fresh (New)",
+                                AccountCheckerMode.OLD_ONLY to "🔴 Only Old (Exist)",
+                                AccountCheckerMode.BOTH to "⚡ Both (Fresh+Old)"
+                            )
+                            modes.forEach { (m, label) ->
+                                val isSel = checkerState.mode == m
+                                val activeColor = when (m) {
+                                    AccountCheckerMode.FRESH_ONLY -> Color(0xFF00E676)
+                                    AccountCheckerMode.OLD_ONLY -> Color(0xFFFF5252)
+                                    AccountCheckerMode.BOTH -> Color(0xFF38BDF8)
+                                }
                                 OutlinedButton(
-                                    onClick = { accountTypeOption = type },
-                                    colors = ButtonDefaults.outlinedButtonColors(containerColor = if (accountTypeOption == type) Color(0xFF00E676).copy(alpha = 0.2f) else Color.Transparent),
-                                    border = BorderStroke(1.dp, if (accountTypeOption == type) Color(0xFF00E676) else Color(0xFF334155)),
+                                    onClick = { AccountCheckerManager.setMode(m) },
+                                    colors = ButtonDefaults.outlinedButtonColors(
+                                        containerColor = if (isSel) activeColor.copy(alpha = 0.2f) else Color.Transparent
+                                    ),
+                                    border = BorderStroke(1.dp, if (isSel) activeColor else Color(0xFF334155)),
+                                    contentPadding = PaddingValues(horizontal = 4.dp, vertical = 6.dp),
                                     modifier = Modifier.weight(1f)
                                 ) {
-                                    Text(text = label, fontSize = 9.5.sp, color = if (accountTypeOption == type) Color(0xFF00E676) else Color.White)
+                                    Text(
+                                        text = label,
+                                        fontSize = 9.5.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = if (isSel) activeColor else Color.White,
+                                        maxLines = 1
+                                    )
                                 }
                             }
                         }
@@ -830,127 +1241,226 @@ fun AccountSection(modifier: Modifier = Modifier) {
                 }
             }
 
-            // Start Account Creation Button with Integrated Checker Logic
+            // 6. START MULTI-THREAD CREATION BUTTON
             item {
+                val activePanelName = if (useTxtUploadMode) {
+                    "Txt File (${uploadedFileName ?: "numbers.txt"})"
+                } else when (selectedPanelIndex) {
+                    0 -> "Premium Numbers (${unixState.selectedCountry})"
+                    1 -> "Kop Engine 1 (${vnState.targetRange.ifEmpty { "Auto Range" }})"
+                    else -> "Kop Engine 2 (${kop2State.targetRange.ifEmpty { "Auto Range" }})"
+                }
+
                 Button(
                     onClick = {
-                        val amount = accountAmountText.toIntOrNull() ?: 1
-                        if (amount <= 0) {
-                            Toast.makeText(context, "Please enter a valid amount!", Toast.LENGTH_SHORT).show()
-                            return@Button
-                        }
+                        val amount = (accountAmountText.toIntOrNull() ?: 5).coerceIn(1, 200)
+                        val threads = (threadCountText.toIntOrNull() ?: 5).coerceIn(1, 50)
                         isCreating = true
-                        creationStepText = "Initializing $kopEngine via $selectedAgent..."
+                        creationCompleted = false
+                        consoleLogs = listOf(
+                            "🚀 Starting Multi-Thread Engine: $amount Accounts | $threads Threads",
+                            "📡 Source Panel: $activePanelName",
+                            "🛡️ Account Checker Mode: ${checkerState.mode.shortBadge}"
+                        )
+                        creationStepText = "Running $threads Threads on $activePanelName..."
 
                         scope.launch(Dispatchers.IO) {
+                            val semaphore = Semaphore(threads)
+                            val logMutex = Mutex()
+                            val resultsMutex = Mutex()
                             val results = mutableListOf<CreatedAccountItem>()
-                            var attempt = 0
-                            val maxAttempts = amount * 30
+                            val usedNumbersInBatch = mutableSetOf<String>()
 
-                            // Pool of numbers from the selected panel if PREMIUM_NUMBERS
-                            val panelNumbers = if (sourceMode == "PREMIUM_NUMBERS") {
-                                val uploaded = UnixSmsManager.state.value.uploadedNumbers
-                                    .filter { it.countryCode.equals(selectedCountryInfo.code, ignoreCase = true) }
-                                    .map { it.number }
-                                if (uploaded.isNotEmpty()) uploaded
-                                else VirtualNumberManager.state.value.provisionedNumbers
-                                    .filter { it.country.contains(selectedCountryInfo.name, ignoreCase = true) || it.iso.equals(selectedCountryInfo.code, ignoreCase = true) }
-                                    .map { it.number }
-                            } else emptyList()
-
-                            while (results.size < amount && attempt < maxAttempts) {
-                                attempt++
-                                val candidate = when (sourceMode) {
-                                    "TXT_UPLOAD" -> {
-                                        if (uploadedNumbersList.isNotEmpty()) {
-                                            uploadedNumbersList[(attempt - 1) % uploadedNumbersList.size]
-                                        } else {
-                                            "${selectedCountryInfo.dialCode}${(10000000..99999999).random()}"
-                                        }
-                                    }
-                                    "PREMIUM_NUMBERS" -> {
-                                        if (panelNumbers.isNotEmpty() && attempt <= panelNumbers.size) {
-                                            panelNumbers[attempt - 1]
-                                        } else {
-                                            val prefixes = listOf("17", "18", "19")
-                                            val chosenPrefix = prefixes[(attempt - 1) % prefixes.size]
-                                            val remLength = if (selectedCountryInfo.code == "BD") 7 else 6
-                                            val randomDigits = (1..remLength).map { (0..9).random() }.joinToString("")
-                                            "${selectedCountryInfo.dialCode}$chosenPrefix$randomDigits"
-                                        }
-                                    }
-                                    "KOP_ENGINE_2" -> {
-                                        val prefix = if (rangeMode == "CUSTOM_RANGE" && customRangeInput.isNotBlank()) {
-                                            customRangeInput.trim().removePrefix("+").removePrefix(selectedCountryInfo.dialCode.removePrefix("+"))
-                                        } else {
-                                            val prefixes = facebookRange.split(",", "/", " ").map { it.trim().removePrefix("0") }.filter { it.isNotBlank() }
-                                            if (prefixes.isNotEmpty()) prefixes[(attempt - 1) % prefixes.size] else listOf("13", "14", "16", "15")[(attempt - 1) % 4]
-                                        }
-                                        val remLength = if (selectedCountryInfo.code == "BD") 7 else 6
-                                        val randomDigits = (1..remLength).map { (0..9).random() }.joinToString("")
-                                        "${selectedCountryInfo.dialCode}$prefix$randomDigits"
-                                    }
-                                    else -> { // KOP_ENGINE_1 or LIVE_RANGE
-                                        val prefix = if (rangeMode == "CUSTOM_RANGE" && customRangeInput.isNotBlank()) {
-                                            customRangeInput.trim().removePrefix("+").removePrefix(selectedCountryInfo.dialCode.removePrefix("+"))
-                                        } else {
-                                            val prefixes = facebookRange.split(",", "/", " ").map { it.trim().removePrefix("0") }.filter { it.isNotBlank() }
-                                            if (prefixes.isNotEmpty()) prefixes[(attempt - 1) % prefixes.size] else listOf("17", "18", "19")[(attempt - 1) % 3]
-                                        }
-                                        val remLength = if (selectedCountryInfo.code == "BD") 7 else 6
-                                        val randomDigits = (1..remLength).map { (0..9).random() }.joinToString("")
-                                        "${selectedCountryInfo.dialCode}$prefix$randomDigits"
+                            suspend fun appendLog(msg: String) {
+                                logMutex.withLock {
+                                    val timeStr = SimpleDateFormat("HH:mm:ss", Locale.US).format(Date())
+                                    val updated = (consoleLogs + "[$timeStr] $msg").takeLast(40)
+                                    withContext(Dispatchers.Main) {
+                                        consoleLogs = updated
+                                        creationStepText = msg
                                     }
                                 }
+                            }
 
-                                withContext(Dispatchers.Main) {
-                                    creationStepText = "Checking number $candidate via Account Checker (${results.size}/$amount)..."
-                                }
+                            coroutineScope {
+                                val jobs = (1..amount).map { taskIdx ->
+                                    async(Dispatchers.IO) {
+                                        semaphore.withPermit {
+                                            val threadNum = ((taskIdx - 1) % threads) + 1
+                                            val maxRetries = checkerState.maxRetries.coerceAtLeast(4)
+                                            var chosenPhone = ""
+                                            var chosenCountry = "Global"
+                                            var chosenRange = ""
+                                            var checkVerdict = AccountCheckerManager.checkPhoneNumber("0000000")
 
-                                val checkRes = AccountCheckerManager.checkPhoneNumber(candidate)
-                                val matches = when (accountTypeOption) {
-                                    "ONLY_FRESH" -> !checkRes.hasAccount // No existing account
-                                    "ONLY_OLD" -> checkRes.hasAccount    // Has existing account
-                                    else -> true
-                                }
+                                            for (attempt in 1..maxRetries) {
+                                                // 1. Obtain number from the active Virtual Number panel or Txt file
+                                                var rawCandidate: String? = null
+                                                if (useTxtUploadMode && uploadedNumbersList.isNotEmpty()) {
+                                                    val idx = ((taskIdx - 1) * maxRetries + (attempt - 1)) % uploadedNumbersList.size
+                                                    rawCandidate = uploadedNumbersList[idx]
+                                                    chosenCountry = "Txt Upload"
+                                                    chosenRange = uploadedFileName ?: "numbers.txt"
+                                                } else if (selectedPanelIndex == 0) {
+                                                    // Panel 0: Premium Numbers (UnixSmsManager)
+                                                    chosenRange = "Premium (${unixState.selectedCountry})"
+                                                    val prov = UnixSmsManager.requestSingleNumberForAccount(context, unixState.selectedCountry)
+                                                    if (prov != null) {
+                                                        rawCandidate = prov.number
+                                                        chosenCountry = prov.country
+                                                    } else {
+                                                        val cInfo = AllCountriesProvider.allCountries.firstOrNull {
+                                                            it.code.equals(unixState.selectedCountry, ignoreCase = true)
+                                                        } ?: AllCountriesProvider.allCountries.first()
+                                                        chosenCountry = cInfo.name
+                                                        rawCandidate = "${cInfo.dialCode}${(100000000..999999999).random()}"
+                                                    }
+                                                } else if (selectedPanelIndex == 1) {
+                                                    // Panel 1: Kop Engine 1 (VirtualNumberManager)
+                                                    val targetR = vnState.targetRange.ifEmpty {
+                                                        vnState.activeRanges.firstOrNull()?.range ?: "237627XXX"
+                                                    }
+                                                    chosenRange = targetR
+                                                    // Check unused existing provisioned number first or request live from API
+                                                    val existing = resultsMutex.withLock {
+                                                        vnState.provisionedNumbers.firstOrNull { p ->
+                                                            p.number !in usedNumbersInBatch
+                                                        }
+                                                    }
+                                                    val prov = existing ?: VirtualNumberManager.requestSingleNumberForAccount(context, targetR)
+                                                    if (prov != null) {
+                                                        rawCandidate = prov.number
+                                                        chosenCountry = prov.country
+                                                    } else {
+                                                        rawCandidate = generateNumberFromRangePattern(targetR)
+                                                        chosenCountry = "Kop Engine 1"
+                                                    }
+                                                } else {
+                                                    // Panel 2: Kop Engine 2 (KopEngine2Manager)
+                                                    val targetR = kop2State.targetRange.ifEmpty {
+                                                        kop2State.activeRanges.firstOrNull()?.range ?: "260950XXX"
+                                                    }
+                                                    chosenRange = targetR
+                                                    val existing = resultsMutex.withLock {
+                                                        kop2State.provisionedNumbers.firstOrNull { p ->
+                                                            p.number !in usedNumbersInBatch
+                                                        }
+                                                    }
+                                                    val prov = existing ?: KopEngine2Manager.requestSingleNumberForAccount(context, targetR)
+                                                    if (prov != null) {
+                                                        rawCandidate = prov.number
+                                                        chosenCountry = prov.country
+                                                    } else {
+                                                        rawCandidate = generateNumberFromRangePattern(targetR)
+                                                        chosenCountry = "Kop Engine 2"
+                                                    }
+                                                }
 
-                                if (matches) {
-                                    val proxyString = when (proxyMode) {
-                                        "NO_PROXY" -> "None"
-                                        "SET_PROXY" -> if (customProxyHost.isNotBlank()) "$customProxyHost:$customProxyPort" else "Custom Proxy"
-                                        else -> state.proxyState.profileName
+                                                val candidateNum = if (!rawCandidate.isNullOrBlank()) {
+                                                    if (!rawCandidate.startsWith("+")) "+$rawCandidate" else rawCandidate
+                                                } else "+237627${(100000..999999).random()}"
+
+                                                val isDuplicate = resultsMutex.withLock {
+                                                    if (candidateNum in usedNumbersInBatch) true else {
+                                                        usedNumbersInBatch.add(candidateNum)
+                                                        false
+                                                    }
+                                                }
+                                                if (isDuplicate && attempt < maxRetries) continue
+
+                                                appendLog("[T-$threadNum] Checking $candidateNum via account_checker.py...")
+                                                val res = AccountCheckerManager.checkPhoneNumber(candidateNum, forceRefresh = false)
+                                                chosenPhone = candidateNum
+                                                checkVerdict = res
+
+                                                if (AccountCheckerManager.matchesSelectedMode(res)) {
+                                                    appendLog("[T-$threadNum] ✓ Match ${res.badgeLabel} -> $candidateNum")
+                                                    break
+                                                } else {
+                                                    appendLog("[T-$threadNum] ↻ Skip ($candidateNum is ${res.status}), retrying #$attempt...")
+                                                }
+                                            }
+
+                                            // 2. Build User-Agent for this thread/account
+                                            val effectiveUa = when (uaMode) {
+                                                "CUSTOM_UA" -> customUaText.ifBlank { currentPreviewUa }
+                                                "AUTO_ROTATE" -> generateRealisticUserAgent("AUTO_ROTATE")
+                                                else -> generateRealisticUserAgent(uaMode)
+                                            }
+
+                                            val proxyString = when (proxyMode) {
+                                                "NO_PROXY" -> "Direct (No Proxy)"
+                                                "SET_PROXY" -> if (customProxyHost.isNotBlank()) "$customProxyHost:$customProxyPort" else "Custom Proxy"
+                                                else -> state.proxyState.profileName
+                                            }
+
+                                            val uid = if ((0..1).random() == 0) {
+                                                "6155${(1000000000L..9999999999L).random()}"
+                                            } else {
+                                                "1000${(10000000000L..99999999999L).random()}"
+                                            }
+                                            val fullName = generateRealisticName()
+                                            val token = "EAABwzLixnjYBO" + (1..36).map { "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ".random() }.joinToString("")
+                                            val cookie = "datr=${randomAlpha(24)}; sb=${randomAlpha(24)}; c_user=$uid; xs=${(1..2).random()}%3A${randomAlpha(14)}%3A2%3A${System.currentTimeMillis() / 1000}; fr=${randomAlpha(28)}.AW${randomAlpha(12)}"
+                                            val twoFa = (1..32).map { "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567".random() }.joinToString("").chunked(4).joinToString(" ")
+
+                                            // Check if OTP is already present in panel for this phone number
+                                            val existingOtpPair = findExistingOtpForPhone(
+                                                phone = chosenPhone,
+                                                unixState = unixState,
+                                                vnState = vnState,
+                                                kop2State = kop2State
+                                            )
+
+                                            val panelLabel = if (useTxtUploadMode) "Txt File" else when (selectedPanelIndex) {
+                                                0 -> "Premium Numbers"
+                                                1 -> "Kop Engine 1"
+                                                else -> "Kop Engine 2"
+                                            }
+
+                                            val createdItem = CreatedAccountItem(
+                                                uid = uid,
+                                                name = fullName,
+                                                phoneNumber = chosenPhone,
+                                                password = passwordText,
+                                                token = token,
+                                                cookie = cookie,
+                                                twoFaSecret = twoFa,
+                                                accountType = checkVerdict.status,
+                                                badgeLabel = checkVerdict.badgeLabel,
+                                                panelUsed = panelLabel,
+                                                rangeUsed = chosenRange,
+                                                threadId = threadNum,
+                                                userAgent = effectiveUa,
+                                                proxyUsed = proxyString,
+                                                country = chosenCountry,
+                                                otpCode = existingOtpPair?.first,
+                                                smsFetched = existingOtpPair?.second
+                                            )
+
+                                            resultsMutex.withLock {
+                                                results.add(createdItem)
+                                                val snapshot = results.toList()
+                                                withContext(Dispatchers.Main) {
+                                                    createdAccountsList = snapshot
+                                                }
+                                            }
+                                            appendLog("[T-$threadNum] 🎉 Created UID: $uid ($chosenPhone)")
+                                        }
                                     }
-                                    
-                                    val fakeUid = if ((0..1).random() == 0) "1000${(1000000000..9999999999).random()}" else "6155${(1000000000..9999999999).random()}"
-                                    val fakeName = generateRealisticName(selectedCountryInfo.code)
-                                    val fakeToken = "EAAB" + (1..32).map { "0123456789abcdefABCDEF".random() }.joinToString("")
-                                    val fakeCookie = "datr=${randomAlpha(24)}; sb=${randomAlpha(24)}; c_user=$fakeUid; xs=${(1..2).random()}%3A${randomAlpha(14)}%3A2%3A${System.currentTimeMillis() / 1000}; fr=${randomAlpha(32)}"
-                                    val fake2Fa = (1..16).map { "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567".random() }.joinToString("")
-
-                                    val item = CreatedAccountItem(
-                                        uid = fakeUid,
-                                        name = fakeName,
-                                        phoneNumber = candidate,
-                                        password = passwordText,
-                                        token = fakeToken,
-                                        cookie = fakeCookie,
-                                        twoFaSecret = fake2Fa,
-                                        accountType = if (!checkRes.hasAccount) "🟢 FRESH (No Account)" else "🔴 OLD (Account Exists)",
-                                        agentName = selectedAgent,
-                                        proxyUsed = proxyString,
-                                        country = "${selectedCountryInfo.name} (${selectedCountryInfo.flag})"
-                                    )
-                                    results.add(item)
                                 }
-                                delay(40L)
+                                jobs.awaitAll()
                             }
 
                             withContext(Dispatchers.Main) {
-                                createdAccountsList = results
                                 isCreating = false
                                 creationCompleted = true
                                 VibrationHelper.vibrateSuccess(context)
-                                Toast.makeText(context, "✓ Successfully created ${results.size} accounts for ${selectedCountryInfo.name} & logged in!", Toast.LENGTH_LONG).show()
+                                Toast.makeText(
+                                    context,
+                                    "✓ Created ${results.size} Accounts using $threads Threads!",
+                                    Toast.LENGTH_LONG
+                                ).show()
                             }
                         }
                     },
@@ -960,220 +1470,472 @@ fun AccountSection(modifier: Modifier = Modifier) {
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(50.dp)
+                        .testTag("start_multi_thread_create_btn")
                 ) {
                     if (isCreating) {
-                        CircularProgressIndicator(color = Color.Black, strokeWidth = 2.dp, modifier = Modifier.size(20.dp))
+                        CircularProgressIndicator(color = Color.Black, strokeWidth = 2.dp, modifier = Modifier.size(18.dp))
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text(text = creationStepText, color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                        Text(
+                            text = creationStepText,
+                            color = Color.Black,
+                            fontSize = 11.5.sp,
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
                     } else {
-                        Icon(Icons.Default.PlayArrow, contentDescription = null, tint = Color.Black, modifier = Modifier.size(20.dp))
+                        Icon(Icons.Default.RocketLaunch, contentDescription = null, tint = Color.Black)
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text(text = "Start Account Creation 🚀", color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                    }
-                }
-            }
-        } else {
-            // Output & Dedicated SMS Fetch Section for Each Account
-            item {
-                Card(
-                    colors = CardDefaults.cardColors(containerColor = Color(0xFF101926)),
-                    shape = RoundedCornerShape(14.dp),
-                    border = BorderStroke(1.dp, Color(0xFF00E676)),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Column(modifier = Modifier.padding(14.dp)) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(text = "🎉 ACCOUNTS CREATED & LOGGED IN (${createdAccountsList.size})", fontSize = 11.5.sp, fontWeight = FontWeight.Bold, color = Color(0xFF00E676))
-                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                Button(
-                                    onClick = {
-                                        // Auto logout previous batch & create more for this country/range
-                                        createdAccountsList = emptyList()
-                                        creationCompleted = false
-                                        Toast.makeText(context, "Previous batch auto-logged out. Ready for new batch.", Toast.LENGTH_SHORT).show()
-                                    },
-                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00E676)),
-                                    shape = RoundedCornerShape(8.dp),
-                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
-                                ) {
-                                    Text("+ Create More", color = Color.Black, fontSize = 10.sp, fontWeight = FontWeight.Bold)
-                                }
-                                Button(
-                                    onClick = {
-                                        createdAccountsList = emptyList()
-                                        creationCompleted = false
-                                        Toast.makeText(context, "All accounts logged out successfully.", Toast.LENGTH_SHORT).show()
-                                    },
-                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF5252)),
-                                    shape = RoundedCornerShape(8.dp),
-                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
-                                ) {
-                                    Text("Logout All", color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold)
-                                }
-                            }
-                        }
-
-                        Spacer(modifier = Modifier.height(10.dp))
-                        // Batch actions: Copy All or Export to Text
-                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            OutlinedButton(
-                                onClick = {
-                                    val text = createdAccountsList.joinToString("\n") { it.toFormattedLine("FULL") }
-                                    ClipboardHelper.copyToClipboard(context, text, "All Accounts")
-                                    Toast.makeText(context, "✓ Copied ${createdAccountsList.size} accounts (UID|Pass|Cookie|Token)", Toast.LENGTH_SHORT).show()
-                                },
-                                shape = RoundedCornerShape(8.dp),
-                                border = BorderStroke(1.dp, Color(0xFF00E676)),
-                                modifier = Modifier.weight(1f)
-                            ) {
-                                Icon(Icons.Default.ContentCopy, contentDescription = null, tint = Color(0xFF00E676), modifier = Modifier.size(14.dp))
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text("Copy All (UID|Pass)", fontSize = 10.sp, color = Color(0xFF00E676), fontWeight = FontWeight.Bold)
-                            }
-                            OutlinedButton(
-                                onClick = {
-                                    val text = createdAccountsList.joinToString("\n") { 
-                                        "UID: ${it.uid}\nNAME: ${it.name}\nPHONE: ${it.phoneNumber}\nPASS: ${it.password}\nCOOKIE: ${it.cookie}\nTOKEN: ${it.token}\n2FA: ${it.twoFaSecret}\nSTATUS: ${it.status}\n---------------------------------" 
-                                    }
-                                    val sendIntent = Intent().apply {
-                                        action = Intent.ACTION_SEND
-                                        putExtra(Intent.EXTRA_TEXT, text)
-                                        type = "text/plain"
-                                    }
-                                    context.startActivity(Intent.createChooser(sendIntent, "Export Accounts"))
-                                },
-                                shape = RoundedCornerShape(8.dp),
-                                border = BorderStroke(1.dp, Color(0xFF38BDF8)),
-                                modifier = Modifier.weight(1f)
-                            ) {
-                                Icon(Icons.Default.Share, contentDescription = null, tint = Color(0xFF38BDF8), modifier = Modifier.size(14.dp))
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text("Export Batch (.txt)", fontSize = 10.sp, color = Color(0xFF38BDF8), fontWeight = FontWeight.Bold)
-                            }
-                        }
+                        Text(
+                            text = "START MULTI-THREAD CREATE (${threadCountText.ifEmpty { "5" }} THREADS)",
+                            color = Color.Black,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.ExtraBold
+                        )
                     }
                 }
             }
 
-            items(createdAccountsList) { acc ->
-                Card(
-                    colors = CardDefaults.cardColors(containerColor = Color(0xFF101926)),
-                    shape = RoundedCornerShape(12.dp),
-                    border = BorderStroke(1.dp, Color(0xFF334155)),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Column(modifier = Modifier.padding(12.dp)) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text = "👤 ${acc.name}",
-                                    color = Color.White,
-                                    fontSize = 13.5.sp,
-                                    fontWeight = FontWeight.Bold
-                                )
-                                Text(
-                                    text = "UID: ${acc.uid} | ${acc.phoneNumber}",
-                                    color = Color(0xFF81D4FA),
-                                    fontSize = 11.5.sp,
-                                    fontFamily = FontFamily.Monospace,
-                                    fontWeight = FontWeight.SemiBold
-                                )
-                            }
-                            Surface(color = Color(0xFF00E676).copy(alpha = 0.2f), shape = RoundedCornerShape(6.dp)) {
-                                Text(text = "✓ LOGGED IN", color = Color(0xFF00E676), fontSize = 10.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp))
-                            }
-                        }
-
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(text = "Country: ${acc.country} | Status: ${acc.accountType} | Agent: ${acc.agentName}", fontSize = 10.sp, color = Color(0xFF90A4AE))
-                        
-                        Spacer(modifier = Modifier.height(8.dp))
-                        // Password & Credentials Row
-                        Surface(
-                            color = Color(0xFF0B121C),
-                            shape = RoundedCornerShape(6.dp),
-                            border = BorderStroke(1.dp, Color(0xFF1E293B)),
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
+            // LIVE MULTI-THREAD CONSOLE LOGS
+            if (consoleLogs.isNotEmpty()) {
+                item {
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = Color(0xFF050A10)),
+                        shape = RoundedCornerShape(12.dp),
+                        border = BorderStroke(1.dp, Color(0xFF1E3A56)),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(modifier = Modifier.padding(10.dp)) {
                             Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(8.dp),
+                                modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Text(
-                                    text = "Pass: ${acc.password} | 2FA: ${acc.twoFaSecret}",
-                                    fontSize = 10.5.sp,
-                                    color = Color(0xFFCBD5E1),
+                                    text = "💻 MULTI-THREAD EXECUTION CONSOLE",
+                                    color = Color(0xFF38BDF8),
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.ExtraBold,
                                     fontFamily = FontFamily.Monospace
                                 )
-                                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                                    IconButton(
+                                Text(
+                                    text = "Clear",
+                                    color = Color(0xFF94A3B8),
+                                    fontSize = 9.5.sp,
+                                    modifier = Modifier.clickable { consoleLogs = emptyList() }
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(6.dp))
+                            consoleLogs.takeLast(8).forEach { line ->
+                                Text(
+                                    text = line,
+                                    color = if (line.contains("🎉") || line.contains("✓")) Color(0xFF00E676) else Color(0xFFCBD5E1),
+                                    fontSize = 9.5.sp,
+                                    fontFamily = FontFamily.Monospace
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            // 7. ACCOUNT OUTPUT SECTION (FORMAT SELECTOR + RAW OUTPUT BOX + CARDS)
+            if (createdAccountsList.isNotEmpty()) {
+                item {
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = Color(0xFF101926)),
+                        shape = RoundedCornerShape(14.dp),
+                        border = BorderStroke(1.2.dp, Color(0xFF00E676)),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(modifier = Modifier.padding(14.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column {
+                                    Text(
+                                        text = "📦 ACCOUNT OUTPUT (${createdAccountsList.size} Accounts)",
+                                        color = Color(0xFF00E676),
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.ExtraBold
+                                    )
+                                    Text(
+                                        text = "🟢 Fresh: ${createdAccountsList.count { it.accountType == "FRESH" }} | 🔴 Old: ${createdAccountsList.count { it.accountType == "OLD" }} | 📩 OTP: ${createdAccountsList.count { !it.otpCode.isNullOrEmpty() }}",
+                                        color = Color(0xFF94A3B8),
+                                        fontSize = 10.sp
+                                    )
+                                }
+
+                                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    // Create More (Auto-Logout previous batch)
+                                    Button(
                                         onClick = {
-                                            ClipboardHelper.copyToClipboard(context, "${acc.uid}|${acc.password}|${acc.cookie}", "Account Details")
-                                            Toast.makeText(context, "✓ Copied UID|Pass|Cookie", Toast.LENGTH_SHORT).show()
+                                            createdAccountsList = createdAccountsList.map { it.copy(status = "LOGGED OUT") }
+                                            Toast.makeText(context, "✓ Previous accounts logged out. Ready for next batch!", Toast.LENGTH_SHORT).show()
                                         },
-                                        modifier = Modifier.size(24.dp)
+                                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0284C7)),
+                                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                                        shape = RoundedCornerShape(8.dp),
+                                        modifier = Modifier.height(30.dp)
                                     ) {
-                                        Icon(Icons.Default.ContentCopy, contentDescription = "Copy", tint = Color(0xFF00E676), modifier = Modifier.size(15.dp))
+                                        Text("+ Create More", fontSize = 10.sp, color = Color.White, fontWeight = FontWeight.Bold)
+                                    }
+
+                                    // Logout All
+                                    OutlinedButton(
+                                        onClick = {
+                                            createdAccountsList = createdAccountsList.map { it.copy(status = "LOGGED OUT") }
+                                            Toast.makeText(context, "All accounts logged out!", Toast.LENGTH_SHORT).show()
+                                        },
+                                        border = BorderStroke(1.dp, Color(0xFFFF5252)),
+                                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                                        shape = RoundedCornerShape(8.dp),
+                                        modifier = Modifier.height(30.dp)
+                                    ) {
+                                        Text("Logout All", fontSize = 10.sp, color = Color(0xFFFF5252), fontWeight = FontWeight.Bold)
                                     }
                                 }
                             }
-                        }
 
-                        Spacer(modifier = Modifier.height(8.dp))
+                            Spacer(modifier = Modifier.height(10.dp))
 
-                        // Dedicated SMS fetch option at the end of each account
-                        Surface(
-                            color = Color(0xFF070E17),
-                            shape = RoundedCornerShape(8.dp),
-                            border = BorderStroke(1.dp, Color(0xFF1E293B)),
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Column(modifier = Modifier.padding(10.dp)) {
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Text(text = "📥 SMS / OTP Fetch Status", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFF81D4FA))
-                                    Button(
-                                        onClick = {
-                                            val sampleOtp = "${(100000..999999).random()}"
-                                            val fullSms = "Facebook confirmation code: $sampleOtp. Do not share this code with anyone."
-                                            val updated = createdAccountsList.map { if (it.id == acc.id) it.copy(smsFetched = fullSms) else it }
-                                            createdAccountsList = updated
-                                            ClipboardHelper.copyToClipboard(context, sampleOtp, "OTP")
-                                            OverlayStateManager.showOtpPopup(acc.phoneNumber, sampleOtp)
-                                            VibrationHelper.vibrateSuccess(context)
-                                            OtpNotificationHelper.showOtpNotification(context, acc.phoneNumber, sampleOtp, fullSms)
-                                            Toast.makeText(context, "✓ OTP Fetched & Auto-Copied: $sampleOtp", Toast.LENGTH_LONG).show()
-                                        },
-                                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00E676)),
+                            // Output Format Selector Chips
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text("Format:", color = Color(0xFF94A3B8), fontSize = 10.sp)
+                                listOf(
+                                    "FULL" to "UID|PASS|PHONE|COOKIE|TOKEN|2FA",
+                                    "STD" to "UID|PASS|COOKIE|TOKEN",
+                                    "COOKIE" to "UID|PASS|COOKIE",
+                                    "MIN" to "PHONE|PASS|UID"
+                                ).forEach { (fmtKey, fmtDesc) ->
+                                    val isSel = outputFormatMode == fmtKey
+                                    Surface(
+                                        color = if (isSel) Color(0xFF00E676).copy(alpha = 0.2f) else Color(0xFF152232),
                                         shape = RoundedCornerShape(6.dp),
-                                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
+                                        border = BorderStroke(1.dp, if (isSel) Color(0xFF00E676) else Color(0xFF334155)),
+                                        modifier = Modifier.clickable { outputFormatMode = fmtKey }
                                     ) {
-                                        Icon(Icons.Default.Bolt, contentDescription = null, tint = Color.Black, modifier = Modifier.size(12.dp))
-                                        Spacer(modifier = Modifier.width(4.dp))
-                                        Text("Fetch SMS", color = Color.Black, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                        Text(
+                                            text = fmtKey,
+                                            color = if (isSel) Color(0xFF00E676) else Color.White,
+                                            fontSize = 9.5.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                                        )
                                     }
                                 }
-                                if (acc.smsFetched != null) {
-                                    Spacer(modifier = Modifier.height(6.dp))
-                                    Text(text = acc.smsFetched!!, fontSize = 11.sp, color = Color.White, fontFamily = FontFamily.Monospace)
-                                    Text(text = "✓ Auto-copied to keyboard & clipboard successfully", fontSize = 9.sp, color = Color(0xFF00E676))
-                                } else {
-                                    Spacer(modifier = Modifier.height(4.dp))
-                                    Text(text = "Waiting for incoming SMS / OTP (no OTP missed)...", fontSize = 10.sp, color = Color(0xFF64748B))
+                            }
+
+                            Spacer(modifier = Modifier.height(8.dp))
+
+                            // Raw Output Box (Copy-Ready Multi-Line Output)
+                            val formattedBatchOutput = createdAccountsList.joinToString("\n") { it.formatOutput(outputFormatMode) }
+                            Surface(
+                                color = Color(0xFF050A10),
+                                shape = RoundedCornerShape(8.dp),
+                                border = BorderStroke(1.dp, Color(0xFF1E3A56)),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Column(modifier = Modifier.padding(10.dp)) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(
+                                            text = "RAW OUTPUT ($outputFormatMode FORMAT):",
+                                            color = Color(0xFF38BDF8),
+                                            fontSize = 9.5.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            fontFamily = FontFamily.Monospace
+                                        )
+                                        Text(
+                                            text = if (showRawOutputBox) "Hide" else "Show",
+                                            color = Color(0xFF94A3B8),
+                                            fontSize = 9.5.sp,
+                                            modifier = Modifier.clickable { showRawOutputBox = !showRawOutputBox }
+                                        )
+                                    }
+                                    AnimatedVisibility(visible = showRawOutputBox) {
+                                        Column {
+                                            Spacer(modifier = Modifier.height(6.dp))
+                                            Text(
+                                                text = formattedBatchOutput,
+                                                color = Color(0xFF00E676),
+                                                fontSize = 9.5.sp,
+                                                fontFamily = FontFamily.Monospace,
+                                                maxLines = 8,
+                                                overflow = TextOverflow.Ellipsis,
+                                                modifier = Modifier.horizontalScroll(rememberScrollState())
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.height(10.dp))
+
+                            // Batch Copy & Export .txt Row
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Button(
+                                    onClick = {
+                                        ClipboardHelper.copyToClipboard(context, formattedBatchOutput, "Accounts Output")
+                                        VibrationHelper.vibrateSuccess(context)
+                                        Toast.makeText(context, "✓ Copied ${createdAccountsList.size} Accounts ($outputFormatMode)!", Toast.LENGTH_SHORT).show()
+                                    },
+                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00E676)),
+                                    shape = RoundedCornerShape(8.dp),
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Icon(Icons.Default.ContentCopy, contentDescription = null, tint = Color.Black, modifier = Modifier.size(15.dp))
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text("Copy All Output", color = Color.Black, fontSize = 11.sp, fontWeight = FontWeight.ExtraBold)
+                                }
+
+                                Button(
+                                    onClick = {
+                                        try {
+                                            val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                                                type = "text/plain"
+                                                putExtra(Intent.EXTRA_SUBJECT, "FB_Accounts_${System.currentTimeMillis()}.txt")
+                                                putExtra(Intent.EXTRA_TEXT, formattedBatchOutput)
+                                            }
+                                            context.startActivity(Intent.createChooser(shareIntent, "Export Accounts (.txt)"))
+                                        } catch (e: Exception) {
+                                            Toast.makeText(context, "Export failed: ${e.message}", Toast.LENGTH_SHORT).show()
+                                        }
+                                    },
+                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0284C7)),
+                                    shape = RoundedCornerShape(8.dp),
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Icon(Icons.Default.Share, contentDescription = null, tint = Color.White, modifier = Modifier.size(15.dp))
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text("Export .txt", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.ExtraBold)
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // INDIVIDUAL CREATED ACCOUNT CARDS
+                items(createdAccountsList, key = { it.id }) { acc ->
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = Color(0xFF101926)),
+                        shape = RoundedCornerShape(12.dp),
+                        border = BorderStroke(
+                            1.dp,
+                            if (acc.accountType == "OLD") Color(0xFFFF5252).copy(alpha = 0.5f)
+                            else Color(0xFF00E676).copy(alpha = 0.5f)
+                        ),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(modifier = Modifier.padding(12.dp)) {
+                            // Top Row: Phone + Thread # + Checker Badge + Login Status
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Surface(
+                                        color = Color(0xFF0284C7).copy(alpha = 0.25f),
+                                        shape = RoundedCornerShape(5.dp)
+                                    ) {
+                                        Text(
+                                            text = "T#${acc.threadId}",
+                                            color = Color(0xFF38BDF8),
+                                            fontSize = 9.5.sp,
+                                            fontWeight = FontWeight.ExtraBold,
+                                            modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
+                                        )
+                                    }
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text(
+                                        text = acc.phoneNumber,
+                                        color = Color.White,
+                                        fontSize = 13.5.sp,
+                                        fontWeight = FontWeight.ExtraBold,
+                                        fontFamily = FontFamily.Monospace
+                                    )
+                                }
+
+                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    AccountStatusHighlightBadge(accountStatus = acc.accountType)
+                                    Surface(
+                                        color = if (acc.status == "LOGGED IN") Color(0xFF00E676).copy(alpha = 0.2f) else Color(0xFFFF5252).copy(alpha = 0.2f),
+                                        shape = RoundedCornerShape(6.dp)
+                                    ) {
+                                        Text(
+                                            text = acc.status,
+                                            color = if (acc.status == "LOGGED IN") Color(0xFF00E676) else Color(0xFFFF5252),
+                                            fontSize = 9.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                        )
+                                    }
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.height(6.dp))
+
+                            Text(
+                                text = "👤 ${acc.name}  •  📡 ${acc.panelUsed} (${acc.rangeUsed})  •  🌐 ${acc.proxyUsed}",
+                                color = Color(0xFF94A3B8),
+                                fontSize = 10.sp
+                            )
+
+                            Spacer(modifier = Modifier.height(8.dp))
+
+                            // Credentials Box
+                            Surface(
+                                color = Color(0xFF070E17),
+                                shape = RoundedCornerShape(8.dp),
+                                border = BorderStroke(1.dp, Color(0xFF1E293B)),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Column(
+                                    modifier = Modifier.padding(8.dp),
+                                    verticalArrangement = Arrangement.spacedBy(3.dp)
+                                ) {
+                                    Text("UID: ${acc.uid}   |   Pass: ${acc.password}", color = Color(0xFF38BDF8), fontSize = 10.5.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
+                                    Text("2FA: ${acc.twoFaSecret}", color = Color(0xFFFFD54F), fontSize = 9.5.sp, fontFamily = FontFamily.Monospace, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    Text("Token: ${acc.token}", color = Color(0xFFA7F3D0), fontSize = 9.5.sp, fontFamily = FontFamily.Monospace, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    Text("Cookie: ${acc.cookie}", color = Color(0xFFCBD5E1), fontSize = 9.5.sp, fontFamily = FontFamily.Monospace, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    Text("UA: ${acc.userAgent}", color = Color(0xFF64748B), fontSize = 8.5.sp, fontFamily = FontFamily.Monospace, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.height(8.dp))
+
+                            // Quick Copy Buttons + Fetch Real SMS Button
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(5.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                OutlinedButton(
+                                    onClick = {
+                                        ClipboardHelper.copyToClipboard(context, acc.uid, "UID")
+                                        Toast.makeText(context, "UID Copied!", Toast.LENGTH_SHORT).show()
+                                    },
+                                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 3.dp),
+                                    modifier = Modifier.height(28.dp).weight(1f)
+                                ) {
+                                    Text("UID", fontSize = 9.sp, color = Color(0xFF38BDF8))
+                                }
+
+                                OutlinedButton(
+                                    onClick = {
+                                        ClipboardHelper.copyToClipboard(context, acc.cookie, "Cookie")
+                                        Toast.makeText(context, "Cookie Copied!", Toast.LENGTH_SHORT).show()
+                                    },
+                                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 3.dp),
+                                    modifier = Modifier.height(28.dp).weight(1f)
+                                ) {
+                                    Text("Cookie", fontSize = 9.sp, color = Color(0xFFCBD5E1))
+                                }
+
+                                OutlinedButton(
+                                    onClick = {
+                                        val fullLine = acc.formatOutput(outputFormatMode)
+                                        ClipboardHelper.copyToClipboard(context, fullLine, "Full Account")
+                                        Toast.makeText(context, "Full Account Line Copied!", Toast.LENGTH_SHORT).show()
+                                    },
+                                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 3.dp),
+                                    modifier = Modifier.height(28.dp).weight(1.2f)
+                                ) {
+                                    Text("Copy Line", fontSize = 9.sp, color = Color(0xFF00E676))
+                                }
+
+                                // Fetch Real OTP SMS from Virtual Numbers Panel
+                                Button(
+                                    onClick = {
+                                        VirtualNumberManager.fetchIncomingOtps(context, autoCopy = true)
+                                        KopEngine2Manager.fetchIncomingOtps(context, autoCopy = true)
+                                        KopEngine2Manager.fetchActiveRanges()
+
+                                        val matched = findExistingOtpForPhone(
+                                            phone = acc.phoneNumber,
+                                            unixState = unixState,
+                                            vnState = vnState,
+                                            kop2State = kop2State
+                                        )
+                                        if (matched != null) {
+                                            val (code, fullSms) = matched
+                                            createdAccountsList = createdAccountsList.map {
+                                                if (it.id == acc.id) it.copy(otpCode = code, smsFetched = fullSms) else it
+                                            }
+                                            ClipboardHelper.copyToClipboard(context, code, "OTP Code")
+                                            VibrationHelper.vibrateSuccess(context)
+                                            OtpNotificationHelper.showOtpNotification(context, acc.phoneNumber, code, fullSms)
+                                            Toast.makeText(context, "⚡ OTP Copied: $code", Toast.LENGTH_SHORT).show()
+                                        } else {
+                                            Toast.makeText(
+                                                context,
+                                                "🔄 Polling ${acc.panelUsed} for ${acc.phoneNumber}... OTP আসামাত্র অটো কপি হবে!",
+                                                Toast.LENGTH_SHORT
+                                            ).show()
+                                        }
+                                    },
+                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0284C7)),
+                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 3.dp),
+                                    shape = RoundedCornerShape(6.dp),
+                                    modifier = Modifier.height(28.dp)
+                                ) {
+                                    Text("📩 Fetch SMS", fontSize = 9.5.sp, color = Color.White, fontWeight = FontWeight.Bold)
+                                }
+                            }
+
+                            if (!acc.smsFetched.isNullOrBlank()) {
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Surface(
+                                    color = Color(0xFF06281E),
+                                    shape = RoundedCornerShape(8.dp),
+                                    border = BorderStroke(1.dp, Color(0xFF00E676)),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(8.dp),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(
+                                            text = "📩 SMS: ${acc.smsFetched}",
+                                            color = Color(0xFF00E676),
+                                            fontSize = 10.5.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            fontFamily = FontFamily.Monospace,
+                                            modifier = Modifier.weight(1f)
+                                        )
+                                        if (!acc.otpCode.isNullOrEmpty()) {
+                                            Surface(
+                                                color = Color(0xFF00E676),
+                                                shape = RoundedCornerShape(4.dp),
+                                                modifier = Modifier.clickable {
+                                                    ClipboardHelper.copyToClipboard(context, acc.otpCode, "OTP Code")
+                                                    Toast.makeText(context, "OTP Copied: ${acc.otpCode}", Toast.LENGTH_SHORT).show()
+                                                }
+                                            ) {
+                                                Text(
+                                                    text = "OTP: ${acc.otpCode}",
+                                                    color = Color.Black,
+                                                    fontSize = 10.sp,
+                                                    fontWeight = FontWeight.ExtraBold,
+                                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                                )
+                                            }
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -1183,89 +1945,184 @@ fun AccountSection(modifier: Modifier = Modifier) {
         }
     }
 
-    // Country Picker Dialog
+    // Country Picker Dialog for Premium Numbers (Synced with UnixSmsManager)
     if (showCountryPicker) {
-        AlertDialog(
-            onDismissRequest = { showCountryPicker = false },
-            containerColor = Color(0xFF101926),
-            title = {
-                Column {
-                    Text(text = "Select Premium Country", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold)
-                    Spacer(modifier = Modifier.height(8.dp))
+        Dialog(onDismissRequest = { showCountryPicker = false }) {
+            Card(
+                colors = CardDefaults.cardColors(containerColor = Color(0xFF101926)),
+                shape = RoundedCornerShape(16.dp),
+                border = BorderStroke(1.dp, Color(0xFF0284C7)),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 500.dp)
+            ) {
+                Column(modifier = Modifier.padding(14.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("Select Country (Premium Panel)", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                        IconButton(onClick = { showCountryPicker = false }) {
+                            Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.White)
+                        }
+                    }
                     OutlinedTextField(
                         value = countrySearchQuery,
                         onValueChange = { countrySearchQuery = it },
-                        placeholder = { Text("Search country...", fontSize = 11.sp) },
+                        placeholder = { Text("Search country or code...", fontSize = 11.sp) },
                         singleLine = true,
-                        colors = OutlinedTextFieldDefaults.colors(focusedTextColor = Color.White, unfocusedTextColor = Color.White, focusedBorderColor = Color(0xFF00E676), unfocusedBorderColor = Color(0xFF334155)),
+                        colors = OutlinedTextFieldDefaults.colors(focusedTextColor = Color.White, unfocusedTextColor = Color.White),
                         modifier = Modifier.fillMaxWidth()
                     )
-                }
-            },
-            text = {
-                val filteredCountries = remember(countrySearchQuery) {
-                    if (countrySearchQuery.isBlank()) AllCountriesProvider.allCountries
-                    else AllCountriesProvider.allCountries.filter {
-                        it.name.contains(countrySearchQuery, ignoreCase = true) ||
-                        it.dialCode.contains(countrySearchQuery, ignoreCase = true) ||
-                        it.code.contains(countrySearchQuery, ignoreCase = true)
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    val filteredCountries = remember(countrySearchQuery) {
+                        AllCountriesProvider.allCountries.filter {
+                            countrySearchQuery.isBlank() ||
+                                it.name.contains(countrySearchQuery, ignoreCase = true) ||
+                                it.dialCode.contains(countrySearchQuery, ignoreCase = true) ||
+                                it.code.contains(countrySearchQuery, ignoreCase = true)
+                        }
                     }
-                }
-                LazyColumn(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(300.dp),
-                    verticalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    items(filteredCountries, key = { it.code }) { c ->
-                        Surface(
-                            color = if (selectedCountryInfo.code == c.code) Color(0xFF00E676).copy(alpha = 0.2f) else Color(0xFF070E17),
-                            shape = RoundedCornerShape(8.dp),
-                            border = BorderStroke(1.dp, if (selectedCountryInfo.code == c.code) Color(0xFF00E676) else Color(0xFF1E293B)),
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable {
-                                    selectedCountryInfo = c
-                                    showCountryPicker = false
-                                }
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(10.dp),
-                                verticalAlignment = Alignment.CenterVertically
+
+                    LazyColumn(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        item {
+                            Surface(
+                                color = if (unixState.selectedCountry == "ALL") Color(0xFF0284C7).copy(alpha = 0.25f) else Color(0xFF070E17),
+                                shape = RoundedCornerShape(8.dp),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        UnixSmsManager.setSelectedCountry("ALL")
+                                        showCountryPicker = false
+                                    }
                             ) {
-                                Text(text = c.flag, fontSize = 20.sp)
-                                Spacer(modifier = Modifier.width(10.dp))
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(text = c.name, color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
-                                    Text(text = c.dialCode, color = Color(0xFF90A4AE), fontSize = 10.sp)
+                                Row(
+                                    modifier = Modifier.padding(10.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Text("🌐 ALL COUNTRIES (Auto Pool)", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                    Text("${unixState.uploadedNumbers.count { !it.isUsed }} Ready", color = Color(0xFF00E676), fontSize = 11.sp)
+                                }
+                            }
+                        }
+                        items(filteredCountries, key = { it.code }) { cItem ->
+                            val countInPool = unixState.uploadedNumbers.count {
+                                !it.isUsed && it.countryCode.equals(cItem.code, ignoreCase = true)
+                            }
+                            Surface(
+                                color = if (unixState.selectedCountry.equals(cItem.code, ignoreCase = true)) Color(0xFF0284C7).copy(alpha = 0.25f) else Color(0xFF070E17),
+                                shape = RoundedCornerShape(8.dp),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        UnixSmsManager.setSelectedCountry(cItem.code)
+                                        showCountryPicker = false
+                                    }
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(10.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text("${cItem.flag} ${cItem.name} (${cItem.dialCode})", color = Color.White, fontSize = 12.sp)
+                                    if (countInPool > 0) {
+                                        Text("$countInPool ready", color = Color(0xFF00E676), fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                    }
                                 }
                             }
                         }
                     }
                 }
-            },
-            confirmButton = {
-                TextButton(onClick = { showCountryPicker = false }) {
-                    Text("Close", color = Color(0xFF00E676))
-                }
             }
-        )
+        }
     }
 }
 
-private fun generateRealisticName(countryCode: String): String {
-    return if (countryCode.equals("BD", ignoreCase = true)) {
-        val firstNames = listOf("Md", "Mohammad", "Tanvir", "Shakil", "Arif", "Sabbir", "Rakib", "Hasan", "Faruk", "Mehedi", "Ayesha", "Fatema", "Nusrat", "Tania", "Ruma", "Sumaiya")
-        val lastNames = listOf("Ahmed", "Hasan", "Rahman", "Islam", "Hossain", "Chowdhury", "Khan", "Ali", "Mia", "Sarker", "Akter", "Khatun")
-        "${firstNames.random()} ${lastNames.random()}"
-    } else {
-        val firstNames = listOf("John", "David", "Michael", "James", "Robert", "Emily", "Sarah", "Jessica", "Ashley", "Amanda")
-        val lastNames = listOf("Smith", "Johnson", "Williams", "Brown", "Jones", "Miller", "Davis", "Wilson", "Taylor")
-        "${firstNames.random()} ${lastNames.random()}"
+private fun generateNumberFromRangePattern(rangePattern: String): String {
+    val clean = rangePattern.trim().replace("+", "")
+    if (clean.contains("X", ignoreCase = true)) {
+        val sb = StringBuilder("+")
+        for (ch in clean) {
+            if (ch.equals('X', ignoreCase = true)) {
+                sb.append((0..9).random())
+            } else {
+                sb.append(ch)
+            }
+        }
+        return sb.toString()
+    }
+    val digitsOnly = clean.filter { it.isDigit() }.ifEmpty { "237627" }
+    val needed = (11 - digitsOnly.length).coerceIn(3, 7)
+    val suffix = (1..needed).map { (0..9).random() }.joinToString("")
+    return "+$digitsOnly$suffix"
+}
+
+private fun findExistingOtpForPhone(
+    phone: String,
+    unixState: com.example.service.UnixSmsState,
+    vnState: com.example.service.VirtualNumbersUiState,
+    kop2State: com.example.service.VirtualNumbersUiState
+): Pair<String, String>? {
+    unixState.activeNumbers.firstOrNull {
+        !it.otpCode.isNullOrEmpty() && UnixSmsManager.isPhoneNumberMatch(it.number, phone)
+    }?.let {
+        return it.otpCode!! to (it.otpMessage ?: "Facebook code: ${it.otpCode}")
+    }
+    unixState.uploadedNumbers.firstOrNull {
+        !it.otpCode.isNullOrEmpty() && UnixSmsManager.isPhoneNumberMatch(it.number, phone)
+    }?.let {
+        return it.otpCode!! to (it.otpMessage ?: "Facebook code: ${it.otpCode}")
+    }
+    vnState.provisionedNumbers.firstOrNull {
+        !it.otpCode.isNullOrEmpty() && VirtualNumberManager.isPhoneNumberMatch(it.number, phone)
+    }?.let {
+        return it.otpCode!! to (it.otpMessage ?: "Facebook code: ${it.otpCode}")
+    }
+    kop2State.provisionedNumbers.firstOrNull {
+        !it.otpCode.isNullOrEmpty() && KopEngine2Manager.isPhoneNumberMatch(it.number, phone)
+    }?.let {
+        return it.otpCode!! to (it.otpMessage ?: "Facebook code: ${it.otpCode}")
+    }
+    return null
+}
+
+private fun generateRealisticUserAgent(mode: String): String {
+    val devices = listOf(
+        Triple("samsung", "SM-S918B", "UP1A.231005.007"),
+        Triple("samsung", "SM-A546E", "UP1A.231005.007"),
+        Triple("Google", "Pixel 8 Pro", "UQ1A.240205.004"),
+        Triple("Xiaomi", "23049PCD8G", "UKQ1.230804.001"),
+        Triple("OnePlus", "CPH2449", "UKQ1.230924.001"),
+        Triple("vivo", "V2250", "UP1A.231005.007"),
+        Triple("realme", "RMX3771", "UKQ1.230924.001")
+    )
+    val (brand, model, buildId) = devices.random()
+    val androidVer = listOf("12", "13", "14").random()
+    val fbMajor = (435..452).random()
+    val fbSub = (10..45).random()
+    val fbBuild = (510000000..599999999).random()
+    val chromeMajor = (119..125).random()
+
+    val effectiveMode = if (mode == "AUTO_ROTATE") {
+        listOf("FB_KATANA", "FB_LITE", "CHROME_MBASIC").random()
+    } else mode
+
+    return when (effectiveMode) {
+        "FB_KATANA" -> "Dalvik/2.1.0 (Linux; U; Android $androidVer; $model Build/$buildId) [FBAN/FB4A;FBAV/$fbMajor.0.0.$fbSub.114;FBBV/$fbBuild;FBDM/{density=2.75,width=1080,height=2400};FBLC/en_US;FBRV/0;FBCR/Carrier;FBMF/$brand;FBBD/$brand;FBPN/com.facebook.katana;FBDV/$model;FBSV/$androidVer;FBOP/1;FBCA/arm64-v8a:;]"
+        "FB_LITE" -> "Dalvik/2.1.0 (Linux; U; Android $androidVer; $model Build/$buildId) [FBAN/EMA;FBLC/en_US;FBAV/${(380..405).random()}.0.0.${(10..20).random()}.109;FBPN/com.facebook.lite;FBDV/$model;FBSV/$androidVer;FBCA/arm64-v8a:;]"
+        else -> "Mozilla/5.0 (Linux; Android $androidVer; $model Build/$buildId; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/$chromeMajor.0.${(6000..6400).random()}.${(50..140).random()} Mobile Safari/537.36"
     }
 }
 
-private fun randomAlpha(length: Int): String {
-    val chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
-    return (1..length).map { chars.random() }.joinToString("")
+private fun generateRealisticName(): String {
+    val firstNames = listOf("Tanvir", "Nusrat", "Sabbir", "Farhana", "Mehedi", "Sadia", "Rakib", "Jannatul", "Arif", "Sumaiya", "Fahim", "Tasnim", "Liam", "Sophia", "Noah", "Olivia", "Aiden", "Zara")
+    val lastNames = listOf("Ahmed", "Hossain", "Islam", "Rahman", "Akter", "Khan", "Hasan", "mim", "Chowdhury", "Sultana", "Karim", "Sikder", "Carter", "Bennett", "Reed")
+    return "${firstNames.random()} ${lastNames.random()}"
+}
+
+private fun randomAlpha(len: Int): String {
+    val chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-"
+    return (1..len).map { chars.random() }.joinToString("")
 }

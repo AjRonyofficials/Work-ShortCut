@@ -797,6 +797,63 @@ object VirtualNumberManager {
         Toast.makeText(context, "✓ ${failed.size} টি ব্যর্থ নম্বর রিমুভ করা হয়েছে!", Toast.LENGTH_SHORT).show()
     }
 
+    suspend fun requestSingleNumberForAccount(context: Context, range: String): ProvisionedNumber? = kotlinx.coroutines.withContext(Dispatchers.IO) {
+        val effectiveRange = range.trim().ifEmpty { _state.value.targetRange.ifEmpty { "237627XXX" } }
+        val apiKey = _state.value.apiKey.ifEmpty { "ZNX_SDY9RBKGG8DO84EWZOMWEH2S" }
+        try {
+            val url = "https://api.zenexnetwork.com/v1/getnum"
+            val jsonBody = JSONObject().apply {
+                put("range", effectiveRange)
+                put("is_national", _state.value.isNational)
+                put("remove_plus", _state.value.removePlus)
+            }
+            val request = Request.Builder()
+                .url(url)
+                .addHeader("mapikey", apiKey)
+                .addHeader("Content-Type", "application/json")
+                .post(jsonBody.toString().toRequestBody("application/json".toMediaType()))
+                .build()
+
+            val response = httpClient.newCall(request).execute()
+            val responseStr = response.body?.string() ?: ""
+            if (response.isSuccessful && responseStr.isNotEmpty()) {
+                val json = JSONObject(responseStr)
+                val dataObj = json.optJSONObject("data")
+                if (dataObj != null) {
+                    val num = dataObj.optString("number").ifEmpty {
+                        dataObj.optString("copy").ifEmpty { dataObj.optString("full_number") }
+                    }
+                    val country = dataObj.optString("country", "Global")
+                    val operator = dataObj.optString("operator", "Mobile")
+                    val iso = dataObj.optString("iso", "gb")
+                    val status = dataObj.optString("status", "pending")
+                    if (num.isNotEmpty()) {
+                        val now = System.currentTimeMillis()
+                        val prov = ProvisionedNumber(
+                            number = if (!num.startsWith("+")) "+$num" else num,
+                            country = country,
+                            operator = operator,
+                            iso = iso,
+                            status = status,
+                            range = effectiveRange,
+                            timestamp = now,
+                            expiresAt = now + 1_200_000L,
+                            accountStatus = "UNCHECKED"
+                        )
+                        _state.update { curr ->
+                            val updated = (listOf(prov) + curr.provisionedNumbers).distinctBy { it.number }.take(50)
+                            saveUserProvisionedNumbers(updated)
+                            curr.copy(provisionedNumbers = updated)
+                        }
+                        mainHandler.post { startAutoPolling(context, autoCopy = true) }
+                        return@withContext prov
+                    }
+                }
+            }
+        } catch (_: Exception) {}
+        null
+    }
+
     fun isPhoneNumberMatch(num1: String, num2: String): Boolean {
         val d1 = num1.replace("[^0-9]".toRegex(), "")
         val d2 = num2.replace("[^0-9]".toRegex(), "")

@@ -1156,6 +1156,46 @@ object UnixSmsManager {
         android.os.Handler(android.os.Looper.getMainLooper()).post(block)
     }
 
+    @Synchronized
+    fun requestSingleNumberForAccount(context: Context, countryCode: String): ProvisionedNumber? {
+        init(context)
+        val available = _state.value.uploadedNumbers.filter {
+            !it.isUsed && (countryCode == "ALL" || it.countryCode.equals(countryCode, ignoreCase = true))
+        }
+        val chosen = available.firstOrNull()
+            ?: _state.value.uploadedNumbers.firstOrNull { countryCode == "ALL" || it.countryCode.equals(countryCode, ignoreCase = true) }
+            ?: return _state.value.activeNumbers.firstOrNull { countryCode == "ALL" || it.iso.equals(countryCode, ignoreCase = true) }
+
+        val updatedUploaded = _state.value.uploadedNumbers.map {
+            if (it.id == chosen.id) it.copy(isUsed = true) else it
+        }
+        saveUploadedNumbers(updatedUploaded)
+
+        val now = System.currentTimeMillis()
+        val gw = chosen.gateway.uppercase().ifEmpty { "LAMIX" }
+        val opName = if (gw == "LAMIX") "Lamix SMS ⚡" else "Unix SMS 🌐"
+        val r = chosen.customRate ?: getRateForCountry(chosen.countryCode)
+        val prov = ProvisionedNumber(
+            id = chosen.id,
+            number = chosen.number,
+            country = chosen.countryName,
+            operator = opName,
+            iso = chosen.countryCode.lowercase(),
+            status = if (!chosen.otpCode.isNullOrEmpty()) "success" else "pending",
+            otpCode = chosen.otpCode,
+            otpMessage = chosen.otpMessage,
+            range = "${chosen.service} ($$r)",
+            timestamp = now,
+            expiresAt = now + 1_200_000L,
+            accountStatus = "UNCHECKED"
+        )
+        val updatedActive = (listOf(prov) + _state.value.activeNumbers).distinctBy { it.number }.take(50)
+        _state.update { it.copy(uploadedNumbers = updatedUploaded, activeNumbers = updatedActive) }
+        saveActiveNumbers(updatedActive)
+        startFastOtpPolling(context)
+        return prov
+    }
+
     fun clearActiveNumbers() {
         _state.update { it.copy(activeNumbers = emptyList()) }
         saveActiveNumbers(emptyList())
