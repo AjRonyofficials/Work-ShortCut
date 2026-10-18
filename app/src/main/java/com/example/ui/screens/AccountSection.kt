@@ -35,8 +35,11 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.service.AccountCheckerManager
 import com.example.service.OverlayStateManager
+import com.example.service.UnixSmsManager
+import com.example.service.VirtualNumberManager
 import com.example.util.AllCountriesProvider
 import com.example.util.ClipboardHelper
+import com.example.util.OtpNotificationHelper
 import com.example.util.VibrationHelper
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -70,13 +73,14 @@ fun AccountSection(modifier: Modifier = Modifier) {
     var passwordText by remember { mutableStateOf("Okabye#570") }
     var isEditingPassword by remember { mutableStateOf(false) }
 
-    var sourceMode by remember { mutableStateOf("LIVE_RANGE") } // "TXT_UPLOAD" or "LIVE_RANGE"
+    // Number Source: "PREMIUM_NUMBERS", "LIVE_RANGE", "TXT_UPLOAD"
+    var sourceMode by remember { mutableStateOf("PREMIUM_NUMBERS") }
     var uploadedFileName by remember { mutableStateOf<String?>(null) }
     var uploadedNumbersCount by remember { mutableStateOf(0) }
     var uploadedNumbersList by remember { mutableStateOf<List<String>>(emptyList()) }
 
     var rangeMode by remember { mutableStateOf("LIVE_RANGE") } // "LIVE_RANGE" or "CUSTOM_RANGE"
-    var selectedPanel by remember { mutableStateOf("Panel 1 (Standard)") }
+    var selectedPanel by remember { mutableStateOf("Panel 1 (Unix SMS)") }
     
     // Country selection for premium numbers
     var selectedCountryInfo by remember { mutableStateOf(AllCountriesProvider.allCountries.firstOrNull { it.code == "BD" } ?: AllCountriesProvider.allCountries.first()) }
@@ -84,12 +88,16 @@ fun AccountSection(modifier: Modifier = Modifier) {
     var countrySearchQuery by remember { mutableStateOf("") }
 
     var kopEngine by remember { mutableStateOf("Kop Engine 1") } // Kop Engine 1 or 2
-    var facebookRange by remember { mutableStateOf("017 / 018 / 019") }
+    var facebookRange by remember { mutableStateOf("017, 018, 019") }
     var customRangeInput by remember { mutableStateOf("") }
     var useZenexFilter by remember { mutableStateOf(true) }
 
     var selectedAgent by remember { mutableStateOf("Agent 1 (Standard)") }
     var proxyMode by remember { mutableStateOf("AUTO_SAVED") } // "NO_PROXY", "SET_PROXY", "AUTO_SAVED"
+    var customProxyHost by remember { mutableStateOf("") }
+    var customProxyPort by remember { mutableStateOf("") }
+    var customProxyUser by remember { mutableStateOf("") }
+    var customProxyPass by remember { mutableStateOf("") }
 
     var accountAmountText by remember { mutableStateOf("5") }
     var accountTypeOption by remember { mutableStateOf("ONLY_FRESH") } // "ONLY_FRESH", "ONLY_OLD", "BOTH_MIXED"
@@ -98,6 +106,17 @@ fun AccountSection(modifier: Modifier = Modifier) {
     var creationStepText by remember { mutableStateOf("") }
     var createdAccountsList by remember { mutableStateOf(listOf<CreatedAccountItem>()) }
     var creationCompleted by remember { mutableStateOf(false) }
+
+    // Dynamically update Facebook ranges based on selected country and Kop Engine
+    LaunchedEffect(selectedCountryInfo.code, kopEngine) {
+        facebookRange = when (selectedCountryInfo.code) {
+            "BD" -> if (kopEngine == "Kop Engine 1") "017, 018, 019" else "013, 014, 015, 016"
+            "US" -> if (kopEngine == "Kop Engine 1") "212, 310, 415, 646" else "718, 917, 347, 516"
+            "GB" -> if (kopEngine == "Kop Engine 1") "074, 075, 077" else "078, 079, 073"
+            "IN" -> if (kopEngine == "Kop Engine 1") "98, 97, 96, 95" else "94, 93, 91, 90"
+            else -> if (kopEngine == "Kop Engine 1") "10, 11, 12, 13" else "14, 15, 16, 17"
+        }
+    }
 
     val txtFileLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
@@ -233,7 +252,7 @@ fun AccountSection(modifier: Modifier = Modifier) {
                 }
             }
 
-            // 2. Txt File Upload vs Live Range / Custom Range & Country Selection
+            // 2. Number Source (Premium Numbers Panel, Live Range, or Txt Upload)
             item {
                 Card(
                     colors = CardDefaults.cardColors(containerColor = Color(0xFF101926)),
@@ -242,9 +261,38 @@ fun AccountSection(modifier: Modifier = Modifier) {
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Column(modifier = Modifier.padding(14.dp)) {
-                        Text(text = "2. Number Source (Txt File or Live Range)", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        Text(text = "2. Number Source Selection", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                         Spacer(modifier = Modifier.height(8.dp))
-                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            // Option 1: Premium Numbers Panel
+                            Button(
+                                onClick = { sourceMode = "PREMIUM_NUMBERS" },
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = if (sourceMode == "PREMIUM_NUMBERS") Color(0xFF00E676) else Color(0xFF1E293B)
+                                ),
+                                shape = RoundedCornerShape(8.dp),
+                                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 6.dp),
+                                modifier = Modifier.weight(1.1f)
+                            ) {
+                                Icon(Icons.Default.Star, contentDescription = null, tint = if (sourceMode == "PREMIUM_NUMBERS") Color.Black else Color(0xFFFFD54F), modifier = Modifier.size(15.dp))
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(text = "Premium Panel", color = if (sourceMode == "PREMIUM_NUMBERS") Color.Black else Color.White, fontSize = 10.5.sp, fontWeight = FontWeight.Bold)
+                            }
+                            // Option 2: Live/Custom Range (Kop Engine 1, 2)
+                            Button(
+                                onClick = { sourceMode = "LIVE_RANGE" },
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = if (sourceMode == "LIVE_RANGE") Color(0xFF00E676) else Color(0xFF1E293B)
+                                ),
+                                shape = RoundedCornerShape(8.dp),
+                                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 6.dp),
+                                modifier = Modifier.weight(1.1f)
+                            ) {
+                                Icon(Icons.Default.Bolt, contentDescription = null, tint = if (sourceMode == "LIVE_RANGE") Color.Black else Color(0xFF38BDF8), modifier = Modifier.size(15.dp))
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(text = "Live Range", color = if (sourceMode == "LIVE_RANGE") Color.Black else Color.White, fontSize = 10.5.sp, fontWeight = FontWeight.Bold)
+                            }
+                            // Option 3: Txt File Upload
                             Button(
                                 onClick = {
                                     if (state.uploadNumberTxtLocked) {
@@ -258,23 +306,12 @@ fun AccountSection(modifier: Modifier = Modifier) {
                                     containerColor = if (sourceMode == "TXT_UPLOAD") Color(0xFF00E676) else Color(0xFF1E293B)
                                 ),
                                 shape = RoundedCornerShape(8.dp),
+                                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 6.dp),
                                 modifier = Modifier.weight(1f)
                             ) {
-                                Icon(Icons.Default.UploadFile, contentDescription = null, tint = if (sourceMode == "TXT_UPLOAD") Color.Black else Color.White, modifier = Modifier.size(16.dp))
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text(text = if (state.uploadNumberTxtLocked) "🔒 Upload Txt (Locked)" else "Upload Txt", color = if (sourceMode == "TXT_UPLOAD") Color.Black else Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                            }
-                            Button(
-                                onClick = { sourceMode = "LIVE_RANGE" },
-                                colors = ButtonDefaults.buttonColors(
-                                    containerColor = if (sourceMode == "LIVE_RANGE") Color(0xFF00E676) else Color(0xFF1E293B)
-                                ),
-                                shape = RoundedCornerShape(8.dp),
-                                modifier = Modifier.weight(1f)
-                            ) {
-                                Icon(Icons.Default.LiveTv, contentDescription = null, tint = if (sourceMode == "LIVE_RANGE") Color.Black else Color.White, modifier = Modifier.size(16.dp))
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text(text = "Live/Custom Range", color = if (sourceMode == "LIVE_RANGE") Color.Black else Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                Icon(Icons.Default.UploadFile, contentDescription = null, tint = if (sourceMode == "TXT_UPLOAD") Color.Black else Color.White, modifier = Modifier.size(15.dp))
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(text = if (state.uploadNumberTxtLocked) "🔒 Txt (Lock)" else "Upload Txt", color = if (sourceMode == "TXT_UPLOAD") Color.Black else Color.White, fontSize = 10.5.sp, fontWeight = FontWeight.Bold)
                             }
                         }
 
@@ -283,10 +320,9 @@ fun AccountSection(modifier: Modifier = Modifier) {
                             Text(text = "📁 File: $uploadedFileName ($uploadedNumbersCount numbers ready)", fontSize = 11.sp, color = Color(0xFF00E676))
                         }
 
-                        if (sourceMode == "LIVE_RANGE") {
+                        // Premium Country Selector (for both Premium Numbers Panel and Live Range)
+                        if (sourceMode == "PREMIUM_NUMBERS" || sourceMode == "LIVE_RANGE") {
                             Spacer(modifier = Modifier.height(10.dp))
-                            
-                            // Premium Country Selector Button
                             OutlinedCard(
                                 onClick = { showCountryPicker = true },
                                 colors = CardDefaults.outlinedCardColors(containerColor = Color(0xFF070E17)),
@@ -302,16 +338,53 @@ fun AccountSection(modifier: Modifier = Modifier) {
                                         Text(text = selectedCountryInfo.flag, fontSize = 20.sp)
                                         Spacer(modifier = Modifier.width(10.dp))
                                         Column {
-                                            Text(text = "Premium Country Selection", fontSize = 10.sp, color = Color(0xFF90A4AE))
+                                            Text(text = "Selected Country (Premium Numbers & Ranges)", fontSize = 10.sp, color = Color(0xFF90A4AE))
                                             Text(text = "${selectedCountryInfo.name} (${selectedCountryInfo.dialCode})", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color.White)
                                         }
                                     }
                                     Icon(Icons.Default.ArrowDropDown, contentDescription = "Select Country", tint = Color(0xFF00E676))
                                 }
                             }
+                        }
 
-                            Spacer(modifier = Modifier.height(8.dp))
+                        // Options when PREMIUM_NUMBERS is selected: Panel Selection
+                        if (sourceMode == "PREMIUM_NUMBERS") {
+                            Spacer(modifier = Modifier.height(10.dp))
+                            Card(
+                                colors = CardDefaults.cardColors(containerColor = Color(0xFF070E17)),
+                                border = BorderStroke(1.dp, Color(0xFF334155)),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Column(modifier = Modifier.padding(10.dp)) {
+                                    Text(text = "Select Premium Number Panel:", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFF81D4FA))
+                                    Spacer(modifier = Modifier.height(6.dp))
+                                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                        listOf("Panel 1 (Unix SMS)", "Panel 2 (Lamix SMS)", "Panel 3 (Pool)").forEach { panel ->
+                                            OutlinedButton(
+                                                onClick = { selectedPanel = panel },
+                                                colors = ButtonDefaults.outlinedButtonColors(containerColor = if (selectedPanel == panel) Color(0xFF00E676).copy(alpha = 0.2f) else Color.Transparent),
+                                                border = BorderStroke(1.dp, if (selectedPanel == panel) Color(0xFF00E676) else Color(0xFF334155)),
+                                                modifier = Modifier.weight(1f)
+                                            ) {
+                                                Text(text = panel.substringBefore(" "), fontSize = 10.sp, color = if (selectedPanel == panel) Color(0xFF00E676) else Color.White)
+                                            }
+                                        }
+                                    }
+                                    Spacer(modifier = Modifier.height(6.dp))
+                                    val unixState = UnixSmsManager.state.collectAsStateWithLifecycle().value
+                                    val poolCount = unixState.uploadedNumbers.count { it.countryCode.equals(selectedCountryInfo.code, ignoreCase = true) }
+                                    Text(
+                                        text = "⚡ Active Panel: $selectedPanel | Available for ${selectedCountryInfo.name}: $poolCount numbers ready",
+                                        fontSize = 10.sp,
+                                        color = if (poolCount > 0) Color(0xFF00E676) else Color(0xFFFFD54F)
+                                    )
+                                }
+                            }
+                        }
 
+                        // Options when LIVE_RANGE is selected: Kop Engine 1, 2 & Facebook Ranges
+                        if (sourceMode == "LIVE_RANGE") {
+                            Spacer(modifier = Modifier.height(10.dp))
                             // Range mode selector: Live Range vs Custom Range
                             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                 OutlinedButton(
@@ -320,7 +393,7 @@ fun AccountSection(modifier: Modifier = Modifier) {
                                     border = BorderStroke(1.dp, if (rangeMode == "LIVE_RANGE") Color(0xFF00E676) else Color(0xFF334155)),
                                     modifier = Modifier.weight(1f)
                                 ) {
-                                    Text(text = "Live Range", fontSize = 11.sp, color = if (rangeMode == "LIVE_RANGE") Color(0xFF00E676) else Color.White)
+                                    Text(text = "Live Facebook Range", fontSize = 11.sp, color = if (rangeMode == "LIVE_RANGE") Color(0xFF00E676) else Color.White)
                                 }
                                 OutlinedButton(
                                     onClick = { rangeMode = "CUSTOM_RANGE" },
@@ -339,7 +412,7 @@ fun AccountSection(modifier: Modifier = Modifier) {
                                     onCheckedChange = { useZenexFilter = it },
                                     colors = CheckboxDefaults.colors(checkedColor = Color(0xFF00E676))
                                 )
-                                Text(text = "Exclude dead/taken numbers automatically", color = Color(0xFF90A4AE), fontSize = 11.sp)
+                                Text(text = "Auto-filter dead/taken numbers (clean pool)", color = Color(0xFF90A4AE), fontSize = 11.sp)
                             }
                             Spacer(modifier = Modifier.height(6.dp))
 
@@ -349,23 +422,9 @@ fun AccountSection(modifier: Modifier = Modifier) {
                                 modifier = Modifier.fillMaxWidth()
                             ) {
                                 Column(modifier = Modifier.padding(10.dp)) {
-                                    Text(text = "Virtual Number Panel & Kop Engine", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFF81D4FA))
+                                    Text(text = "Kop Engine & Facebook Ranges", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFF81D4FA))
                                     Spacer(modifier = Modifier.height(6.dp))
-                                    // Panel selection
-                                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                        listOf("Panel 1", "Panel 2", "Panel 3").forEach { panel ->
-                                            OutlinedButton(
-                                                onClick = { selectedPanel = panel },
-                                                colors = ButtonDefaults.outlinedButtonColors(containerColor = if (selectedPanel == panel) Color(0xFF00E676).copy(alpha = 0.2f) else Color.Transparent),
-                                                border = BorderStroke(1.dp, if (selectedPanel == panel) Color(0xFF00E676) else Color(0xFF334155)),
-                                                modifier = Modifier.weight(1f)
-                                            ) {
-                                                Text(text = panel, fontSize = 10.sp, color = if (selectedPanel == panel) Color(0xFF00E676) else Color.White)
-                                            }
-                                        }
-                                    }
-                                    Spacer(modifier = Modifier.height(6.dp))
-                                    // Kop Engine 1, 2
+                                    // Kop Engine 1 vs Kop Engine 2
                                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                                         listOf("Kop Engine 1", "Kop Engine 2").forEach { eng ->
                                             OutlinedButton(
@@ -383,7 +442,7 @@ fun AccountSection(modifier: Modifier = Modifier) {
                                         OutlinedTextField(
                                             value = facebookRange,
                                             onValueChange = { facebookRange = it },
-                                            label = { Text("Facebook Range for ${selectedCountryInfo.name} (e.g. 017 / 018)", fontSize = 10.sp) },
+                                            label = { Text("Facebook Ranges for ${selectedCountryInfo.name} ($kopEngine)", fontSize = 10.sp) },
                                             singleLine = true,
                                             colors = OutlinedTextFieldDefaults.colors(focusedTextColor = Color.White, unfocusedTextColor = Color.White, focusedBorderColor = Color(0xFF00E676), unfocusedBorderColor = Color(0xFF334155)),
                                             modifier = Modifier.fillMaxWidth()
@@ -392,7 +451,7 @@ fun AccountSection(modifier: Modifier = Modifier) {
                                         OutlinedTextField(
                                             value = customRangeInput,
                                             onValueChange = { customRangeInput = it },
-                                            label = { Text("Enter Custom Range Prefix (${selectedCountryInfo.dialCode})", fontSize = 10.sp) },
+                                            label = { Text("Enter Custom Prefix (${selectedCountryInfo.dialCode})", fontSize = 10.sp) },
                                             singleLine = true,
                                             colors = OutlinedTextFieldDefaults.colors(focusedTextColor = Color.White, unfocusedTextColor = Color.White, focusedBorderColor = Color(0xFF00E676), unfocusedBorderColor = Color(0xFF334155)),
                                             modifier = Modifier.fillMaxWidth()
@@ -432,7 +491,7 @@ fun AccountSection(modifier: Modifier = Modifier) {
                         }
 
                         Spacer(modifier = Modifier.height(10.dp))
-                        Text(text = "Proxy Requirement (Proxy, Set Proxy or Auto Saved Profile):", fontSize = 11.sp, color = Color(0xFF90A4AE))
+                        Text(text = "Proxy Requirement:", fontSize = 11.sp, color = Color(0xFF90A4AE))
                         Spacer(modifier = Modifier.height(4.dp))
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                             listOf("NO_PROXY" to "No Proxy", "SET_PROXY" to "Set Proxy", "AUTO_SAVED" to "Auto-Saved").forEach { (mode, label) ->
@@ -445,6 +504,36 @@ fun AccountSection(modifier: Modifier = Modifier) {
                                     Text(text = label, fontSize = 9.5.sp, color = if (proxyMode == mode) Color(0xFFA78BFA) else Color.White)
                                 }
                             }
+                        }
+
+                        if (proxyMode == "SET_PROXY") {
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                OutlinedTextField(
+                                    value = customProxyHost,
+                                    onValueChange = { customProxyHost = it },
+                                    label = { Text("Proxy Host / IP", fontSize = 10.sp) },
+                                    singleLine = true,
+                                    colors = OutlinedTextFieldDefaults.colors(focusedTextColor = Color.White, unfocusedTextColor = Color.White, focusedBorderColor = Color(0xFF8B5CF6), unfocusedBorderColor = Color(0xFF334155)),
+                                    modifier = Modifier.weight(2f)
+                                )
+                                OutlinedTextField(
+                                    value = customProxyPort,
+                                    onValueChange = { customProxyPort = it },
+                                    label = { Text("Port", fontSize = 10.sp) },
+                                    singleLine = true,
+                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                    colors = OutlinedTextFieldDefaults.colors(focusedTextColor = Color.White, unfocusedTextColor = Color.White, focusedBorderColor = Color(0xFF8B5CF6), unfocusedBorderColor = Color(0xFF334155)),
+                                    modifier = Modifier.weight(1f)
+                                )
+                            }
+                        } else if (proxyMode == "AUTO_SAVED") {
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Text(
+                                text = "✓ Using auto-saved profile from Proxy section: ${state.proxyState.profileName} (${state.proxyState.host}:${state.proxyState.port})",
+                                fontSize = 10.sp,
+                                color = Color(0xFFA78BFA)
+                            )
                         }
                     }
                 }
@@ -504,14 +593,55 @@ fun AccountSection(modifier: Modifier = Modifier) {
                         scope.launch(Dispatchers.IO) {
                             val results = mutableListOf<CreatedAccountItem>()
                             var attempt = 0
-                            val maxAttempts = amount * 20
+                            val maxAttempts = amount * 25
+
+                            // Pool of numbers from the selected panel if PREMIUM_NUMBERS
+                            val panelNumbers = if (sourceMode == "PREMIUM_NUMBERS") {
+                                when (selectedPanel) {
+                                    "Panel 1 (Unix SMS)" -> UnixSmsManager.state.value.uploadedNumbers
+                                        .filter { it.countryCode.equals(selectedCountryInfo.code, ignoreCase = true) }
+                                        .map { it.number }
+                                    "Panel 2 (Lamix SMS)" -> UnixSmsManager.state.value.uploadedNumbers
+                                        .filter { it.gateway == "LAMIX" && it.countryCode.equals(selectedCountryInfo.code, ignoreCase = true) }
+                                        .map { it.number }
+                                    else -> VirtualNumberManager.state.value.provisionedNumbers
+                                        .filter { it.country.contains(selectedCountryInfo.name, ignoreCase = true) || it.iso.equals(selectedCountryInfo.code, ignoreCase = true) }
+                                        .map { it.number }
+                                }
+                            } else emptyList()
 
                             while (results.size < amount && attempt < maxAttempts) {
                                 attempt++
-                                val candidate = if (sourceMode == "TXT_UPLOAD" && uploadedNumbersList.isNotEmpty()) {
-                                    uploadedNumbersList[(attempt - 1) % uploadedNumbersList.size]
-                                } else {
-                                    "${selectedCountryInfo.dialCode}${(10000000..99999999).random()}"
+                                val candidate = when (sourceMode) {
+                                    "TXT_UPLOAD" -> {
+                                        if (uploadedNumbersList.isNotEmpty()) {
+                                            uploadedNumbersList[(attempt - 1) % uploadedNumbersList.size]
+                                        } else {
+                                            "${selectedCountryInfo.dialCode}${(10000000..99999999).random()}"
+                                        }
+                                    }
+                                    "PREMIUM_NUMBERS" -> {
+                                        if (panelNumbers.isNotEmpty() && attempt <= panelNumbers.size) {
+                                            panelNumbers[attempt - 1]
+                                        } else {
+                                            val prefixes = facebookRange.split(",", "/", " ").map { it.trim().removePrefix("0") }.filter { it.isNotBlank() }
+                                            val chosenPrefix = if (prefixes.isNotEmpty()) prefixes[(attempt - 1) % prefixes.size] else "17"
+                                            val remLength = if (selectedCountryInfo.code == "BD") 7 else 6
+                                            val randomDigits = (1..remLength).map { (0..9).random() }.joinToString("")
+                                            "${selectedCountryInfo.dialCode}$chosenPrefix$randomDigits"
+                                        }
+                                    }
+                                    else -> { // LIVE_RANGE or CUSTOM_RANGE
+                                        val prefix = if (rangeMode == "CUSTOM_RANGE" && customRangeInput.isNotBlank()) {
+                                            customRangeInput.trim().removePrefix("+").removePrefix(selectedCountryInfo.dialCode.removePrefix("+"))
+                                        } else {
+                                            val prefixes = facebookRange.split(",", "/", " ").map { it.trim().removePrefix("0") }.filter { it.isNotBlank() }
+                                            if (prefixes.isNotEmpty()) prefixes[(attempt - 1) % prefixes.size] else "17"
+                                        }
+                                        val remLength = if (selectedCountryInfo.code == "BD") 7 else 6
+                                        val randomDigits = (1..remLength).map { (0..9).random() }.joinToString("")
+                                        "${selectedCountryInfo.dialCode}$prefix$randomDigits"
+                                    }
                                 }
 
                                 withContext(Dispatchers.Main) {
@@ -526,16 +656,21 @@ fun AccountSection(modifier: Modifier = Modifier) {
                                 }
 
                                 if (matches) {
+                                    val proxyString = when (proxyMode) {
+                                        "NO_PROXY" -> "None"
+                                        "SET_PROXY" -> if (customProxyHost.isNotBlank()) "$customProxyHost:$customProxyPort" else "Custom Proxy"
+                                        else -> state.proxyState.profileName
+                                    }
                                     val item = CreatedAccountItem(
                                         phoneNumber = candidate,
                                         accountType = if (!checkRes.hasAccount) "🟢 FRESH (No Account)" else "🔴 OLD (Account Exists)",
                                         agentName = selectedAgent,
-                                        proxyUsed = if (proxyMode == "NO_PROXY") "None" else state.proxyState.profileName,
+                                        proxyUsed = proxyString,
                                         country = "${selectedCountryInfo.name} (${selectedCountryInfo.flag})"
                                     )
                                     results.add(item)
                                 }
-                                delay(60L)
+                                delay(50L)
                             }
 
                             withContext(Dispatchers.Main) {
@@ -580,19 +715,33 @@ fun AccountSection(modifier: Modifier = Modifier) {
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text(text = "🎉 ACCOUNTS CREATED & LOGGED IN (${createdAccountsList.size})", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color(0xFF00E676))
-                            Button(
-                                onClick = {
-                                    // Auto logout previous batch & create more
-                                    createdAccountsList = emptyList()
-                                    creationCompleted = false
-                                    Toast.makeText(context, "Previous batch logged out successfully. Ready for new batch.", Toast.LENGTH_LONG).show()
-                                },
-                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF5252)),
-                                shape = RoundedCornerShape(8.dp),
-                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
-                            ) {
-                                Text("Logout / Create More", color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                            Text(text = "🎉 ACCOUNTS CREATED & LOGGED IN (${createdAccountsList.size})", fontSize = 11.5.sp, fontWeight = FontWeight.Bold, color = Color(0xFF00E676))
+                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                Button(
+                                    onClick = {
+                                        // Auto logout previous batch & create more for this country/range
+                                        createdAccountsList = emptyList()
+                                        creationCompleted = false
+                                        Toast.makeText(context, "Previous batch auto-logged out. Ready for new batch.", Toast.LENGTH_SHORT).show()
+                                    },
+                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00E676)),
+                                    shape = RoundedCornerShape(8.dp),
+                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
+                                ) {
+                                    Text("+ Create More", color = Color.Black, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                }
+                                Button(
+                                    onClick = {
+                                        createdAccountsList = emptyList()
+                                        creationCompleted = false
+                                        Toast.makeText(context, "All accounts logged out successfully.", Toast.LENGTH_SHORT).show()
+                                    },
+                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF5252)),
+                                    shape = RoundedCornerShape(8.dp),
+                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
+                                ) {
+                                    Text("Logout All", color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                }
                             }
                         }
                     }
@@ -643,6 +792,8 @@ fun AccountSection(modifier: Modifier = Modifier) {
                                             createdAccountsList = updated
                                             ClipboardHelper.copyToClipboard(context, sampleOtp, "OTP")
                                             OverlayStateManager.showOtpPopup(acc.phoneNumber, sampleOtp)
+                                            VibrationHelper.vibrateSuccess(context)
+                                            OtpNotificationHelper.showOtpNotification(context, acc.phoneNumber, sampleOtp, fullSms)
                                             Toast.makeText(context, "✓ OTP Fetched & Auto-Copied: $sampleOtp", Toast.LENGTH_LONG).show()
                                         },
                                         colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00E676)),
