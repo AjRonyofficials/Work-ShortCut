@@ -564,37 +564,67 @@ fun KopEngine2SectionContent(
                     )
                     Spacer(modifier = Modifier.height(10.dp))
 
-                    // Active suggestions
-                    if (state.activeRanges.isNotEmpty()) {
-                        Text(
-                            text = "Live Active Signals / Ranges (ট্যাপ করে সিলেক্ট করুন):",
-                            color = ThemeMuted,
-                            fontSize = 10.5.sp,
-                            fontWeight = FontWeight.SemiBold
+                    // Active Suggestions Chips (Kop Engine 2: 013 (Skitto), 014 (BL New), 016 (Airtel), 015 (Teletalk))
+                    Text(
+                        text = "Active Suggestions Chips (ফেসবুকের টপ রেঞ্জ):",
+                        color = ThemeMuted,
+                        fontSize = 10.5.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    Spacer(modifier = Modifier.height(5.dp))
+                    FlowRow(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalArrangement = Arrangement.spacedBy(5.dp)
+                    ) {
+                        val kop2Suggestions = listOf(
+                            Pair("013", "Skitto"),
+                            Pair("014", "BL New"),
+                            Pair("016", "Airtel"),
+                            Pair("015", "Teletalk")
                         )
-                        Spacer(modifier = Modifier.height(5.dp))
-                        FlowRow(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(6.dp),
-                            verticalArrangement = Arrangement.spacedBy(5.dp)
-                        ) {
-                            state.activeRanges.forEach { item ->
-                                val isSelected = state.targetRange == item.range
+                        kop2Suggestions.forEach { (prefix, op) ->
+                            val isSelected = state.targetRange == prefix || state.targetRange.startsWith(prefix)
+                            Surface(
+                                color = if (isSelected) ThemeSky.copy(alpha = 0.35f) else ThemeSurfaceDark,
+                                shape = RoundedCornerShape(8.dp),
+                                border = BorderStroke(
+                                    1.dp,
+                                    if (isSelected) ThemeSkyBright else ThemeBorder
+                                ),
+                                modifier = Modifier.clickable {
+                                    KopEngine2Manager.setTargetRange(prefix)
+                                    ClipboardHelper.copyToClipboard(context, prefix, "Target Range")
+                                    Toast.makeText(context, "রেঞ্জ সিলেক্ট হয়েছে: $prefix ($op)", Toast.LENGTH_SHORT).show()
+                                }
+                            ) {
+                                Text(
+                                    text = "$prefix ($op)",
+                                    color = if (isSelected) Color.White else Color(0xFFCBD5E1),
+                                    fontSize = 10.5.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                )
+                            }
+                        }
+
+                        // Also include dynamic API ranges if any
+                        state.activeRanges.take(2).forEach { item ->
+                            if (item.range != "013" && item.range != "014" && item.range != "016" && item.range != "015") {
                                 Surface(
-                                    color = if (isSelected) ThemeSky.copy(alpha = 0.35f) else ThemeSurfaceDark,
+                                    color = if (state.targetRange == item.range) ThemeSky.copy(alpha = 0.35f) else ThemeSurfaceDark,
                                     shape = RoundedCornerShape(8.dp),
-                                    border = BorderStroke(
-                                        1.dp,
-                                        if (isSelected) ThemeSkyBright else ThemeBorder
-                                    ),
+                                    border = BorderStroke(1.dp, if (state.targetRange == item.range) ThemeSkyBright else ThemeBorder),
                                     modifier = Modifier.clickable {
                                         KopEngine2Manager.setTargetRange(item.range)
+                                        ClipboardHelper.copyToClipboard(context, item.range, "Target Range")
+                                        Toast.makeText(context, "রেঞ্জ সিলেক্ট হয়েছে: ${item.range}", Toast.LENGTH_SHORT).show()
                                     }
                                 ) {
                                     val label = if (item.hits > 0) "${item.range} (${item.service} • ${item.hits})" else "${item.range} (${item.service})"
                                     Text(
                                         text = label,
-                                        color = if (isSelected) Color.White else Color(0xFFCBD5E1),
+                                        color = if (state.targetRange == item.range) Color.White else Color(0xFFCBD5E1),
                                         fontSize = 10.5.sp,
                                         fontWeight = FontWeight.SemiBold,
                                         modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
@@ -602,8 +632,8 @@ fun KopEngine2SectionContent(
                                 }
                             }
                         }
-                        Spacer(modifier = Modifier.height(10.dp))
                     }
+                    Spacer(modifier = Modifier.height(10.dp))
 
                     // Checkboxes & Quantity Dropdown in Row
                     Row(

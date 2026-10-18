@@ -102,14 +102,13 @@ fun AccountSection(modifier: Modifier = Modifier) {
     var passwordText by remember { mutableStateOf("Okabye#570") }
     var isEditingPassword by remember { mutableStateOf(false) }
 
-    // Number Source: "PREMIUM_NUMBERS", "LIVE_RANGE", "TXT_UPLOAD"
+    // Number Source / Panel: "PREMIUM_NUMBERS", "KOP_ENGINE_1", "KOP_ENGINE_2", "TXT_UPLOAD"
     var sourceMode by remember { mutableStateOf("PREMIUM_NUMBERS") }
     var uploadedFileName by remember { mutableStateOf<String?>(null) }
     var uploadedNumbersCount by remember { mutableStateOf(0) }
     var uploadedNumbersList by remember { mutableStateOf<List<String>>(emptyList()) }
 
     var rangeMode by remember { mutableStateOf("LIVE_RANGE") } // "LIVE_RANGE" or "CUSTOM_RANGE"
-    var selectedPanel by remember { mutableStateOf("Panel 1 (Unix SMS)") }
     
     // Country selection for premium numbers
     var selectedCountryInfo by remember { mutableStateOf(AllCountriesProvider.allCountries.firstOrNull { it.code == "BD" } ?: AllCountriesProvider.allCountries.first()) }
@@ -290,38 +289,70 @@ fun AccountSection(modifier: Modifier = Modifier) {
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Column(modifier = Modifier.padding(14.dp)) {
-                        Text(text = "2. Number Source Selection", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        Text(text = "2. Number Source & Panel Selection", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                         Spacer(modifier = Modifier.height(8.dp))
-                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            // Option 1: Premium Numbers Panel
+                        // Panel Selection matching Virtual Numbers section exactly
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                            // Panel 0: Premium Numbers
                             Button(
-                                onClick = { sourceMode = "PREMIUM_NUMBERS" },
+                                onClick = { 
+                                    sourceMode = "PREMIUM_NUMBERS"
+                                    VirtualNumberManager.setSelectedPanel(0)
+                                },
                                 colors = ButtonDefaults.buttonColors(
                                     containerColor = if (sourceMode == "PREMIUM_NUMBERS") Color(0xFF00E676) else Color(0xFF1E293B)
                                 ),
                                 shape = RoundedCornerShape(8.dp),
-                                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 6.dp),
+                                contentPadding = PaddingValues(horizontal = 4.dp, vertical = 6.dp),
                                 modifier = Modifier.weight(1.1f)
                             ) {
-                                Icon(Icons.Default.Star, contentDescription = null, tint = if (sourceMode == "PREMIUM_NUMBERS") Color.Black else Color(0xFFFFD54F), modifier = Modifier.size(15.dp))
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text(text = "Premium Panel", color = if (sourceMode == "PREMIUM_NUMBERS") Color.Black else Color.White, fontSize = 10.5.sp, fontWeight = FontWeight.Bold)
+                                Icon(Icons.Default.Star, contentDescription = null, tint = if (sourceMode == "PREMIUM_NUMBERS") Color.Black else Color(0xFFFFD54F), modifier = Modifier.size(14.dp))
+                                Spacer(modifier = Modifier.width(3.dp))
+                                Text(text = "Premium", color = if (sourceMode == "PREMIUM_NUMBERS") Color.Black else Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                             }
-                            // Option 2: Live/Custom Range (Kop Engine 1, 2)
+                            // Panel 1: Kop Engine 1 (Api Number)
                             Button(
-                                onClick = { sourceMode = "LIVE_RANGE" },
+                                onClick = { 
+                                    sourceMode = "KOP_ENGINE_1"
+                                    kopEngine = "Kop Engine 1"
+                                    VirtualNumberManager.setSelectedPanel(1)
+                                    if (selectedCountryInfo.code == "BD") {
+                                        facebookRange = "017, 018, 019"
+                                    }
+                                },
                                 colors = ButtonDefaults.buttonColors(
-                                    containerColor = if (sourceMode == "LIVE_RANGE") Color(0xFF00E676) else Color(0xFF1E293B)
+                                    containerColor = if (sourceMode == "KOP_ENGINE_1") Color(0xFF00E676) else Color(0xFF1E293B)
                                 ),
                                 shape = RoundedCornerShape(8.dp),
-                                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 6.dp),
+                                contentPadding = PaddingValues(horizontal = 4.dp, vertical = 6.dp),
                                 modifier = Modifier.weight(1.1f)
                             ) {
-                                Icon(Icons.Default.Bolt, contentDescription = null, tint = if (sourceMode == "LIVE_RANGE") Color.Black else Color(0xFF38BDF8), modifier = Modifier.size(15.dp))
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text(text = "Live Range", color = if (sourceMode == "LIVE_RANGE") Color.Black else Color.White, fontSize = 10.5.sp, fontWeight = FontWeight.Bold)
+                                Icon(Icons.Default.Bolt, contentDescription = null, tint = if (sourceMode == "KOP_ENGINE_1") Color.Black else Color(0xFF38BDF8), modifier = Modifier.size(14.dp))
+                                Spacer(modifier = Modifier.width(3.dp))
+                                Text(text = "Kop Eng 1", color = if (sourceMode == "KOP_ENGINE_1") Color.Black else Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                             }
-                            // Option 3: Txt File Upload
+                            // Panel 2: Kop Engine 2 (Api Number)
+                            Button(
+                                onClick = { 
+                                    sourceMode = "KOP_ENGINE_2"
+                                    kopEngine = "Kop Engine 2"
+                                    VirtualNumberManager.setSelectedPanel(2)
+                                    if (selectedCountryInfo.code == "BD") {
+                                        facebookRange = "013, 014, 016, 015"
+                                    }
+                                },
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = if (sourceMode == "KOP_ENGINE_2") Color(0xFF00E676) else Color(0xFF1E293B)
+                                ),
+                                shape = RoundedCornerShape(8.dp),
+                                contentPadding = PaddingValues(horizontal = 4.dp, vertical = 6.dp),
+                                modifier = Modifier.weight(1.1f)
+                            ) {
+                                Icon(Icons.Default.Sensors, contentDescription = null, tint = if (sourceMode == "KOP_ENGINE_2") Color.Black else Color(0xFFA78BFA), modifier = Modifier.size(14.dp))
+                                Spacer(modifier = Modifier.width(3.dp))
+                                Text(text = "Kop Eng 2", color = if (sourceMode == "KOP_ENGINE_2") Color.Black else Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                            }
+                            // Option 4: Txt File Upload
                             Button(
                                 onClick = {
                                     if (state.uploadNumberTxtLocked) {
@@ -335,12 +366,12 @@ fun AccountSection(modifier: Modifier = Modifier) {
                                     containerColor = if (sourceMode == "TXT_UPLOAD") Color(0xFF00E676) else Color(0xFF1E293B)
                                 ),
                                 shape = RoundedCornerShape(8.dp),
-                                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 6.dp),
-                                modifier = Modifier.weight(1f)
+                                contentPadding = PaddingValues(horizontal = 4.dp, vertical = 6.dp),
+                                modifier = Modifier.weight(0.95f)
                             ) {
-                                Icon(Icons.Default.UploadFile, contentDescription = null, tint = if (sourceMode == "TXT_UPLOAD") Color.Black else Color.White, modifier = Modifier.size(15.dp))
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text(text = if (state.uploadNumberTxtLocked) "🔒 Txt (Lock)" else "Upload Txt", color = if (sourceMode == "TXT_UPLOAD") Color.Black else Color.White, fontSize = 10.5.sp, fontWeight = FontWeight.Bold)
+                                Icon(Icons.Default.UploadFile, contentDescription = null, tint = if (sourceMode == "TXT_UPLOAD") Color.Black else Color.White, modifier = Modifier.size(14.dp))
+                                Spacer(modifier = Modifier.width(3.dp))
+                                Text(text = if (state.uploadNumberTxtLocked) "🔒 Lock" else "Txt File", color = if (sourceMode == "TXT_UPLOAD") Color.Black else Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                             }
                         }
 
@@ -349,8 +380,8 @@ fun AccountSection(modifier: Modifier = Modifier) {
                             Text(text = "📁 File: $uploadedFileName ($uploadedNumbersCount numbers ready)", fontSize = 11.sp, color = Color(0xFF00E676))
                         }
 
-                        // Premium Country Selector (for both Premium Numbers Panel and Live Range)
-                        if (sourceMode == "PREMIUM_NUMBERS" || sourceMode == "LIVE_RANGE") {
+                        // Country Selector (for Premium Numbers, Kop Engine 1, and Kop Engine 2)
+                        if (sourceMode != "TXT_UPLOAD") {
                             Spacer(modifier = Modifier.height(10.dp))
                             OutlinedCard(
                                 onClick = { showCountryPicker = true },
@@ -367,7 +398,7 @@ fun AccountSection(modifier: Modifier = Modifier) {
                                         Text(text = selectedCountryInfo.flag, fontSize = 20.sp)
                                         Spacer(modifier = Modifier.width(10.dp))
                                         Column {
-                                            Text(text = "Selected Country (Premium Numbers & Ranges)", fontSize = 10.sp, color = Color(0xFF90A4AE))
+                                            Text(text = "Country Selection (${when(sourceMode) { "PREMIUM_NUMBERS" -> "Premium Panel"; "KOP_ENGINE_1" -> "Kop Engine 1"; else -> "Kop Engine 2" }})", fontSize = 10.sp, color = Color(0xFF90A4AE))
                                             Text(text = "${selectedCountryInfo.name} (${selectedCountryInfo.dialCode})", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color.White)
                                         }
                                     }
@@ -376,43 +407,51 @@ fun AccountSection(modifier: Modifier = Modifier) {
                             }
                         }
 
-                        // Options when PREMIUM_NUMBERS is selected: Panel Selection
+                        // 1. PANEL: PREMIUM NUMBERS (FAST 1s)
                         if (sourceMode == "PREMIUM_NUMBERS") {
                             Spacer(modifier = Modifier.height(10.dp))
                             Card(
                                 colors = CardDefaults.cardColors(containerColor = Color(0xFF070E17)),
-                                border = BorderStroke(1.dp, Color(0xFF334155)),
+                                border = BorderStroke(1.dp, Color(0xFF0284C7)),
                                 modifier = Modifier.fillMaxWidth()
                             ) {
-                                Column(modifier = Modifier.padding(10.dp)) {
-                                    Text(text = "Select Premium Number Panel:", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFF81D4FA))
-                                    Spacer(modifier = Modifier.height(6.dp))
-                                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                        listOf("Panel 1 (Unix SMS)", "Panel 2 (Lamix SMS)", "Panel 3 (Pool)").forEach { panel ->
-                                            OutlinedButton(
-                                                onClick = { selectedPanel = panel },
-                                                colors = ButtonDefaults.outlinedButtonColors(containerColor = if (selectedPanel == panel) Color(0xFF00E676).copy(alpha = 0.2f) else Color.Transparent),
-                                                border = BorderStroke(1.dp, if (selectedPanel == panel) Color(0xFF00E676) else Color(0xFF334155)),
-                                                modifier = Modifier.weight(1f)
-                                            ) {
-                                                Text(text = panel.substringBefore(" "), fontSize = 10.sp, color = if (selectedPanel == panel) Color(0xFF00E676) else Color.White)
-                                            }
+                                Column(modifier = Modifier.padding(12.dp)) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Box(modifier = Modifier.size(8.dp).clip(CircleShape).background(Color(0xFF38BDF8)))
+                                            Spacer(modifier = Modifier.width(6.dp))
+                                            Text(text = "PANEL: PREMIUM NUMBERS", fontSize = 11.5.sp, fontWeight = FontWeight.ExtraBold, color = Color(0xFF38BDF8))
+                                        }
+                                        Surface(color = Color(0xFF00E676).copy(alpha = 0.2f), shape = RoundedCornerShape(4.dp)) {
+                                            Text(text = "FAST 1s", color = Color(0xFF00E676), fontSize = 9.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp))
                                         }
                                     }
-                                    Spacer(modifier = Modifier.height(6.dp))
+                                    Spacer(modifier = Modifier.height(8.dp))
                                     val unixState = UnixSmsManager.state.collectAsStateWithLifecycle().value
                                     val poolCount = unixState.uploadedNumbers.count { it.countryCode.equals(selectedCountryInfo.code, ignoreCase = true) }
                                     Text(
-                                        text = "⚡ Active Panel: $selectedPanel | Available for ${selectedCountryInfo.name}: $poolCount numbers ready",
-                                        fontSize = 10.sp,
+                                        text = "⚡ Uploaded Pool for ${selectedCountryInfo.name}: $poolCount numbers ready",
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.SemiBold,
                                         color = if (poolCount > 0) Color(0xFF00E676) else Color(0xFFFFD54F)
+                                    )
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    Text(
+                                        text = "নম্বর তৈরি করার সময় স্বয়ংক্রিয়ভাবে প্রিমিয়াম প্যানেলের এক্টিভ নম্বর ব্যবহার হবে এবং ফুল এসএমএস সাথে সাথে দেখাবে।",
+                                        fontSize = 10.sp,
+                                        color = Color(0xFF90A4AE)
                                     )
                                 }
                             }
                         }
 
-                        // Options when LIVE_RANGE is selected: Kop Engine 1, 2 & Facebook Ranges
-                        if (sourceMode == "LIVE_RANGE") {
+                        // 2. PANEL: KOP ENGINE 1 or KOP ENGINE 2 (LIVE FACEBOOK RADAR)
+                        if (sourceMode == "KOP_ENGINE_1" || sourceMode == "KOP_ENGINE_2") {
+                            val isKop1 = sourceMode == "KOP_ENGINE_1"
                             Spacer(modifier = Modifier.height(10.dp))
                             // Range mode selector: Live Range vs Custom Range
                             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -447,7 +486,7 @@ fun AccountSection(modifier: Modifier = Modifier) {
 
                             Card(
                                 colors = CardDefaults.cardColors(containerColor = Color(0xFF070E17)),
-                                border = BorderStroke(1.dp, Color(0xFF1E3A56)),
+                                border = BorderStroke(1.dp, if (isKop1) Color(0xFF1E3A56) else Color(0xFF3B2D54)),
                                 modifier = Modifier.fillMaxWidth()
                             ) {
                                 Column(modifier = Modifier.padding(12.dp)) {
@@ -462,14 +501,14 @@ fun AccountSection(modifier: Modifier = Modifier) {
                                                 modifier = Modifier
                                                     .size(8.dp)
                                                     .clip(CircleShape)
-                                                    .background(Color(0xFF00E676))
+                                                    .background(if (isKop1) Color(0xFF34D399) else Color(0xFFA78BFA))
                                             )
                                             Spacer(modifier = Modifier.width(6.dp))
                                             Text(
-                                                text = "LIVE ACTIVE RANGES (MK RADAR)",
+                                                text = if (isKop1) "LIVE PANEL: KOP ENGINE 1 (NETWORK)" else "LIVE PANEL: KOP ENGINE 2 (API NUMBER)",
                                                 fontSize = 11.sp,
                                                 fontWeight = FontWeight.ExtraBold,
-                                                color = Color(0xFF81D4FA),
+                                                color = if (isKop1) Color(0xFF34D399) else Color(0xFFA78BFA),
                                                 letterSpacing = 0.5.sp
                                             )
                                         }
@@ -506,25 +545,9 @@ fun AccountSection(modifier: Modifier = Modifier) {
 
                                     Spacer(modifier = Modifier.height(10.dp))
 
-                                    // Kop Engine 1 vs Kop Engine 2
-                                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                        listOf("Kop Engine 1", "Kop Engine 2").forEach { eng ->
-                                            OutlinedButton(
-                                                onClick = { kopEngine = eng },
-                                                colors = ButtonDefaults.outlinedButtonColors(containerColor = if (kopEngine == eng) Color(0xFF6366F1).copy(alpha = 0.25f) else Color.Transparent),
-                                                border = BorderStroke(1.dp, if (kopEngine == eng) Color(0xFF818CF8) else Color(0xFF334155)),
-                                                modifier = Modifier.weight(1f)
-                                            ) {
-                                                Text(text = eng, fontSize = 10.5.sp, fontWeight = FontWeight.Bold, color = if (kopEngine == eng) Color(0xFF818CF8) else Color.White)
-                                            }
-                                        }
-                                    }
-
-                                    Spacer(modifier = Modifier.height(10.dp))
-
-                                    // Quick Range Chips from Active Ranges (matching Virtual Numbers Section)
+                                    // Active Suggestions Chips (Kop Engine 1: 017 GP, 018 Robi, 019 BL | Kop Engine 2: 013 Skitto, 014 BL New, 016 Airtel, 015 Teletalk)
                                     Text(
-                                        text = "Active Range Suggestions (ট্যাপ করে রেঞ্জ সেট করুন):",
+                                        text = "Active Suggestions Chips (ফেসবুকের টপ রেঞ্জ):",
                                         color = Color(0xFF78909C),
                                         fontSize = 10.sp,
                                         fontWeight = FontWeight.SemiBold
@@ -532,7 +555,7 @@ fun AccountSection(modifier: Modifier = Modifier) {
                                     Spacer(modifier = Modifier.height(6.dp))
 
                                     val activeChips = if (selectedCountryInfo.code == "BD") {
-                                        if (kopEngine == "Kop Engine 1") {
+                                        if (isKop1) {
                                             listOf("017 (GP)", "018 (Robi)", "019 (BL)")
                                         } else {
                                             listOf("013 (Skitto)", "014 (BL New)", "016 (Airtel)", "015 (Teletalk)")
@@ -549,15 +572,15 @@ fun AccountSection(modifier: Modifier = Modifier) {
                                             val rawPrefix = chip.substringBefore(" ")
                                             val isSelected = facebookRange.contains(rawPrefix)
                                             Surface(
-                                                color = if (isSelected) Color(0xFF0091EA).copy(alpha = 0.25f) else Color(0xFF192C3D),
+                                                color = if (isSelected) (if (isKop1) Color(0xFF0091EA).copy(alpha = 0.25f) else Color(0xFF8B5CF6).copy(alpha = 0.25f)) else Color(0xFF192C3D),
                                                 shape = RoundedCornerShape(6.dp),
-                                                border = BorderStroke(1.dp, if (isSelected) Color(0xFF00B0FF) else Color(0xFF1E3A56)),
+                                                border = BorderStroke(1.dp, if (isSelected) (if (isKop1) Color(0xFF00B0FF) else Color(0xFFA78BFA)) else Color(0xFF1E3A56)),
                                                 modifier = Modifier
                                                     .weight(1f)
                                                     .clickable {
                                                         facebookRange = rawPrefix
                                                         ClipboardHelper.copyToClipboard(context, rawPrefix, "Range")
-                                                        Toast.makeText(context, "✓ সিলেক্ট হয়েছে: $rawPrefix", Toast.LENGTH_SHORT).show()
+                                                        Toast.makeText(context, "✓ সিলেক্ট হয়েছে: $chip", Toast.LENGTH_SHORT).show()
                                                     }
                                             ) {
                                                 Column(
@@ -566,7 +589,7 @@ fun AccountSection(modifier: Modifier = Modifier) {
                                                 ) {
                                                     Text(
                                                         text = chip,
-                                                        color = if (isSelected) Color(0xFF81D4FA) else Color.White,
+                                                        color = if (isSelected) (if (isKop1) Color(0xFF81D4FA) else Color(0xFFC4B5FD)) else Color.White,
                                                         fontSize = 9.5.sp,
                                                         fontWeight = FontWeight.Bold,
                                                         maxLines = 1
@@ -588,11 +611,20 @@ fun AccountSection(modifier: Modifier = Modifier) {
                                     )
                                     Spacer(modifier = Modifier.height(6.dp))
 
-                                    val radarRanges = listOf(
-                                        Triple(if (kopEngine == "Kop Engine 1") "017 / GP" else "013 / Skitto", "148 hits", "99% Success"),
-                                        Triple(if (kopEngine == "Kop Engine 1") "018 / Robi" else "016 / Airtel", "112 hits", "98% Success"),
-                                        Triple(if (kopEngine == "Kop Engine 1") "019 / BL" else "014 / BL New", "89 hits", "96% Success")
-                                    )
+                                    val radarRanges = if (isKop1) {
+                                        listOf(
+                                            Triple("017 / GP", "148 hits", "99% Success"),
+                                            Triple("018 / Robi", "112 hits", "98% Success"),
+                                            Triple("019 / BL", "89 hits", "96% Success")
+                                        )
+                                    } else {
+                                        listOf(
+                                            Triple("013 / Skitto", "124 hits", "99% Success"),
+                                            Triple("014 / BL New", "96 hits", "97% Success"),
+                                            Triple("016 / Airtel", "88 hits", "96% Success"),
+                                            Triple("015 / Teletalk", "72 hits", "95% Success")
+                                        )
+                                    }
 
                                     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                                         radarRanges.forEach { (rName, hits, success) ->
@@ -817,17 +849,13 @@ fun AccountSection(modifier: Modifier = Modifier) {
 
                             // Pool of numbers from the selected panel if PREMIUM_NUMBERS
                             val panelNumbers = if (sourceMode == "PREMIUM_NUMBERS") {
-                                when (selectedPanel) {
-                                    "Panel 1 (Unix SMS)" -> UnixSmsManager.state.value.uploadedNumbers
-                                        .filter { it.countryCode.equals(selectedCountryInfo.code, ignoreCase = true) }
-                                        .map { it.number }
-                                    "Panel 2 (Lamix SMS)" -> UnixSmsManager.state.value.uploadedNumbers
-                                        .filter { it.gateway == "LAMIX" && it.countryCode.equals(selectedCountryInfo.code, ignoreCase = true) }
-                                        .map { it.number }
-                                    else -> VirtualNumberManager.state.value.provisionedNumbers
-                                        .filter { it.country.contains(selectedCountryInfo.name, ignoreCase = true) || it.iso.equals(selectedCountryInfo.code, ignoreCase = true) }
-                                        .map { it.number }
-                                }
+                                val uploaded = UnixSmsManager.state.value.uploadedNumbers
+                                    .filter { it.countryCode.equals(selectedCountryInfo.code, ignoreCase = true) }
+                                    .map { it.number }
+                                if (uploaded.isNotEmpty()) uploaded
+                                else VirtualNumberManager.state.value.provisionedNumbers
+                                    .filter { it.country.contains(selectedCountryInfo.name, ignoreCase = true) || it.iso.equals(selectedCountryInfo.code, ignoreCase = true) }
+                                    .map { it.number }
                             } else emptyList()
 
                             while (results.size < amount && attempt < maxAttempts) {
@@ -844,19 +872,30 @@ fun AccountSection(modifier: Modifier = Modifier) {
                                         if (panelNumbers.isNotEmpty() && attempt <= panelNumbers.size) {
                                             panelNumbers[attempt - 1]
                                         } else {
-                                            val prefixes = facebookRange.split(",", "/", " ").map { it.trim().removePrefix("0") }.filter { it.isNotBlank() }
-                                            val chosenPrefix = if (prefixes.isNotEmpty()) prefixes[(attempt - 1) % prefixes.size] else "17"
+                                            val prefixes = listOf("17", "18", "19")
+                                            val chosenPrefix = prefixes[(attempt - 1) % prefixes.size]
                                             val remLength = if (selectedCountryInfo.code == "BD") 7 else 6
                                             val randomDigits = (1..remLength).map { (0..9).random() }.joinToString("")
                                             "${selectedCountryInfo.dialCode}$chosenPrefix$randomDigits"
                                         }
                                     }
-                                    else -> { // LIVE_RANGE or CUSTOM_RANGE
+                                    "KOP_ENGINE_2" -> {
                                         val prefix = if (rangeMode == "CUSTOM_RANGE" && customRangeInput.isNotBlank()) {
                                             customRangeInput.trim().removePrefix("+").removePrefix(selectedCountryInfo.dialCode.removePrefix("+"))
                                         } else {
                                             val prefixes = facebookRange.split(",", "/", " ").map { it.trim().removePrefix("0") }.filter { it.isNotBlank() }
-                                            if (prefixes.isNotEmpty()) prefixes[(attempt - 1) % prefixes.size] else "17"
+                                            if (prefixes.isNotEmpty()) prefixes[(attempt - 1) % prefixes.size] else listOf("13", "14", "16", "15")[(attempt - 1) % 4]
+                                        }
+                                        val remLength = if (selectedCountryInfo.code == "BD") 7 else 6
+                                        val randomDigits = (1..remLength).map { (0..9).random() }.joinToString("")
+                                        "${selectedCountryInfo.dialCode}$prefix$randomDigits"
+                                    }
+                                    else -> { // KOP_ENGINE_1 or LIVE_RANGE
+                                        val prefix = if (rangeMode == "CUSTOM_RANGE" && customRangeInput.isNotBlank()) {
+                                            customRangeInput.trim().removePrefix("+").removePrefix(selectedCountryInfo.dialCode.removePrefix("+"))
+                                        } else {
+                                            val prefixes = facebookRange.split(",", "/", " ").map { it.trim().removePrefix("0") }.filter { it.isNotBlank() }
+                                            if (prefixes.isNotEmpty()) prefixes[(attempt - 1) % prefixes.size] else listOf("17", "18", "19")[(attempt - 1) % 3]
                                         }
                                         val remLength = if (selectedCountryInfo.code == "BD") 7 else 6
                                         val randomDigits = (1..remLength).map { (0..9).random() }.joinToString("")

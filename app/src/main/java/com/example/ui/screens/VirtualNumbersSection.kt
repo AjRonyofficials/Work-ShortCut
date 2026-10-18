@@ -836,25 +836,56 @@ fun VirtualNumbersSection(
 
                         Spacer(modifier = Modifier.height(10.dp))
 
-                        // Quick Range Chips from Active Ranges
-                        if (state.activeRanges.isNotEmpty()) {
-                            Text(
-                                text = "Active Suggestions:",
-                                color = Color(0xFF78909C),
-                                fontSize = 10.sp
+                        // Active Suggestions Chips (Kop Engine 1: 017 (GP), 018 (Robi), 019 (BL))
+                        Text(
+                            text = "Active Suggestions Chips (ফেসবুকের টপ রেঞ্জ):",
+                            color = Color(0xFF78909C),
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        FlowRow(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            val kop1Suggestions = listOf(
+                                Pair("017", "GP"),
+                                Pair("018", "Robi"),
+                                Pair("019", "BL")
                             )
-                            Spacer(modifier = Modifier.height(4.dp))
-                            FlowRow(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                                verticalArrangement = Arrangement.spacedBy(4.dp)
-                            ) {
-                                state.activeRanges.take(4).forEach { item ->
+                            kop1Suggestions.forEach { (prefix, op) ->
+                                val isSelected = state.targetRange == prefix || state.targetRange.startsWith(prefix)
+                                Surface(
+                                    color = if (isSelected) Color(0xFF0091EA) else Color(0xFF192C3D),
+                                    shape = RoundedCornerShape(6.dp),
+                                    border = BorderStroke(1.dp, if (isSelected) Color(0xFF00B0FF) else Color(0xFF1E3A56)),
+                                    modifier = Modifier.clickable {
+                                        VirtualNumberManager.setTargetRange(prefix)
+                                        ClipboardHelper.copyToClipboard(context, prefix, "Target Range")
+                                        Toast.makeText(context, "রেঞ্জ সিলেক্ট হয়েছে: $prefix ($op)", Toast.LENGTH_SHORT).show()
+                                    }
+                                ) {
+                                    Text(
+                                        text = "$prefix ($op)",
+                                        color = if (isSelected) Color.White else Color(0xFFB0BEC5),
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                    )
+                                }
+                            }
+
+                            // Also display dynamic API ranges if any
+                            state.activeRanges.take(2).forEach { item ->
+                                if (item.range != "017" && item.range != "018" && item.range != "019") {
                                     Surface(
                                         color = if (state.targetRange == item.range) Color(0xFF0091EA) else Color(0xFF192C3D),
                                         shape = RoundedCornerShape(6.dp),
                                         modifier = Modifier.clickable {
                                             VirtualNumberManager.setTargetRange(item.range)
+                                            ClipboardHelper.copyToClipboard(context, item.range, "Target Range")
+                                            Toast.makeText(context, "রেঞ্জ সিলেক্ট হয়েছে: ${item.range}", Toast.LENGTH_SHORT).show()
                                         }
                                     ) {
                                         Text(
@@ -867,8 +898,8 @@ fun VirtualNumbersSection(
                                     }
                                 }
                             }
-                            Spacer(modifier = Modifier.height(10.dp))
                         }
+                        Spacer(modifier = Modifier.height(10.dp))
 
                         // Checkboxes & Quantity Dropdown in Row
                         Row(
