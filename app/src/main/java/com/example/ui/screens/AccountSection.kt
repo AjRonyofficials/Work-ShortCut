@@ -1,5 +1,6 @@
 package com.example.ui.screens
 
+import android.content.Intent
 import android.net.Uri
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -30,6 +31,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -48,15 +50,30 @@ import kotlinx.coroutines.withContext
 
 data class CreatedAccountItem(
     val id: String = java.util.UUID.randomUUID().toString(),
+    val uid: String,
+    val name: String,
     val phoneNumber: String,
+    val password: String,
+    val token: String,
+    val cookie: String,
+    val twoFaSecret: String,
     val accountType: String,
     val agentName: String,
     val proxyUsed: String,
     val country: String,
-    val status: String = "LOGGED IN",
+    val status: String = "LOGGED IN ✓",
     var smsFetched: String? = null,
     val createdAt: Long = System.currentTimeMillis()
-)
+) {
+    fun toFormattedLine(format: String = "FULL"): String {
+        return when (format) {
+            "UID_PASS" -> "$uid|$password"
+            "PHONE_PASS" -> "$phoneNumber|$password"
+            "UID_PASS_2FA" -> "$uid|$password|$twoFaSecret"
+            else -> "$uid|$password|$cookie|$token"
+        }
+    }
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -92,7 +109,7 @@ fun AccountSection(modifier: Modifier = Modifier) {
     var customRangeInput by remember { mutableStateOf("") }
     var useZenexFilter by remember { mutableStateOf(true) }
 
-    var selectedAgent by remember { mutableStateOf("Agent 1 (Standard)") }
+    var selectedAgent by remember { mutableStateOf("Agent 1 (Dalvik/Katana Android)") }
     var proxyMode by remember { mutableStateOf("AUTO_SAVED") } // "NO_PROXY", "SET_PROXY", "AUTO_SAVED"
     var customProxyHost by remember { mutableStateOf("") }
     var customProxyPort by remember { mutableStateOf("") }
@@ -170,15 +187,15 @@ fun AccountSection(modifier: Modifier = Modifier) {
                         Spacer(modifier = Modifier.width(12.dp))
                         Column {
                             Text(
-                                text = "AUTOMATED ACCOUNT CREATION & SMS WORKSTATION",
+                                text = "AUTOMATED ACCOUNT CREATION WORKSTATION",
                                 fontSize = 13.sp,
                                 fontWeight = FontWeight.ExtraBold,
                                 color = Color(0xFF00E676),
                                 letterSpacing = 0.5.sp
                             )
                             Text(
-                                text = "Integrated Account Checker • Kop Engine 1,2 • Proxy • OTP Auto-Copy",
-                                fontSize = 11.sp,
+                                text = "Termux-Grade Engine • Account Checker • Kop Engine 1,2 • OTP Auto-Copy",
+                                fontSize = 10.5.sp,
                                 color = Color(0xFF90A4AE)
                             )
                         }
@@ -478,14 +495,14 @@ fun AccountSection(modifier: Modifier = Modifier) {
                         Text(text = "Select Agent:", fontSize = 11.sp, color = Color(0xFF90A4AE))
                         Spacer(modifier = Modifier.height(4.dp))
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            listOf("Agent 1", "Agent 2", "Agent 3").forEach { agent ->
+                            listOf("Agent 1 (Katana)", "Agent 2 (Chrome)", "Agent 3 (Dalvik)").forEach { agent ->
                                 OutlinedButton(
                                     onClick = { selectedAgent = agent },
                                     colors = ButtonDefaults.outlinedButtonColors(containerColor = if (selectedAgent == agent) Color(0xFF00E676).copy(alpha = 0.2f) else Color.Transparent),
                                     border = BorderStroke(1.dp, if (selectedAgent == agent) Color(0xFF00E676) else Color(0xFF334155)),
                                     modifier = Modifier.weight(1f)
                                 ) {
-                                    Text(text = agent, fontSize = 10.sp, color = if (selectedAgent == agent) Color(0xFF00E676) else Color.White)
+                                    Text(text = agent.substringBefore(" "), fontSize = 10.sp, color = if (selectedAgent == agent) Color(0xFF00E676) else Color.White)
                                 }
                             }
                         }
@@ -593,7 +610,7 @@ fun AccountSection(modifier: Modifier = Modifier) {
                         scope.launch(Dispatchers.IO) {
                             val results = mutableListOf<CreatedAccountItem>()
                             var attempt = 0
-                            val maxAttempts = amount * 25
+                            val maxAttempts = amount * 30
 
                             // Pool of numbers from the selected panel if PREMIUM_NUMBERS
                             val panelNumbers = if (sourceMode == "PREMIUM_NUMBERS") {
@@ -661,8 +678,21 @@ fun AccountSection(modifier: Modifier = Modifier) {
                                         "SET_PROXY" -> if (customProxyHost.isNotBlank()) "$customProxyHost:$customProxyPort" else "Custom Proxy"
                                         else -> state.proxyState.profileName
                                     }
+                                    
+                                    val fakeUid = if ((0..1).random() == 0) "1000${(1000000000..9999999999).random()}" else "6155${(1000000000..9999999999).random()}"
+                                    val fakeName = generateRealisticName(selectedCountryInfo.code)
+                                    val fakeToken = "EAAB" + (1..32).map { "0123456789abcdefABCDEF".random() }.joinToString("")
+                                    val fakeCookie = "datr=${randomAlpha(24)}; sb=${randomAlpha(24)}; c_user=$fakeUid; xs=${(1..2).random()}%3A${randomAlpha(14)}%3A2%3A${System.currentTimeMillis() / 1000}; fr=${randomAlpha(32)}"
+                                    val fake2Fa = (1..16).map { "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567".random() }.joinToString("")
+
                                     val item = CreatedAccountItem(
+                                        uid = fakeUid,
+                                        name = fakeName,
                                         phoneNumber = candidate,
+                                        password = passwordText,
+                                        token = fakeToken,
+                                        cookie = fakeCookie,
+                                        twoFaSecret = fake2Fa,
                                         accountType = if (!checkRes.hasAccount) "🟢 FRESH (No Account)" else "🔴 OLD (Account Exists)",
                                         agentName = selectedAgent,
                                         proxyUsed = proxyString,
@@ -670,7 +700,7 @@ fun AccountSection(modifier: Modifier = Modifier) {
                                     )
                                     results.add(item)
                                 }
-                                delay(50L)
+                                delay(40L)
                             }
 
                             withContext(Dispatchers.Main) {
@@ -744,6 +774,45 @@ fun AccountSection(modifier: Modifier = Modifier) {
                                 }
                             }
                         }
+
+                        Spacer(modifier = Modifier.height(10.dp))
+                        // Batch actions: Copy All or Export to Text
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            OutlinedButton(
+                                onClick = {
+                                    val text = createdAccountsList.joinToString("\n") { it.toFormattedLine("FULL") }
+                                    ClipboardHelper.copyToClipboard(context, text, "All Accounts")
+                                    Toast.makeText(context, "✓ Copied ${createdAccountsList.size} accounts (UID|Pass|Cookie|Token)", Toast.LENGTH_SHORT).show()
+                                },
+                                shape = RoundedCornerShape(8.dp),
+                                border = BorderStroke(1.dp, Color(0xFF00E676)),
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Icon(Icons.Default.ContentCopy, contentDescription = null, tint = Color(0xFF00E676), modifier = Modifier.size(14.dp))
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("Copy All (UID|Pass)", fontSize = 10.sp, color = Color(0xFF00E676), fontWeight = FontWeight.Bold)
+                            }
+                            OutlinedButton(
+                                onClick = {
+                                    val text = createdAccountsList.joinToString("\n") { 
+                                        "UID: ${it.uid}\nNAME: ${it.name}\nPHONE: ${it.phoneNumber}\nPASS: ${it.password}\nCOOKIE: ${it.cookie}\nTOKEN: ${it.token}\n2FA: ${it.twoFaSecret}\nSTATUS: ${it.status}\n---------------------------------" 
+                                    }
+                                    val sendIntent = Intent().apply {
+                                        action = Intent.ACTION_SEND
+                                        putExtra(Intent.EXTRA_TEXT, text)
+                                        type = "text/plain"
+                                    }
+                                    context.startActivity(Intent.createChooser(sendIntent, "Export Accounts"))
+                                },
+                                shape = RoundedCornerShape(8.dp),
+                                border = BorderStroke(1.dp, Color(0xFF38BDF8)),
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Icon(Icons.Default.Share, contentDescription = null, tint = Color(0xFF38BDF8), modifier = Modifier.size(14.dp))
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("Export Batch (.txt)", fontSize = 10.sp, color = Color(0xFF38BDF8), fontWeight = FontWeight.Bold)
+                            }
+                        }
                     }
                 }
             }
@@ -761,13 +830,64 @@ fun AccountSection(modifier: Modifier = Modifier) {
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text(text = acc.phoneNumber, color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Black, fontFamily = FontFamily.Monospace)
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "👤 ${acc.name}",
+                                    color = Color.White,
+                                    fontSize = 13.5.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Text(
+                                    text = "UID: ${acc.uid} | ${acc.phoneNumber}",
+                                    color = Color(0xFF81D4FA),
+                                    fontSize = 11.5.sp,
+                                    fontFamily = FontFamily.Monospace,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                            }
                             Surface(color = Color(0xFF00E676).copy(alpha = 0.2f), shape = RoundedCornerShape(6.dp)) {
                                 Text(text = "✓ LOGGED IN", color = Color(0xFF00E676), fontSize = 10.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp))
                             }
                         }
+
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(text = "Country: ${acc.country} | Status: ${acc.accountType} | Agent: ${acc.agentName}", fontSize = 10.sp, color = Color(0xFF90A4AE))
+                        
+                        Spacer(modifier = Modifier.height(8.dp))
+                        // Password & Credentials Row
+                        Surface(
+                            color = Color(0xFF0B121C),
+                            shape = RoundedCornerShape(6.dp),
+                            border = BorderStroke(1.dp, Color(0xFF1E293B)),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(8.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = "Pass: ${acc.password} | 2FA: ${acc.twoFaSecret}",
+                                    fontSize = 10.5.sp,
+                                    color = Color(0xFFCBD5E1),
+                                    fontFamily = FontFamily.Monospace
+                                )
+                                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                    IconButton(
+                                        onClick = {
+                                            ClipboardHelper.copyToClipboard(context, "${acc.uid}|${acc.password}|${acc.cookie}", "Account Details")
+                                            Toast.makeText(context, "✓ Copied UID|Pass|Cookie", Toast.LENGTH_SHORT).show()
+                                        },
+                                        modifier = Modifier.size(24.dp)
+                                    ) {
+                                        Icon(Icons.Default.ContentCopy, contentDescription = "Copy", tint = Color(0xFF00E676), modifier = Modifier.size(15.dp))
+                                    }
+                                }
+                            }
+                        }
+
                         Spacer(modifier = Modifier.height(8.dp))
 
                         // Dedicated SMS fetch option at the end of each account
@@ -787,7 +907,7 @@ fun AccountSection(modifier: Modifier = Modifier) {
                                     Button(
                                         onClick = {
                                             val sampleOtp = "${(100000..999999).random()}"
-                                            val fullSms = "Facebook confirmation code: $sampleOtp. Do not share this code."
+                                            val fullSms = "Facebook confirmation code: $sampleOtp. Do not share this code with anyone."
                                             val updated = createdAccountsList.map { if (it.id == acc.id) it.copy(smsFetched = fullSms) else it }
                                             createdAccountsList = updated
                                             ClipboardHelper.copyToClipboard(context, sampleOtp, "OTP")
@@ -889,4 +1009,21 @@ fun AccountSection(modifier: Modifier = Modifier) {
             }
         )
     }
+}
+
+private fun generateRealisticName(countryCode: String): String {
+    return if (countryCode.equals("BD", ignoreCase = true)) {
+        val firstNames = listOf("Md", "Mohammad", "Tanvir", "Shakil", "Arif", "Sabbir", "Rakib", "Hasan", "Faruk", "Mehedi", "Ayesha", "Fatema", "Nusrat", "Tania", "Ruma", "Sumaiya")
+        val lastNames = listOf("Ahmed", "Hasan", "Rahman", "Islam", "Hossain", "Chowdhury", "Khan", "Ali", "Mia", "Sarker", "Akter", "Khatun")
+        "${firstNames.random()} ${lastNames.random()}"
+    } else {
+        val firstNames = listOf("John", "David", "Michael", "James", "Robert", "Emily", "Sarah", "Jessica", "Ashley", "Amanda")
+        val lastNames = listOf("Smith", "Johnson", "Williams", "Brown", "Jones", "Miller", "Davis", "Wilson", "Taylor")
+        "${firstNames.random()} ${lastNames.random()}"
+    }
+}
+
+private fun randomAlpha(length: Int): String {
+    val chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+    return (1..length).map { chars.random() }.joinToString("")
 }
