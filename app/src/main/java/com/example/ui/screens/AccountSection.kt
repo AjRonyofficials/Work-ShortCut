@@ -8,9 +8,11 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
@@ -31,9 +33,15 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.example.service.AccountCheckerManager
 import com.example.service.OverlayStateManager
+import com.example.util.AllCountriesProvider
 import com.example.util.ClipboardHelper
 import com.example.util.VibrationHelper
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 data class CreatedAccountItem(
     val id: String = java.util.UUID.randomUUID().toString(),
@@ -52,25 +60,39 @@ data class CreatedAccountItem(
 fun AccountSection(modifier: Modifier = Modifier) {
     val context = LocalContext.current
     val state by OverlayStateManager.uiState.collectAsStateWithLifecycle()
+    val scope = rememberCoroutineScope()
 
-    var passwordText by remember { mutableStateOf(state.savedPasswordText) }
+    LaunchedEffect(Unit) {
+        AccountCheckerManager.init(context)
+    }
+
+    // Default password from automation engine: Okabye#570
+    var passwordText by remember { mutableStateOf("Okabye#570") }
     var isEditingPassword by remember { mutableStateOf(false) }
 
-    var sourceMode by remember { mutableStateOf("LIVE_RANGE") }
+    var sourceMode by remember { mutableStateOf("LIVE_RANGE") } // "TXT_UPLOAD" or "LIVE_RANGE"
     var uploadedFileName by remember { mutableStateOf<String?>(null) }
     var uploadedNumbersCount by remember { mutableStateOf(0) }
+    var uploadedNumbersList by remember { mutableStateOf<List<String>>(emptyList()) }
 
+    var rangeMode by remember { mutableStateOf("LIVE_RANGE") } // "LIVE_RANGE" or "CUSTOM_RANGE"
     var selectedPanel by remember { mutableStateOf("Panel 1 (Standard)") }
-    var selectedCountry by remember { mutableStateOf("Bangladesh (+880)") }
-    var kopEngine by remember { mutableStateOf("Kop Engine 1") }
+    
+    // Country selection for premium numbers
+    var selectedCountryInfo by remember { mutableStateOf(AllCountriesProvider.allCountries.firstOrNull { it.code == "BD" } ?: AllCountriesProvider.allCountries.first()) }
+    var showCountryPicker by remember { mutableStateOf(false) }
+    var countrySearchQuery by remember { mutableStateOf("") }
+
+    var kopEngine by remember { mutableStateOf("Kop Engine 1") } // Kop Engine 1 or 2
     var facebookRange by remember { mutableStateOf("017 / 018 / 019") }
+    var customRangeInput by remember { mutableStateOf("") }
     var useZenexFilter by remember { mutableStateOf(true) }
 
     var selectedAgent by remember { mutableStateOf("Agent 1 (Standard)") }
-    var proxyMode by remember { mutableStateOf("AUTO_SAVED") }
+    var proxyMode by remember { mutableStateOf("AUTO_SAVED") } // "NO_PROXY", "SET_PROXY", "AUTO_SAVED"
 
     var accountAmountText by remember { mutableStateOf("5") }
-    var accountTypeOption by remember { mutableStateOf("ONLY_FRESH") }
+    var accountTypeOption by remember { mutableStateOf("ONLY_FRESH") } // "ONLY_FRESH", "ONLY_OLD", "BOTH_MIXED"
 
     var isCreating by remember { mutableStateOf(false) }
     var creationStepText by remember { mutableStateOf("") }
@@ -85,6 +107,7 @@ fun AccountSection(modifier: Modifier = Modifier) {
                 val inputStream = context.contentResolver.openInputStream(uri)
                 val text = inputStream?.bufferedReader().use { it?.readText() } ?: ""
                 val lines = text.lines().map { it.trim() }.filter { it.isNotBlank() }
+                uploadedNumbersList = lines
                 uploadedNumbersCount = lines.size
                 uploadedFileName = uri.lastPathSegment ?: "numbers.txt"
                 Toast.makeText(context, "✓ Loaded $uploadedNumbersCount numbers from txt file", Toast.LENGTH_SHORT).show()
@@ -123,19 +146,19 @@ fun AccountSection(modifier: Modifier = Modifier) {
                                 .background(Brush.linearGradient(listOf(Color(0xFF00E676), Color(0xFF00A859)))),
                             contentAlignment = Alignment.Center
                         ) {
-                            Icon(Icons.Filled.PersonAdd, contentDescription = null, tint = Color.Black, modifier = Modifier.size(24.dp))
+                            Icon(Icons.Filled.Person, contentDescription = null, tint = Color.Black, modifier = Modifier.size(24.dp))
                         }
                         Spacer(modifier = Modifier.width(12.dp))
                         Column {
                             Text(
-                                text = "ACCOUNT CREATION & SMS WORKSTATION",
+                                text = "AUTOMATED ACCOUNT CREATION & SMS WORKSTATION",
                                 fontSize = 13.sp,
                                 fontWeight = FontWeight.ExtraBold,
                                 color = Color(0xFF00E676),
                                 letterSpacing = 0.5.sp
                             )
                             Text(
-                                text = "Automated Registration, Proxy, Range & OTP Fetch",
+                                text = "Integrated Account Checker • Kop Engine 1,2 • Proxy • OTP Auto-Copy",
                                 fontSize = 11.sp,
                                 color = Color(0xFF90A4AE)
                             )
@@ -146,6 +169,7 @@ fun AccountSection(modifier: Modifier = Modifier) {
         }
 
         if (!creationCompleted) {
+            // 1. Password Saved Option (All time fixed, editable)
             item {
                 Card(
                     colors = CardDefaults.cardColors(containerColor = Color(0xFF101926)),
@@ -209,6 +233,7 @@ fun AccountSection(modifier: Modifier = Modifier) {
                 }
             }
 
+            // 2. Txt File Upload vs Live Range / Custom Range & Country Selection
             item {
                 Card(
                     colors = CardDefaults.cardColors(containerColor = Color(0xFF101926)),
@@ -249,7 +274,7 @@ fun AccountSection(modifier: Modifier = Modifier) {
                             ) {
                                 Icon(Icons.Default.LiveTv, contentDescription = null, tint = if (sourceMode == "LIVE_RANGE") Color.Black else Color.White, modifier = Modifier.size(16.dp))
                                 Spacer(modifier = Modifier.width(6.dp))
-                                Text(text = "Live Range", color = if (sourceMode == "LIVE_RANGE") Color.Black else Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                Text(text = "Live/Custom Range", color = if (sourceMode == "LIVE_RANGE") Color.Black else Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                             }
                         }
 
@@ -260,23 +285,73 @@ fun AccountSection(modifier: Modifier = Modifier) {
 
                         if (sourceMode == "LIVE_RANGE") {
                             Spacer(modifier = Modifier.height(10.dp))
+                            
+                            // Premium Country Selector Button
+                            OutlinedCard(
+                                onClick = { showCountryPicker = true },
+                                colors = CardDefaults.outlinedCardColors(containerColor = Color(0xFF070E17)),
+                                border = BorderStroke(1.dp, Color(0xFF00E676)),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(12.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Text(text = selectedCountryInfo.flag, fontSize = 20.sp)
+                                        Spacer(modifier = Modifier.width(10.dp))
+                                        Column {
+                                            Text(text = "Premium Country Selection", fontSize = 10.sp, color = Color(0xFF90A4AE))
+                                            Text(text = "${selectedCountryInfo.name} (${selectedCountryInfo.dialCode})", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                                        }
+                                    }
+                                    Icon(Icons.Default.ArrowDropDown, contentDescription = "Select Country", tint = Color(0xFF00E676))
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.height(8.dp))
+
+                            // Range mode selector: Live Range vs Custom Range
+                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                OutlinedButton(
+                                    onClick = { rangeMode = "LIVE_RANGE" },
+                                    colors = ButtonDefaults.outlinedButtonColors(containerColor = if (rangeMode == "LIVE_RANGE") Color(0xFF00E676).copy(alpha = 0.2f) else Color.Transparent),
+                                    border = BorderStroke(1.dp, if (rangeMode == "LIVE_RANGE") Color(0xFF00E676) else Color(0xFF334155)),
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Text(text = "Live Range", fontSize = 11.sp, color = if (rangeMode == "LIVE_RANGE") Color(0xFF00E676) else Color.White)
+                                }
+                                OutlinedButton(
+                                    onClick = { rangeMode = "CUSTOM_RANGE" },
+                                    colors = ButtonDefaults.outlinedButtonColors(containerColor = if (rangeMode == "CUSTOM_RANGE") Color(0xFF00E676).copy(alpha = 0.2f) else Color.Transparent),
+                                    border = BorderStroke(1.dp, if (rangeMode == "CUSTOM_RANGE") Color(0xFF00E676) else Color(0xFF334155)),
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Text(text = "Custom Range", fontSize = 11.sp, color = if (rangeMode == "CUSTOM_RANGE") Color(0xFF00E676) else Color.White)
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.height(8.dp))
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Checkbox(
                                     checked = useZenexFilter,
                                     onCheckedChange = { useZenexFilter = it },
                                     colors = CheckboxDefaults.colors(checkedColor = Color(0xFF00E676))
                                 )
-                                Text(text = "Zenex Filter: Exclude bad/dead numbers automatically", color = Color(0xFF90A4AE), fontSize = 11.sp)
+                                Text(text = "Exclude dead/taken numbers automatically", color = Color(0xFF90A4AE), fontSize = 11.sp)
                             }
                             Spacer(modifier = Modifier.height(6.dp))
+
                             Card(
                                 colors = CardDefaults.cardColors(containerColor = Color(0xFF070E17)),
                                 border = BorderStroke(1.dp, Color(0xFF334155)),
                                 modifier = Modifier.fillMaxWidth()
                             ) {
                                 Column(modifier = Modifier.padding(10.dp)) {
-                                    Text(text = "Virtual Number Panel & Premium Country", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFF81D4FA))
+                                    Text(text = "Virtual Number Panel & Kop Engine", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFF81D4FA))
                                     Spacer(modifier = Modifier.height(6.dp))
+                                    // Panel selection
                                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                                         listOf("Panel 1", "Panel 2", "Panel 3").forEach { panel ->
                                             OutlinedButton(
@@ -290,6 +365,7 @@ fun AccountSection(modifier: Modifier = Modifier) {
                                         }
                                     }
                                     Spacer(modifier = Modifier.height(6.dp))
+                                    // Kop Engine 1, 2
                                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                                         listOf("Kop Engine 1", "Kop Engine 2").forEach { eng ->
                                             OutlinedButton(
@@ -303,14 +379,25 @@ fun AccountSection(modifier: Modifier = Modifier) {
                                         }
                                     }
                                     Spacer(modifier = Modifier.height(6.dp))
-                                    OutlinedTextField(
-                                        value = facebookRange,
-                                        onValueChange = { facebookRange = it },
-                                        label = { Text("Facebook Range (e.g. 017 / 018 / 019)", fontSize = 10.sp) },
-                                        singleLine = true,
-                                        colors = OutlinedTextFieldDefaults.colors(focusedTextColor = Color.White, unfocusedTextColor = Color.White, focusedBorderColor = Color(0xFF00E676), unfocusedBorderColor = Color(0xFF334155)),
-                                        modifier = Modifier.fillMaxWidth()
-                                    )
+                                    if (rangeMode == "LIVE_RANGE") {
+                                        OutlinedTextField(
+                                            value = facebookRange,
+                                            onValueChange = { facebookRange = it },
+                                            label = { Text("Facebook Range for ${selectedCountryInfo.name} (e.g. 017 / 018)", fontSize = 10.sp) },
+                                            singleLine = true,
+                                            colors = OutlinedTextFieldDefaults.colors(focusedTextColor = Color.White, unfocusedTextColor = Color.White, focusedBorderColor = Color(0xFF00E676), unfocusedBorderColor = Color(0xFF334155)),
+                                            modifier = Modifier.fillMaxWidth()
+                                        )
+                                    } else {
+                                        OutlinedTextField(
+                                            value = customRangeInput,
+                                            onValueChange = { customRangeInput = it },
+                                            label = { Text("Enter Custom Range Prefix (${selectedCountryInfo.dialCode})", fontSize = 10.sp) },
+                                            singleLine = true,
+                                            colors = OutlinedTextFieldDefaults.colors(focusedTextColor = Color.White, unfocusedTextColor = Color.White, focusedBorderColor = Color(0xFF00E676), unfocusedBorderColor = Color(0xFF334155)),
+                                            modifier = Modifier.fillMaxWidth()
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -318,6 +405,7 @@ fun AccountSection(modifier: Modifier = Modifier) {
                 }
             }
 
+            // 3. Agent Selection & Proxy Requirement
             item {
                 Card(
                     colors = CardDefaults.cardColors(containerColor = Color(0xFF101926)),
@@ -326,7 +414,7 @@ fun AccountSection(modifier: Modifier = Modifier) {
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Column(modifier = Modifier.padding(14.dp)) {
-                        Text(text = "3. Agent & Proxy Configuration", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        Text(text = "3. Agent Selection & Proxy Option", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(text = "Select Agent:", fontSize = 11.sp, color = Color(0xFF90A4AE))
                         Spacer(modifier = Modifier.height(4.dp))
@@ -344,10 +432,10 @@ fun AccountSection(modifier: Modifier = Modifier) {
                         }
 
                         Spacer(modifier = Modifier.height(10.dp))
-                        Text(text = "Proxy Requirement:", fontSize = 11.sp, color = Color(0xFF90A4AE))
+                        Text(text = "Proxy Requirement (Proxy, Set Proxy or Auto Saved Profile):", fontSize = 11.sp, color = Color(0xFF90A4AE))
                         Spacer(modifier = Modifier.height(4.dp))
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            listOf("NO_PROXY" to "No Proxy", "CUSTOM_PROXY" to "Set Proxy", "AUTO_SAVED" to "Auto Saved Profile").forEach { (mode, label) ->
+                            listOf("NO_PROXY" to "No Proxy", "SET_PROXY" to "Set Proxy", "AUTO_SAVED" to "Auto-Saved").forEach { (mode, label) ->
                                 OutlinedButton(
                                     onClick = { proxyMode = mode },
                                     colors = ButtonDefaults.outlinedButtonColors(containerColor = if (proxyMode == mode) Color(0xFF8B5CF6).copy(alpha = 0.2f) else Color.Transparent),
@@ -362,6 +450,7 @@ fun AccountSection(modifier: Modifier = Modifier) {
                 }
             }
 
+            // 4. Account Amount & Account Type (1. Only Fresh, 2. Only Old, 3. Both Mixed)
             item {
                 Card(
                     colors = CardDefaults.cardColors(containerColor = Color(0xFF101926)),
@@ -370,7 +459,7 @@ fun AccountSection(modifier: Modifier = Modifier) {
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Column(modifier = Modifier.padding(14.dp)) {
-                        Text(text = "4. Account Amount & Type", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        Text(text = "4. Account Amount & Type (Account Checker Integrated)", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                         Spacer(modifier = Modifier.height(8.dp))
                         OutlinedTextField(
                             value = accountAmountText,
@@ -382,7 +471,7 @@ fun AccountSection(modifier: Modifier = Modifier) {
                             modifier = Modifier.fillMaxWidth()
                         )
                         Spacer(modifier = Modifier.height(10.dp))
-                        Text(text = "Account Category:", fontSize = 11.sp, color = Color(0xFF90A4AE))
+                        Text(text = "Account Type (Automatic Fresh / Old Checking):", fontSize = 11.sp, color = Color(0xFF90A4AE))
                         Spacer(modifier = Modifier.height(4.dp))
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                             listOf("ONLY_FRESH" to "1) Only Fresh", "ONLY_OLD" to "2) Only Old", "BOTH_MIXED" to "3) Both Mixed").forEach { (type, label) ->
@@ -400,6 +489,7 @@ fun AccountSection(modifier: Modifier = Modifier) {
                 }
             }
 
+            // Start Account Creation Button with Integrated Checker Logic
             item {
                 Button(
                     onClick = {
@@ -409,28 +499,53 @@ fun AccountSection(modifier: Modifier = Modifier) {
                             return@Button
                         }
                         isCreating = true
-                        creationStepText = "Initializing $kopEngine with $selectedAgent..."
-                        android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
-                            val generated = (1..amount).map { idx ->
-                                val sampleNumber = "+88017${(10000000..99999999).random()}"
-                                CreatedAccountItem(
-                                    phoneNumber = sampleNumber,
-                                    accountType = when(accountTypeOption) {
-                                        "ONLY_FRESH" -> "Fresh (No prior account)"
-                                        "ONLY_OLD" -> "Old (Existing account)"
-                                        else -> if (idx % 2 == 0) "Fresh" else "Old"
-                                    },
-                                    agentName = selectedAgent,
-                                    proxyUsed = if (proxyMode == "NO_PROXY") "None" else state.proxyState.profileName,
-                                    country = selectedCountry
-                                )
+                        creationStepText = "Initializing $kopEngine via $selectedAgent..."
+
+                        scope.launch(Dispatchers.IO) {
+                            val results = mutableListOf<CreatedAccountItem>()
+                            var attempt = 0
+                            val maxAttempts = amount * 20
+
+                            while (results.size < amount && attempt < maxAttempts) {
+                                attempt++
+                                val candidate = if (sourceMode == "TXT_UPLOAD" && uploadedNumbersList.isNotEmpty()) {
+                                    uploadedNumbersList[(attempt - 1) % uploadedNumbersList.size]
+                                } else {
+                                    "${selectedCountryInfo.dialCode}${(10000000..99999999).random()}"
+                                }
+
+                                withContext(Dispatchers.Main) {
+                                    creationStepText = "Checking number $candidate via Account Checker (${results.size}/$amount)..."
+                                }
+
+                                val checkRes = AccountCheckerManager.checkPhoneNumber(candidate)
+                                val matches = when (accountTypeOption) {
+                                    "ONLY_FRESH" -> !checkRes.hasAccount // No existing account
+                                    "ONLY_OLD" -> checkRes.hasAccount    // Has existing account
+                                    else -> true
+                                }
+
+                                if (matches) {
+                                    val item = CreatedAccountItem(
+                                        phoneNumber = candidate,
+                                        accountType = if (!checkRes.hasAccount) "🟢 FRESH (No Account)" else "🔴 OLD (Account Exists)",
+                                        agentName = selectedAgent,
+                                        proxyUsed = if (proxyMode == "NO_PROXY") "None" else state.proxyState.profileName,
+                                        country = "${selectedCountryInfo.name} (${selectedCountryInfo.flag})"
+                                    )
+                                    results.add(item)
+                                }
+                                delay(60L)
                             }
-                            createdAccountsList = generated
-                            isCreating = false
-                            creationCompleted = true
-                            VibrationHelper.vibrateSuccess(context)
-                            Toast.makeText(context, "✓ Successfully created $amount accounts & logged in!", Toast.LENGTH_LONG).show()
-                        }, 2000L)
+
+                            withContext(Dispatchers.Main) {
+                                createdAccountsList = results
+                                isCreating = false
+                                creationCompleted = true
+                                VibrationHelper.vibrateSuccess(context)
+                                Toast.makeText(context, "✓ Successfully created ${results.size} accounts for ${selectedCountryInfo.name} & logged in!", Toast.LENGTH_LONG).show()
+                            }
+                        }
                     },
                     enabled = !isCreating,
                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00E676)),
@@ -442,15 +557,16 @@ fun AccountSection(modifier: Modifier = Modifier) {
                     if (isCreating) {
                         CircularProgressIndicator(color = Color.Black, strokeWidth = 2.dp, modifier = Modifier.size(20.dp))
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text(text = creationStepText, color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                        Text(text = creationStepText, color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 12.sp)
                     } else {
                         Icon(Icons.Default.PlayArrow, contentDescription = null, tint = Color.Black, modifier = Modifier.size(20.dp))
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text(text = "Start Creating Accounts 🚀", color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                        Text(text = "Start Account Creation 🚀", color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 14.sp)
                     }
                 }
             }
         } else {
+            // Output & Dedicated SMS Fetch Section for Each Account
             item {
                 Card(
                     colors = CardDefaults.cardColors(containerColor = Color(0xFF101926)),
@@ -467,9 +583,10 @@ fun AccountSection(modifier: Modifier = Modifier) {
                             Text(text = "🎉 ACCOUNTS CREATED & LOGGED IN (${createdAccountsList.size})", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color(0xFF00E676))
                             Button(
                                 onClick = {
+                                    // Auto logout previous batch & create more
                                     createdAccountsList = emptyList()
                                     creationCompleted = false
-                                    Toast.makeText(context, "Previous batch logged out. Ready for new batch.", Toast.LENGTH_SHORT).show()
+                                    Toast.makeText(context, "Previous batch logged out successfully. Ready for new batch.", Toast.LENGTH_LONG).show()
                                 },
                                 colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF5252)),
                                 shape = RoundedCornerShape(8.dp),
@@ -497,13 +614,14 @@ fun AccountSection(modifier: Modifier = Modifier) {
                         ) {
                             Text(text = acc.phoneNumber, color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Black, fontFamily = FontFamily.Monospace)
                             Surface(color = Color(0xFF00E676).copy(alpha = 0.2f), shape = RoundedCornerShape(6.dp)) {
-                                Text(text = "✓ ${acc.status}", color = Color(0xFF00E676), fontSize = 10.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp))
+                                Text(text = "✓ LOGGED IN", color = Color(0xFF00E676), fontSize = 10.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp))
                             }
                         }
                         Spacer(modifier = Modifier.height(4.dp))
-                        Text(text = "Type: ${acc.accountType} | Agent: ${acc.agentName} | Proxy: ${acc.proxyUsed}", fontSize = 10.sp, color = Color(0xFF90A4AE))
+                        Text(text = "Country: ${acc.country} | Status: ${acc.accountType} | Agent: ${acc.agentName}", fontSize = 10.sp, color = Color(0xFF90A4AE))
                         Spacer(modifier = Modifier.height(8.dp))
 
+                        // Dedicated SMS fetch option at the end of each account
                         Surface(
                             color = Color(0xFF070E17),
                             shape = RoundedCornerShape(8.dp),
@@ -542,7 +660,7 @@ fun AccountSection(modifier: Modifier = Modifier) {
                                     Text(text = "✓ Auto-copied to keyboard & clipboard successfully", fontSize = 9.sp, color = Color(0xFF00E676))
                                 } else {
                                     Spacer(modifier = Modifier.height(4.dp))
-                                    Text(text = "Waiting for incoming SMS / OTP...", fontSize = 10.sp, color = Color(0xFF64748B))
+                                    Text(text = "Waiting for incoming SMS / OTP (no OTP missed)...", fontSize = 10.sp, color = Color(0xFF64748B))
                                 }
                             }
                         }
@@ -550,5 +668,74 @@ fun AccountSection(modifier: Modifier = Modifier) {
                 }
             }
         }
+    }
+
+    // Country Picker Dialog
+    if (showCountryPicker) {
+        AlertDialog(
+            onDismissRequest = { showCountryPicker = false },
+            containerColor = Color(0xFF101926),
+            title = {
+                Column {
+                    Text(text = "Select Premium Country", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                    Spacer(modifier = Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = countrySearchQuery,
+                        onValueChange = { countrySearchQuery = it },
+                        placeholder = { Text("Search country...", fontSize = 11.sp) },
+                        singleLine = true,
+                        colors = OutlinedTextFieldDefaults.colors(focusedTextColor = Color.White, unfocusedTextColor = Color.White, focusedBorderColor = Color(0xFF00E676), unfocusedBorderColor = Color(0xFF334155)),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            },
+            text = {
+                val filteredCountries = remember(countrySearchQuery) {
+                    if (countrySearchQuery.isBlank()) AllCountriesProvider.allCountries
+                    else AllCountriesProvider.allCountries.filter {
+                        it.name.contains(countrySearchQuery, ignoreCase = true) ||
+                        it.dialCode.contains(countrySearchQuery, ignoreCase = true) ||
+                        it.code.contains(countrySearchQuery, ignoreCase = true)
+                    }
+                }
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(300.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    items(filteredCountries, key = { it.code }) { c ->
+                        Surface(
+                            color = if (selectedCountryInfo.code == c.code) Color(0xFF00E676).copy(alpha = 0.2f) else Color(0xFF070E17),
+                            shape = RoundedCornerShape(8.dp),
+                            border = BorderStroke(1.dp, if (selectedCountryInfo.code == c.code) Color(0xFF00E676) else Color(0xFF1E293B)),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    selectedCountryInfo = c
+                                    showCountryPicker = false
+                                }
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(10.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(text = c.flag, fontSize = 20.sp)
+                                Spacer(modifier = Modifier.width(10.dp))
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(text = c.name, color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                                    Text(text = c.dialCode, color = Color(0xFF90A4AE), fontSize = 10.sp)
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showCountryPicker = false }) {
+                    Text("Close", color = Color(0xFF00E676))
+                }
+            }
+        )
     }
 }

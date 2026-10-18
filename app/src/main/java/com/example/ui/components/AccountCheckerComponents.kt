@@ -165,13 +165,6 @@ fun VirtualNumberAccountCheckerBar(
         AccountCheckerManager.init(context)
     }
     val checkerState by AccountCheckerManager.state.collectAsState()
-    var showScriptDialog by remember { mutableStateOf(false) }
-
-    if (showScriptDialog) {
-        AccountCheckerScriptDialog(
-            onDismiss = { showScriptDialog = false }
-        )
-    }
 
     Card(
         colors = CardDefaults.cardColors(containerColor = Color(0xFF111C2B)),
@@ -260,31 +253,28 @@ fun VirtualNumberAccountCheckerBar(
 
                     Spacer(modifier = Modifier.width(6.dp))
 
-                    // checker.py Script Loader Button
+                    // Secured Internal Engine (Locked - Users cannot view/edit/upload script)
                     Surface(
-                        color = CyanAccent.copy(alpha = 0.18f),
+                        color = Color(0xFF1E293B),
                         shape = RoundedCornerShape(6.dp),
-                        border = BorderStroke(1.dp, CyanAccent),
-                        modifier = Modifier
-                            .clickable { showScriptDialog = true }
-                            .testTag("open_checker_py_dialog_button")
+                        border = BorderStroke(1.dp, Color(0xFF334155))
                     ) {
                         Row(
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                            modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Icon(
-                                imageVector = Icons.Default.Code,
-                                contentDescription = "checker.py",
-                                tint = CyanAccent,
-                                modifier = Modifier.size(13.dp)
+                                imageVector = Icons.Default.Security,
+                                contentDescription = "Locked Engine",
+                                tint = Color(0xFF94A3B8),
+                                modifier = Modifier.size(11.dp)
                             )
                             Spacer(modifier = Modifier.width(4.dp))
                             Text(
-                                text = "checker.py",
-                                color = Color.White,
-                                fontSize = 10.sp,
-                                fontWeight = FontWeight.ExtraBold
+                                text = "🔒 SECURED",
+                                color = Color(0xFF94A3B8),
+                                fontSize = 9.sp,
+                                fontWeight = FontWeight.Bold
                             )
                         }
                     }
@@ -424,13 +414,6 @@ fun SettingsAccountCheckerCard(
         AccountCheckerManager.init(context)
     }
     val checkerState by AccountCheckerManager.state.collectAsState()
-    var showScriptDialog by remember { mutableStateOf(false) }
-
-    if (showScriptDialog) {
-        AccountCheckerScriptDialog(
-            onDismiss = { showScriptDialog = false }
-        )
-    }
 
     Card(
         modifier = modifier.fillMaxWidth(),
@@ -679,14 +662,19 @@ fun SettingsAccountCheckerCard(
                         Text("${checkerState.maxRetries}x Retry", color = CyanAccent, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                     }
 
-                    Button(
-                        onClick = { showScriptDialog = true },
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0284C7)),
-                        shape = RoundedCornerShape(8.dp)
+                    Surface(
+                        color = Color(0xFF1E293B),
+                        shape = RoundedCornerShape(8.dp),
+                        border = BorderStroke(1.dp, Color(0xFF334155))
                     ) {
-                        Icon(Icons.Default.Code, contentDescription = null, tint = Color.White, modifier = Modifier.size(15.dp))
-                        Spacer(modifier = Modifier.width(5.dp))
-                        Text("checker.py", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        Row(
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(Icons.Default.Security, contentDescription = null, tint = Color(0xFF94A3B8), modifier = Modifier.size(14.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("🔒 Engine Locked", color = Color(0xFF94A3B8), fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        }
                     }
                 }
             }
