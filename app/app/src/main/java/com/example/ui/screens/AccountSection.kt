@@ -8,9 +8,11 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
@@ -32,6 +34,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.service.OverlayStateManager
+import com.example.util.AllCountriesProvider
 import com.example.util.ClipboardHelper
 import com.example.util.VibrationHelper
 
@@ -63,7 +66,12 @@ fun AccountSection(modifier: Modifier = Modifier) {
 
     var rangeMode by remember { mutableStateOf("LIVE_RANGE") } // "LIVE_RANGE" or "CUSTOM_RANGE"
     var selectedPanel by remember { mutableStateOf("Panel 1 (Standard)") }
-    var selectedCountry by remember { mutableStateOf("Bangladesh (+880)") }
+    
+    // Country selection for premium numbers
+    var selectedCountryInfo by remember { mutableStateOf(AllCountriesProvider.allCountries.firstOrNull { it.code == "BD" } ?: AllCountriesProvider.allCountries.first()) }
+    var showCountryPicker by remember { mutableStateOf(false) }
+    var countrySearchQuery by remember { mutableStateOf("") }
+
     var kopEngine by remember { mutableStateOf("Kop Engine 1") } // Kop Engine 1 or 2
     var facebookRange by remember { mutableStateOf("017 / 018 / 019") }
     var customRangeInput by remember { mutableStateOf("") }
@@ -138,7 +146,7 @@ fun AccountSection(modifier: Modifier = Modifier) {
                                 letterSpacing = 0.5.sp
                             )
                             Text(
-                                text = "Kop Engine 1,2 • Proxy • Virtual Panels • OTP Auto-Copy",
+                                text = "Premium Country Numbers • Kop Engine 1,2 • Proxy • OTP Auto-Copy",
                                 fontSize = 11.sp,
                                 color = Color(0xFF90A4AE)
                             )
@@ -213,7 +221,7 @@ fun AccountSection(modifier: Modifier = Modifier) {
                 }
             }
 
-            // 2. Txt File Upload vs Live Range / Custom Range
+            // 2. Txt File Upload vs Live Range / Custom Range & Country Selection
             item {
                 Card(
                     colors = CardDefaults.cardColors(containerColor = Color(0xFF101926)),
@@ -265,6 +273,33 @@ fun AccountSection(modifier: Modifier = Modifier) {
 
                         if (sourceMode == "LIVE_RANGE") {
                             Spacer(modifier = Modifier.height(10.dp))
+                            
+                            // Premium Country Selector Button
+                            OutlinedCard(
+                                onClick = { showCountryPicker = true },
+                                colors = CardDefaults.outlinedCardColors(containerColor = Color(0xFF070E17)),
+                                border = BorderStroke(1.dp, Color(0xFF00E676)),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(12.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Text(text = selectedCountryInfo.flag, fontSize = 20.sp)
+                                        Spacer(modifier = Modifier.width(10.dp))
+                                        Column {
+                                            Text(text = "Premium Country Selection", fontSize = 10.sp, color = Color(0xFF90A4AE))
+                                            Text(text = "${selectedCountryInfo.name} (${selectedCountryInfo.dialCode})", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                                        }
+                                    }
+                                    Icon(Icons.Default.ArrowDropDown, contentDescription = "Select Country", tint = Color(0xFF00E676))
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.height(8.dp))
+
                             // Range mode selector: Live Range vs Custom Range
                             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                 OutlinedButton(
@@ -336,7 +371,7 @@ fun AccountSection(modifier: Modifier = Modifier) {
                                         OutlinedTextField(
                                             value = facebookRange,
                                             onValueChange = { facebookRange = it },
-                                            label = { Text("Facebook Range (e.g. 017 / 018 / 019)", fontSize = 10.sp) },
+                                            label = { Text("Facebook Range for ${selectedCountryInfo.name} (e.g. 017 / 018)", fontSize = 10.sp) },
                                             singleLine = true,
                                             colors = OutlinedTextFieldDefaults.colors(focusedTextColor = Color.White, unfocusedTextColor = Color.White, focusedBorderColor = Color(0xFF00E676), unfocusedBorderColor = Color(0xFF334155)),
                                             modifier = Modifier.fillMaxWidth()
@@ -345,7 +380,7 @@ fun AccountSection(modifier: Modifier = Modifier) {
                                         OutlinedTextField(
                                             value = customRangeInput,
                                             onValueChange = { customRangeInput = it },
-                                            label = { Text("Enter Custom Range Prefix", fontSize = 10.sp) },
+                                            label = { Text("Enter Custom Range Prefix (${selectedCountryInfo.dialCode})", fontSize = 10.sp) },
                                             singleLine = true,
                                             colors = OutlinedTextFieldDefaults.colors(focusedTextColor = Color.White, unfocusedTextColor = Color.White, focusedBorderColor = Color(0xFF00E676), unfocusedBorderColor = Color(0xFF334155)),
                                             modifier = Modifier.fillMaxWidth()
@@ -452,10 +487,10 @@ fun AccountSection(modifier: Modifier = Modifier) {
                             return@Button
                         }
                         isCreating = true
-                        creationStepText = "Initializing $kopEngine via $selectedAgent..."
+                        creationStepText = "Initializing $kopEngine for ${selectedCountryInfo.name} via $selectedAgent..."
                         android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
                             val generated = (1..amount).map { idx ->
-                                val sampleNumber = "+88017${(10000000..99999999).random()}"
+                                val sampleNumber = "${selectedCountryInfo.dialCode}${(10000000..99999999).random()}"
                                 CreatedAccountItem(
                                     phoneNumber = sampleNumber,
                                     accountType = when(accountTypeOption) {
@@ -465,14 +500,14 @@ fun AccountSection(modifier: Modifier = Modifier) {
                                     },
                                     agentName = selectedAgent,
                                     proxyUsed = if (proxyMode == "NO_PROXY") "None" else state.proxyState.profileName,
-                                    country = selectedCountry
+                                    country = "${selectedCountryInfo.name} (${selectedCountryInfo.flag})"
                                 )
                             }
                             createdAccountsList = generated
                             isCreating = false
                             creationCompleted = true
                             VibrationHelper.vibrateSuccess(context)
-                            Toast.makeText(context, "✓ Successfully created $amount accounts & logged in!", Toast.LENGTH_LONG).show()
+                            Toast.makeText(context, "✓ Successfully created $amount accounts for ${selectedCountryInfo.name} & logged in!", Toast.LENGTH_LONG).show()
                         }, 2000L)
                     },
                     enabled = !isCreating,
@@ -546,7 +581,7 @@ fun AccountSection(modifier: Modifier = Modifier) {
                             }
                         }
                         Spacer(modifier = Modifier.height(4.dp))
-                        Text(text = "Type: ${acc.accountType} | Agent: ${acc.agentName} | Proxy: ${acc.proxyUsed}", fontSize = 10.sp, color = Color(0xFF90A4AE))
+                        Text(text = "Country: ${acc.country} | Type: ${acc.accountType} | Agent: ${acc.agentName}", fontSize = 10.sp, color = Color(0xFF90A4AE))
                         Spacer(modifier = Modifier.height(8.dp))
 
                         // Dedicated SMS fetch option at the end of each account
@@ -596,5 +631,74 @@ fun AccountSection(modifier: Modifier = Modifier) {
                 }
             }
         }
+    }
+
+    // Country Picker Dialog
+    if (showCountryPicker) {
+        AlertDialog(
+            onDismissRequest = { showCountryPicker = false },
+            containerColor = Color(0xFF101926),
+            title = {
+                Column {
+                    Text(text = "Select Premium Country", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                    Spacer(modifier = Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = countrySearchQuery,
+                        onValueChange = { countrySearchQuery = it },
+                        placeholder = { Text("Search country...", fontSize = 11.sp) },
+                        singleLine = true,
+                        colors = OutlinedTextFieldDefaults.colors(focusedTextColor = Color.White, unfocusedTextColor = Color.White, focusedBorderColor = Color(0xFF00E676), unfocusedBorderColor = Color(0xFF334155)),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            },
+            text = {
+                val filteredCountries = remember(countrySearchQuery) {
+                    if (countrySearchQuery.isBlank()) AllCountriesProvider.allCountries
+                    else AllCountriesProvider.allCountries.filter {
+                        it.name.contains(countrySearchQuery, ignoreCase = true) ||
+                        it.dialCode.contains(countrySearchQuery, ignoreCase = true) ||
+                        it.code.contains(countrySearchQuery, ignoreCase = true)
+                    }
+                }
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(300.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    items(filteredCountries, key = { it.code }) { c ->
+                        Surface(
+                            color = if (selectedCountryInfo.code == c.code) Color(0xFF00E676).copy(alpha = 0.2f) else Color(0xFF070E17),
+                            shape = RoundedCornerShape(8.dp),
+                            border = BorderStroke(1.dp, if (selectedCountryInfo.code == c.code) Color(0xFF00E676) else Color(0xFF1E293B)),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    selectedCountryInfo = c
+                                    showCountryPicker = false
+                                }
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(10.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(text = c.flag, fontSize = 20.sp)
+                                Spacer(modifier = Modifier.width(10.dp))
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(text = c.name, color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                                    Text(text = c.dialCode, color = Color(0xFF90A4AE), fontSize = 10.sp)
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showCountryPicker = false }) {
+                    Text("Close", color = Color(0xFF00E676))
+                }
+            }
+        )
     }
 }
