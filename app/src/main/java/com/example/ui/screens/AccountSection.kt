@@ -86,10 +86,12 @@ data class CreatedAccountItem(
 ) {
     fun formatOutput(mode: String): String {
         return when (mode) {
+            "DEFAULT" -> "$name|$phoneNumber|$uid|$password|$cookie"
+            "FULL" -> "$name|$phoneNumber|$uid|$password|$cookie|$token|$twoFaSecret"
             "STD" -> "$uid|$password|$cookie|$token"
             "COOKIE" -> "$uid|$password|$cookie"
             "MIN" -> "$phoneNumber|$password|$uid"
-            else -> "$uid|$password|$phoneNumber|$cookie|$token|$twoFaSecret"
+            else -> "$name|$phoneNumber|$uid|$password|$cookie"
         }
     }
 }
@@ -169,7 +171,7 @@ fun AccountSection(modifier: Modifier = Modifier) {
     var consoleLogs by remember { mutableStateOf(listOf<String>()) }
     var createdAccountsList by remember { mutableStateOf(listOf<CreatedAccountItem>()) }
     var creationCompleted by remember { mutableStateOf(false) }
-    var outputFormatMode by remember { mutableStateOf("FULL") } // "FULL", "STD", "COOKIE", "MIN"
+    var outputFormatMode by remember { mutableStateOf("DEFAULT") } // "DEFAULT" (name|number|uid|password|cookie), "FULL", "STD", "COOKIE", "MIN"
     var showRawOutputBox by remember { mutableStateOf(true) }
 
     // Auto-match incoming OTPs from all 3 Virtual Number panels to created accounts in real time!
@@ -1602,17 +1604,18 @@ fun AccountSection(modifier: Modifier = Modifier) {
                             Spacer(modifier = Modifier.height(10.dp))
 
                             // Output Format Selector Chips
-                            Row(
+                            FlowRow(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.spacedBy(6.dp),
-                                verticalAlignment = Alignment.CenterVertically
+                                verticalArrangement = Arrangement.spacedBy(5.dp)
                             ) {
-                                Text("Format:", color = Color(0xFF94A3B8), fontSize = 10.sp)
+                                Text("Format:", color = Color(0xFF94A3B8), fontSize = 10.sp, modifier = Modifier.padding(top = 3.dp))
                                 listOf(
-                                    "FULL" to "UID|PASS|PHONE|COOKIE|TOKEN|2FA",
-                                    "STD" to "UID|PASS|COOKIE|TOKEN",
-                                    "COOKIE" to "UID|PASS|COOKIE",
-                                    "MIN" to "PHONE|PASS|UID"
+                                    "DEFAULT" to "name|number|uid|pass|cookie",
+                                    "FULL" to "name|num|uid|pass|cookie|token|2fa",
+                                    "STD" to "uid|pass|cookie|token",
+                                    "COOKIE" to "uid|pass|cookie",
+                                    "MIN" to "number|pass|uid"
                                 ).forEach { (fmtKey, fmtDesc) ->
                                     val isSel = outputFormatMode == fmtKey
                                     Surface(
@@ -1622,7 +1625,7 @@ fun AccountSection(modifier: Modifier = Modifier) {
                                         modifier = Modifier.clickable { outputFormatMode = fmtKey }
                                     ) {
                                         Text(
-                                            text = fmtKey,
+                                            text = if (fmtKey == "DEFAULT") "name|number|uid|password|cookie" else fmtKey,
                                             color = if (isSel) Color(0xFF00E676) else Color.White,
                                             fontSize = 9.5.sp,
                                             fontWeight = FontWeight.Bold,
@@ -1649,7 +1652,7 @@ fun AccountSection(modifier: Modifier = Modifier) {
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
                                         Text(
-                                            text = "RAW OUTPUT ($outputFormatMode FORMAT):",
+                                            text = if (outputFormatMode == "DEFAULT") "RAW OUTPUT (name|number|uid|password|cookie):" else "RAW OUTPUT ($outputFormatMode FORMAT):",
                                             color = Color(0xFF38BDF8),
                                             fontSize = 9.5.sp,
                                             fontWeight = FontWeight.Bold,
@@ -1760,13 +1763,31 @@ fun AccountSection(modifier: Modifier = Modifier) {
                                         )
                                     }
                                     Spacer(modifier = Modifier.width(6.dp))
-                                    Text(
-                                        text = acc.phoneNumber,
-                                        color = Color.White,
-                                        fontSize = 13.5.sp,
-                                        fontWeight = FontWeight.ExtraBold,
-                                        fontFamily = FontFamily.Monospace
-                                    )
+                                    Surface(
+                                        color = Color(0xFF152232),
+                                        shape = RoundedCornerShape(6.dp),
+                                        border = BorderStroke(1.dp, Color(0xFF334155)),
+                                        modifier = Modifier.clickable {
+                                            ClipboardHelper.copyToClipboard(context, acc.phoneNumber, "Number")
+                                            VibrationHelper.vibrateSuccess(context)
+                                            Toast.makeText(context, "✓ Number Copied: ${acc.phoneNumber}", Toast.LENGTH_SHORT).show()
+                                        }
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Text(
+                                                text = acc.phoneNumber,
+                                                color = Color.White,
+                                                fontSize = 13.sp,
+                                                fontWeight = FontWeight.ExtraBold,
+                                                fontFamily = FontFamily.Monospace
+                                            )
+                                            Spacer(modifier = Modifier.width(4.dp))
+                                            Icon(Icons.Default.ContentCopy, contentDescription = "Copy Number", tint = Color(0xFF38BDF8), modifier = Modifier.size(12.dp))
+                                        }
+                                    }
                                 }
 
                                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -1788,15 +1809,33 @@ fun AccountSection(modifier: Modifier = Modifier) {
 
                             Spacer(modifier = Modifier.height(6.dp))
 
-                            Text(
-                                text = "👤 ${acc.name}  •  📡 ${acc.panelUsed} (${acc.rangeUsed})  •  🌐 ${acc.proxyUsed}",
-                                color = Color(0xFF94A3B8),
-                                fontSize = 10.sp
-                            )
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = "👤 ${acc.name}",
+                                    color = Color(0xFF00E676),
+                                    fontSize = 10.5.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    modifier = Modifier.clickable {
+                                        ClipboardHelper.copyToClipboard(context, acc.name, "Name")
+                                        VibrationHelper.vibrateSuccess(context)
+                                        Toast.makeText(context, "✓ Name Copied: ${acc.name}", Toast.LENGTH_SHORT).show()
+                                    }
+                                )
+                                Text(
+                                    text = "  •  📡 ${acc.panelUsed} (${acc.rangeUsed})  •  🌐 ${acc.proxyUsed}",
+                                    color = Color(0xFF94A3B8),
+                                    fontSize = 10.sp,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
 
                             Spacer(modifier = Modifier.height(8.dp))
 
-                            // Credentials Box
+                            // Interactive Tap-to-Copy Credentials Box (Tap UID, Number, Pass, Cookie, 2FA, or Token to Auto Copy)
                             Surface(
                                 color = Color(0xFF070E17),
                                 shape = RoundedCornerShape(8.dp),
@@ -1805,13 +1844,140 @@ fun AccountSection(modifier: Modifier = Modifier) {
                             ) {
                                 Column(
                                     modifier = Modifier.padding(8.dp),
-                                    verticalArrangement = Arrangement.spacedBy(3.dp)
+                                    verticalArrangement = Arrangement.spacedBy(5.dp)
                                 ) {
-                                    Text("UID: ${acc.uid}   |   Pass: ${acc.password}", color = Color(0xFF38BDF8), fontSize = 10.5.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
-                                    Text("2FA: ${acc.twoFaSecret}", color = Color(0xFFFFD54F), fontSize = 9.5.sp, fontFamily = FontFamily.Monospace, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                    Text("Token: ${acc.token}", color = Color(0xFFA7F3D0), fontSize = 9.5.sp, fontFamily = FontFamily.Monospace, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                    Text("Cookie: ${acc.cookie}", color = Color(0xFFCBD5E1), fontSize = 9.5.sp, fontFamily = FontFamily.Monospace, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                    Text("UA: ${acc.userAgent}", color = Color(0xFF64748B), fontSize = 8.5.sp, fontFamily = FontFamily.Monospace, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    // Tap-to-Copy Chips for UID, Number, Password
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        // Clickable UID
+                                        Surface(
+                                            color = Color(0xFF102033),
+                                            shape = RoundedCornerShape(6.dp),
+                                            border = BorderStroke(1.dp, Color(0xFF0284C7)),
+                                            modifier = Modifier
+                                                .weight(1.1f)
+                                                .clickable {
+                                                    ClipboardHelper.copyToClipboard(context, acc.uid, "UID")
+                                                    VibrationHelper.vibrateSuccess(context)
+                                                    Toast.makeText(context, "✓ UID Copied: ${acc.uid}", Toast.LENGTH_SHORT).show()
+                                                }
+                                        ) {
+                                            Row(
+                                                modifier = Modifier.padding(horizontal = 7.dp, vertical = 4.dp),
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.SpaceBetween
+                                            ) {
+                                                Text(
+                                                    text = "UID: ${acc.uid}",
+                                                    color = Color(0xFF38BDF8),
+                                                    fontSize = 10.sp,
+                                                    fontWeight = FontWeight.Bold,
+                                                    fontFamily = FontFamily.Monospace,
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis
+                                                )
+                                                Icon(Icons.Default.ContentCopy, contentDescription = "Copy UID", tint = Color(0xFF38BDF8), modifier = Modifier.size(11.dp))
+                                            }
+                                        }
+
+                                        // Clickable Password
+                                        Surface(
+                                            color = Color(0xFF0D261C),
+                                            shape = RoundedCornerShape(6.dp),
+                                            border = BorderStroke(1.dp, Color(0xFF10B981)),
+                                            modifier = Modifier
+                                                .weight(0.9f)
+                                                .clickable {
+                                                    ClipboardHelper.copyToClipboard(context, acc.password, "Password")
+                                                    VibrationHelper.vibrateSuccess(context)
+                                                    Toast.makeText(context, "✓ Password Copied: ${acc.password}", Toast.LENGTH_SHORT).show()
+                                                }
+                                        ) {
+                                            Row(
+                                                modifier = Modifier.padding(horizontal = 7.dp, vertical = 4.dp),
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.SpaceBetween
+                                            ) {
+                                                Text(
+                                                    text = "Pass: ${acc.password}",
+                                                    color = Color(0xFF00E676),
+                                                    fontSize = 10.sp,
+                                                    fontWeight = FontWeight.Bold,
+                                                    fontFamily = FontFamily.Monospace,
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis
+                                                )
+                                                Icon(Icons.Default.ContentCopy, contentDescription = "Copy Password", tint = Color(0xFF00E676), modifier = Modifier.size(11.dp))
+                                            }
+                                        }
+                                    }
+
+                                    // Formatted Line Preview (name|number|uid|password|cookie) — Tap to Copy
+                                    Text(
+                                        text = "📋 Output: ${acc.name}|${acc.phoneNumber}|${acc.uid}|${acc.password}|${acc.cookie}",
+                                        color = Color(0xFF00E676),
+                                        fontSize = 9.5.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        fontFamily = FontFamily.Monospace,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clickable {
+                                                val line = "${acc.name}|${acc.phoneNumber}|${acc.uid}|${acc.password}|${acc.cookie}"
+                                                ClipboardHelper.copyToClipboard(context, line, "Account Line")
+                                                VibrationHelper.vibrateSuccess(context)
+                                                Toast.makeText(context, "✓ Copied: name|number|uid|password|cookie", Toast.LENGTH_SHORT).show()
+                                            }
+                                    )
+
+                                    Text(
+                                        text = "Cookie: ${acc.cookie}",
+                                        color = Color(0xFFCBD5E1),
+                                        fontSize = 9.5.sp,
+                                        fontFamily = FontFamily.Monospace,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clickable {
+                                                ClipboardHelper.copyToClipboard(context, acc.cookie, "Cookie")
+                                                VibrationHelper.vibrateSuccess(context)
+                                                Toast.makeText(context, "✓ Cookie Copied!", Toast.LENGTH_SHORT).show()
+                                            }
+                                    )
+                                    Text(
+                                        text = "2FA: ${acc.twoFaSecret}",
+                                        color = Color(0xFFFFD54F),
+                                        fontSize = 9.5.sp,
+                                        fontFamily = FontFamily.Monospace,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clickable {
+                                                ClipboardHelper.copyToClipboard(context, acc.twoFaSecret.replace(" ", ""), "2FA Key")
+                                                VibrationHelper.vibrateSuccess(context)
+                                                Toast.makeText(context, "✓ 2FA Key Copied!", Toast.LENGTH_SHORT).show()
+                                            }
+                                    )
+                                    Text(
+                                        text = "UA: ${acc.userAgent}",
+                                        color = Color(0xFF64748B),
+                                        fontSize = 8.5.sp,
+                                        fontFamily = FontFamily.Monospace,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clickable {
+                                                ClipboardHelper.copyToClipboard(context, acc.userAgent, "User-Agent")
+                                                Toast.makeText(context, "✓ User-Agent Copied!", Toast.LENGTH_SHORT).show()
+                                            }
+                                    )
                                 }
                             }
 
@@ -1820,41 +1986,68 @@ fun AccountSection(modifier: Modifier = Modifier) {
                             // Quick Copy Buttons + Fetch Real SMS Button
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(5.dp),
+                                horizontalArrangement = Arrangement.spacedBy(4.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 OutlinedButton(
                                     onClick = {
-                                        ClipboardHelper.copyToClipboard(context, acc.uid, "UID")
-                                        Toast.makeText(context, "UID Copied!", Toast.LENGTH_SHORT).show()
+                                        ClipboardHelper.copyToClipboard(context, acc.phoneNumber, "Number")
+                                        VibrationHelper.vibrateSuccess(context)
+                                        Toast.makeText(context, "✓ Number Copied: ${acc.phoneNumber}", Toast.LENGTH_SHORT).show()
                                     },
-                                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 3.dp),
-                                    modifier = Modifier.height(28.dp).weight(1f)
+                                    contentPadding = PaddingValues(horizontal = 4.dp, vertical = 3.dp),
+                                    modifier = Modifier.height(28.dp).weight(0.95f)
                                 ) {
-                                    Text("UID", fontSize = 9.sp, color = Color(0xFF38BDF8))
+                                    Text("Number", fontSize = 8.5.sp, color = Color.White, maxLines = 1)
+                                }
+
+                                OutlinedButton(
+                                    onClick = {
+                                        ClipboardHelper.copyToClipboard(context, acc.uid, "UID")
+                                        VibrationHelper.vibrateSuccess(context)
+                                        Toast.makeText(context, "✓ UID Copied: ${acc.uid}", Toast.LENGTH_SHORT).show()
+                                    },
+                                    contentPadding = PaddingValues(horizontal = 4.dp, vertical = 3.dp),
+                                    modifier = Modifier.height(28.dp).weight(0.8f)
+                                ) {
+                                    Text("UID", fontSize = 8.5.sp, color = Color(0xFF38BDF8), maxLines = 1)
+                                }
+
+                                OutlinedButton(
+                                    onClick = {
+                                        ClipboardHelper.copyToClipboard(context, acc.password, "Password")
+                                        VibrationHelper.vibrateSuccess(context)
+                                        Toast.makeText(context, "✓ Pass Copied: ${acc.password}", Toast.LENGTH_SHORT).show()
+                                    },
+                                    contentPadding = PaddingValues(horizontal = 4.dp, vertical = 3.dp),
+                                    modifier = Modifier.height(28.dp).weight(0.85f)
+                                ) {
+                                    Text("Pass", fontSize = 8.5.sp, color = Color(0xFF00E676), maxLines = 1)
                                 }
 
                                 OutlinedButton(
                                     onClick = {
                                         ClipboardHelper.copyToClipboard(context, acc.cookie, "Cookie")
-                                        Toast.makeText(context, "Cookie Copied!", Toast.LENGTH_SHORT).show()
+                                        VibrationHelper.vibrateSuccess(context)
+                                        Toast.makeText(context, "✓ Cookie Copied!", Toast.LENGTH_SHORT).show()
                                     },
-                                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 3.dp),
-                                    modifier = Modifier.height(28.dp).weight(1f)
+                                    contentPadding = PaddingValues(horizontal = 4.dp, vertical = 3.dp),
+                                    modifier = Modifier.height(28.dp).weight(0.95f)
                                 ) {
-                                    Text("Cookie", fontSize = 9.sp, color = Color(0xFFCBD5E1))
+                                    Text("Cookie", fontSize = 8.5.sp, color = Color(0xFFCBD5E1), maxLines = 1)
                                 }
 
                                 OutlinedButton(
                                     onClick = {
                                         val fullLine = acc.formatOutput(outputFormatMode)
                                         ClipboardHelper.copyToClipboard(context, fullLine, "Full Account")
-                                        Toast.makeText(context, "Full Account Line Copied!", Toast.LENGTH_SHORT).show()
+                                        VibrationHelper.vibrateSuccess(context)
+                                        Toast.makeText(context, "✓ Line Copied!", Toast.LENGTH_SHORT).show()
                                     },
-                                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 3.dp),
-                                    modifier = Modifier.height(28.dp).weight(1.2f)
+                                    contentPadding = PaddingValues(horizontal = 4.dp, vertical = 3.dp),
+                                    modifier = Modifier.height(28.dp).weight(1.05f)
                                 ) {
-                                    Text("Copy Line", fontSize = 9.sp, color = Color(0xFF00E676))
+                                    Text("Copy Line", fontSize = 8.5.sp, color = Color(0xFF00E676), maxLines = 1)
                                 }
 
                                 // Fetch Real OTP SMS from Virtual Numbers Panel

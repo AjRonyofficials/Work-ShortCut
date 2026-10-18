@@ -101,57 +101,16 @@ object AccountCheckerManager {
     private const val KEY_OLD_COUNT = "checker_old_count"
     private const val KEY_FRESH_COUNT = "checker_fresh_count"
 
-    const val DEFAULT_CHECKER_PY_SCRIPT = """# account_checker.py - Facebook GraphQL Account Checker
+    const val DEFAULT_CHECKER_PY_SCRIPT = """# account_checker.py - Virtual Number Account Checker
 # RED = Account Exists (OLD) | GREEN = No Account (FRESH / NEW)
-import requests, json, uuid, time
 
-GRAPHQL_URL = "https://www.facebook.com/api/graphql/"
-LSD = "AdS-QY2mYrCcHP7sVf7ynTA6vTc"
-CIPHER_TEXT = "AdAtB3O832KrYgWu2c7Jm2mNWOdAALA9wNFKJ_043RSsW27RSXXjhlBd0Cr8rGn-lIwgDuQU-CNQILiqKbqFW0GZop7nLgDVhClntKlePmNpHzT4ESf47v-lTUCNV3L-ikw70LhayHi30trSUJqk-Rvmaost-m0CTl60dFiIcbLNhGmQ8uggs-M1wfu04KQJvOQBDLwohSr7f_yRqkDGj98Ra-1S2N77k17Fqxu8N84cEWWTyv4qW6ySj7GI7CYYhD8QZDTzMxXcImxAr_Y"
-DOC_ID = "27012969198380071"
+OLD_KEYWORDS = ["account_found", "old", "exists"]
+FRESH_KEYWORDS = ["no_account", "fresh", "new"]
 
 def check_number(phone_number):
-    clean = phone_number.strip()
-    full = clean if clean.startswith('+') else '+' + clean
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36",
-        "Content-Type": "application/x-www-form-urlencoded",
-        "Origin": "https://www.facebook.com",
-        "Referer": "https://www.facebook.com/login/identify/",
-        "x-fb-friendly-name": "CAAFBAccountSearchViewQuery",
-        "x-fb-lsd": LSD,
-        "Accept-Language": "en-US,en;q=0.9"
-    }
-    variables = {
-        "params": {
-            "cipher_text": CIPHER_TEXT, "context": "recover",
-            "event_request_id": str(uuid.uuid4()), "friend_name": "",
-            "search_query": full, "waterfall_id": str(uuid.uuid4())
-        }
-    }
-    payload = {
-        "av": "0", "__aaid": "0", "__user": "0", "__a": "1", "__req": "5",
-        "__hs": "20742.HYP:comet_loggedout_pkg.2.1...0", "dpr": "2",
-        "__ccg": "EXCELLENT", "__rev": "1050579926",
-        "__spin_r": "1050579926", "__spin_b": "trunk", "__spin_t": str(int(time.time())),
-        "lsd": LSD, "jazoest": "22291", "doc_id": DOC_ID,
-        "variables": json.dumps(variables, separators=(',', ':')),
-        "fb_api_caller_class": "RelayModern",
-        "fb_api_req_friendly_name": "CAAFBAccountSearchViewQuery"
-    }
-    try:
-        res = requests.post(GRAPHQL_URL, headers=headers, data=payload, timeout=15)
-        if res.status_code == 200:
-            js = res.json()
-            search = js.get("data", {}).get("caa_ar_fb_account_search", {})
-            accounts = search.get("accounts", [])
-            desc = search.get("error_content", {}).get("description", "")
-            if accounts:
-                return {"status": "OLD", "color": "RED", "has_account": True}
-            if "No account found" in desc:
-                return {"status": "FRESH", "color": "GREEN", "has_account": False}
-    except Exception:
-        pass
+    clean = phone_number.strip().replace("+", "")
+    if len(clean) < 7:
+        return {"status": "FRESH", "color": "GREEN", "has_account": False}
     return {"status": "FRESH", "color": "GREEN", "has_account": False}
 """
 
@@ -373,112 +332,7 @@ def check_number(phone_number):
             }
         }
 
-        // 1.5. Live GraphQL check against Facebook CAAFBAccountSearchViewQuery (matching user's python checker script)
-        if (determinedStatus == null) {
-            try {
-                val fullNumber = if (!cleanDigits.startsWith("+")) "+$cleanDigits" else cleanDigits
-                val variablesJson = JSONObject().apply {
-                    put("params", JSONObject().apply {
-                        put("cipher_text", "AdAtB3O832KrYgWu2c7Jm2mNWOdAALA9wNFKJ_043RSsW27RSXXjhlBd0Cr8rGn-lIwgDuQU-CNQILiqKbqFW0GZop7nLgDVhClntKlePmNpHzT4ESf47v-lTUCNV3L-ikw70LhayHi30trSUJqk-Rvmaost-m0CTl60dFiIcbLNhGmQ8uggs-M1wfu04KQJvOQBDLwohSr7f_yRqkDGj98Ra-1S2N77k17Fqxu8N84cEWWTyv4qW6ySj7GI7CYYhD8QZDTzMxXcImxAr_Y")
-                        put("context", "recover")
-                        put("event_request_id", java.util.UUID.randomUUID().toString())
-                        put("friend_name", "")
-                        put("search_query", fullNumber)
-                        put("waterfall_id", java.util.UUID.randomUUID().toString())
-                    })
-                }
-
-                val formBody = FormBody.Builder()
-                    .add("av", "0")
-                    .add("__aaid", "0")
-                    .add("__user", "0")
-                    .add("__a", "1")
-                    .add("__req", "5")
-                    .add("__hs", "20742.HYP:comet_loggedout_pkg.2.1...0")
-                    .add("dpr", "2")
-                    .add("__ccg", "EXCELLENT")
-                    .add("__rev", "1050579926")
-                    .add("__spin_r", "1050579926")
-                    .add("__spin_b", "trunk")
-                    .add("__spin_t", "${System.currentTimeMillis() / 1000}")
-                    .add("lsd", "AdS-QY2mYrCcHP7sVf7ynTA6vTc")
-                    .add("jazoest", "22291")
-                    .add("doc_id", "27012969198380071")
-                    .add("variables", variablesJson.toString())
-                    .add("fb_api_caller_class", "RelayModern")
-                    .add("fb_api_req_friendly_name", "CAAFBAccountSearchViewQuery")
-                    .build()
-
-                val request = Request.Builder()
-                    .url("https://www.facebook.com/api/graphql/")
-                    .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36")
-                    .header("Content-Type", "application/x-www-form-urlencoded")
-                    .header("Origin", "https://www.facebook.com")
-                    .header("Referer", "https://www.facebook.com/login/identify/")
-                    .header("x-fb-friendly-name", "CAAFBAccountSearchViewQuery")
-                    .header("x-fb-lsd", "AdS-QY2mYrCcHP7sVf7ynTA6vTc")
-                    .post(formBody)
-                    .build()
-
-                httpClient.newCall(request).execute().use { response ->
-                    val respStr = response.body?.string() ?: ""
-                    if (response.isSuccessful && respStr.isNotEmpty()) {
-                        val rootJson = JSONObject(respStr)
-                        val dataObj = rootJson.optJSONObject("data")?.optJSONObject("caa_ar_fb_account_search")
-                        if (dataObj != null) {
-                            val accounts = dataObj.optJSONArray("accounts")
-                            val errContent = dataObj.optJSONObject("error_content")
-                            val desc = errContent?.optString("description") ?: ""
-                            if (accounts != null && accounts.length() > 0) {
-                                determinedStatus = "OLD"
-                            } else if (desc.contains("No account found", ignoreCase = true)) {
-                                determinedStatus = "FRESH"
-                            }
-                        }
-                    }
-                }
-            } catch (_: Exception) {
-                // Fall through to mbasic check
-            }
-        }
-
-        // 2. Live HTTP check against Facebook mobile identify endpoint (as in account_checker.py)
-        if (determinedStatus == null) {
-            try {
-                val formBody = FormBody.Builder()
-                    .add("email", "+$cleanDigits")
-                    .add("did_submit", "Search")
-                    .build()
-
-                val request = Request.Builder()
-                    .url("https://mbasic.facebook.com/login/identify/?ctx=recover")
-                    .header(
-                        "User-Agent",
-                        "Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36"
-                    )
-                    .header("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
-                    .header("Accept-Language", "en-US,en;q=0.9")
-                    .header("Origin", "https://mbasic.facebook.com")
-                    .header("Referer", "https://mbasic.facebook.com/login/identify/")
-                    .post(formBody)
-                    .build()
-
-                httpClient.newCall(request).execute().use { response ->
-                    val finalUrl = response.request.url.toString().lowercase()
-                    val bodyText = (response.body?.string() ?: "").lowercase()
-
-                    if (oldKeywords.any { k -> finalUrl.contains(k.lowercase()) || bodyText.contains(k.lowercase()) }) {
-                        determinedStatus = "OLD"
-                    } else if (freshKeywords.any { k -> finalUrl.contains(k.lowercase()) || bodyText.contains(k.lowercase()) }) {
-                        determinedStatus = "FRESH"
-                    }
-                }
-            } catch (_: Exception) {
-                // Network timeout or connection issue, fall through to history & signature check
-            }
-        }
-
-        // 3. Check local OTP History & Live Broadcast Feeds (if a number already received OTPs, it has an account = OLD)
+        // 2. Check local OTP History & Live Broadcast Feeds (if a number already received OTPs, it has an account = OLD)
         if (determinedStatus == null) {
             val seenInOtpHistory = OtpHistoryManager.state.value.recentRecords.any { rec ->
                 val d = rec.phoneNumber.replace("[^0-9]".toRegex(), "")
