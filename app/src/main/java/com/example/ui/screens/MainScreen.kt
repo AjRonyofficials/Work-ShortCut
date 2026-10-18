@@ -149,6 +149,7 @@ fun MainScreen(
                 "APPS" -> selectedTab = AppNavTab.SHORTCUTS
                 "CLEAR_DATA" -> selectedTab = AppNavTab.CLEAR_DATA
                 "SETTINGS" -> selectedTab = AppNavTab.SETTINGS
+                "ACCOUNT" -> selectedTab = AppNavTab.ACCOUNT
             }
         }
     }
@@ -280,6 +281,7 @@ fun MainScreen(
                     AppNavTab.CLEAR_DATA -> ClearDataSection(state = state)
                     AppNavTab.SETTINGS -> SettingsSection(state = state)
                     AppNavTab.ADMIN_PANEL -> AdminPanelSection()
+                    AppNavTab.ACCOUNT -> AccountSection()
                 }
             }
         }

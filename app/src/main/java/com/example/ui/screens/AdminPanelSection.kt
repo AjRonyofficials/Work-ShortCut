@@ -41,6 +41,8 @@ import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.RocketLaunch
 import com.example.service.AppUpdateManager
 import com.example.service.KopEngine2Manager
+import com.example.service.OverlayStateManager
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
@@ -4972,6 +4974,58 @@ fun AdminAppUpdateCard(
                         Icon(Icons.Default.RocketLaunch, contentDescription = null, tint = Color.Black, modifier = Modifier.size(16.dp))
                         Spacer(modifier = Modifier.width(6.dp))
                         Text("Publish Update 🚀", color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            // Admin Control Toggles for Account Section & Txt Upload Lock
+            val overlayState by OverlayStateManager.uiState.collectAsStateWithLifecycle()
+            Card(
+                colors = CardDefaults.cardColors(containerColor = Color(0xFF101926)),
+                shape = RoundedCornerShape(16.dp),
+                border = BorderStroke(1.dp, Color(0xFF334155)),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(modifier = Modifier.padding(14.dp)) {
+                    Text(
+                        text = "⚙️ ACCOUNT & TXT UPLOAD ADMIN CONTROLS",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFF00E676)
+                    )
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(text = "Upload Number Txt Lock", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                            Text(text = "Lock Txt file upload until admin unlocks", color = Color(0xFF90A4AE), fontSize = 9.sp)
+                        }
+                        Switch(
+                            checked = overlayState.uploadNumberTxtLocked,
+                            onCheckedChange = { OverlayStateManager.setUploadNumberTxtLocked(it) },
+                            colors = SwitchDefaults.colors(checkedThumbColor = Color.White, checkedTrackColor = Color(0xFF00E676))
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(text = "Account Section Active", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                            Text(text = "Enable or disable Account section for users", color = Color(0xFF90A4AE), fontSize = 9.sp)
+                        }
+                        Switch(
+                            checked = overlayState.accountSectionEnabled,
+                            onCheckedChange = { OverlayStateManager.setAccountSectionEnabled(it) },
+                            colors = SwitchDefaults.colors(checkedThumbColor = Color.White, checkedTrackColor = Color(0xFF00E676))
+                        )
                     }
                 }
             }

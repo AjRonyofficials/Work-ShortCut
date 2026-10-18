@@ -116,7 +116,9 @@ data class OverlayUiState(
     val showOverlayVirtualNumbers: Boolean = true,
     val isVirtualNumbersOverlayExpanded: Boolean = false,
     val autoCopyOtp: Boolean = true,
-    val otpSoundVibrationEnabled: Boolean = true
+    val otpSoundVibrationEnabled: Boolean = true,
+    val uploadNumberTxtLocked: Boolean = true,
+    val accountSectionEnabled: Boolean = true
 )
 
 object OverlayStateManager {
@@ -317,6 +319,8 @@ object OverlayStateManager {
                     showOverlayVirtualNumbers = showVirtual,
                     autoCopyOtp = p.getBoolean("auto_copy_otp", true),
                     otpSoundVibrationEnabled = p.getBoolean("otp_sound_vibration_enabled", true),
+                    uploadNumberTxtLocked = p.getBoolean("upload_number_txt_locked", true),
+                    accountSectionEnabled = p.getBoolean("account_section_enabled", true),
                     proxyState = it.proxyState.copy(
                         profileName = profileName,
                         host = proxyHost,
@@ -1712,6 +1716,16 @@ object OverlayStateManager {
 
     fun toggleVirtualNumbersOverlayExpanded() {
         _uiState.update { it.copy(isVirtualNumbersOverlayExpanded = !it.isVirtualNumbersOverlayExpanded) }
+    }
+
+    fun setUploadNumberTxtLocked(locked: Boolean) {
+        prefs?.edit()?.putBoolean("upload_number_txt_locked", locked)?.apply()
+        _uiState.update { it.copy(uploadNumberTxtLocked = locked) }
+    }
+
+    fun setAccountSectionEnabled(enabled: Boolean) {
+        prefs?.edit()?.putBoolean("account_section_enabled", enabled)?.apply()
+        _uiState.update { it.copy(accountSectionEnabled = enabled) }
     }
 
     private fun startPeriodicPingTester() {
