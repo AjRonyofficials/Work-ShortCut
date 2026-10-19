@@ -184,15 +184,6 @@ enum class AppNavTab(
         unselectedIcon = Icons.Outlined.Security,
         gradientColors = listOf(Color(0xFF6366F1), Color(0xFF4338CA)),
         accentColor = Color(0xFF818CF8)
-    ),
-    ACCOUNT(
-        title = "Account",
-        subtitle = "Creation & OTP Fetch",
-        category = "COMMUNICATION",
-        selectedIcon = Icons.Filled.Person,
-        unselectedIcon = Icons.Outlined.Person,
-        gradientColors = listOf(Color(0xFF00E676), Color(0xFF00A859)),
-        accentColor = Color(0xFF00E676)
     )
 }
 
@@ -435,19 +426,14 @@ fun PremiumNavigationMenu(
                         Spacer(modifier = Modifier.height(10.dp))
 
                         // Filtered Tabs
-                        val accountEnabled = OverlayStateManager.uiState.collectAsStateWithLifecycle().value.accountSectionEnabled
                         val filteredTabs = AppNavTab.entries.filter { tab ->
-                            if (tab == AppNavTab.ACCOUNT && !accountEnabled) {
-                                false
-                            } else {
-                                val matchSearch = searchQuery.isBlank() ||
-                                        tab.title.contains(searchQuery, ignoreCase = true) ||
-                                        tab.subtitle.contains(searchQuery, ignoreCase = true) ||
-                                        tab.category.contains(searchQuery, ignoreCase = true)
+                            val matchSearch = searchQuery.isBlank() ||
+                                    tab.title.contains(searchQuery, ignoreCase = true) ||
+                                    tab.subtitle.contains(searchQuery, ignoreCase = true) ||
+                                    tab.category.contains(searchQuery, ignoreCase = true)
 
-                                val matchCat = selectedCategory == "ALL" || tab.category == selectedCategory
-                                matchSearch && matchCat
-                            }
+                            val matchCat = selectedCategory == "ALL" || tab.category == selectedCategory
+                            matchSearch && matchCat
                         }
 
                         // 2-Column Responsive Bento Grid of Modules

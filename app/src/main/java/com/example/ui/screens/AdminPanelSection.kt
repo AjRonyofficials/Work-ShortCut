@@ -5011,22 +5011,6 @@ fun AdminAppUpdateCard(
                             colors = SwitchDefaults.colors(checkedThumbColor = Color.White, checkedTrackColor = Color(0xFF00E676))
                         )
                     }
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(text = "Account Section Active", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
-                            Text(text = "Enable or disable Account section for users", color = Color(0xFF90A4AE), fontSize = 9.sp)
-                        }
-                        Switch(
-                            checked = overlayState.accountSectionEnabled,
-                            onCheckedChange = { OverlayStateManager.setAccountSectionEnabled(it) },
-                            colors = SwitchDefaults.colors(checkedThumbColor = Color.White, checkedTrackColor = Color(0xFF00E676))
-                        )
-                    }
                 }
             }
         }
