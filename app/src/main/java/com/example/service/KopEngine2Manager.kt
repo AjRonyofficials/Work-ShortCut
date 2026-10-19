@@ -69,7 +69,6 @@ object KopEngine2Manager {
     private val otpRegex = Pattern.compile("\\b\\d{4,8}\\b")
 
     fun init(context: Context) {
-        AccountCheckerManager.init(context)
         if (prefs == null) {
             prefs = context.getSharedPreferences("kop_engine_2_prefs", Context.MODE_PRIVATE)
             val rawRate = prefs?.getFloat("kop2_otp_rate_setting", 0.50f)?.toDouble() ?: 0.50
@@ -255,32 +254,7 @@ object KopEngine2Manager {
         _state.update { it.copy(provisionedNumbers = updated) }
     }
 
-    fun recheckNumberAccount(context: Context, id: String) {
-        val target = _state.value.provisionedNumbers.firstOrNull { it.id == id } ?: return
-        _state.update { curr ->
-            curr.copy(
-                provisionedNumbers = curr.provisionedNumbers.map {
-                    if (it.id == id) it.copy(accountStatus = "CHECKING") else it
-                }
-            )
-        }
-        AccountCheckerManager.checkNumberAsync(target.number, forceRefresh = true) { result ->
-            _state.update { curr ->
-                val updated = curr.provisionedNumbers.map {
-                    if (it.id == id) it.copy(accountStatus = result.status) else it
-                }
-                saveUserProvisionedNumbers(updated)
-                curr.copy(provisionedNumbers = updated)
-            }
-            mainHandler.post {
-                Toast.makeText(
-                    context,
-                    "${target.number}: ${result.badgeLabel}",
-                    Toast.LENGTH_SHORT
-                ).show()
-            }
-        }
-    }
+
 
     fun provisionNumbers(
         context: Context,
@@ -288,7 +262,6 @@ object KopEngine2Manager {
         count: Int = _state.value.requestCount,
         onComplete: (Boolean, String) -> Unit = { _, _ -> }
     ) {
-        AccountCheckerManager.init(context)
         val clientKey = _state.value.clientKey.ifEmpty { DEFAULT_MK_API_KEY }
         if (range.isBlank()) {
             Toast.makeText(context, "Range প্রদান করুন (e.g. 260XXX)", Toast.LENGTH_SHORT).show()
@@ -302,146 +275,88 @@ object KopEngine2Manager {
             var successCount = 0
             val newNumbers = mutableListOf<ProvisionedNumber>()
             var lastMsg = ""
-            val checkerState = AccountCheckerManager.state.value
-            val checkerEnabled = checkerState.isEnabled
-            val mode = checkerState.mode
-            val maxAttempts = if (checkerEnabled && mode != AccountCheckerMode.BOTH) checkerState.maxRetries else 1
 
             for (i in 0 until count) {
-                var matchedItem: ProvisionedNumber? = null
-                var fallbackCandidate: ProvisionedNumber? = null
-
-                for (attempt in 1..maxAttempts) {
-                    if (checkerEnabled && maxAttempts > 1 && attempt > 1) {
-                        val targetLabel = if (mode == AccountCheckerMode.FRESH_ONLY) "FRESH (Green)" else "OLD (Red)"
-                        AccountCheckerManager.setRetryStatus(
-                            true,
-                            "🔄 Kop 2: ব্যাকগ্রাউন্ডে $targetLabel নম্বর খোঁজা হচ্ছে... (রি-ট্রাই #$attempt/$maxAttempts)"
-                        )
-                    } else if (checkerEnabled) {
-                        AccountCheckerManager.setRetryStatus(
-                            true,
-                            "🔍 account_checker.py দিয়ে নম্বর চেক করা হচ্ছে..."
-                        )
+                try {
+                    val url = "$MK_BASE_URL/getnum/number"
+                    val jsonBody = JSONObject().apply {
+                        put("range", range)
                     }
 
-                    try {
-                        val url = "$MK_BASE_URL/getnum/number"
-                        val jsonBody = JSONObject().apply {
-                            put("range", range)
-                        }
+                    val request = Request.Builder()
+                        .url(url)
+                        .addHeader("mknetwork-key", clientKey)
+                        .addHeader("Content-Type", "application/json")
+                        .post(jsonBody.toString().toRequestBody("application/json".toMediaType()))
+                        .build()
 
-                        val request = Request.Builder()
-                            .url(url)
-                            .addHeader("mknetwork-key", clientKey)
-                            .addHeader("Content-Type", "application/json")
-                            .post(jsonBody.toString().toRequestBody("application/json".toMediaType()))
-                            .build()
+                    val response = try {
+                        httpClient.newCall(request).execute()
+                    } catch (_: Exception) {
+                        null
+                    }
 
-                        val response = try {
-                            httpClient.newCall(request).execute()
-                        } catch (_: Exception) {
-                            null
-                        }
+                    val responseStr = response?.body?.string() ?: ""
 
-                        val responseStr = response?.body?.string() ?: ""
+                    if (response != null && response.isSuccessful && responseStr.isNotEmpty()) {
+                        val json = JSONObject(responseStr)
+                        val dataObj = json.optJSONObject("data")
+                        if (dataObj != null) {
+                            val rawNum = dataObj.optString("number").ifEmpty {
+                                dataObj.optString("full_number")
+                            }
+                            val reqId = dataObj.optLong("request_id", 0L)
+                            val country = dataObj.optString("country", "Zambia")
+                            val operator = dataObj.optString("operator", "Zamtel")
+                            val status = dataObj.optString("status", "pending")
+                            val secondsRemaining = dataObj.optLong("seconds_remaining", 900L)
 
-                        if (response != null && response.isSuccessful && responseStr.isNotEmpty()) {
-                            val json = JSONObject(responseStr)
-                            val dataObj = json.optJSONObject("data")
-                            if (dataObj != null) {
-                                val rawNum = dataObj.optString("number").ifEmpty {
-                                    dataObj.optString("full_number")
+                            if (rawNum.isNotEmpty()) {
+                                val now = System.currentTimeMillis()
+                                val formattedNum = if (_state.value.removePlus) {
+                                    rawNum.replace("+", "").trim()
+                                } else {
+                                    if (!rawNum.startsWith("+")) "+$rawNum" else rawNum
                                 }
-                                val reqId = dataObj.optLong("request_id", 0L)
-                                val country = dataObj.optString("country", "Zambia")
-                                val operator = dataObj.optString("operator", "Zamtel")
-                                val status = dataObj.optString("status", "pending")
-                                val secondsRemaining = dataObj.optLong("seconds_remaining", 900L)
 
-                                if (rawNum.isNotEmpty()) {
-                                    val now = System.currentTimeMillis()
-                                    val formattedNum = if (_state.value.removePlus) {
-                                        rawNum.replace("+", "").trim()
-                                    } else {
-                                        if (!rawNum.startsWith("+")) "+$rawNum" else rawNum
-                                    }
-
-                                    if (checkerEnabled) {
-                                        val checkRes = AccountCheckerManager.checkPhoneNumber(formattedNum)
-                                        val candidate = ProvisionedNumber(
-                                            number = formattedNum,
-                                            country = country,
-                                            operator = operator,
-                                            iso = getIsoForCountry(country),
-                                            status = status,
-                                            range = range,
-                                            timestamp = now,
-                                            expiresAt = now + (secondsRemaining * 1000L).coerceAtLeast(15 * 60 * 1000L),
-                                            requestId = if (reqId > 0L) reqId else null,
-                                            accountStatus = checkRes.status
-                                        )
-                                        fallbackCandidate = candidate
-                                        if (AccountCheckerManager.matchesSelectedMode(checkRes)) {
-                                            matchedItem = candidate
-                                            lastMsg = "${checkRes.badgeLabel} • $formattedNum"
-                                            break
-                                        } else {
-                                            lastMsg = "Retrying (${checkRes.status})..."
-                                        }
-                                    } else {
-                                        matchedItem = ProvisionedNumber(
-                                            number = formattedNum,
-                                            country = country,
-                                            operator = operator,
-                                            iso = getIsoForCountry(country),
-                                            status = status,
-                                            range = range,
-                                            timestamp = now,
-                                            expiresAt = now + (secondsRemaining * 1000L).coerceAtLeast(15 * 60 * 1000L),
-                                            requestId = if (reqId > 0L) reqId else null,
-                                            accountStatus = "UNCHECKED"
-                                        )
-                                        lastMsg = json.optString("message", "Number provisioned successfully")
-                                        break
-                                    }
-                                }
-                            } else {
-                                lastMsg = json.optString("message", "No number data")
+                                val item = ProvisionedNumber(
+                                    number = formattedNum,
+                                    country = country,
+                                    operator = operator,
+                                    iso = getIsoForCountry(country),
+                                    status = status,
+                                    range = range,
+                                    timestamp = now,
+                                    expiresAt = now + (secondsRemaining * 1000L).coerceAtLeast(15 * 60 * 1000L),
+                                    requestId = if (reqId > 0L) reqId else null
+                                )
+                                newNumbers.add(item)
+                                successCount++
+                                lastMsg = json.optString("message", "Number provisioned successfully")
                             }
                         } else {
-                            if (responseStr.isNotEmpty()) {
-                                try {
-                                    val errJson = JSONObject(responseStr)
-                                    lastMsg = errJson.optString("message", "MK Network: Range $range available নেই")
-                                } catch (_: Exception) {
-                                    lastMsg = if (response?.code == 404) "MK Network: Range $range available নেই" else "API Error ${response?.code}"
-                                }
-                            } else {
-                                lastMsg = "MK Network এর সাথে সংযোগ স্থাপন করা যায়নি"
-                            }
+                            lastMsg = json.optString("message", "No number data")
                         }
-                    } catch (e: Exception) {
-                        lastMsg = "Error: ${e.message ?: "Network error"}"
+                    } else {
+                        if (responseStr.isNotEmpty()) {
+                            try {
+                                val errJson = JSONObject(responseStr)
+                                lastMsg = errJson.optString("message", "MK Network: Range $range available নেই")
+                            } catch (_: Exception) {
+                                lastMsg = if (response?.code == 404) "MK Network: Range $range available নেই" else "API Error ${response?.code}"
+                            }
+                        } else {
+                            lastMsg = "MK Network এর সাথে সংযোগ স্থাপন করা যায়নি"
+                        }
                     }
-
-                    if (attempt < maxAttempts) {
-                        delay(250L)
-                    }
-                }
-
-                val finalItem = matchedItem ?: fallbackCandidate
-                if (finalItem != null) {
-                    newNumbers.add(finalItem)
-                    successCount++
+                } catch (e: Exception) {
+                    lastMsg = "Error: ${e.message ?: "Network error"}"
                 }
 
                 if (i < count - 1) {
                     delay(350L)
                 }
             }
-
-            AccountCheckerManager.setRetryStatus(false, null)
 
             _state.update { current ->
                 val combined = newNumbers + current.provisionedNumbers
@@ -463,16 +378,9 @@ object KopEngine2Manager {
 
             mainHandler.post {
                 if (successCount > 0) {
-                    val firstBadge = newNumbers.firstOrNull()?.let {
-                        when (it.accountStatus) {
-                            "OLD" -> " [🔴 OLD ACCOUNT]"
-                            "FRESH" -> " [🟢 NEW / FRESH]"
-                            else -> ""
-                        }
-                    } ?: ""
                     Toast.makeText(
                         context,
-                        "✓ Kop Engine 2: $successCount টি নম্বর রেডি ও অটো কপি হয়েছে!$firstBadge",
+                        "✓ Kop Engine 2: $successCount টি নম্বর রেডি ও অটো কপি হয়েছে!",
                         Toast.LENGTH_SHORT
                     ).show()
                     VibrationHelper.vibrateSuccess(context)
@@ -856,8 +764,7 @@ object KopEngine2Manager {
                         otpMessage = if (o.has("otpMessage") && !o.isNull("otpMessage")) o.optString("otpMessage") else null,
                         timestamp = o.optLong("timestamp", System.currentTimeMillis()),
                         expiresAt = o.optLong("expiresAt", System.currentTimeMillis() + 15 * 60 * 1000L),
-                        requestId = if (o.has("requestId") && !o.isNull("requestId")) o.optLong("requestId") else null,
-                        accountStatus = o.optString("accountStatus", "UNCHECKED")
+                        requestId = if (o.has("requestId") && !o.isNull("requestId")) o.optLong("requestId") else null
                     )
                 )
             }
@@ -882,79 +789,13 @@ object KopEngine2Manager {
                 o.put("timestamp", item.timestamp)
                 o.put("expiresAt", item.expiresAt)
                 item.requestId?.let { o.put("requestId", it) }
-                o.put("accountStatus", item.accountStatus)
                 arr.put(o)
             }
             prefs?.edit()?.putString("kop2_user_provisioned_numbers_v2", arr.toString())?.apply()
         } catch (_: Exception) {}
     }
 
-    suspend fun requestSingleNumberForAccount(context: Context, range: String): ProvisionedNumber? = kotlinx.coroutines.withContext(Dispatchers.IO) {
-        val effectiveRange = range.trim().ifEmpty {
-            _state.value.targetRange.ifEmpty {
-                _state.value.activeRanges.firstOrNull()?.range ?: "260950XXX"
-            }
-        }
-        val clientKey = _state.value.clientKey.ifEmpty { DEFAULT_MK_API_KEY }
-        try {
-            val url = "$MK_BASE_URL/getnum/number"
-            val jsonBody = JSONObject().apply {
-                put("range", effectiveRange)
-            }
-            val request = Request.Builder()
-                .url(url)
-                .addHeader("mknetwork-key", clientKey)
-                .addHeader("Content-Type", "application/json")
-                .post(jsonBody.toString().toRequestBody("application/json".toMediaType()))
-                .build()
 
-            val response = try {
-                httpClient.newCall(request).execute()
-            } catch (_: Exception) {
-                null
-            }
-            val responseStr = response?.body?.string() ?: ""
-            if (response != null && response.isSuccessful && responseStr.isNotEmpty()) {
-                val json = JSONObject(responseStr)
-                val dataObj = json.optJSONObject("data")
-                if (dataObj != null) {
-                    val rawNum = dataObj.optString("number").ifEmpty {
-                        dataObj.optString("full_number")
-                    }
-                    val reqId = dataObj.optLong("request_id", 0L)
-                    val country = dataObj.optString("country", "Zambia")
-                    val operator = dataObj.optString("operator", "Zamtel")
-                    val status = dataObj.optString("status", "pending")
-                    val secondsRemaining = dataObj.optLong("seconds_remaining", 900L)
-                    if (rawNum.isNotEmpty()) {
-                        val now = System.currentTimeMillis()
-                        val formattedNum = if (!rawNum.startsWith("+")) "+$rawNum" else rawNum
-                        val checkRes = AccountCheckerManager.checkPhoneNumber(formattedNum, forceRefresh = false)
-                        val prov = ProvisionedNumber(
-                            number = formattedNum,
-                            country = country,
-                            operator = operator,
-                            iso = getIsoForCountry(country),
-                            status = status,
-                            range = effectiveRange,
-                            timestamp = now,
-                            expiresAt = now + (secondsRemaining * 1000L).coerceAtLeast(15 * 60 * 1000L),
-                            requestId = if (reqId > 0L) reqId else null,
-                            accountStatus = checkRes.status
-                        )
-                        _state.update { curr ->
-                            val updated = (listOf(prov) + curr.provisionedNumbers).distinctBy { it.number }.take(50)
-                            saveUserProvisionedNumbers(updated)
-                            curr.copy(provisionedNumbers = updated)
-                        }
-                        mainHandler.post { startAutoPolling(context, autoCopy = true) }
-                        return@withContext prov
-                    }
-                }
-            }
-        } catch (_: Exception) {}
-        null
-    }
 
     fun isPhoneNumberMatch(num1: String, num2: String): Boolean {
         val d1 = num1.replace("[^0-9]".toRegex(), "")

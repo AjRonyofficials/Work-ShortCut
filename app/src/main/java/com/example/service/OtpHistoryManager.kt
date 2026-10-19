@@ -6,16 +6,28 @@ import android.content.SharedPreferences
 import android.widget.Toast
 import com.example.util.ClipboardHelper
 import com.example.util.VibrationHelper
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import okhttp3.MediaType.Companion.toMediaTypeOrNull
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONArray
 import org.json.JSONObject
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
 import java.util.Locale
+import java.util.concurrent.TimeUnit
+import com.example.util.AppLifecycleTracker
 
 data class OtpHistoryRecord(
     val id: String = java.util.UUID.randomUUID().toString(),
@@ -74,6 +86,17 @@ object OtpHistoryManager {
     private const val KEY_MONTHLY_CYCLE_START = "monthly_cycle_start_time"
     private const val KEY_CLEANED_DUMMY_V2 = "cleaned_dummy_records_v2"
 
+    private const val SUPABASE_BASE_URL = "https://fbtqjpuclmnsiqehalow.supabase.co/rest/v1"
+    private const val SUPABASE_KEY = "sb_publishable_zBqxIMDPy4yHEuAdJJUlxg_wSCRF9u5"
+
+    private val httpClient = OkHttpClient.Builder()
+        .connectTimeout(6, TimeUnit.SECONDS)
+        .readTimeout(6, TimeUnit.SECONDS)
+        .build()
+
+    private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+    private var isPolling = false
+
     // 1 Month = 30 Days in Milliseconds
     private const val ONE_MONTH_MS = 30L * 24L * 60L * 60L * 1000L
 
@@ -89,6 +112,99 @@ object OtpHistoryManager {
         if (prefs == null) {
             prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
             loadHistory()
+        }
+        if (!isPolling) {
+            isPolling = true
+            scope.launch {
+                syncFromCloud(context)
+                while (isActive) {
+                    if (!AppLifecycleTracker.canRunBackgroundWork()) {
+                        delay(20000L)
+                        continue
+                    }
+                    delay(4000L) // 4s live sync
+                    try {
+                        syncFromCloud(context)
+                    } catch (_: Exception) {}
+                }
+            }
+        }
+    }
+
+    private fun parseCreatedAt(dateStr: String): Long {
+        if (dateStr.isBlank()) return System.currentTimeMillis()
+        return try {
+            val clean = if (dateStr.contains(".")) {
+                dateStr.substringBefore(".") + "Z"
+            } else if (dateStr.endsWith("+00:00")) {
+                dateStr.substringBefore("+") + "Z"
+            } else dateStr
+            val sdf = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.US).apply {
+                timeZone = java.util.TimeZone.getTimeZone("UTC")
+            }
+            sdf.parse(clean)?.time ?: System.currentTimeMillis()
+        } catch (_: Exception) {
+            System.currentTimeMillis()
+        }
+    }
+
+    suspend fun syncFromCloud(context: Context? = null) {
+        try {
+            val req = Request.Builder()
+                .url("$SUPABASE_BASE_URL/otp_history?select=*&order=created_at.desc&limit=100")
+                .header("apikey", SUPABASE_KEY)
+                .header("Authorization", "Bearer $SUPABASE_KEY")
+                .get()
+                .build()
+            httpClient.newCall(req).execute().use { resp ->
+                if (!resp.isSuccessful) return
+                val bodyStr = resp.body?.string() ?: return
+                val arr = JSONArray(bodyStr)
+                if (arr.length() == 0) return
+                val cloudList = mutableListOf<OtpHistoryRecord>()
+                for (i in 0 until arr.length()) {
+                    val o = arr.getJSONObject(i)
+                    val idStr = o.optString("id", java.util.UUID.randomUUID().toString())
+                    val phone = o.optString("phone_number", "")
+                    val code = o.optString("otp_code", "")
+                    val srv = o.optString("service", "SMS")
+                    val plt = o.optString("platform", "Unix SMS")
+                    val rateVal = o.optDouble("earned_amount", 0.50)
+                    val ts = parseCreatedAt(o.optString("created_at", ""))
+                    cloudList.add(
+                        OtpHistoryRecord(
+                            id = idStr,
+                            phoneNumber = phone,
+                            otpCode = code,
+                            service = srv,
+                            platform = plt,
+                            rate = if (rateVal < 0.05) 0.50 else rateVal,
+                            timestamp = ts,
+                            dateKey = dateFormat.format(Date(ts))
+                        )
+                    )
+                }
+
+                if (cloudList.isNotEmpty()) {
+                    // Deduplicate with local records
+                    val existing = _state.value.recentRecords
+                    val combined = (cloudList + existing).distinctBy { "${it.phoneNumber}_${it.otpCode}" }
+                        .sortedByDescending { it.timestamp }
+                        .take(100)
+                    val total = maxOf(combined.size, _state.value.totalOtpsAllTime)
+                    val cycleStart = _state.value.monthlyCycleStartEpoch.let {
+                        if (it == 0L) System.currentTimeMillis() else it
+                    }
+                    recalculateSummaries(combined, total, cycleStart)
+                    saveRecords(combined, total)
+                }
+            }
+        } catch (_: Exception) {}
+    }
+
+    fun triggerLiveCloudSync() {
+        scope.launch {
+            syncFromCloud()
         }
     }
 
@@ -215,6 +331,33 @@ object OtpHistoryManager {
             last7d = st.last7DaysOtps,
             last30d = st.last30DaysOtps
         )
+
+        // Real-time Push to Supabase otp_history table
+        scope.launch {
+            try {
+                val email = AuthManager.currentEmail.value.ifBlank { "User" }
+                val payload = JSONObject().apply {
+                    put("user_email", email)
+                    put("phone_number", phoneNumber)
+                    put("otp_code", otpCode)
+                    put("service", service)
+                    put("platform", platform)
+                    put("earned_amount", rate)
+                }
+                val body = payload.toString().toRequestBody("application/json; charset=utf-8".toMediaTypeOrNull())
+                val req = Request.Builder()
+                    .url("$SUPABASE_BASE_URL/otp_history")
+                    .header("apikey", SUPABASE_KEY)
+                    .header("Authorization", "Bearer $SUPABASE_KEY")
+                    .header("Content-Type", "application/json")
+                    .header("Prefer", "return=minimal")
+                    .post(body)
+                    .build()
+                httpClient.newCall(req).execute()
+            } catch (e: Exception) {
+                android.util.Log.e("OtpHistoryManager", "Error pushing OTP to Supabase: ${e.message}")
+            }
+        }
     }
 
     fun recalculateSummaries(

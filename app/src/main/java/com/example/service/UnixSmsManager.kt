@@ -342,8 +342,7 @@ object UnixSmsManager {
                         timestamp = o.optLong("timestamp", System.currentTimeMillis()),
                         expiresAt = o.optLong("expiresAt", System.currentTimeMillis() + 1_200_000L),
                         gateway = o.optString("gateway", "LAMIX"),
-                        rate = o.optDouble("rate", 0.50),
-                        accountStatus = o.optString("accountStatus", "UNCHECKED")
+                        rate = o.optDouble("rate", 0.50)
                     )
                 )
             }
@@ -368,7 +367,6 @@ object UnixSmsManager {
             o.put("expiresAt", item.expiresAt)
             o.put("gateway", item.gateway)
             o.put("rate", item.rate)
-            o.put("accountStatus", item.accountStatus)
             arr.put(o)
         }
         prefs?.edit()?.putString(KEY_ACTIVE_NUMBERS, arr.toString())?.apply()
@@ -563,36 +561,10 @@ object UnixSmsManager {
         _state.update { it.copy(requestCount = safe) }
     }
 
-    fun recheckNumberAccount(context: Context, id: String) {
-        val target = _state.value.activeNumbers.firstOrNull { it.id == id } ?: return
-        _state.update { curr ->
-            curr.copy(
-                activeNumbers = curr.activeNumbers.map {
-                    if (it.id == id) it.copy(accountStatus = "CHECKING") else it
-                }
-            )
-        }
-        AccountCheckerManager.checkNumberAsync(target.number, forceRefresh = true) { result ->
-            _state.update { curr ->
-                val updated = curr.activeNumbers.map {
-                    if (it.id == id) it.copy(accountStatus = result.status) else it
-                }
-                saveActiveNumbers(updated)
-                curr.copy(activeNumbers = updated)
-            }
-            mainHandler.post {
-                Toast.makeText(
-                    context,
-                    "${target.number}: ${result.badgeLabel}",
-                    Toast.LENGTH_SHORT
-                ).show()
-            }
-        }
-    }
+
 
     /**
      * User: Get Numbers from Premium pool (Multi-Gateway: Lamix SMS or Unix SMS)
-     * Integrates `account_checker.py` verification and background auto-retry when Option 1 (Fresh Only) or Option 2 (Old Only) is enabled.
      */
     fun getNumbersForUser(
         context: Context,
@@ -601,7 +573,6 @@ object UnixSmsManager {
         count: Int = _state.value.requestCount,
         onResult: (Boolean, String) -> Unit
     ) {
-        AccountCheckerManager.init(context)
         val safeCount = count.coerceIn(1, 10)
         val available = _state.value.uploadedNumbers.filter {
             !it.isUsed &&
@@ -616,54 +587,8 @@ object UnixSmsManager {
         }
 
         scope.launch {
-            val checkerState = AccountCheckerManager.state.value
-            val checkerEnabled = checkerState.isEnabled
-            val mode = checkerState.mode
-
-            val chosenPairs = mutableListOf<Pair<UploadedNumberItem, String>>() // item to accountStatus
-
-            if (!checkerEnabled) {
-                available.take(safeCount).forEach { item ->
-                    chosenPairs.add(item to "UNCHECKED")
-                }
-            } else if (mode == AccountCheckerMode.BOTH) {
-                AccountCheckerManager.setRetryStatus(true, "🔍 account_checker.py দিয়ে নম্বর চেক করা হচ্ছে...")
-                for (item in available.take(safeCount)) {
-                    val res = AccountCheckerManager.checkPhoneNumber(item.number)
-                    chosenPairs.add(item to res.status)
-                }
-                AccountCheckerManager.setRetryStatus(false, null)
-            } else {
-                // Mode 1 (FRESH_ONLY) or Mode 2 (OLD_ONLY) -> scan candidates in background & auto-retry until matched!
-                val targetLabel = if (mode == AccountCheckerMode.FRESH_ONLY) "FRESH (Green)" else "OLD (Red)"
-                val fallbackList = mutableListOf<Pair<UploadedNumberItem, String>>()
-                var attempt = 0
-                val maxPoolScan = minOf(available.size, safeCount * checkerState.maxRetries.coerceAtLeast(3))
-
-                for (candidate in available.take(maxPoolScan)) {
-                    attempt++
-                    AccountCheckerManager.setRetryStatus(
-                        true,
-                        "🔄 ব্যাকগ্রাউন্ডে $targetLabel নম্বর চেক ও রি-ট্রাই হচ্ছে... (#$attempt)"
-                    )
-                    val res = AccountCheckerManager.checkPhoneNumber(candidate.number)
-                    if (AccountCheckerManager.matchesSelectedMode(res)) {
-                        chosenPairs.add(candidate to res.status)
-                        if (chosenPairs.size >= safeCount) break
-                    } else {
-                        fallbackList.add(candidate to res.status)
-                    }
-                }
-                AccountCheckerManager.setRetryStatus(false, null)
-
-                // If pool had fewer matching numbers than requested, fill remaining from checked fallback so user still gets numbers with accurate highlight
-                if (chosenPairs.size < safeCount && fallbackList.isNotEmpty()) {
-                    val needed = safeCount - chosenPairs.size
-                    chosenPairs.addAll(fallbackList.take(needed))
-                }
-            }
-
-            val chosenIds = chosenPairs.map { it.first.id }.toSet()
+            val chosen = available.take(safeCount)
+            val chosenIds = chosen.map { it.id }.toSet()
 
             // Mark as used
             val updatedUploaded = _state.value.uploadedNumbers.map {
@@ -672,22 +597,21 @@ object UnixSmsManager {
             saveUploadedNumbers(updatedUploaded)
 
             val now = System.currentTimeMillis()
-            val newProvs = chosenPairs.map { (chosen, accStatus) ->
-                val gw = chosen.gateway.uppercase().ifEmpty { "LAMIX" }
+            val newProvs = chosen.map { item ->
+                val gw = item.gateway.uppercase().ifEmpty { "LAMIX" }
                 val opName = if (gw == "LAMIX") "Lamix SMS ⚡" else "Unix SMS 🌐"
-                val r = chosen.customRate ?: getRateForCountry(chosen.countryCode)
+                val r = item.customRate ?: getRateForCountry(item.countryCode)
                 ProvisionedNumber(
-                    number = chosen.number,
-                    country = chosen.countryName,
+                    number = item.number,
+                    country = item.countryName,
                     operator = opName,
-                    iso = chosen.countryCode.lowercase(),
+                    iso = item.countryCode.lowercase(),
                     status = "pending",
-                    range = chosen.service,
+                    range = item.service,
                     timestamp = now,
                     expiresAt = now + 1_200_000L,
                     gateway = gw,
-                    rate = r,
-                    accountStatus = accStatus
+                    rate = r
                 )
             }
 
@@ -702,8 +626,8 @@ object UnixSmsManager {
             }
 
             mainHandler.post {
-                if (chosenPairs.isNotEmpty()) {
-                    val allNumbersText = chosenPairs.joinToString("\n") { it.first.number.replace("+", "").trim() }
+                if (chosen.isNotEmpty()) {
+                    val allNumbersText = chosen.joinToString("\n") { it.number.replace("+", "").trim() }
                     ClipboardHelper.copyToClipboard(context, allNumbersText, "Unix SMS Numbers")
                 }
                 VibrationHelper.vibrateSuccess(context)
@@ -711,18 +635,10 @@ object UnixSmsManager {
                 // Make sure polling is active
                 startFastOtpPolling(context)
 
-                val badgeInfo = newProvs.firstOrNull()?.let {
-                    when (it.accountStatus) {
-                        "OLD" -> " [🔴 OLD ACCOUNT]"
-                        "FRESH" -> " [🟢 NEW / FRESH]"
-                        else -> ""
-                    }
-                } ?: ""
-
-                if (chosenPairs.size > 1) {
-                    onResult(true, "✓ ${chosenPairs.size} টি নম্বর রেডি ও কপি হয়েছে!$badgeInfo")
-                } else if (chosenPairs.isNotEmpty()) {
-                    onResult(true, "✓ নম্বর ${chosenPairs.first().first.number} রেডি ও কপি হয়েছে!$badgeInfo")
+                if (chosen.size > 1) {
+                    onResult(true, "✓ ${chosen.size} টি নম্বর রেডি ও কপি হয়েছে!")
+                } else if (chosen.isNotEmpty()) {
+                    onResult(true, "✓ নম্বর ${chosen.first().number} রেডি ও কপি হয়েছে!")
                 } else {
                     onResult(false, "কোনো উপযুক্ত নম্বর পাওয়া যায়নি।")
                 }
@@ -1164,54 +1080,7 @@ object UnixSmsManager {
         android.os.Handler(android.os.Looper.getMainLooper()).post(block)
     }
 
-    @Synchronized
-    fun requestSingleNumberForAccount(context: Context, countryCode: String): ProvisionedNumber? {
-        init(context)
-        val available = _state.value.uploadedNumbers.filter {
-            !it.isUsed && (countryCode == "ALL" || it.countryCode.equals(countryCode, ignoreCase = true))
-        }
-        val chosen = available.firstOrNull()
-            ?: _state.value.uploadedNumbers.firstOrNull { countryCode == "ALL" || it.countryCode.equals(countryCode, ignoreCase = true) }
-            ?: return _state.value.activeNumbers.firstOrNull { countryCode == "ALL" || it.iso.equals(countryCode, ignoreCase = true) }
 
-        val updatedUploaded = _state.value.uploadedNumbers.map {
-            if (it.id == chosen.id) it.copy(isUsed = true) else it
-        }
-        saveUploadedNumbers(updatedUploaded)
-
-        val now = System.currentTimeMillis()
-        val gw = chosen.gateway.uppercase().ifEmpty { "LAMIX" }
-        val opName = if (gw == "LAMIX") "Lamix SMS ⚡" else "Unix SMS 🌐"
-        val r = chosen.customRate ?: getRateForCountry(chosen.countryCode)
-        val prov = ProvisionedNumber(
-            id = chosen.id,
-            number = chosen.number,
-            country = chosen.countryName,
-            operator = opName,
-            iso = chosen.countryCode.lowercase(),
-            status = if (!chosen.otpCode.isNullOrEmpty()) "success" else "pending",
-            otpCode = chosen.otpCode,
-            otpMessage = chosen.otpMessage,
-            range = "${chosen.service} ($$r)",
-            timestamp = now,
-            expiresAt = now + 1_200_000L,
-            accountStatus = "CHECKING"
-        )
-        val updatedActive = (listOf(prov) + _state.value.activeNumbers).distinctBy { it.number }.take(50)
-        _state.update { it.copy(uploadedNumbers = updatedUploaded, activeNumbers = updatedActive) }
-        saveActiveNumbers(updatedActive)
-        AccountCheckerManager.checkNumberAsync(prov.number, forceRefresh = false) { res ->
-            _state.update { curr ->
-                val listWithStatus = curr.activeNumbers.map {
-                    if (it.id == prov.id) it.copy(accountStatus = res.status) else it
-                }
-                saveActiveNumbers(listWithStatus)
-                curr.copy(activeNumbers = listWithStatus)
-            }
-        }
-        startFastOtpPolling(context)
-        return prov
-    }
 
     fun clearActiveNumbers() {
         _state.update { it.copy(activeNumbers = emptyList()) }

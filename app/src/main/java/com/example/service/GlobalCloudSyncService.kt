@@ -155,9 +155,28 @@ object GlobalCloudSyncService {
                     VirtualNumberManager.applyCloudRate(zenexRate)
                 }
 
-                val kop2Rate = data.optDouble("kop2_rate", -1.0)
-                if (kop2Rate > 0.0) {
-                    KopEngine2Manager.applyCloudRate(kop2Rate)
+                // Parse kop2_rate & country rates from country_rates_json
+                val countryRatesJsonStr = data.optString("country_rates_json", "{}")
+                if (countryRatesJsonStr.isNotEmpty() && countryRatesJsonStr != "{}") {
+                    try {
+                        val cObj = JSONObject(countryRatesJsonStr)
+                        val kRate = cObj.optDouble("kop2_rate", -1.0)
+                        if (kRate > 0.0) {
+                            KopEngine2Manager.applyCloudRate(kRate)
+                        }
+                        val cMap = mutableMapOf<String, Double>()
+                        val keys = cObj.keys()
+                        while (keys.hasNext()) {
+                            val k = keys.next()
+                            if (k != "kop2_rate") {
+                                val r = cObj.optDouble(k, -1.0)
+                                if (r > 0.0) cMap[k] = r
+                            }
+                        }
+                        if (cMap.isNotEmpty()) {
+                            UnixSmsManager.applyCloudCountryRates(cMap)
+                        }
+                    } catch (_: Exception) {}
                 }
 
                 // 3. Check for published App Updates (1-Click in-app OTA)
@@ -210,11 +229,18 @@ object GlobalCloudSyncService {
                 numArr.put(o)
             }
 
+            val ratesObj = JSONObject().apply {
+                put("kop2_rate", kop2Rate)
+                for ((k, v) in countryRates) {
+                    put(k, v)
+                }
+            }
+
             val patchPayload = JSONObject().apply {
                 put("otp_rate", unixRate)
                 put("zenex_rate", zenexRate)
-                put("kop2_rate", kop2Rate)
                 put("numbers_json", numArr.toString())
+                put("country_rates_json", ratesObj.toString())
                 put("updated_at", patchTimestamp)
             }
 
@@ -246,7 +272,7 @@ object GlobalCloudSyncService {
 
     /**
      * Called whenever Admin uploads numbers, deletes numbers, or changes rates.
-     * Pushes state to Supabase PostgreSQL immediately so all 10,000+ users receive it.
+     * Pushes state to Supabase PostgreSQL immediately so all users receive it in 3-5 seconds.
      */
     fun pushToCloud(
         uploadedNumbers: List<UploadedNumberItem>,
@@ -273,10 +299,16 @@ object GlobalCloudSyncService {
         lastLocalPushTimestamp = patchTimestamp
         scope.launch {
             try {
+                val ratesObj = JSONObject().apply {
+                    put("kop2_rate", kop2Rate)
+                    for ((k, v) in UnixSmsManager.state.value.countryRates) {
+                        put(k, v)
+                    }
+                }
                 val patchPayload = JSONObject().apply {
                     put("otp_rate", unixRate)
                     put("zenex_rate", zenexRate)
-                    put("kop2_rate", kop2Rate)
+                    put("country_rates_json", ratesObj.toString())
                     put("updated_at", patchTimestamp)
                 }
                 val body = patchPayload.toString().toRequestBody("application/json; charset=utf-8".toMediaTypeOrNull())

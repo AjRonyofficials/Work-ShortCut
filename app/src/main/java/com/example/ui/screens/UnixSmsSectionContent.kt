@@ -819,14 +819,9 @@ fun UnixActiveNumberRow(
     context: Context
 ) {
     val isOtpReceived = !prov.otpCode.isNullOrEmpty()
-    val isOldAccount = prov.accountStatus == "OLD"
-    val isFreshAccount = prov.accountStatus == "FRESH"
-
     Surface(
         color = when {
             isOtpReceived -> Color(0xFF042817)
-            isOldAccount -> Color(0xFF230C12) // Highlighted RED for OLD account
-            isFreshAccount -> Color(0xFF072318) // Highlighted GREEN for FRESH/NEW account
             else -> Color(0xFF0A1420)
         },
         shape = RoundedCornerShape(12.dp),
@@ -834,8 +829,6 @@ fun UnixActiveNumberRow(
             1.2.dp,
             when {
                 isOtpReceived -> Color(0xFF00E676).copy(alpha = 0.7f)
-                isOldAccount -> Color(0xFFEF4444).copy(alpha = 0.75f)
-                isFreshAccount -> Color(0xFF10B981).copy(alpha = 0.75f)
                 else -> Color(0xFF1E3246)
             }
         ),
@@ -851,21 +844,10 @@ fun UnixActiveNumberRow(
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
                             text = prov.number,
-                            color = when {
-                                isOldAccount -> Color(0xFFFCA5A5) // Red highlight
-                                isFreshAccount -> Color(0xFF6EE7B7) // Green highlight
-                                else -> Color.White
-                            },
+                            color = Color.White,
                             fontSize = 14.sp,
                             fontWeight = FontWeight.Bold,
                             fontFamily = FontFamily.Monospace
-                        )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        com.example.ui.components.AccountStatusHighlightBadge(
-                            accountStatus = prov.accountStatus,
-                            onRecheckClick = {
-                                UnixSmsManager.recheckNumberAccount(context, prov.id)
-                            }
                         )
                     }
                     Spacer(modifier = Modifier.height(3.dp))

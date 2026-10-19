@@ -848,16 +848,11 @@ private fun Kop2ProvisionedNumberCard(
     val isSuccess = item.status.equals("success", true) || !item.otpCode.isNullOrEmpty()
     val totalDurationMs = 15 * 60 * 1000f // 15 Minutes
     val progressRatio = (remainingMs.toFloat() / totalDurationMs).coerceIn(0f, 1f)
-    val isOldAccount = item.accountStatus == "OLD"
-    val isFreshAccount = item.accountStatus == "FRESH"
-
     Card(
         colors = CardDefaults.cardColors(
             containerColor = when {
                 isSuccess -> Color(0xFF063529)
                 isExpired -> Color(0xFF1E293B)
-                isOldAccount -> Color(0xFF230C12) // Highlighted RED when account exists
-                isFreshAccount -> Color(0xFF072318) // Highlighted GREEN when account does not exist (Fresh)
                 else -> Color(0xFF0F1E2E)
             }
         ),
@@ -867,8 +862,6 @@ private fun Kop2ProvisionedNumberCard(
             when {
                 isSuccess -> ThemeEmerald
                 isExpired -> ThemeBorder
-                isOldAccount -> Color(0xFFEF4444).copy(alpha = 0.85f)
-                isFreshAccount -> Color(0xFF10B981).copy(alpha = 0.85f)
                 else -> ThemeSky.copy(alpha = 0.8f)
             }
         ),
@@ -884,11 +877,7 @@ private fun Kop2ProvisionedNumberCard(
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
                         text = item.number,
-                        color = when {
-                            isOldAccount -> Color(0xFFFCA5A5) // Red highlight for Old
-                            isFreshAccount -> Color(0xFF6EE7B7) // Green highlight for Fresh
-                            else -> Color.White
-                        },
+                        color = Color.White,
                         fontSize = 15.sp,
                         fontWeight = FontWeight.ExtraBold,
                         fontFamily = FontFamily.Monospace,
@@ -986,24 +975,13 @@ private fun Kop2ProvisionedNumberCard(
                     color = ThemeMuted,
                     fontSize = 11.sp
                 )
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    com.example.ui.components.AccountStatusHighlightBadge(
-                        accountStatus = item.accountStatus,
-                        onRecheckClick = {
-                            KopEngine2Manager.recheckNumberAccount(context, item.id)
-                        }
+                if (item.requestId != null) {
+                    Text(
+                        text = "Req #${item.requestId}",
+                        color = ThemeSkyBright.copy(alpha = 0.7f),
+                        fontSize = 10.sp,
+                        fontFamily = FontFamily.Monospace
                     )
-                    if (item.requestId != null) {
-                        Text(
-                            text = "Req #${item.requestId}",
-                            color = ThemeSkyBright.copy(alpha = 0.7f),
-                            fontSize = 10.sp,
-                            fontFamily = FontFamily.Monospace
-                        )
-                    }
                 }
             }
 

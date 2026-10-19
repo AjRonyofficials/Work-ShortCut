@@ -11,6 +11,21 @@ import kotlinx.coroutines.flow.update
 import org.json.JSONArray
 import org.json.JSONObject
 
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
+import okhttp3.MediaType.Companion.toMediaTypeOrNull
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
+import java.text.SimpleDateFormat
+import java.util.Locale
+import java.util.concurrent.TimeUnit
+import com.example.util.AppLifecycleTracker
+
 data class WithdrawalRequest(
     val id: String = java.util.UUID.randomUUID().toString(),
     val userEmail: String,
@@ -38,9 +53,20 @@ object WithdrawalManager {
     private const val KEY_BASE_CREDIT = "base_earned_credit_tk"
     private const val KEY_CREDIT_RESET_V2 = "credit_cleaned_v2"
 
+    private const val SUPABASE_BASE_URL = "https://fbtqjpuclmnsiqehalow.supabase.co/rest/v1"
+    private const val SUPABASE_KEY = "sb_publishable_zBqxIMDPy4yHEuAdJJUlxg_wSCRF9u5"
+
     const val MIN_BINANCE_TK = 20.0
     const val MIN_BKASH_TK = 50.0
     const val MIN_NAGAD_TK = 50.0
+
+    private val httpClient = OkHttpClient.Builder()
+        .connectTimeout(6, TimeUnit.SECONDS)
+        .readTimeout(6, TimeUnit.SECONDS)
+        .build()
+
+    private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+    private var isPolling = false
 
     private var prefs: SharedPreferences? = null
 
@@ -51,6 +77,89 @@ object WithdrawalManager {
         if (prefs == null) {
             prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
             loadData()
+        }
+        if (!isPolling) {
+            isPolling = true
+            scope.launch {
+                syncFromCloud(context)
+                while (isActive) {
+                    if (!AppLifecycleTracker.canRunBackgroundWork()) {
+                        delay(20000L)
+                        continue
+                    }
+                    delay(4000L) // 4s live sync for instant updates
+                    try {
+                        syncFromCloud(context)
+                    } catch (_: Exception) {}
+                }
+            }
+        }
+    }
+
+    private fun parseCreatedAt(dateStr: String): Long {
+        if (dateStr.isBlank()) return System.currentTimeMillis()
+        return try {
+            val clean = if (dateStr.contains(".")) {
+                dateStr.substringBefore(".") + "Z"
+            } else if (dateStr.endsWith("+00:00")) {
+                dateStr.substringBefore("+") + "Z"
+            } else dateStr
+            val sdf = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.US).apply {
+                timeZone = java.util.TimeZone.getTimeZone("UTC")
+            }
+            sdf.parse(clean)?.time ?: System.currentTimeMillis()
+        } catch (_: Exception) {
+            System.currentTimeMillis()
+        }
+    }
+
+    suspend fun syncFromCloud(context: Context? = null) {
+        try {
+            val req = Request.Builder()
+                .url("$SUPABASE_BASE_URL/withdraw_history?select=*&order=created_at.desc&limit=50")
+                .header("apikey", SUPABASE_KEY)
+                .header("Authorization", "Bearer $SUPABASE_KEY")
+                .get()
+                .build()
+            httpClient.newCall(req).execute().use { resp ->
+                if (!resp.isSuccessful) return
+                val bodyStr = resp.body?.string() ?: return
+                val arr = JSONArray(bodyStr)
+                val cloudRequests = mutableListOf<WithdrawalRequest>()
+                for (i in 0 until arr.length()) {
+                    val o = arr.getJSONObject(i)
+                    val idStr = o.optString("id", "")
+                    val email = o.optString("user_email", "")
+                    val method = o.optString("payment_method", "bKash")
+                    val acc = o.optString("account_number", "")
+                    val amt = o.optDouble("amount", 0.0)
+                    val status = o.optString("status", "PENDING")
+                    val ts = parseCreatedAt(o.optString("created_at", ""))
+                    cloudRequests.add(
+                        WithdrawalRequest(
+                            id = idStr,
+                            userEmail = email,
+                            method = method,
+                            accountNumber = acc,
+                            amount = amt,
+                            status = status,
+                            requestTimestamp = ts,
+                            note = ""
+                        )
+                    )
+                }
+                if (cloudRequests.isNotEmpty()) {
+                    val baseCredit = prefs?.getFloat(KEY_BASE_CREDIT, 0.0f)?.toDouble() ?: 0.0
+                    recomputeBalances(cloudRequests, baseCredit)
+                    saveRequests(cloudRequests)
+                }
+            }
+        } catch (_: Exception) {}
+    }
+
+    fun triggerLiveCloudSync() {
+        scope.launch {
+            syncFromCloud()
         }
     }
 
@@ -204,6 +313,45 @@ object WithdrawalManager {
         val baseCredit = prefs?.getFloat(KEY_BASE_CREDIT, 0.0f)?.toDouble() ?: 0.0
         recomputeBalances(updated, baseCredit)
 
+        // Real-time Push to Supabase withdraw_history table
+        scope.launch {
+            try {
+                val payload = JSONObject().apply {
+                    put("user_email", newRequest.userEmail)
+                    put("amount", newRequest.amount)
+                    put("payment_method", newRequest.method)
+                    put("account_number", newRequest.accountNumber)
+                    put("status", "PENDING")
+                }
+                val body = payload.toString().toRequestBody("application/json; charset=utf-8".toMediaTypeOrNull())
+                val req = Request.Builder()
+                    .url("$SUPABASE_BASE_URL/withdraw_history")
+                    .header("apikey", SUPABASE_KEY)
+                    .header("Authorization", "Bearer $SUPABASE_KEY")
+                    .header("Content-Type", "application/json")
+                    .header("Prefer", "return=representation")
+                    .post(body)
+                    .build()
+                httpClient.newCall(req).execute().use { resp ->
+                    if (resp.isSuccessful) {
+                        val bodyStr = resp.body?.string() ?: ""
+                        val arr = JSONArray(bodyStr)
+                        if (arr.length() > 0) {
+                            val serverId = arr.getJSONObject(0).optString("id", newRequest.id)
+                            _state.update { st ->
+                                val remapped = st.allRequests.map {
+                                    if (it.id == newRequest.id) it.copy(id = serverId) else it
+                                }
+                                st.copy(allRequests = remapped)
+                            }
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("WithdrawalManager", "Error pushing withdrawal to Supabase: ${e.message}")
+            }
+        }
+
         VibrationHelper.vibrateSuccess(context)
         return Pair(true, "✓ উইথড্র রিকোয়েস্ট সফল হয়েছে! এডমিনের অনুমোদনের অপেক্ষায় আছে।")
     }
@@ -224,6 +372,24 @@ object WithdrawalManager {
 
         val baseCredit = prefs?.getFloat(KEY_BASE_CREDIT, 0.0f)?.toDouble() ?: 0.0
         recomputeBalances(currentList, baseCredit)
+
+        // Real-time PATCH to Supabase withdraw_history table
+        scope.launch {
+            try {
+                val payload = JSONObject().apply {
+                    put("status", "APPROVED")
+                }
+                val body = payload.toString().toRequestBody("application/json; charset=utf-8".toMediaTypeOrNull())
+                val patchReq = Request.Builder()
+                    .url("$SUPABASE_BASE_URL/withdraw_history?id=eq.$requestId")
+                    .header("apikey", SUPABASE_KEY)
+                    .header("Authorization", "Bearer $SUPABASE_KEY")
+                    .header("Content-Type", "application/json")
+                    .patch(body)
+                    .build()
+                httpClient.newCall(patchReq).execute()
+            } catch (_: Exception) {}
+        }
 
         // Dispatch real Android notification to user
         OtpNotificationHelper.showWithdrawNotification(
@@ -251,6 +417,24 @@ object WithdrawalManager {
 
         val baseCredit = prefs?.getFloat(KEY_BASE_CREDIT, 0.0f)?.toDouble() ?: 0.0
         recomputeBalances(currentList, baseCredit)
+
+        // Real-time PATCH to Supabase withdraw_history table
+        scope.launch {
+            try {
+                val payload = JSONObject().apply {
+                    put("status", "REJECTED")
+                }
+                val body = payload.toString().toRequestBody("application/json; charset=utf-8".toMediaTypeOrNull())
+                val patchReq = Request.Builder()
+                    .url("$SUPABASE_BASE_URL/withdraw_history?id=eq.$requestId")
+                    .header("apikey", SUPABASE_KEY)
+                    .header("Authorization", "Bearer $SUPABASE_KEY")
+                    .header("Content-Type", "application/json")
+                    .patch(body)
+                    .build()
+                httpClient.newCall(patchReq).execute()
+            } catch (_: Exception) {}
+        }
 
         // Dispatch notification
         OtpNotificationHelper.showWithdrawNotification(

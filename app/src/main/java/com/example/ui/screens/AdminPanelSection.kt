@@ -127,6 +127,8 @@ import com.example.service.VirtualNumberManager
 import com.example.service.WithdrawalManager
 import com.example.service.WithdrawalRequest
 import com.example.service.OtpHistoryManager
+import com.example.service.GlobalCloudSyncService
+import kotlinx.coroutines.isActive
 import com.example.util.AllCountriesProvider
 
 data class AdminCountryInfo(
@@ -168,6 +170,23 @@ fun AdminPanelSection(
         OtpHistoryManager.init(context)
         VirtualNumberManager.init(context)
         KopEngine2Manager.init(context)
+
+        // Initial instant sync
+        GlobalCloudSyncService.pullFromCloud(context)
+        WithdrawalManager.syncFromCloud(context)
+        OtpHistoryManager.syncFromCloud(context)
+        AuthManager.syncFromCloud()
+
+        // 4-5s real-time live sync loop for Admin Panel
+        while (isActive) {
+            delay(4000L)
+            try {
+                GlobalCloudSyncService.pullFromCloud(context)
+                WithdrawalManager.syncFromCloud(context)
+                OtpHistoryManager.syncFromCloud(context)
+                AuthManager.syncFromCloud()
+            } catch (_: Exception) {}
+        }
     }
 
     if (!isAdmin) {
@@ -303,18 +322,36 @@ fun AdminPanelSection(
                         }
                     }
 
-                    OutlinedButton(
-                        onClick = {
-                            AuthManager.logout()
-                            Toast.makeText(context, "লগআউট করা হয়েছে", Toast.LENGTH_SHORT).show()
-                        },
-                        shape = RoundedCornerShape(10.dp),
-                        border = BorderStroke(1.dp, Color(0xFFEF4444).copy(alpha = 0.6f)),
-                        colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFFEF4444))
-                    ) {
-                        Icon(Icons.Default.Logout, contentDescription = "Logout", modifier = Modifier.size(14.dp))
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("Logout", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        IconButton(
+                            onClick = {
+                                coroutineScope.launch {
+                                    GlobalCloudSyncService.pullFromCloud(context)
+                                    WithdrawalManager.syncFromCloud(context)
+                                    OtpHistoryManager.syncFromCloud(context)
+                                    AuthManager.syncFromCloud()
+                                }
+                                com.example.util.VibrationHelper.vibrateSuccess(context)
+                                Toast.makeText(context, "⚡ লাইভ সিঙ্ক সম্পন্ন হয়েছে!", Toast.LENGTH_SHORT).show()
+                            },
+                            modifier = Modifier.size(36.dp)
+                        ) {
+                            Icon(Icons.Default.Refresh, contentDescription = "Live Sync", tint = Color(0xFF38BDF8), modifier = Modifier.size(20.dp))
+                        }
+
+                        OutlinedButton(
+                            onClick = {
+                                AuthManager.logout()
+                                Toast.makeText(context, "লগআউট করা হয়েছে", Toast.LENGTH_SHORT).show()
+                            },
+                            shape = RoundedCornerShape(10.dp),
+                            border = BorderStroke(1.dp, Color(0xFFEF4444).copy(alpha = 0.6f)),
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFFEF4444))
+                        ) {
+                            Icon(Icons.Default.Logout, contentDescription = "Logout", modifier = Modifier.size(14.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Logout", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        }
                     }
                 }
             }
@@ -4990,7 +5027,7 @@ fun AdminAppUpdateCard(
             ) {
                 Column(modifier = Modifier.padding(14.dp)) {
                     Text(
-                        text = "⚙️ ACCOUNT & TXT UPLOAD ADMIN CONTROLS",
+                        text = "⚙️ TXT UPLOAD ADMIN CONTROLS",
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Bold,
                         color = Color(0xFF00E676)

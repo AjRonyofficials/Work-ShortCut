@@ -108,6 +108,8 @@ fun UserProfileOtpHistoryDialog(
     LaunchedEffect(Unit) {
         OtpHistoryManager.init(context)
         WithdrawalManager.init(context)
+        WithdrawalManager.triggerLiveCloudSync()
+        OtpHistoryManager.triggerLiveCloudSync()
         while (true) {
             delay(1000L)
             dailyCountdownString = OtpHistoryManager.getFormattedDailyResetCountdown()
