@@ -724,18 +724,20 @@ fun UnixSmsSectionContent(
                 }
             }
 
-            val filteredCdrs = unixState.liveCdrRecords.filter { cdr ->
-                val matchesSearch = consoleSearchFilter.isBlank() ||
-                        cdr.num.contains(consoleSearchFilter) ||
-                        cdr.cli.contains(consoleSearchFilter, ignoreCase = true) ||
-                        cdr.message.contains(consoleSearchFilter, ignoreCase = true)
+            val filteredCdrs = remember(unixState.liveCdrRecords, consoleSearchFilter, dlrFilterTab) {
+                unixState.liveCdrRecords.filter { cdr ->
+                    val matchesSearch = consoleSearchFilter.isBlank() ||
+                            cdr.num.contains(consoleSearchFilter) ||
+                            cdr.cli.contains(consoleSearchFilter, ignoreCase = true) ||
+                            cdr.message.contains(consoleSearchFilter, ignoreCase = true)
 
-                val matchesTab = if (dlrFilterTab == "OTP_ONLY") {
-                    val p = java.util.regex.Pattern.compile("\\b\\d{4,8}\\b")
-                    p.matcher(cdr.message).find()
-                } else true
+                    val matchesTab = if (dlrFilterTab == "OTP_ONLY") {
+                        val p = java.util.regex.Pattern.compile("\\b\\d{4,8}\\b")
+                        p.matcher(cdr.message).find()
+                    } else true
 
-                matchesSearch && matchesTab
+                    matchesSearch && matchesTab
+                }
             }
 
             if (filteredCdrs.isEmpty()) {
@@ -849,11 +851,68 @@ fun UnixActiveNumberRow(
                             fontWeight = FontWeight.Bold,
                             fontFamily = FontFamily.Monospace
                         )
+                        if (isOtpReceived) {
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Surface(
+                                color = Color(0xFF00E676),
+                                shape = RoundedCornerShape(4.dp)
+                            ) {
+                                Text(
+                                    text = "OTP RCV ✓",
+                                    color = Color.Black,
+                                    fontSize = 9.sp,
+                                    fontWeight = FontWeight.ExtraBold,
+                                    modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
+                                )
+                            }
+                        } else {
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Surface(
+                                color = Color(0xFF00B0FF).copy(alpha = 0.2f),
+                                shape = RoundedCornerShape(4.dp),
+                                border = BorderStroke(0.8.dp, Color(0xFF00B0FF).copy(alpha = 0.5f))
+                            ) {
+                                Text(
+                                    text = "WAITING SMS...",
+                                    color = Color(0xFF81D4FA),
+                                    fontSize = 8.5.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                                )
+                            }
+                        }
                     }
                     Spacer(modifier = Modifier.height(3.dp))
                     Row(verticalAlignment = Alignment.CenterVertically) {
+                        val countryInfo = remember(prov.number, prov.country) {
+                            com.example.util.AllCountriesProvider.findByPhoneNumber(prov.number)
+                                ?: com.example.util.AllCountriesProvider.findByNameOrCode(prov.country)
+                        }
+                        val flag = countryInfo?.flag ?: "🌐"
+                        val countryName = countryInfo?.name ?: prov.country
+
+                        Surface(
+                            color = Color(0xFF162536),
+                            shape = RoundedCornerShape(4.dp),
+                            border = BorderStroke(0.6.dp, Color(0xFF28405E))
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.5.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(text = flag, fontSize = 11.sp)
+                                Spacer(modifier = Modifier.width(3.dp))
+                                Text(
+                                    text = countryName,
+                                    color = Color(0xFFE2E8F0),
+                                    fontSize = 9.5.sp,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                            }
+                        }
+                        Spacer(modifier = Modifier.width(5.dp))
                         Text(
-                            text = "${prov.country} • ${prov.range.ifEmpty { "Service" }}",
+                            text = "• ${prov.range.ifEmpty { "Service" }}",
                             color = Color(0xFF90A4AE),
                             fontSize = 10.sp
                         )
@@ -980,17 +1039,10 @@ fun UnixActiveNumberRow(
 }
 
 /**
- * Masks the middle 3 to 4 digits of a phone number with *** or ... to protect real number
+ * Masks strictly the middle 4 digits of the phone number with asterisks (****)!
  */
 fun maskPhoneNumberMiddle(rawNumber: String): String {
-    val clean = rawNumber.trim()
-    if (clean.length <= 6) return clean
-    // e.g. +12025550193 -> +1202***0193
-    val midStart = (clean.length / 2) - 1
-    val midEnd = (midStart + 3).coerceAtMost(clean.length - 2)
-    val prefix = clean.substring(0, midStart)
-    val suffix = clean.substring(midEnd)
-    return "$prefix***$suffix"
+    return UnixSmsManager.maskPhoneNumberMiddle4(rawNumber)
 }
 
 @Composable
@@ -1019,19 +1071,38 @@ fun UnixCdrMessageCard(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    val countryFlag = when {
-                        cdr.num.startsWith("880") || cdr.num.startsWith("+880") -> "🇧🇩"
-                        cdr.num.startsWith("1") || cdr.num.startsWith("+1") -> "🇺🇸"
-                        cdr.num.startsWith("44") || cdr.num.startsWith("+44") -> "🇬🇧"
-                        cdr.num.startsWith("91") || cdr.num.startsWith("+91") -> "🇮🇳"
-                        cdr.num.startsWith("237") || cdr.num.startsWith("+237") -> "🇨🇲"
-                        cdr.num.startsWith("234") || cdr.num.startsWith("+234") -> "🇳🇬"
-                        cdr.num.startsWith("62") || cdr.num.startsWith("+62") -> "🇮🇩"
-                        cdr.num.startsWith("63") || cdr.num.startsWith("+63") -> "🇵🇭"
-                        cdr.num.startsWith("254") || cdr.num.startsWith("+254") -> "🇰🇪"
-                        else -> "🌐"
+                    val resolvedCountry = remember(cdr.num, cdr.countryName, cdr.countryFlag) {
+                        if (cdr.countryName.isNotEmpty() && cdr.countryFlag.isNotEmpty()) {
+                            Pair(cdr.countryFlag, cdr.countryName)
+                        } else {
+                            val info = com.example.util.AllCountriesProvider.findByPhoneNumber(cdr.num)
+                            Pair(info?.flag ?: "🌐", info?.name ?: "Global")
+                        }
                     }
-                    Text(text = countryFlag, fontSize = 15.sp)
+                    val (countryFlag, countryName) = resolvedCountry
+
+                    // Country Flag + Country Name Badge
+                    Surface(
+                        color = Color(0xFF162536),
+                        shape = RoundedCornerShape(6.dp),
+                        border = BorderStroke(0.8.dp, Color(0xFF28405E))
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(text = countryFlag, fontSize = 13.sp)
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                text = countryName,
+                                color = Color(0xFFE2E8F0),
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                maxLines = 1
+                            )
+                        }
+                    }
+
                     Spacer(modifier = Modifier.width(6.dp))
                     Surface(
                         color = Color(0xFF0091EA).copy(alpha = 0.2f),

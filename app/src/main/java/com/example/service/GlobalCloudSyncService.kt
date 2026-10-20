@@ -164,11 +164,17 @@ object GlobalCloudSyncService {
                         if (kRate > 0.0) {
                             KopEngine2Manager.applyCloudRate(kRate)
                         }
+                        if (cObj.has("telegram_bots_json")) {
+                            val tgBotsStr = cObj.optString("telegram_bots_json", "")
+                            if (tgBotsStr.isNotBlank()) {
+                                TelegramBotManager.applyCloudBots(tgBotsStr, context)
+                            }
+                        }
                         val cMap = mutableMapOf<String, Double>()
                         val keys = cObj.keys()
                         while (keys.hasNext()) {
                             val k = keys.next()
-                            if (k != "kop2_rate") {
+                            if (k != "kop2_rate" && k != "telegram_bots_json") {
                                 val r = cObj.optDouble(k, -1.0)
                                 if (r > 0.0) cMap[k] = r
                             }
@@ -328,6 +334,47 @@ object GlobalCloudSyncService {
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Error pushing rates to cloud: ${e.message}")
+            }
+        }
+    }
+
+    /**
+     * Admin: Push Telegram Bots configuration to Supabase app_settings
+     * so that all users globally run only the admin-selected bots!
+     */
+    fun pushTelegramBotsToCloud(botsJson: String) {
+        val patchTimestamp = System.currentTimeMillis()
+        lastLocalPushTimestamp = patchTimestamp
+        scope.launch {
+            try {
+                val ratesObj = JSONObject().apply {
+                    put("kop2_rate", KopEngine2Manager.kop2OtpRate.value)
+                    put("telegram_bots_json", botsJson)
+                    for ((k, v) in UnixSmsManager.state.value.countryRates) {
+                        put(k, v)
+                    }
+                }
+                val patchPayload = JSONObject().apply {
+                    put("country_rates_json", ratesObj.toString())
+                    put("updated_at", patchTimestamp)
+                }
+                val body = patchPayload.toString().toRequestBody("application/json; charset=utf-8".toMediaTypeOrNull())
+                val req = Request.Builder()
+                    .url("$SUPABASE_BASE_URL/app_settings?id=eq.1")
+                    .header("apikey", SUPABASE_KEY)
+                    .header("Authorization", "Bearer $SUPABASE_KEY")
+                    .header("Content-Type", "application/json")
+                    .header("Prefer", "return=minimal")
+                    .patch(body)
+                    .build()
+                httpClient.newCall(req).execute().use { resp ->
+                    if (resp.isSuccessful) {
+                        lastObservedServerTimestamp = patchTimestamp
+                        Log.d(TAG, "Pushed Telegram Bots settings to Supabase successfully.")
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error pushing Telegram Bots to cloud: ${e.message}")
             }
         }
     }

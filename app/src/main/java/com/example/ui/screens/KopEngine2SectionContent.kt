@@ -110,21 +110,16 @@ fun KopEngine2SectionContent(
     var nowTick by remember { mutableLongStateOf(System.currentTimeMillis()) }
     var syncCountdown by remember { mutableIntStateOf(3) }
 
-    // Fast 1s Real-Time Clock Tick & 3s Live API Auto Sync
+    // Fast 1s Real-Time Clock Tick & 3s Live API Auto Sync without duplicate network calls
     LaunchedEffect(Unit) {
         KopEngine2Manager.init(context)
         KopEngine2Manager.startAutoPolling(context, autoCopy = true)
-        KopEngine2Manager.fetchActiveRanges()
-        KopEngine2Manager.fetchGlobalBroadcast()
+        KopEngine2Manager.fetchRadarData()
         while (true) {
             delay(1000L)
             nowTick = System.currentTimeMillis()
-            KopEngine2Manager.checkNumberTimeouts()
-            KopEngine2Manager.fetchIncomingOtps(context, autoCopy = true)
             if (syncCountdown <= 1) {
                 syncCountdown = 3
-                KopEngine2Manager.fetchGlobalBroadcast()
-                KopEngine2Manager.fetchActiveRanges()
             } else {
                 syncCountdown -= 1
             }
@@ -1283,7 +1278,7 @@ private fun Kop2LiveConsoleTab(
                 }
             }
         } else {
-            filteredList.forEachIndexed { index, feedItem ->
+            filteredList.take(30).forEachIndexed { index, feedItem ->
                 key(feedItem.id) {
                     MkLiveOtpFeedCard(
                         item = feedItem,

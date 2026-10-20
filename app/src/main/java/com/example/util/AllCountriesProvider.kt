@@ -126,6 +126,27 @@ object AllCountriesProvider {
         return allCountries.find { it.code.equals(code, ignoreCase = true) }
     }
 
+    fun findByPhoneNumber(rawPhone: String): AdminCountryInfo? {
+        val clean = rawPhone.replace("[^0-9]".toRegex(), "")
+        if (clean.isEmpty()) return null
+        return allCountries
+            .sortedByDescending { it.dialCode.replace("+", "").length }
+            .firstOrNull {
+                val dc = it.dialCode.replace("+", "")
+                clean.startsWith(dc)
+            }
+    }
+
+    fun findByNameOrCode(query: String): AdminCountryInfo? {
+        val q = query.trim().lowercase()
+        if (q.isEmpty()) return null
+        return allCountries.firstOrNull {
+            it.code.equals(q, ignoreCase = true) ||
+            it.name.equals(q, ignoreCase = true) ||
+            it.dialCode.replace("+", "") == q
+        }
+    }
+
     fun search(query: String): List<AdminCountryInfo> {
         val q = query.trim().lowercase()
         if (q.isEmpty()) return allCountries

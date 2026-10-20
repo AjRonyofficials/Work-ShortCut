@@ -39,6 +39,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AdminPanelSettings
 import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.RocketLaunch
+import androidx.compose.material.icons.filled.SmartToy
 import com.example.service.AppUpdateManager
 import com.example.service.KopEngine2Manager
 import com.example.service.OverlayStateManager
@@ -442,6 +443,18 @@ fun AdminPanelSection(
                         }
                     )
                 }
+                Tab(
+                    selected = selectedTab == 5,
+                    onClick = { selectedTab = 5 },
+                    text = {
+                        val activeTgBots = com.example.service.TelegramBotManager.state.collectAsState().value.activeBots.size
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.SmartToy, contentDescription = null, modifier = Modifier.size(13.dp), tint = Color(0xFF29B6F6))
+                            Spacer(modifier = Modifier.width(3.dp))
+                            Text("Telegram Bots ($activeTgBots)", fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                )
             }
         }
 
@@ -511,6 +524,14 @@ fun AdminPanelSection(
                             context = context
                         )
                     }
+                }
+            }
+            5 -> {
+                // TAB 5: TELEGRAM BOTS MANAGEMENT (ADMIN SELECTS WHICH BOTS RUN)
+                item {
+                    AdminTelegramBotsCard(
+                        context = context
+                    )
                 }
             }
         }
@@ -5053,3 +5074,411 @@ fun AdminAppUpdateCard(
         }
     }
 }
+
+/**
+ * Tab 5: Telegram Bots Management
+ * Allows Admin to add multiple bots, test connections, and SELECT which bots run.
+ * Whichever bots are selected/enabled by the admin, ONLY those bots run and receive OTP forwarding!
+ */
+@Composable
+fun AdminTelegramBotsCard(
+    context: Context
+) {
+    val tgState by com.example.service.TelegramBotManager.state.collectAsState()
+
+    var showAddDialog by remember { mutableStateOf(false) }
+    var botNameInput by remember { mutableStateOf("") }
+    var botTokenInput by remember { mutableStateOf("") }
+    var chatIdInput by remember { mutableStateOf("") }
+    var autoForwardInput by remember { mutableStateOf(true) }
+
+    var testBroadcastMsg by remember { mutableStateOf("") }
+    var isSendingBroadcast by remember { mutableStateOf(false) }
+
+    val activeBotsCount = tgState.activeBots.size
+
+    Card(
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = Color(0xFF111E2E)),
+        border = BorderStroke(1.2.dp, Color(0xFF0288D1)),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            // Header
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        modifier = Modifier
+                            .size(36.dp)
+                            .clip(CircleShape)
+                            .background(Color(0xFF0288D1)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text("🤖", fontSize = 18.sp)
+                    }
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Column {
+                        Text(
+                            text = "TELEGRAM BOTS DISPATCHER",
+                            color = Color.White,
+                            fontSize = 13.5.sp,
+                            fontWeight = FontWeight.ExtraBold
+                        )
+                        Text(
+                            text = "Admin Selection: Whichever bots are enabled here will run",
+                            color = Color(0xFF81D4FA),
+                            fontSize = 10.5.sp
+                        )
+                    }
+                }
+
+                Surface(
+                    color = if (activeBotsCount > 0) Color(0xFF00E676).copy(alpha = 0.15f) else Color(0xFFFF5252).copy(alpha = 0.15f),
+                    shape = RoundedCornerShape(20.dp),
+                    border = BorderStroke(1.dp, if (activeBotsCount > 0) Color(0xFF00E676) else Color(0xFFFF5252))
+                ) {
+                    Text(
+                        text = if (activeBotsCount > 0) "● $activeBotsCount BOT(S) RUNNING" else "● NO BOT ACTIVE",
+                        color = if (activeBotsCount > 0) Color(0xFF00E676) else Color(0xFFFF5252),
+                        fontSize = 9.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                    )
+                }
+            }
+
+            // Stats row
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                Surface(
+                    color = Color(0xFF0A1420),
+                    shape = RoundedCornerShape(10.dp),
+                    border = BorderStroke(1.dp, Color(0xFF1E3A56)),
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Column(
+                        modifier = Modifier.padding(8.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Text("TOTAL BOTS", color = Color(0xFF81D4FA), fontSize = 8.sp, fontWeight = FontWeight.Bold)
+                        Text("${tgState.bots.size}", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
+                Surface(
+                    color = Color(0xFF0A1420),
+                    shape = RoundedCornerShape(10.dp),
+                    border = BorderStroke(1.dp, Color(0xFF00E676).copy(alpha = 0.4f)),
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Column(
+                        modifier = Modifier.padding(8.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Text("SELECTED / ACTIVE", color = Color(0xFF00E676), fontSize = 8.sp, fontWeight = FontWeight.Bold)
+                        Text("$activeBotsCount", color = Color(0xFF00E676), fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
+                Surface(
+                    color = Color(0xFF0A1420),
+                    shape = RoundedCornerShape(10.dp),
+                    border = BorderStroke(1.dp, Color(0xFF1E3A56)),
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Column(
+                        modifier = Modifier.padding(8.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Text("AUTO-FORWARD", color = Color(0xFFFFD600), fontSize = 8.sp, fontWeight = FontWeight.Bold)
+                        Text(if (activeBotsCount > 0) "ENABLED" else "PAUSED", color = Color(0xFFFFD600), fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+
+            // Add Bot Button
+            Button(
+                onClick = { showAddDialog = !showAddDialog },
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0288D1)),
+                shape = RoundedCornerShape(10.dp),
+                modifier = Modifier.fillMaxWidth().height(40.dp)
+            ) {
+                Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
+                Spacer(modifier = Modifier.width(6.dp))
+                Text(if (showAddDialog) "HIDE FORM" else "➕ ADD NEW TELEGRAM BOT", fontWeight = FontWeight.Bold, fontSize = 11.5.sp)
+            }
+
+            // Add Bot Form
+            AnimatedVisibility(visible = showAddDialog) {
+                Surface(
+                    color = Color(0xFF0A1420),
+                    shape = RoundedCornerShape(12.dp),
+                    border = BorderStroke(1.dp, Color(0xFF0288D1).copy(alpha = 0.6f)),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text("ADD TELEGRAM BOT CONFIGURATION", color = Color(0xFF81D4FA), fontSize = 11.5.sp, fontWeight = FontWeight.Bold)
+
+                        OutlinedTextField(
+                            value = botNameInput,
+                            onValueChange = { botNameInput = it },
+                            label = { Text("Bot Name (e.g. VIP Forwarder)") },
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedTextColor = Color.White,
+                                unfocusedTextColor = Color.White,
+                                focusedBorderColor = Color(0xFF0288D1),
+                                unfocusedBorderColor = Color(0xFF1E3A56)
+                            ),
+                            singleLine = true
+                        )
+
+                        OutlinedTextField(
+                            value = botTokenInput,
+                            onValueChange = { botTokenInput = it },
+                            label = { Text("Bot API Token (from @BotFather)") },
+                            placeholder = { Text("123456789:ABCdefGh...") },
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedTextColor = Color.White,
+                                unfocusedTextColor = Color.White,
+                                focusedBorderColor = Color(0xFF0288D1),
+                                unfocusedBorderColor = Color(0xFF1E3A56)
+                            ),
+                            singleLine = true
+                        )
+
+                        OutlinedTextField(
+                            value = chatIdInput,
+                            onValueChange = { chatIdInput = it },
+                            label = { Text("Target Chat ID / Group ID") },
+                            placeholder = { Text("987654321 or -100...") },
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedTextColor = Color.White,
+                                unfocusedTextColor = Color.White,
+                                focusedBorderColor = Color(0xFF0288D1),
+                                unfocusedBorderColor = Color(0xFF1E3A56)
+                            ),
+                            singleLine = true
+                        )
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text("Auto-Forward Received OTPs", color = Color.White, fontSize = 11.5.sp)
+                            Switch(
+                                checked = autoForwardInput,
+                                onCheckedChange = { autoForwardInput = it },
+                                colors = SwitchDefaults.colors(checkedThumbColor = Color.White, checkedTrackColor = Color(0xFF00E676))
+                            )
+                        }
+
+                        Button(
+                            onClick = {
+                                if (botTokenInput.isBlank() || chatIdInput.isBlank()) {
+                                    Toast.makeText(context, "Bot Token এবং Chat ID দিন", Toast.LENGTH_SHORT).show()
+                                    return@Button
+                                }
+                                com.example.service.TelegramBotManager.addBot(
+                                    name = botNameInput.ifEmpty { "Telegram Bot" },
+                                    token = botTokenInput,
+                                    chatId = chatIdInput,
+                                    isEnabled = true,
+                                    autoForward = autoForwardInput
+                                )
+                                botNameInput = ""
+                                botTokenInput = ""
+                                chatIdInput = ""
+                                showAddDialog = false
+                                Toast.makeText(context, "✓ বট যুক্ত ও সিলেক্ট করা হয়েছে!", Toast.LENGTH_SHORT).show()
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00E676), contentColor = Color.Black),
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier.fillMaxWidth().height(40.dp)
+                        ) {
+                            Text("SAVE & ACTIVATE BOT", fontWeight = FontWeight.Bold, fontSize = 11.5.sp)
+                        }
+                    }
+                }
+            }
+
+            HorizontalDivider(color = Color(0xFF1E3A56), thickness = 0.8.dp)
+
+            // Bots List Header
+            Text(
+                text = "BOT LIST & SELECTION CONTROLS (চালু/বন্ধ)",
+                color = Color.White,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Bold
+            )
+
+            // Bots List
+            if (tgState.bots.isEmpty()) {
+                Text("কোনো টেলিগ্রাম বট যোগ করা নেই। উপরের বাটনে ক্লিক করে যোগ করুন।", color = Color(0xFF78909C), fontSize = 11.sp)
+            } else {
+                tgState.bots.forEach { bot ->
+                    val isRunning = bot.isEnabled && bot.botToken.isNotBlank() && bot.chatId.isNotBlank()
+                    Surface(
+                        color = if (isRunning) Color(0xFF0F1E2E) else Color(0xFF141922),
+                        shape = RoundedCornerShape(12.dp),
+                        border = BorderStroke(1.2.dp, if (isRunning) Color(0xFF00E676).copy(alpha = 0.7f) else Color(0xFF1E2D3D)),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = bot.name,
+                                        color = Color.White,
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                    Text(
+                                        text = if (bot.botToken.isNotBlank()) "Token: ${bot.botToken.take(6)}...${bot.botToken.takeLast(4)}" else "No token",
+                                        color = Color(0xFF81D4FA),
+                                        fontSize = 10.5.sp,
+                                        fontFamily = FontFamily.Monospace
+                                    )
+                                    Text(
+                                        text = "Chat ID: ${bot.chatId.ifEmpty { "Not set" }}",
+                                        color = Color(0xFF94A3B8),
+                                        fontSize = 10.5.sp,
+                                        fontFamily = FontFamily.Monospace
+                                    )
+                                }
+
+                                // Selection Switch (Whichever bot admin enables, ONLY that bot runs!)
+                                Column(horizontalAlignment = Alignment.End) {
+                                    Switch(
+                                        checked = bot.isEnabled,
+                                        onCheckedChange = { enabled ->
+                                            com.example.service.TelegramBotManager.toggleBotEnabled(bot.id, enabled)
+                                            Toast.makeText(
+                                                context,
+                                                if (enabled) "✓ '${bot.name}' চালু ও সিলেক্ট করা হয়েছে!" else "⚪ '${bot.name}' বন্ধ করা হয়েছে",
+                                                Toast.LENGTH_SHORT
+                                            ).show()
+                                        },
+                                        colors = SwitchDefaults.colors(
+                                            checkedThumbColor = Color(0xFF00E676),
+                                            checkedTrackColor = Color(0xFF00E676).copy(alpha = 0.4f)
+                                        )
+                                    )
+                                    Text(
+                                        text = if (bot.isEnabled) "ACTIVE ✓" else "DISABLED",
+                                        color = if (bot.isEnabled) Color(0xFF00E676) else Color(0xFF64748B),
+                                        fontSize = 9.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                            }
+
+                            // Exclusive Select Button
+                            Button(
+                                onClick = {
+                                    com.example.service.TelegramBotManager.selectOnlyThisBot(bot.id)
+                                    Toast.makeText(context, "✓ শুধুমাত্র '${bot.name}' সিলেক্ট ও চালু করা হয়েছে!", Toast.LENGTH_SHORT).show()
+                                },
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = if (bot.isEnabled) Color(0xFF00E676).copy(alpha = 0.2f) else Color(0xFF1E3A56)
+                                ),
+                                border = BorderStroke(1.dp, if (bot.isEnabled) Color(0xFF00E676) else Color(0xFF0288D1)),
+                                shape = RoundedCornerShape(8.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text(
+                                    text = if (bot.isEnabled) "✓ CURRENTLY RUNNING (একক চালু)" else "▶ SELECT ONLY THIS BOT (শুধু এটি চালান)",
+                                    color = if (bot.isEnabled) Color(0xFF00E676) else Color(0xFF81D4FA),
+                                    fontSize = 10.5.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Button(
+                                    onClick = {
+                                        com.example.service.TelegramBotManager.testBot(bot) { success, msg ->
+                                            Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
+                                        }
+                                    },
+                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E3858)),
+                                    shape = RoundedCornerShape(8.dp),
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Text("TEST BOT", color = Color(0xFF81D4FA), fontSize = 10.5.sp, fontWeight = FontWeight.Bold)
+                                }
+
+                                Button(
+                                    onClick = {
+                                        com.example.service.TelegramBotManager.deleteBot(bot.id)
+                                        Toast.makeText(context, "বট ডিলিট করা হয়েছে", Toast.LENGTH_SHORT).show()
+                                    },
+                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF7F1D1D)),
+                                    shape = RoundedCornerShape(8.dp)
+                                ) {
+                                    Text("DELETE", color = Color(0xFFEF4444), fontSize = 10.5.sp, fontWeight = FontWeight.Bold)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Broadcast test section
+            HorizontalDivider(color = Color(0xFF1E3A56), thickness = 0.8.dp)
+
+            Text("SEND BROADCAST TO SELECTED RUNNING BOTS", color = Color(0xFF81D4FA), fontSize = 11.5.sp, fontWeight = FontWeight.Bold)
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                OutlinedTextField(
+                    value = testBroadcastMsg,
+                    onValueChange = { testBroadcastMsg = it },
+                    placeholder = { Text("Broadcast message text...") },
+                    modifier = Modifier.weight(1f),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = Color.White,
+                        unfocusedTextColor = Color.White,
+                        focusedBorderColor = Color(0xFF0288D1),
+                        unfocusedBorderColor = Color(0xFF1E3A56)
+                    ),
+                    singleLine = true
+                )
+                Spacer(modifier = Modifier.width(6.dp))
+                Button(
+                    onClick = {
+                        val text = testBroadcastMsg.ifBlank { "📢 <b>Admin Announcement</b>\nSystem is fully online and routing OTPs." }
+                        isSendingBroadcast = true
+                        com.example.service.TelegramBotManager.sendMessageToActiveBots(text) { success, msg ->
+                            isSendingBroadcast = false
+                            Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                            if (success) testBroadcastMsg = ""
+                        }
+                    },
+                    enabled = !isSendingBroadcast && activeBotsCount > 0,
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00E676), contentColor = Color.Black),
+                    shape = RoundedCornerShape(8.dp)
+                ) {
+                    Text(if (isSendingBroadcast) "..." else "SEND", fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                }
+            }
+        }
+    }
+}
+

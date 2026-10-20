@@ -68,6 +68,7 @@ import com.example.service.OverlayUiState
 import com.example.service.KopEngine2Manager
 import com.example.service.UnixSmsManager
 import com.example.service.VirtualNumberManager
+import com.example.service.TelegramBotManager
 import com.example.util.ClipboardHelper
 import android.widget.Toast
 
@@ -231,25 +232,147 @@ fun FloatingOverlayWindowContent(
                         dockChassisShape
                     )
             ) {
+                val tgState by TelegramBotManager.state.collectAsState()
+
                 Column(
-                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
                     modifier = Modifier
-                        .widthIn(min = 124.dp, max = if (state.isVirtualNumbersOverlayExpanded) 175.dp else 138.dp)
-                        .heightIn(max = 580.dp)
+                        .width(320.dp)
+                        .height(450.dp)
                         .verticalScroll(rememberScrollState())
-                        .padding(horizontal = 6.dp, vertical = 6.dp)
+                        .padding(horizontal = 10.dp, vertical = 8.dp)
                         .testTag("floating_edge_tabs_column")
                 ) {
                     // Sleek Drag Grip Header Handle
                     Box(
                         modifier = Modifier
                             .align(Alignment.CenterHorizontally)
-                            .width(28.dp)
+                            .width(32.dp)
                             .height(4.dp)
                             .clip(RoundedCornerShape(2.dp))
                             .background(Color.White.copy(alpha = 0.35f))
                     )
+
+                    // Top Control Bar: Title, Minimize & Close Controls
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 2.dp, bottom = 4.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("✈️", fontSize = 16.sp)
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "TELEGRAM BOT",
+                                color = Color.White,
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.ExtraBold,
+                                letterSpacing = 0.5.sp
+                            )
+                        }
+
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            // Minimize button (collapses to small floating bubble)
+                            Surface(
+                                shape = RoundedCornerShape(6.dp),
+                                color = Color(0xFF1E3858),
+                                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF0288D1)),
+                                modifier = Modifier
+                                    .size(28.dp)
+                                    .clickable { onToggleExpand() }
+                                    .testTag("btn_minimize_panel")
+                            ) {
+                                Box(contentAlignment = Alignment.Center) {
+                                    Text("—", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                                }
+                            }
+
+                            // Close button (stops overlay service)
+                            Surface(
+                                shape = RoundedCornerShape(6.dp),
+                                color = Color(0xFF7F1D1D),
+                                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFEF4444)),
+                                modifier = Modifier
+                                    .size(28.dp)
+                                    .clickable { onCloseOverlay() }
+                                    .testTag("btn_close_panel")
+                            ) {
+                                Box(contentAlignment = Alignment.Center) {
+                                    Text("✕", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                }
+                            }
+                        }
+                    }
+
+                    // Telegram Bot Quick Card in 320x450 Panel
+                    Surface(
+                        shape = RoundedCornerShape(10.dp),
+                        color = Color(0xFF0F1E2E),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF0288D1).copy(alpha = 0.5f)),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(modifier = Modifier.padding(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(6.dp)
+                                            .clip(CircleShape)
+                                            .background(if (tgState.isConnected) Color(0xFF00E676) else Color(0xFFFF5252))
+                                    )
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text(
+                                        text = if (tgState.isConnected) "BOT CONNECTED" else "BOT NOT SET",
+                                        color = if (tgState.isConnected) Color(0xFF00E676) else Color(0xFFFF5252),
+                                        fontSize = 9.5.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+
+                                Text(
+                                    text = if (tgState.autoForwardOtp) "⚡ Auto-Forward: ON" else "Auto-Forward: OFF",
+                                    color = Color(0xFF81D4FA),
+                                    fontSize = 9.sp
+                                )
+                            }
+
+                            // Quick Bot Command Pills: /start, /otp, /balance, /numbers
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                listOf("/start", "/otp", "/balance", "/numbers").forEach { cmd ->
+                                    Surface(
+                                        color = Color(0xFF0A1420),
+                                        shape = RoundedCornerShape(6.dp),
+                                        border = androidx.compose.foundation.BorderStroke(0.8.dp, Color(0xFF0288D1)),
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .clickable {
+                                                val res = TelegramBotManager.executeBotCommand(cmd, context)
+                                                Toast.makeText(context, res, Toast.LENGTH_SHORT).show()
+                                            }
+                                    ) {
+                                        Text(
+                                            text = cmd,
+                                            color = Color(0xFF81D4FA),
+                                            fontSize = 9.5.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            modifier = Modifier.padding(vertical = 4.dp),
+                                            textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
 
                     // Live Heads-Up OTP Alert in Floating Overlay
                     if (liveOtpPopup != null) {

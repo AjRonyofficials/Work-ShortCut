@@ -565,8 +565,7 @@ object KopEngine2Manager {
                 syncTicks++
                 if (syncTicks >= 3) {
                     syncTicks = 0
-                    fetchGlobalBroadcast()
-                    fetchActiveRanges()
+                    fetchRadarData()
                 }
 
                 delay(1000L)
@@ -580,14 +579,19 @@ object KopEngine2Manager {
         _state.update { it.copy(isPolling = false) }
     }
 
+    private var isFetchingRadar = false
+
     /**
      * Fetches 100% real active ranges and live OTP broadcast feed from MK Network v3 Radar API.
      * Endpoint: https://mknetworkbd.com/api/v3/public/radar
      * No fake data, no simulated math.
      */
     fun fetchRadarData() {
+        if (isFetchingRadar) return
         val clientKey = _state.value.clientKey.ifEmpty { DEFAULT_MK_API_KEY }
         scope.launch {
+            if (isFetchingRadar) return@launch
+            isFetchingRadar = true
             try {
                 val url = "$MK_BASE_URL/radar"
                 val request = Request.Builder()
@@ -686,7 +690,10 @@ object KopEngine2Manager {
                         )
                     }
                 }
-            } catch (_: Exception) {}
+            } catch (_: Exception) {
+            } finally {
+                isFetchingRadar = false
+            }
         }
     }
 
