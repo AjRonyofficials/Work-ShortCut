@@ -33,14 +33,22 @@ import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Phone
+import androidx.compose.material.icons.filled.SmartToy
+import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -66,9 +74,9 @@ import androidx.compose.ui.unit.sp
 import com.example.service.OverlayStateManager
 import com.example.service.OverlayUiState
 import com.example.service.KopEngine2Manager
+import com.example.service.PremiumNumberV2Manager
 import com.example.service.UnixSmsManager
 import com.example.service.VirtualNumberManager
-import com.example.service.TelegramBotManager
 import com.example.util.ClipboardHelper
 import android.widget.Toast
 
@@ -232,147 +240,23 @@ fun FloatingOverlayWindowContent(
                         dockChassisShape
                     )
             ) {
-                val tgState by TelegramBotManager.state.collectAsState()
-
                 Column(
                     verticalArrangement = Arrangement.spacedBy(6.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
                     modifier = Modifier
-                        .width(320.dp)
-                        .height(450.dp)
-                        .verticalScroll(rememberScrollState())
-                        .padding(horizontal = 10.dp, vertical = 8.dp)
+                        .wrapContentSize()
+                        .padding(horizontal = 6.dp, vertical = 8.dp)
                         .testTag("floating_edge_tabs_column")
                 ) {
                     // Sleek Drag Grip Header Handle
                     Box(
                         modifier = Modifier
                             .align(Alignment.CenterHorizontally)
-                            .width(32.dp)
+                            .width(28.dp)
                             .height(4.dp)
                             .clip(RoundedCornerShape(2.dp))
                             .background(Color.White.copy(alpha = 0.35f))
                     )
-
-                    // Top Control Bar: Title, Minimize & Close Controls
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(top = 2.dp, bottom = 4.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text("✈️", fontSize = 16.sp)
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text(
-                                text = "TELEGRAM BOT",
-                                color = Color.White,
-                                fontSize = 13.sp,
-                                fontWeight = FontWeight.ExtraBold,
-                                letterSpacing = 0.5.sp
-                            )
-                        }
-
-                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                            // Minimize button (collapses to small floating bubble)
-                            Surface(
-                                shape = RoundedCornerShape(6.dp),
-                                color = Color(0xFF1E3858),
-                                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF0288D1)),
-                                modifier = Modifier
-                                    .size(28.dp)
-                                    .clickable { onToggleExpand() }
-                                    .testTag("btn_minimize_panel")
-                            ) {
-                                Box(contentAlignment = Alignment.Center) {
-                                    Text("—", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold)
-                                }
-                            }
-
-                            // Close button (stops overlay service)
-                            Surface(
-                                shape = RoundedCornerShape(6.dp),
-                                color = Color(0xFF7F1D1D),
-                                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFEF4444)),
-                                modifier = Modifier
-                                    .size(28.dp)
-                                    .clickable { onCloseOverlay() }
-                                    .testTag("btn_close_panel")
-                            ) {
-                                Box(contentAlignment = Alignment.Center) {
-                                    Text("✕", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                                }
-                            }
-                        }
-                    }
-
-                    // Telegram Bot Quick Card in 320x450 Panel
-                    Surface(
-                        shape = RoundedCornerShape(10.dp),
-                        color = Color(0xFF0F1E2E),
-                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF0288D1).copy(alpha = 0.5f)),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Column(modifier = Modifier.padding(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Box(
-                                        modifier = Modifier
-                                            .size(6.dp)
-                                            .clip(CircleShape)
-                                            .background(if (tgState.isConnected) Color(0xFF00E676) else Color(0xFFFF5252))
-                                    )
-                                    Spacer(modifier = Modifier.width(4.dp))
-                                    Text(
-                                        text = if (tgState.isConnected) "BOT CONNECTED" else "BOT NOT SET",
-                                        color = if (tgState.isConnected) Color(0xFF00E676) else Color(0xFFFF5252),
-                                        fontSize = 9.5.sp,
-                                        fontWeight = FontWeight.Bold
-                                    )
-                                }
-
-                                Text(
-                                    text = if (tgState.autoForwardOtp) "⚡ Auto-Forward: ON" else "Auto-Forward: OFF",
-                                    color = Color(0xFF81D4FA),
-                                    fontSize = 9.sp
-                                )
-                            }
-
-                            // Quick Bot Command Pills: /start, /otp, /balance, /numbers
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(4.dp)
-                            ) {
-                                listOf("/start", "/otp", "/balance", "/numbers").forEach { cmd ->
-                                    Surface(
-                                        color = Color(0xFF0A1420),
-                                        shape = RoundedCornerShape(6.dp),
-                                        border = androidx.compose.foundation.BorderStroke(0.8.dp, Color(0xFF0288D1)),
-                                        modifier = Modifier
-                                            .weight(1f)
-                                            .clickable {
-                                                val res = TelegramBotManager.executeBotCommand(cmd, context)
-                                                Toast.makeText(context, res, Toast.LENGTH_SHORT).show()
-                                            }
-                                    ) {
-                                        Text(
-                                            text = cmd,
-                                            color = Color(0xFF81D4FA),
-                                            fontSize = 9.5.sp,
-                                            fontWeight = FontWeight.Bold,
-                                            modifier = Modifier.padding(vertical = 4.dp),
-                                            textAlign = androidx.compose.ui.text.style.TextAlign.Center
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                    }
 
                     // Live Heads-Up OTP Alert in Floating Overlay
                     if (liveOtpPopup != null) {
@@ -1427,17 +1311,20 @@ fun VirtualNumbersOverlaySection(
     val unixState by UnixSmsManager.state.collectAsState()
     val vnState by VirtualNumberManager.state.collectAsState()
     val kop2State by KopEngine2Manager.state.collectAsState()
+    val v2State by PremiumNumberV2Manager.state.collectAsState()
     var dropdownExpanded by remember { mutableStateOf(false) }
 
     val activeCount = when (selectedPanel) {
         0 -> unixState.activeNumbers.size
         1 -> vnState.provisionedNumbers.size
-        else -> kop2State.provisionedNumbers.size
+        2 -> kop2State.provisionedNumbers.size
+        else -> v2State.activeNumbers.size
     }
     val panelName = when (selectedPanel) {
         0 -> "Unix"
         1 -> "Zenex"
-        else -> "Kop 2"
+        2 -> "Kop 2"
+        else -> "V2"
     }
 
     Column(
@@ -1472,7 +1359,8 @@ fun VirtualNumbersOverlaySection(
                             when (selectedPanel) {
                                 0 -> listOf(Color(0xFF00E5FF).copy(alpha = 0.8f), Color(0xFF0288D1).copy(alpha = 0.4f))
                                 1 -> listOf(Color(0xFF00E676).copy(alpha = 0.8f), Color(0xFF00897B).copy(alpha = 0.4f))
-                                else -> listOf(Color(0xFFFFD54F).copy(alpha = 0.8f), Color(0xFFF57C00).copy(alpha = 0.4f))
+                                2 -> listOf(Color(0xFFFFD54F).copy(alpha = 0.8f), Color(0xFFF57C00).copy(alpha = 0.4f))
+                                else -> listOf(Color(0xFF38BDF8).copy(alpha = 0.8f), Color(0xFF0284C7).copy(alpha = 0.4f))
                             }
                         ),
                         RoundedCornerShape(8.dp)
@@ -1493,20 +1381,28 @@ fun VirtualNumbersOverlaySection(
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
                             modifier = Modifier.clickable {
-                                // Cycle panel: 0 -> 1 -> 2 -> 0
-                                VirtualNumberManager.setSelectedPanel((selectedPanel + 1) % 3)
+                                // Cycle panel: 0 (Unix) -> 3 (V2) -> 1 (Zenex) -> 2 (Kop 2) -> 0
+                                val next = when (selectedPanel) {
+                                    0 -> 3
+                                    3 -> 1
+                                    1 -> 2
+                                    else -> 0
+                                }
+                                VirtualNumberManager.setSelectedPanel(next)
                             }
                         ) {
                             Text(
                                 text = when (selectedPanel) {
                                     0 -> "⚡ 1. UNIX SMS"
-                                    1 -> "⚡ 2. ZENEX SMS"
-                                    else -> "⚡ 3. KOP ENGINE 2"
+                                    3 -> "⚡ 2. PREMIUM V2"
+                                    1 -> "⚡ 3. ZENEX SMS"
+                                    else -> "⚡ 4. KOP ENGINE 2"
                                 },
                                 fontSize = 8.5.sp,
                                 fontWeight = FontWeight.Black,
                                 color = when (selectedPanel) {
                                     0 -> Color(0xFF00E5FF)
+                                    3 -> Color(0xFF38BDF8)
                                     1 -> Color(0xFF00E676)
                                     else -> Color(0xFFFFD54F)
                                 }
@@ -1523,6 +1419,7 @@ fun VirtualNumbersOverlaySection(
                         Text(
                             text = when (selectedPanel) {
                                 0 -> "OTP: ${unixState.todayOtpCount}"
+                                3 -> "OTP: ${v2State.todayOtpCount}"
                                 1 -> "OTP: ${vnState.todayOtpCount}"
                                 else -> "OTP: ${kop2State.todayOtpCount}"
                             },
@@ -1724,7 +1621,7 @@ fun VirtualNumbersOverlaySection(
                                 }
                             }
                         }
-                    } else {
+                    } else if (selectedPanel == 2) {
                         // KOP ENGINE 2 (MK Network): Auto-Populates Range Selected in App with Qty and Get Button
                         Row(
                             modifier = Modifier.fillMaxWidth(),
@@ -1815,18 +1712,101 @@ fun VirtualNumbersOverlaySection(
                                 }
                             }
                         }
+                    } else if (selectedPanel == 3) {
+                        // PREMIUM NUMBER V2: Shows Selected Country & Service with 1-Tap Get Number (1-10 qty)
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(3.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Surface(
+                                shape = RoundedCornerShape(4.dp),
+                                color = Color(0xFF0C1929),
+                                border = androidx.compose.foundation.BorderStroke(0.7.dp, Color(0xFF38BDF8)),
+                                modifier = Modifier.weight(1f).height(26.dp)
+                            ) {
+                                Box(
+                                    modifier = Modifier.padding(horizontal = 4.dp),
+                                    contentAlignment = Alignment.CenterStart
+                                ) {
+                                    Text(
+                                        text = "${v2State.selectedCountryFlag} ${v2State.selectedCountryCode} • ${v2State.selectedService}",
+                                        color = Color.White,
+                                        fontSize = 8.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        maxLines = 1
+                                    )
+                                }
+                            }
+
+                            // Qty toggle (1-10)
+                            Surface(
+                                shape = RoundedCornerShape(4.dp),
+                                color = Color(0xFF132237),
+                                border = androidx.compose.foundation.BorderStroke(0.7.dp, Color(0xFF1E3A56)),
+                                modifier = Modifier.height(26.dp).clickable {
+                                    val nextQty = if (v2State.requestCount >= 10) 1 else v2State.requestCount + 1
+                                    PremiumNumberV2Manager.setRequestCount(nextQty)
+                                }
+                            ) {
+                                Box(
+                                    modifier = Modifier.padding(horizontal = 4.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        text = "${v2State.requestCount}x",
+                                        color = Color(0xFF38BDF8),
+                                        fontSize = 9.sp,
+                                        fontWeight = FontWeight.Black
+                                    )
+                                }
+                            }
+
+                            // GET Action Button for Premium V2
+                            Surface(
+                                shape = RoundedCornerShape(4.dp),
+                                color = Color(0xFF0284C7),
+                                modifier = Modifier
+                                    .height(26.dp)
+                                    .clickable(enabled = !v2State.isLoading) {
+                                        PremiumNumberV2Manager.acquireNumbers(context)
+                                    }
+                            ) {
+                                Box(
+                                    modifier = Modifier.padding(horizontal = 6.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    if (v2State.isLoading) {
+                                        CircularProgressIndicator(
+                                            color = Color.White,
+                                            strokeWidth = 1.5.dp,
+                                            modifier = Modifier.size(12.dp)
+                                        )
+                                    } else {
+                                        Text(
+                                            text = "GET",
+                                            color = Color.White,
+                                            fontWeight = FontWeight.Black,
+                                            fontSize = 10.sp
+                                        )
+                                    }
+                                }
+                            }
+                        }
                     }
 
-                    // Numbers & Live OTP List (Unix, Zenex, or Kop Engine 2)
+                    // Numbers & Live OTP List (Unix, Zenex, Kop Engine 2, or Premium V2)
                     val numbers = when (selectedPanel) {
                         0 -> unixState.activeNumbers.take(4)
                         1 -> vnState.provisionedNumbers.take(4)
-                        else -> kop2State.provisionedNumbers.take(4)
+                        2 -> kop2State.provisionedNumbers.take(4)
+                        else -> v2State.activeNumbers.take(4)
                     }
                     if (numbers.isEmpty()) {
                         Text(
                             text = when (selectedPanel) {
                                 0 -> "দেশ [${unixState.selectedCountry}] সংরক্ষিত • GET চাপুন"
+                                3 -> "${v2State.selectedCountryFlag} ${v2State.selectedCountryName} • GET চাপুন"
                                 1 -> "রেঞ্জ দিয়ে GET চাপুন (Zenex)"
                                 else -> "রেঞ্জ দিয়ে GET চাপুন (Kop 2)"
                             },
@@ -1859,31 +1839,53 @@ fun VirtualNumbersOverlaySection(
                                             fontWeight = FontWeight.Bold,
                                             modifier = Modifier.clickable {
                                                 ClipboardHelper.copyToClipboard(context, item.number, "Phone")
+                                                Toast.makeText(context, "নম্বর কপি হয়েছে!", Toast.LENGTH_SHORT).show()
                                             }
                                         )
-                                        if (item.otpCode != null) {
-                                            Surface(
-                                                color = Color(0xFF00E676),
-                                                shape = RoundedCornerShape(3.dp),
-                                                modifier = Modifier.clickable {
-                                                    ClipboardHelper.copyToClipboard(context, item.otpCode, "OTP")
+                                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+                                            if (selectedPanel == 3 && item.status != "success") {
+                                                Surface(
+                                                    color = Color(0xFFEF4444).copy(alpha = 0.2f),
+                                                    shape = RoundedCornerShape(3.dp),
+                                                    modifier = Modifier.clickable {
+                                                        val rId = item.rentalId ?: item.id
+                                                        PremiumNumberV2Manager.cancelRental(rId, context, isAutoReturn = false)
+                                                    }
+                                                ) {
+                                                    Text(
+                                                        text = "ফেরত",
+                                                        color = Color(0xFFF87171),
+                                                        fontSize = 7.5.sp,
+                                                        fontWeight = FontWeight.Bold,
+                                                        modifier = Modifier.padding(horizontal = 3.dp, vertical = 1.dp)
+                                                    )
                                                 }
-                                            ) {
+                                            }
+                                            if (item.otpCode != null) {
+                                                Surface(
+                                                    color = Color(0xFF00E676),
+                                                    shape = RoundedCornerShape(3.dp),
+                                                    modifier = Modifier.clickable {
+                                                        ClipboardHelper.copyToClipboard(context, item.otpCode, "OTP")
+                                                        Toast.makeText(context, "OTP কপি হয়েছে!", Toast.LENGTH_SHORT).show()
+                                                    }
+                                                ) {
+                                                    Text(
+                                                        text = "OTP: ${item.otpCode}",
+                                                        color = Color.Black,
+                                                        fontSize = 8.5.sp,
+                                                        fontWeight = FontWeight.Black,
+                                                        modifier = Modifier.padding(horizontal = 3.dp, vertical = 1.dp)
+                                                    )
+                                                }
+                                            } else {
                                                 Text(
-                                                    text = "OTP: ${item.otpCode}",
-                                                    color = Color.Black,
-                                                    fontSize = 8.5.sp,
-                                                    fontWeight = FontWeight.Black,
-                                                    modifier = Modifier.padding(horizontal = 3.dp, vertical = 1.dp)
+                                                    text = "Wait...",
+                                                    color = Color(0xFFFFD600),
+                                                    fontSize = 8.sp,
+                                                    fontWeight = FontWeight.Bold
                                                 )
                                             }
-                                        } else {
-                                            Text(
-                                                text = "Wait...",
-                                                color = Color(0xFFFFD600),
-                                                fontSize = 8.sp,
-                                                fontWeight = FontWeight.Bold
-                                            )
                                         }
                                     }
                                 }

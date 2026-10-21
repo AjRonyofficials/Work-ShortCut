@@ -898,12 +898,6 @@ object UnixSmsManager {
                         platform = "Lamix SMS",
                         rate = prov.rate
                     )
-                    TelegramBotManager.forwardOtpIfEnabled(
-                        phoneNumber = prov.number,
-                        otpCode = otp,
-                        service = prov.range.ifEmpty { "Facebook" },
-                        fullMessage = prov.otpMessage ?: "OTP: $otp"
-                    )
                 }
                 WithdrawalManager.refreshBalances()
 
@@ -1091,12 +1085,6 @@ object UnixSmsManager {
                             service = prov.range.ifEmpty { "Unix SMS" },
                             platform = "Unix SMS",
                             rate = prov.rate
-                        )
-                        TelegramBotManager.forwardOtpIfEnabled(
-                            phoneNumber = prov.number,
-                            otpCode = otp,
-                            service = prov.range.ifEmpty { "Unix SMS" },
-                            fullMessage = prov.otpMessage ?: "OTP: $otp"
                         )
                     }
                     WithdrawalManager.refreshBalances()

@@ -280,7 +280,6 @@ fun MainScreen(
                     AppNavTab.CLEAR_DATA -> ClearDataSection(state = state)
                     AppNavTab.SETTINGS -> SettingsSection(state = state)
                     AppNavTab.ADMIN_PANEL -> AdminPanelSection()
-                    AppNavTab.TELEGRAM_BOTS -> TelegramBotSection(state = state)
                 }
             }
         }

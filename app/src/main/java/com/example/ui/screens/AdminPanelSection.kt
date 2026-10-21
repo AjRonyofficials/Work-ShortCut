@@ -58,6 +58,8 @@ import androidx.compose.material.icons.filled.Logout
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PersonAdd
 import androidx.compose.material.icons.filled.Phone
+import androidx.compose.material.icons.filled.Public
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Security
@@ -161,6 +163,7 @@ fun AdminPanelSection(
     val otpHistoryState by OtpHistoryManager.state.collectAsState()
     val zenexOtpRate by VirtualNumberManager.zenexOtpRate.collectAsState()
     val kop2OtpRate by KopEngine2Manager.kop2OtpRate.collectAsState()
+    val premiumV2OtpRate by com.example.service.PremiumNumberV2Manager.otpRate.collectAsState()
 
     var selectedTab by remember { mutableIntStateOf(0) } // 0: SMS Panels, 1: Withdrawals, 2: Users, 3: Live CDR/DLR
 
@@ -171,6 +174,7 @@ fun AdminPanelSection(
         OtpHistoryManager.init(context)
         VirtualNumberManager.init(context)
         KopEngine2Manager.init(context)
+        com.example.service.PremiumNumberV2Manager.init(context)
 
         // Initial instant sync
         GlobalCloudSyncService.pullFromCloud(context)
@@ -443,18 +447,6 @@ fun AdminPanelSection(
                         }
                     )
                 }
-                Tab(
-                    selected = selectedTab == 5,
-                    onClick = { selectedTab = 5 },
-                    text = {
-                        val activeTgBots = com.example.service.TelegramBotManager.state.collectAsState().value.activeBots.size
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Default.SmartToy, contentDescription = null, modifier = Modifier.size(13.dp), tint = Color(0xFF29B6F6))
-                            Spacer(modifier = Modifier.width(3.dp))
-                            Text("Telegram Bots ($activeTgBots)", fontSize = 10.sp, fontWeight = FontWeight.Bold)
-                        }
-                    }
-                )
             }
         }
 
@@ -467,6 +459,7 @@ fun AdminPanelSection(
                         unixState = unixState,
                         zenexRate = zenexOtpRate,
                         kop2Rate = kop2OtpRate,
+                        premiumV2Rate = premiumV2OtpRate,
                         canUploadNumbers = if (isPrimeAdmin) true else subAdminPerms.canUploadNumbers,
                         canDeleteNumbers = if (isPrimeAdmin) true else subAdminPerms.canDeleteNumbers,
                         canUpdateOtpRate = if (isPrimeAdmin) true else subAdminPerms.canUpdateOtpRate
@@ -526,14 +519,6 @@ fun AdminPanelSection(
                     }
                 }
             }
-            5 -> {
-                // TAB 5: TELEGRAM BOTS MANAGEMENT (ADMIN SELECTS WHICH BOTS RUN)
-                item {
-                    AdminTelegramBotsCard(
-                        context = context
-                    )
-                }
-            }
         }
 
         item {
@@ -551,6 +536,7 @@ fun AdminUnixSmsCard(
     unixState: com.example.service.UnixSmsState,
     zenexRate: Double = 0.50,
     kop2Rate: Double = 0.50,
+    premiumV2Rate: Double = 0.50,
     canUploadNumbers: Boolean = true,
     canDeleteNumbers: Boolean = true,
     canUpdateOtpRate: Boolean = true
@@ -613,7 +599,12 @@ fun AdminUnixSmsCard(
         var showCustomUnixRateDialog by remember { mutableStateOf(false) }
         var showCustomZenexRateDialog by remember { mutableStateOf(false) }
         var showCustomKop2RateDialog by remember { mutableStateOf(false) }
+        var showCustomPremiumV2RateDialog by remember { mutableStateOf(false) }
+        var showAllWorldCountriesDialog by remember { mutableStateOf(false) }
+        var showApiKeyConfigDialog by remember { mutableStateOf(false) }
+        var allCountriesSearchQuery by remember { mutableStateOf("") }
         var customRateInputText by remember { mutableStateOf("") }
+        var customApiKeyInputText by remember { mutableStateOf("") }
 
         if (showCustomUnixRateDialog) {
             AlertDialog(
@@ -769,6 +760,271 @@ fun AdminUnixSmsCard(
                 },
                 dismissButton = {
                     TextButton(onClick = { showCustomKop2RateDialog = false }) {
+                        Text("বাতিল", color = Color(0xFF94A3B8))
+                    }
+                }
+            )
+        }
+
+        if (showCustomPremiumV2RateDialog) {
+            AlertDialog(
+                onDismissRequest = { showCustomPremiumV2RateDialog = false },
+                containerColor = Color(0xFF101C2B),
+                title = {
+                    Text("PREMIUM NUMBER V2 (SL Api) রেট পরিবর্তন", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                },
+                text = {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text("যেকোনো ওটিপি রেট লিখুন (টাকা / ৳):", color = Color(0xFF94A3B8), fontSize = 12.sp)
+                        OutlinedTextField(
+                            value = customRateInputText,
+                            onValueChange = { customRateInputText = it },
+                            placeholder = { Text("যেমন: 0.50 বা 0.40 বা 1.00", color = Color(0xFF64748B)) },
+                            singleLine = true,
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedTextColor = Color.White,
+                                unfocusedTextColor = Color.White,
+                                focusedBorderColor = Color(0xFF38BDF8),
+                                unfocusedBorderColor = Color(0xFF1E2D40),
+                                focusedContainerColor = Color(0xFF090E17),
+                                unfocusedContainerColor = Color(0xFF090E17)
+                            ),
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+                },
+                confirmButton = {
+                    Button(
+                        onClick = {
+                            val r = customRateInputText.toDoubleOrNull()
+                            if (r != null && r >= 0.01) {
+                                com.example.service.PremiumNumberV2Manager.setOtpRate(r)
+                                com.example.service.WithdrawalManager.refreshBalances()
+                                Toast.makeText(context, "Premium Number V2 ওটিপি রেট সেট হয়েছে: ${String.format(java.util.Locale.US, "%.2f", r)} ৳", Toast.LENGTH_SHORT).show()
+                                showCustomPremiumV2RateDialog = false
+                            } else {
+                                Toast.makeText(context, "সঠিক রেট লিখুন (কমপক্ষে 0.01)", Toast.LENGTH_SHORT).show()
+                            }
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0284C7))
+                    ) {
+                        Text("সেভ করুন", fontWeight = FontWeight.Bold)
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showCustomPremiumV2RateDialog = false }) {
+                        Text("বাতিল", color = Color(0xFF94A3B8))
+                    }
+                }
+            )
+        }
+
+        if (showAllWorldCountriesDialog) {
+            val filteredWorldCountries = remember(allCountriesSearchQuery) {
+                if (allCountriesSearchQuery.isBlank()) {
+                    ADMIN_PRESET_COUNTRIES
+                } else {
+                    val q = allCountriesSearchQuery.trim().lowercase(java.util.Locale.US)
+                    ADMIN_PRESET_COUNTRIES.filter {
+                        it.name.lowercase(java.util.Locale.US).contains(q) ||
+                        it.code.lowercase(java.util.Locale.US).contains(q) ||
+                        it.dialCode.contains(q)
+                    }
+                }
+            }
+
+            AlertDialog(
+                onDismissRequest = { showAllWorldCountriesDialog = false },
+                containerColor = Color(0xFF0D1826),
+                title = {
+                    Column {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.Public, contentDescription = null, tint = Color(0xFF38BDF8), modifier = Modifier.size(20.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("বিশ্বের সকল দেশ - Premium Numbers (${ADMIN_PRESET_COUNTRIES.size})", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                        }
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text("নম্বর আপলোডের জন্য দেশ সিলেক্ট করুন বা নির্দিষ্ট দেশের রেট আপডেট করুন", color = Color(0xFF94A3B8), fontSize = 11.sp)
+                    }
+                },
+                text = {
+                    Column(modifier = Modifier.height(440.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedTextField(
+                            value = allCountriesSearchQuery,
+                            onValueChange = { allCountriesSearchQuery = it },
+                            placeholder = { Text("দেশ খুঁজুন (যেমন Bangladesh, United States, +880, +1)...", color = Color(0xFF64748B), fontSize = 12.sp) },
+                            singleLine = true,
+                            leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = Color(0xFF38BDF8), modifier = Modifier.size(16.dp)) },
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedTextColor = Color.White,
+                                unfocusedTextColor = Color.White,
+                                focusedBorderColor = Color(0xFF38BDF8),
+                                unfocusedBorderColor = Color(0xFF1E2D40),
+                                focusedContainerColor = Color(0xFF090E17),
+                                unfocusedContainerColor = Color(0xFF090E17)
+                            ),
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+
+                        Text("পাওয়া গেছে: ${filteredWorldCountries.size} টি দেশ", color = Color(0xFF38BDF8), fontSize = 11.sp, fontWeight = FontWeight.Bold)
+
+                        androidx.compose.foundation.lazy.LazyColumn(
+                            modifier = Modifier.weight(1f),
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            items(filteredWorldCountries.size) { idx ->
+                                val country = filteredWorldCountries[idx]
+                                val isSelected = country.code.equals(selectedCountry.code, ignoreCase = true)
+                                val currentRate = UnixSmsManager.getRateForCountry(country.code)
+                                Surface(
+                                    color = if (isSelected) Color(0xFF0369A1) else Color(0xFF132237),
+                                    shape = RoundedCornerShape(8.dp),
+                                    border = BorderStroke(1.dp, if (isSelected) Color(0xFF38BDF8) else Color(0xFF1E3A56)),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.SpaceBetween
+                                    ) {
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            modifier = Modifier
+                                                .weight(1f)
+                                                .clickable {
+                                                    selectedCountry = country
+                                                    Toast.makeText(context, "✓ ${country.flag} ${country.name} আপলোডের জন্য নির্বাচিত হয়েছে!", Toast.LENGTH_SHORT).show()
+                                                    showAllWorldCountriesDialog = false
+                                                }
+                                        ) {
+                                            Text(country.flag, fontSize = 20.sp)
+                                            Spacer(modifier = Modifier.width(8.dp))
+                                            Column {
+                                                Text(country.name, color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                                Text("ISO: ${country.code} • Dial: ${country.dialCode}", color = Color(0xFF94A3B8), fontSize = 10.sp)
+                                            }
+                                        }
+
+                                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                            // Country Rate Pill
+                                            Surface(
+                                                color = Color(0xFF0284C7).copy(alpha = 0.25f),
+                                                shape = RoundedCornerShape(4.dp),
+                                                border = BorderStroke(0.8.dp, Color(0xFF38BDF8))
+                                            ) {
+                                                Text(
+                                                    text = "${String.format(java.util.Locale.US, "%.2f", currentRate)} ৳",
+                                                    color = Color(0xFF38BDF8),
+                                                    fontSize = 10.5.sp,
+                                                    fontWeight = FontWeight.Bold,
+                                                    modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
+                                                )
+                                            }
+
+                                            // Quick 0.48, 0.49, 0.50 rate buttons for this country
+                                            listOf(0.48, 0.49, 0.50).forEach { rVal ->
+                                                Surface(
+                                                    color = if (Math.abs(currentRate - rVal) < 0.005) Color(0xFF00E676) else Color(0xFF0F1A28),
+                                                    shape = RoundedCornerShape(4.dp),
+                                                    border = BorderStroke(0.6.dp, Color(0xFF38BDF8).copy(alpha = 0.5f)),
+                                                    modifier = Modifier.clickable {
+                                                        UnixSmsManager.setCountryRate(country.code, rVal)
+                                                        Toast.makeText(context, "${country.flag} ${country.code} রেট: ${rVal} ৳", Toast.LENGTH_SHORT).show()
+                                                    }
+                                                ) {
+                                                    Text(
+                                                        text = String.format(java.util.Locale.US, "%.2f", rVal),
+                                                        color = if (Math.abs(currentRate - rVal) < 0.005) Color.Black else Color.White,
+                                                        fontSize = 9.sp,
+                                                        fontWeight = FontWeight.Bold,
+                                                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
+                                                    )
+                                                }
+                                            }
+
+                                            // Select Button
+                                            Surface(
+                                                color = if (isSelected) Color(0xFF00E676) else Color(0xFF0284C7),
+                                                shape = RoundedCornerShape(4.dp),
+                                                modifier = Modifier.clickable {
+                                                    selectedCountry = country
+                                                    Toast.makeText(context, "✓ ${country.flag} ${country.name} আপলোডের জন্য নির্বাচিত হয়েছে!", Toast.LENGTH_SHORT).show()
+                                                    showAllWorldCountriesDialog = false
+                                                }
+                                            ) {
+                                                Text(
+                                                    text = if (isSelected) "ACTIVE" else "সিলেক্ট",
+                                                    color = if (isSelected) Color.Black else Color.White,
+                                                    fontSize = 9.sp,
+                                                    fontWeight = FontWeight.Bold,
+                                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp)
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                confirmButton = {
+                    TextButton(onClick = { showAllWorldCountriesDialog = false }) {
+                        Text("বন্ধ করুন", color = Color(0xFF38BDF8), fontWeight = FontWeight.Bold)
+                    }
+                }
+            )
+        }
+
+        if (showApiKeyConfigDialog) {
+            val v2State by com.example.service.PremiumNumberV2Manager.state.collectAsState()
+            AlertDialog(
+                onDismissRequest = { showApiKeyConfigDialog = false },
+                containerColor = Color(0xFF101C2B),
+                title = {
+                    Text("SL Virtual Number API Key সেটিংস", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                },
+                text = {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text("slvirtualnumber.com এর সক্রিয় ডেভেলপার API Key দিন:", color = Color(0xFF94A3B8), fontSize = 11.5.sp)
+                        OutlinedTextField(
+                            value = customApiKeyInputText,
+                            onValueChange = { customApiKeyInputText = it },
+                            placeholder = { Text("sl_live_...", color = Color(0xFF64748B)) },
+                            singleLine = true,
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedTextColor = Color.White,
+                                unfocusedTextColor = Color.White,
+                                focusedBorderColor = Color(0xFF38BDF8),
+                                unfocusedBorderColor = Color(0xFF1E2D40),
+                                focusedContainerColor = Color(0xFF090E17),
+                                unfocusedContainerColor = Color(0xFF090E17)
+                            ),
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        Text("বর্তমান Key: ${v2State.apiKey.take(15)}...", color = Color(0xFF64748B), fontSize = 10.5.sp)
+                    }
+                },
+                confirmButton = {
+                    Button(
+                        onClick = {
+                            if (customApiKeyInputText.isNotBlank()) {
+                                com.example.service.PremiumNumberV2Manager.setApiKey(customApiKeyInputText)
+                                Toast.makeText(context, "✓ API Key সফলভাবে আপডেট হয়েছে!", Toast.LENGTH_SHORT).show()
+                                showApiKeyConfigDialog = false
+                            } else {
+                                Toast.makeText(context, "API Key লিখুন", Toast.LENGTH_SHORT).show()
+                            }
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0284C7))
+                    ) {
+                        Text("সেভ করুন", fontWeight = FontWeight.Bold)
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showApiKeyConfigDialog = false }) {
                         Text("বাতিল", color = Color(0xFF94A3B8))
                     }
                 }
@@ -949,6 +1205,27 @@ fun AdminUnixSmsCard(
                                 Text("লিখুন", color = Color(0xFF38BDF8), fontSize = 9.5.sp, fontWeight = FontWeight.Bold)
                             }
                         }
+                    }
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    // World Countries Button for Premium Numbers (Rate & Upload Selection)
+                    Button(
+                        onClick = {
+                            allCountriesSearchQuery = ""
+                            showAllWorldCountriesDialog = true
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0369A1)),
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(Icons.Default.Public, contentDescription = null, modifier = Modifier.size(15.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = "🌍 বিশ্বের সকল দেশ (${ADMIN_PRESET_COUNTRIES.size} Countries - রেট ও আপলোড নির্বাচন)",
+                            fontSize = 11.5.sp,
+                            fontWeight = FontWeight.Bold
+                        )
                     }
                 } else {
                     Surface(
@@ -1323,6 +1600,266 @@ fun AdminUnixSmsCard(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Text(text = "Kop Engine 2 Rate: ${String.format(java.util.Locale.US, "%.2f", kop2Rate)} ৳", color = Color.White, fontWeight = FontWeight.Bold)
+                            Text(text = "🔒 রেট পরিবর্তন লক", color = Color(0xFF94A3B8), fontSize = 11.sp)
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(14.dp))
+                HorizontalDivider(color = Color(0xFF1E2D40))
+                Spacer(modifier = Modifier.height(14.dp))
+
+                // 4. PREMIUM NUMBER V2 (SL Api) Rate Header
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.Bolt, contentDescription = null, tint = Color(0xFF38BDF8), modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = "4. PREMIUM NUMBER V2 (SL Api) OTP RATE",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White
+                        )
+                    }
+
+                    Surface(
+                        color = Color(0xFF0284C7).copy(alpha = 0.2f),
+                        shape = RoundedCornerShape(6.dp),
+                        border = BorderStroke(1.dp, Color(0xFF38BDF8).copy(alpha = 0.5f))
+                    ) {
+                        Text(
+                            text = "${String.format(java.util.Locale.US, "%.2f", premiumV2Rate)} ৳ / OTP",
+                            color = Color(0xFF38BDF8),
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                if (canUpdateOtpRate) {
+                    // Quick Increments for Premium V2
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Button(
+                            onClick = {
+                                val newRate = (premiumV2Rate - 0.10).coerceAtLeast(0.01)
+                                com.example.service.PremiumNumberV2Manager.setOtpRate(newRate)
+                                com.example.service.WithdrawalManager.refreshBalances()
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E293B)),
+                            shape = RoundedCornerShape(8.dp),
+                            contentPadding = PaddingValues(horizontal = 4.dp),
+                            modifier = Modifier.weight(1f).height(38.dp)
+                        ) {
+                            Text("-0.10", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color(0xFFEF4444))
+                        }
+
+                        Button(
+                            onClick = {
+                                val newRate = (premiumV2Rate - 0.05).coerceAtLeast(0.01)
+                                com.example.service.PremiumNumberV2Manager.setOtpRate(newRate)
+                                com.example.service.WithdrawalManager.refreshBalances()
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E293B)),
+                            shape = RoundedCornerShape(8.dp),
+                            contentPadding = PaddingValues(horizontal = 4.dp),
+                            modifier = Modifier.weight(1f).height(38.dp)
+                        ) {
+                            Text("-0.05", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color(0xFFF87171))
+                        }
+
+                        Button(
+                            onClick = {
+                                val newRate = (premiumV2Rate - 0.01).coerceAtLeast(0.01)
+                                com.example.service.PremiumNumberV2Manager.setOtpRate(newRate)
+                                com.example.service.WithdrawalManager.refreshBalances()
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E293B)),
+                            shape = RoundedCornerShape(8.dp),
+                            contentPadding = PaddingValues(horizontal = 4.dp),
+                            modifier = Modifier.weight(1f).height(38.dp)
+                        ) {
+                            Text("-0.01", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color(0xFFFCA5A5))
+                        }
+
+                        Button(
+                            onClick = {
+                                val newRate = premiumV2Rate + 0.01
+                                com.example.service.PremiumNumberV2Manager.setOtpRate(newRate)
+                                com.example.service.WithdrawalManager.refreshBalances()
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E293B)),
+                            shape = RoundedCornerShape(8.dp),
+                            contentPadding = PaddingValues(horizontal = 4.dp),
+                            modifier = Modifier.weight(1f).height(38.dp)
+                        ) {
+                            Text("+0.01", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color(0xFF6EE7B7))
+                        }
+
+                        Button(
+                            onClick = {
+                                val newRate = premiumV2Rate + 0.05
+                                com.example.service.PremiumNumberV2Manager.setOtpRate(newRate)
+                                com.example.service.WithdrawalManager.refreshBalances()
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E293B)),
+                            shape = RoundedCornerShape(8.dp),
+                            contentPadding = PaddingValues(horizontal = 4.dp),
+                            modifier = Modifier.weight(1f).height(38.dp)
+                        ) {
+                            Text("+0.05", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color(0xFF34D399))
+                        }
+
+                        Button(
+                            onClick = {
+                                val newRate = premiumV2Rate + 0.10
+                                com.example.service.PremiumNumberV2Manager.setOtpRate(newRate)
+                                com.example.service.WithdrawalManager.refreshBalances()
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E293B)),
+                            shape = RoundedCornerShape(8.dp),
+                            contentPadding = PaddingValues(horizontal = 4.dp),
+                            modifier = Modifier.weight(1f).height(38.dp)
+                        ) {
+                            Text("+0.10", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color(0xFF10B981))
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    // Preset Chips and Custom Edit Button for Premium V2
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(5.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        listOf(0.30, 0.40, 0.48, 0.50, 0.70, 1.00).forEach { presetRate ->
+                            val isSel = Math.abs(premiumV2Rate - presetRate) < 0.005
+                            Surface(
+                                color = if (isSel) Color(0xFF0284C7) else Color(0xFF0B141E),
+                                shape = RoundedCornerShape(6.dp),
+                                border = BorderStroke(1.dp, if (isSel) Color(0xFF38BDF8) else Color(0xFF1E2D40)),
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clickable {
+                                        com.example.service.PremiumNumberV2Manager.setOtpRate(presetRate)
+                                        com.example.service.WithdrawalManager.refreshBalances()
+                                    }
+                            ) {
+                                Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(vertical = 5.dp)) {
+                                    Text(
+                                        text = "${String.format(java.util.Locale.US, "%.2f", presetRate)}৳",
+                                        color = if (isSel) Color.White else Color(0xFF94A3B8),
+                                        fontSize = 9.5.sp,
+                                        fontWeight = if (isSel) FontWeight.ExtraBold else FontWeight.Medium
+                                    )
+                                }
+                            }
+                        }
+
+                        Surface(
+                            color = Color(0xFF1E293B),
+                            shape = RoundedCornerShape(6.dp),
+                            border = BorderStroke(1.dp, Color(0xFF38BDF8)),
+                            modifier = Modifier.clickable {
+                                customRateInputText = String.format(java.util.Locale.US, "%.2f", premiumV2Rate)
+                                showCustomPremiumV2RateDialog = true
+                            }
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 5.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(Icons.Default.Edit, contentDescription = null, tint = Color(0xFF38BDF8), modifier = Modifier.size(11.dp))
+                                Spacer(modifier = Modifier.width(2.dp))
+                                Text("লিখুন", color = Color(0xFF38BDF8), fontSize = 9.5.sp, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    // Live Range Pool Notice for V2
+                    Surface(
+                        color = Color(0xFF0369A1).copy(alpha = 0.15f),
+                        shape = RoundedCornerShape(8.dp),
+                        border = BorderStroke(1.dp, Color(0xFF0284C7).copy(alpha = 0.35f)),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text("⚡", fontSize = 13.sp)
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "V2 নম্বরগুলো সরাসরি লাইভ রেঞ্জ (Live Range) থেকে আসে। কোনো দেশ বাছাই করার প্রয়োজন নেই।",
+                                color = Color(0xFF7DD3FC),
+                                fontSize = 10.5.sp,
+                                lineHeight = 14.sp
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    // Buttons for API Key & Balance
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Button(
+                            onClick = {
+                                customApiKeyInputText = com.example.service.PremiumNumberV2Manager.state.value.apiKey
+                                showApiKeyConfigDialog = true
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E293B)),
+                            shape = RoundedCornerShape(8.dp),
+                            border = BorderStroke(1.dp, Color(0xFF38BDF8)),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Icon(Icons.Default.Settings, contentDescription = null, tint = Color(0xFF38BDF8), modifier = Modifier.size(14.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("API Key কনফিগার", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFF38BDF8))
+                        }
+
+                        Button(
+                            onClick = {
+                                com.example.service.PremiumNumberV2Manager.refreshBalance()
+                                Toast.makeText(context, "ব্যালেন্স রিফ্রেশ হচ্ছে...", Toast.LENGTH_SHORT).show()
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0F273E)),
+                            shape = RoundedCornerShape(8.dp),
+                            border = BorderStroke(1.dp, Color(0xFF0284C7)),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Icon(Icons.Default.Refresh, contentDescription = null, tint = Color(0xFF38BDF8), modifier = Modifier.size(14.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("ব্যালেন্স চেক ($)", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFF38BDF8))
+                        }
+                    }
+                } else {
+                    Surface(
+                        color = Color(0xFF090E17),
+                        shape = RoundedCornerShape(8.dp),
+                        border = BorderStroke(1.dp, Color(0xFF0284C7)),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(12.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(text = "Premium Number V2 Rate: ${String.format(java.util.Locale.US, "%.2f", premiumV2Rate)} ৳", color = Color.White, fontWeight = FontWeight.Bold)
                             Text(text = "🔒 রেট পরিবর্তন লক", color = Color(0xFF94A3B8), fontSize = 11.sp)
                         }
                     }
@@ -5075,410 +5612,4 @@ fun AdminAppUpdateCard(
     }
 }
 
-/**
- * Tab 5: Telegram Bots Management
- * Allows Admin to add multiple bots, test connections, and SELECT which bots run.
- * Whichever bots are selected/enabled by the admin, ONLY those bots run and receive OTP forwarding!
- */
-@Composable
-fun AdminTelegramBotsCard(
-    context: Context
-) {
-    val tgState by com.example.service.TelegramBotManager.state.collectAsState()
-
-    var showAddDialog by remember { mutableStateOf(false) }
-    var botNameInput by remember { mutableStateOf("") }
-    var botTokenInput by remember { mutableStateOf("") }
-    var chatIdInput by remember { mutableStateOf("") }
-    var autoForwardInput by remember { mutableStateOf(true) }
-
-    var testBroadcastMsg by remember { mutableStateOf("") }
-    var isSendingBroadcast by remember { mutableStateOf(false) }
-
-    val activeBotsCount = tgState.activeBots.size
-
-    Card(
-        shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = Color(0xFF111E2E)),
-        border = BorderStroke(1.2.dp, Color(0xFF0288D1)),
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            // Header
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box(
-                        modifier = Modifier
-                            .size(36.dp)
-                            .clip(CircleShape)
-                            .background(Color(0xFF0288D1)),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text("🤖", fontSize = 18.sp)
-                    }
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Column {
-                        Text(
-                            text = "TELEGRAM BOTS DISPATCHER",
-                            color = Color.White,
-                            fontSize = 13.5.sp,
-                            fontWeight = FontWeight.ExtraBold
-                        )
-                        Text(
-                            text = "Admin Selection: Whichever bots are enabled here will run",
-                            color = Color(0xFF81D4FA),
-                            fontSize = 10.5.sp
-                        )
-                    }
-                }
-
-                Surface(
-                    color = if (activeBotsCount > 0) Color(0xFF00E676).copy(alpha = 0.15f) else Color(0xFFFF5252).copy(alpha = 0.15f),
-                    shape = RoundedCornerShape(20.dp),
-                    border = BorderStroke(1.dp, if (activeBotsCount > 0) Color(0xFF00E676) else Color(0xFFFF5252))
-                ) {
-                    Text(
-                        text = if (activeBotsCount > 0) "● $activeBotsCount BOT(S) RUNNING" else "● NO BOT ACTIVE",
-                        color = if (activeBotsCount > 0) Color(0xFF00E676) else Color(0xFFFF5252),
-                        fontSize = 9.sp,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
-                    )
-                }
-            }
-
-            // Stats row
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
-                Surface(
-                    color = Color(0xFF0A1420),
-                    shape = RoundedCornerShape(10.dp),
-                    border = BorderStroke(1.dp, Color(0xFF1E3A56)),
-                    modifier = Modifier.weight(1f)
-                ) {
-                    Column(
-                        modifier = Modifier.padding(8.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally
-                    ) {
-                        Text("TOTAL BOTS", color = Color(0xFF81D4FA), fontSize = 8.sp, fontWeight = FontWeight.Bold)
-                        Text("${tgState.bots.size}", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold)
-                    }
-                }
-                Surface(
-                    color = Color(0xFF0A1420),
-                    shape = RoundedCornerShape(10.dp),
-                    border = BorderStroke(1.dp, Color(0xFF00E676).copy(alpha = 0.4f)),
-                    modifier = Modifier.weight(1f)
-                ) {
-                    Column(
-                        modifier = Modifier.padding(8.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally
-                    ) {
-                        Text("SELECTED / ACTIVE", color = Color(0xFF00E676), fontSize = 8.sp, fontWeight = FontWeight.Bold)
-                        Text("$activeBotsCount", color = Color(0xFF00E676), fontSize = 14.sp, fontWeight = FontWeight.Bold)
-                    }
-                }
-                Surface(
-                    color = Color(0xFF0A1420),
-                    shape = RoundedCornerShape(10.dp),
-                    border = BorderStroke(1.dp, Color(0xFF1E3A56)),
-                    modifier = Modifier.weight(1f)
-                ) {
-                    Column(
-                        modifier = Modifier.padding(8.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally
-                    ) {
-                        Text("AUTO-FORWARD", color = Color(0xFFFFD600), fontSize = 8.sp, fontWeight = FontWeight.Bold)
-                        Text(if (activeBotsCount > 0) "ENABLED" else "PAUSED", color = Color(0xFFFFD600), fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                    }
-                }
-            }
-
-            // Add Bot Button
-            Button(
-                onClick = { showAddDialog = !showAddDialog },
-                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0288D1)),
-                shape = RoundedCornerShape(10.dp),
-                modifier = Modifier.fillMaxWidth().height(40.dp)
-            ) {
-                Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
-                Spacer(modifier = Modifier.width(6.dp))
-                Text(if (showAddDialog) "HIDE FORM" else "➕ ADD NEW TELEGRAM BOT", fontWeight = FontWeight.Bold, fontSize = 11.5.sp)
-            }
-
-            // Add Bot Form
-            AnimatedVisibility(visible = showAddDialog) {
-                Surface(
-                    color = Color(0xFF0A1420),
-                    shape = RoundedCornerShape(12.dp),
-                    border = BorderStroke(1.dp, Color(0xFF0288D1).copy(alpha = 0.6f)),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text("ADD TELEGRAM BOT CONFIGURATION", color = Color(0xFF81D4FA), fontSize = 11.5.sp, fontWeight = FontWeight.Bold)
-
-                        OutlinedTextField(
-                            value = botNameInput,
-                            onValueChange = { botNameInput = it },
-                            label = { Text("Bot Name (e.g. VIP Forwarder)") },
-                            modifier = Modifier.fillMaxWidth(),
-                            colors = OutlinedTextFieldDefaults.colors(
-                                focusedTextColor = Color.White,
-                                unfocusedTextColor = Color.White,
-                                focusedBorderColor = Color(0xFF0288D1),
-                                unfocusedBorderColor = Color(0xFF1E3A56)
-                            ),
-                            singleLine = true
-                        )
-
-                        OutlinedTextField(
-                            value = botTokenInput,
-                            onValueChange = { botTokenInput = it },
-                            label = { Text("Bot API Token (from @BotFather)") },
-                            placeholder = { Text("123456789:ABCdefGh...") },
-                            modifier = Modifier.fillMaxWidth(),
-                            colors = OutlinedTextFieldDefaults.colors(
-                                focusedTextColor = Color.White,
-                                unfocusedTextColor = Color.White,
-                                focusedBorderColor = Color(0xFF0288D1),
-                                unfocusedBorderColor = Color(0xFF1E3A56)
-                            ),
-                            singleLine = true
-                        )
-
-                        OutlinedTextField(
-                            value = chatIdInput,
-                            onValueChange = { chatIdInput = it },
-                            label = { Text("Target Chat ID / Group ID") },
-                            placeholder = { Text("987654321 or -100...") },
-                            modifier = Modifier.fillMaxWidth(),
-                            colors = OutlinedTextFieldDefaults.colors(
-                                focusedTextColor = Color.White,
-                                unfocusedTextColor = Color.White,
-                                focusedBorderColor = Color(0xFF0288D1),
-                                unfocusedBorderColor = Color(0xFF1E3A56)
-                            ),
-                            singleLine = true
-                        )
-
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text("Auto-Forward Received OTPs", color = Color.White, fontSize = 11.5.sp)
-                            Switch(
-                                checked = autoForwardInput,
-                                onCheckedChange = { autoForwardInput = it },
-                                colors = SwitchDefaults.colors(checkedThumbColor = Color.White, checkedTrackColor = Color(0xFF00E676))
-                            )
-                        }
-
-                        Button(
-                            onClick = {
-                                if (botTokenInput.isBlank() || chatIdInput.isBlank()) {
-                                    Toast.makeText(context, "Bot Token এবং Chat ID দিন", Toast.LENGTH_SHORT).show()
-                                    return@Button
-                                }
-                                com.example.service.TelegramBotManager.addBot(
-                                    name = botNameInput.ifEmpty { "Telegram Bot" },
-                                    token = botTokenInput,
-                                    chatId = chatIdInput,
-                                    isEnabled = true,
-                                    autoForward = autoForwardInput
-                                )
-                                botNameInput = ""
-                                botTokenInput = ""
-                                chatIdInput = ""
-                                showAddDialog = false
-                                Toast.makeText(context, "✓ বট যুক্ত ও সিলেক্ট করা হয়েছে!", Toast.LENGTH_SHORT).show()
-                            },
-                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00E676), contentColor = Color.Black),
-                            shape = RoundedCornerShape(8.dp),
-                            modifier = Modifier.fillMaxWidth().height(40.dp)
-                        ) {
-                            Text("SAVE & ACTIVATE BOT", fontWeight = FontWeight.Bold, fontSize = 11.5.sp)
-                        }
-                    }
-                }
-            }
-
-            HorizontalDivider(color = Color(0xFF1E3A56), thickness = 0.8.dp)
-
-            // Bots List Header
-            Text(
-                text = "BOT LIST & SELECTION CONTROLS (চালু/বন্ধ)",
-                color = Color.White,
-                fontSize = 12.sp,
-                fontWeight = FontWeight.Bold
-            )
-
-            // Bots List
-            if (tgState.bots.isEmpty()) {
-                Text("কোনো টেলিগ্রাম বট যোগ করা নেই। উপরের বাটনে ক্লিক করে যোগ করুন।", color = Color(0xFF78909C), fontSize = 11.sp)
-            } else {
-                tgState.bots.forEach { bot ->
-                    val isRunning = bot.isEnabled && bot.botToken.isNotBlank() && bot.chatId.isNotBlank()
-                    Surface(
-                        color = if (isRunning) Color(0xFF0F1E2E) else Color(0xFF141922),
-                        shape = RoundedCornerShape(12.dp),
-                        border = BorderStroke(1.2.dp, if (isRunning) Color(0xFF00E676).copy(alpha = 0.7f) else Color(0xFF1E2D3D)),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(
-                                        text = bot.name,
-                                        color = Color.White,
-                                        fontSize = 13.sp,
-                                        fontWeight = FontWeight.Bold
-                                    )
-                                    Text(
-                                        text = if (bot.botToken.isNotBlank()) "Token: ${bot.botToken.take(6)}...${bot.botToken.takeLast(4)}" else "No token",
-                                        color = Color(0xFF81D4FA),
-                                        fontSize = 10.5.sp,
-                                        fontFamily = FontFamily.Monospace
-                                    )
-                                    Text(
-                                        text = "Chat ID: ${bot.chatId.ifEmpty { "Not set" }}",
-                                        color = Color(0xFF94A3B8),
-                                        fontSize = 10.5.sp,
-                                        fontFamily = FontFamily.Monospace
-                                    )
-                                }
-
-                                // Selection Switch (Whichever bot admin enables, ONLY that bot runs!)
-                                Column(horizontalAlignment = Alignment.End) {
-                                    Switch(
-                                        checked = bot.isEnabled,
-                                        onCheckedChange = { enabled ->
-                                            com.example.service.TelegramBotManager.toggleBotEnabled(bot.id, enabled)
-                                            Toast.makeText(
-                                                context,
-                                                if (enabled) "✓ '${bot.name}' চালু ও সিলেক্ট করা হয়েছে!" else "⚪ '${bot.name}' বন্ধ করা হয়েছে",
-                                                Toast.LENGTH_SHORT
-                                            ).show()
-                                        },
-                                        colors = SwitchDefaults.colors(
-                                            checkedThumbColor = Color(0xFF00E676),
-                                            checkedTrackColor = Color(0xFF00E676).copy(alpha = 0.4f)
-                                        )
-                                    )
-                                    Text(
-                                        text = if (bot.isEnabled) "ACTIVE ✓" else "DISABLED",
-                                        color = if (bot.isEnabled) Color(0xFF00E676) else Color(0xFF64748B),
-                                        fontSize = 9.sp,
-                                        fontWeight = FontWeight.Bold
-                                    )
-                                }
-                            }
-
-                            // Exclusive Select Button
-                            Button(
-                                onClick = {
-                                    com.example.service.TelegramBotManager.selectOnlyThisBot(bot.id)
-                                    Toast.makeText(context, "✓ শুধুমাত্র '${bot.name}' সিলেক্ট ও চালু করা হয়েছে!", Toast.LENGTH_SHORT).show()
-                                },
-                                colors = ButtonDefaults.buttonColors(
-                                    containerColor = if (bot.isEnabled) Color(0xFF00E676).copy(alpha = 0.2f) else Color(0xFF1E3A56)
-                                ),
-                                border = BorderStroke(1.dp, if (bot.isEnabled) Color(0xFF00E676) else Color(0xFF0288D1)),
-                                shape = RoundedCornerShape(8.dp),
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                Text(
-                                    text = if (bot.isEnabled) "✓ CURRENTLY RUNNING (একক চালু)" else "▶ SELECT ONLY THIS BOT (শুধু এটি চালান)",
-                                    color = if (bot.isEnabled) Color(0xFF00E676) else Color(0xFF81D4FA),
-                                    fontSize = 10.5.sp,
-                                    fontWeight = FontWeight.Bold
-                                )
-                            }
-
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(6.dp)
-                            ) {
-                                Button(
-                                    onClick = {
-                                        com.example.service.TelegramBotManager.testBot(bot) { success, msg ->
-                                            Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
-                                        }
-                                    },
-                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E3858)),
-                                    shape = RoundedCornerShape(8.dp),
-                                    modifier = Modifier.weight(1f)
-                                ) {
-                                    Text("TEST BOT", color = Color(0xFF81D4FA), fontSize = 10.5.sp, fontWeight = FontWeight.Bold)
-                                }
-
-                                Button(
-                                    onClick = {
-                                        com.example.service.TelegramBotManager.deleteBot(bot.id)
-                                        Toast.makeText(context, "বট ডিলিট করা হয়েছে", Toast.LENGTH_SHORT).show()
-                                    },
-                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF7F1D1D)),
-                                    shape = RoundedCornerShape(8.dp)
-                                ) {
-                                    Text("DELETE", color = Color(0xFFEF4444), fontSize = 10.5.sp, fontWeight = FontWeight.Bold)
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-            // Broadcast test section
-            HorizontalDivider(color = Color(0xFF1E3A56), thickness = 0.8.dp)
-
-            Text("SEND BROADCAST TO SELECTED RUNNING BOTS", color = Color(0xFF81D4FA), fontSize = 11.5.sp, fontWeight = FontWeight.Bold)
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                OutlinedTextField(
-                    value = testBroadcastMsg,
-                    onValueChange = { testBroadcastMsg = it },
-                    placeholder = { Text("Broadcast message text...") },
-                    modifier = Modifier.weight(1f),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedTextColor = Color.White,
-                        unfocusedTextColor = Color.White,
-                        focusedBorderColor = Color(0xFF0288D1),
-                        unfocusedBorderColor = Color(0xFF1E3A56)
-                    ),
-                    singleLine = true
-                )
-                Spacer(modifier = Modifier.width(6.dp))
-                Button(
-                    onClick = {
-                        val text = testBroadcastMsg.ifBlank { "📢 <b>Admin Announcement</b>\nSystem is fully online and routing OTPs." }
-                        isSendingBroadcast = true
-                        com.example.service.TelegramBotManager.sendMessageToActiveBots(text) { success, msg ->
-                            isSendingBroadcast = false
-                            Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
-                            if (success) testBroadcastMsg = ""
-                        }
-                    },
-                    enabled = !isSendingBroadcast && activeBotsCount > 0,
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00E676), contentColor = Color.Black),
-                    shape = RoundedCornerShape(8.dp)
-                ) {
-                    Text(if (isSendingBroadcast) "..." else "SEND", fontWeight = FontWeight.Bold, fontSize = 11.sp)
-                }
-            }
-        }
-    }
-}
 

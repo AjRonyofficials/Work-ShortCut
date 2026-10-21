@@ -184,15 +184,6 @@ enum class AppNavTab(
         unselectedIcon = Icons.Outlined.Security,
         gradientColors = listOf(Color(0xFF6366F1), Color(0xFF4338CA)),
         accentColor = Color(0xFF818CF8)
-    ),
-    TELEGRAM_BOTS(
-        title = "Telegram Bots",
-        subtitle = "Auto OTP & 320x450 Overlay",
-        category = "COMMUNICATION",
-        selectedIcon = Icons.Filled.Bolt,
-        unselectedIcon = Icons.Outlined.Phone,
-        gradientColors = listOf(Color(0xFF0288D1), Color(0xFF00B0FF)),
-        accentColor = Color(0xFF29B6F6)
     )
 }
 

@@ -147,7 +147,7 @@ class FloatingOverlayService : Service(), LifecycleOwner, ViewModelStoreOwner, S
                 val state by OverlayStateManager.uiState.collectAsState()
 
                 androidx.compose.runtime.LaunchedEffect(state.isEdgeBarMinimized) {
-                    updateOverlayLayoutParams(!state.isEdgeBarMinimized)
+                    updateOverlayLayoutParams(state.isEdgeBarMinimized)
                 }
 
                 WorkShortcutTheme(themeMode = state.appTheme) {
@@ -192,22 +192,13 @@ class FloatingOverlayService : Service(), LifecycleOwner, ViewModelStoreOwner, S
         }
     }
 
-    private fun updateOverlayLayoutParams(isExpanded: Boolean) {
-        val density = resources.displayMetrics.density
+    private fun updateOverlayLayoutParams(isEdgeBarMinimized: Boolean) {
         windowLayoutParams?.let { p ->
-            if (isExpanded) {
-                p.width = (320 * density).toInt()
-                p.height = (450 * density).toInt()
-                p.flags = WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
-                        WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH or
-                        WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED
-            } else {
-                p.width = WindowManager.LayoutParams.WRAP_CONTENT
-                p.height = WindowManager.LayoutParams.WRAP_CONTENT
-                p.flags = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-                        WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or
-                        WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED
-            }
+            p.width = WindowManager.LayoutParams.WRAP_CONTENT
+            p.height = WindowManager.LayoutParams.WRAP_CONTENT
+            p.flags = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                    WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or
+                    WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED
             try {
                 windowManager?.updateViewLayout(overlayComposeView, p)
             } catch (_: Exception) {

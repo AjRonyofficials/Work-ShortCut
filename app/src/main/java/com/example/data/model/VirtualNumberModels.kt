@@ -15,7 +15,9 @@ data class ProvisionedNumber(
     val failReason: String? = null,
     val requestId: Long? = null,
     val gateway: String = "LAMIX",
-    val rate: Double = 0.50
+    val rate: Double = 0.50,
+    val rentalId: String? = null,
+    val flag: String? = null
 )
 
 data class ActiveRangeItem(
