@@ -230,20 +230,12 @@ fun VirtualNumbersSection(
                                             fontWeight = FontWeight.ExtraBold
                                         )
                                     } else if (selectedPanel == 3) {
-                                        Row(verticalAlignment = Alignment.CenterVertically) {
-                                            Text(
-                                                text = "Premium Number V2 ",
-                                                color = Color.White,
-                                                fontSize = 12.sp,
-                                                fontWeight = FontWeight.ExtraBold
-                                            )
-                                            Text(
-                                                text = "(SL Api)",
-                                                color = Color(0xFF38BDF8),
-                                                fontSize = 9.5.sp,
-                                                fontWeight = FontWeight.Medium
-                                            )
-                                        }
+                                        Text(
+                                            text = "Premium Number V2",
+                                            color = Color.White,
+                                            fontSize = 12.sp,
+                                            fontWeight = FontWeight.ExtraBold
+                                        )
                                     } else if (selectedPanel == 2) {
                                         Row(verticalAlignment = Alignment.CenterVertically) {
                                             Text(
@@ -306,14 +298,13 @@ fun VirtualNumbersSection(
                                 DropdownMenuItem(
                                     text = {
                                         Row(verticalAlignment = Alignment.CenterVertically) {
-                                            Text(text = "Premium Number V2 ", color = Color(0xFF38BDF8), fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                                            Text(text = "(SL Api)", color = Color(0xFF7DD3FC), fontSize = 10.sp, fontWeight = FontWeight.Normal)
+                                            Text(text = "Premium Number V2", color = Color(0xFF38BDF8), fontWeight = FontWeight.Bold, fontSize = 13.sp)
                                             Spacer(modifier = Modifier.width(6.dp))
                                             Surface(
                                                 color = Color(0xFF0284C7).copy(alpha = 0.2f),
                                                 shape = RoundedCornerShape(4.dp)
                                             ) {
-                                                Text(text = "V2 ZERO DEPOSIT", color = Color(0xFF38BDF8), fontSize = 9.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp))
+                                                Text(text = "V2 LIVE POOL", color = Color(0xFF38BDF8), fontSize = 9.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp))
                                             }
                                         }
                                     },

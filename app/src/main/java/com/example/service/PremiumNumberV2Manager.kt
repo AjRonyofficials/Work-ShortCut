@@ -65,6 +65,8 @@ data class PremiumNumberV2UiState(
     val nationalFormat: Boolean = false,
     val isLoading: Boolean = false,
     val isPolling: Boolean = false,
+    val isApiConnected: Boolean = true,
+    val isSoundEnabled: Boolean = true,
     val lastError: String? = null,
     val lastSyncTime: Long = 0L,
     // Live Stats matching Screenshot 2
@@ -77,6 +79,7 @@ data class PremiumNumberV2UiState(
 object PremiumNumberV2Manager {
 
     const val DEFAULT_API_KEY = "sl_live_17852e6050e9559278b5e8a69a2cc7429f9346f83f8cb667"
+    const val AUTO_RETURN_TIMEOUT_MS = (14 * 60 + 40) * 1000L // 14 min 40 sec (880,000 ms)
     private const val BASE_URL = "https://slvirtualnumber.com/api/v1/developer"
 
     private val scope = CoroutineScope(Dispatchers.IO + Job())
@@ -117,6 +120,7 @@ object PremiumNumberV2Manager {
 
             val todayKey = "today_otp_" + SimpleDateFormat("yyyyMMdd", Locale.US).format(Date())
             val todayOtps = prefs?.getInt(todayKey, 0) ?: 0
+            val savedSound = prefs?.getBoolean("sound_enabled", true) ?: true
 
             val savedNumbers = loadNumbers()
 
@@ -130,7 +134,8 @@ object PremiumNumberV2Manager {
                     selectedService = savedService,
                     requestCount = savedCount,
                     todayOtpCount = todayOtps,
-                    activeNumbers = savedNumbers
+                    activeNumbers = savedNumbers,
+                    isSoundEnabled = savedSound
                 )
             }
 
@@ -209,6 +214,20 @@ object PremiumNumberV2Manager {
         _state.update { it.copy(nationalFormat = enabled) }
     }
 
+    fun setSoundEnabled(enabled: Boolean) {
+        prefs?.edit()?.putBoolean("sound_enabled", enabled)?.apply()
+        _state.update { it.copy(isSoundEnabled = enabled) }
+    }
+
+    fun clearExpiredOrCompletedNumbers() {
+        val now = System.currentTimeMillis()
+        val remaining = _state.value.activeNumbers.filter {
+            (it.status == "pending" || it.status == "wait") && it.otpCode.isNullOrEmpty() && now < it.expiresAt
+        }
+        saveNumbers(remaining)
+        _state.update { it.copy(activeNumbers = remaining) }
+    }
+
     /**
      * Acquire virtual numbers (1 to 10) from https://slvirtualnumber.com/api/v1/developer/rent
      */
@@ -268,9 +287,9 @@ object PremiumNumberV2Manager {
                                     val rentCountryCode = autoCountry?.code ?: dataObj.optString("countryCode", "LIVE")
                                     val rentFlag = autoCountry?.flag ?: "🌐"
 
-                                    // 15-Minute Auto-Return Limit (900,000 ms)
+                                    // 14-Minute 80-Second Auto-Return Limit (920,000 ms)
                                     val now = System.currentTimeMillis()
-                                    val expiresAt = now + (15 * 60 * 1000L)
+                                    val expiresAt = now + AUTO_RETURN_TIMEOUT_MS
 
                                     if (phoneNumber.isNotBlank()) {
                                         val item = ProvisionedNumber(
@@ -312,7 +331,8 @@ object PremiumNumberV2Manager {
             }
 
             if (newNumbers.isNotEmpty()) {
-                val updated = newNumbers + _state.value.activeNumbers
+                // Ensure newly acquired numbers strictly stay at the top
+                val updated = (newNumbers + _state.value.activeNumbers).sortedByDescending { it.timestamp }
                 saveNumbers(updated)
                 _state.update {
                     it.copy(
@@ -323,7 +343,7 @@ object PremiumNumberV2Manager {
                     )
                 }
                 mainHandler.post {
-                    Toast.makeText(context, "✓ $successCount টি নম্বর সফলভাবে সংগ্রহ হয়েছে! (১৫ মিনিট মেয়াদ)", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, "✓ $successCount টি নম্বর সফলভাবে সংগ্রহ হয়েছে! (১৪ মিনিট ৪০ সেকেন্ড মেয়াদ)", Toast.LENGTH_SHORT).show()
                 }
                 startBackgroundPolling(context)
                 refreshBalance()
@@ -362,18 +382,22 @@ object PremiumNumberV2Manager {
                 }
             } catch (_: Exception) {}
 
-            // Update local state to cancelled/returned
-            val updated = _state.value.activeNumbers.map {
-                if (it.rentalId == rentalId || it.id == rentalId) {
-                    it.copy(status = if (isAutoReturn) "expired" else "cancelled", failReason = if (isAutoReturn) "15-min auto return" else "User cancelled")
-                } else it
+            // If auto-return, delete/remove the number from the list completely
+            val updated = if (isAutoReturn) {
+                _state.value.activeNumbers.filter { it.rentalId != rentalId && it.id != rentalId }
+            } else {
+                _state.value.activeNumbers.map {
+                    if (it.rentalId == rentalId || it.id == rentalId) {
+                        it.copy(status = "cancelled", failReason = "User cancelled")
+                    } else it
+                }
             }
             saveNumbers(updated)
             _state.update { it.copy(activeNumbers = updated) }
 
             if (context != null) {
                 mainHandler.post {
-                    val msg = if (isAutoReturn) "নম্বর ১৫ মিনিট পার হওয়ায় অটো-রিটার্ন হয়েছে" else "✓ নম্বর সফলভাবে ফেরত দেওয়া হয়েছে"
+                    val msg = if (isAutoReturn) "নম্বর ১৪ মিনিট ৪০ সেকেন্ড পার হওয়ায় অটো-রিটার্ন ও লিস্ট থেকে সরানো হয়েছে" else "✓ নম্বর সফলভাবে ফেরত দেওয়া হয়েছে"
                     Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
                 }
             }
@@ -462,7 +486,7 @@ object PremiumNumberV2Manager {
                                 val rentCountryCode = autoCountry?.code ?: item.iso
                                 val rentFlag = autoCountry?.flag ?: item.flag
                                 val now = System.currentTimeMillis()
-                                val expiresAt = now + (15 * 60 * 1000L)
+                                val expiresAt = now + AUTO_RETURN_TIMEOUT_MS
 
                                 if (phoneNumber.isNotBlank()) {
                                     val prov = ProvisionedNumber(
@@ -482,7 +506,7 @@ object PremiumNumberV2Manager {
                                         rentalId = rentalId,
                                         flag = rentFlag
                                     )
-                                    val updated = listOf(prov) + _state.value.activeNumbers
+                                    val updated = (listOf(prov) + _state.value.activeNumbers).sortedByDescending { it.timestamp }
                                     saveNumbers(updated)
                                     _state.update { it.copy(activeNumbers = updated, isLoading = false) }
 
@@ -510,6 +534,25 @@ object PremiumNumberV2Manager {
         }
     }
 
+    fun formatMaskedNumber(raw: String): String {
+        val trimmed = raw.trim()
+        if (trimmed.isBlank()) return "+2637••••0889"
+        if (trimmed.contains("••••") || trimmed.contains("****")) return trimmed
+        val digits = trimmed.replace("[^0-9+]".toRegex(), "")
+        if (digits.length <= 7) return digits
+        val prefixLen = if (digits.startsWith("+")) 5 else 4
+        val suffixLen = 4
+        return if (digits.length > prefixLen + suffixLen) {
+            val start = digits.take(prefixLen)
+            val end = digits.takeLast(suffixLen)
+            "$start••••$end"
+        } else {
+            val start = digits.take(digits.length / 2)
+            val end = digits.takeLast(2)
+            "$start••••$end"
+        }
+    }
+
     /**
      * Fetch Live Console Feed (Carrier global stream - Hubu same as slvirtualnumber.com)
      */
@@ -534,6 +577,7 @@ object PremiumNumberV2Manager {
                                 for (i in 0 until dataArr.length()) {
                                     val obj = dataArr.optJSONObject(i) ?: continue
                                     val rawNum = obj.optString("maskedNumber", obj.optString("phoneNumber", ""))
+                                    val formattedNum = formatMaskedNumber(if (rawNum.isNotBlank()) rawNum else "+26371145${1000 + i}")
                                     val autoC = com.example.util.AllCountriesProvider.findByPhoneNumber(rawNum)
                                         ?: com.example.util.AllCountriesProvider.findByNameOrCode(obj.optString("country", ""))
                                     val cName = autoC?.name ?: obj.optString("country", "Zimbabwe")
@@ -544,7 +588,7 @@ object PremiumNumberV2Manager {
                                     items.add(
                                         PremiumV2ConsoleItem(
                                             id = obj.optString("id", java.util.UUID.randomUUID().toString()),
-                                            maskedNumber = if (rawNum.isNotBlank()) rawNum else "+2637••••${1000 + i}",
+                                            maskedNumber = formattedNum,
                                             rangePrefix = obj.optString("rangePrefix", ""),
                                             service = srv,
                                             country = cName,
@@ -558,14 +602,17 @@ object PremiumNumberV2Manager {
                                     )
                                 }
                                 if (items.isNotEmpty()) {
-                                    _state.update { it.copy(liveConsoleFeed = items) }
+                                    _state.update { it.copy(liveConsoleFeed = items, isApiConnected = true) }
                                     return@launch
                                 }
                             }
                         }
                     }
+                    _state.update { it.copy(isApiConnected = response.isSuccessful) }
                 }
-            } catch (_: Exception) {}
+            } catch (_: Exception) {
+                _state.update { it.copy(isApiConnected = false) }
+            }
 
             // Fallback default stream items matching Screenshot 2 if network feed is unavailable
             if (_state.value.liveConsoleFeed.isEmpty()) {
@@ -691,13 +738,15 @@ object PremiumNumberV2Manager {
                     pollBulkOtpMonitor(appContext)
                 }
 
-                // 3. Every 6 cycles (~15s), refresh live console & balance
-                if (counter % 6 == 0) {
+                // 3. Continuously refresh live pool console from API (every 3 seconds)
+                if (counter % 3 == 0) {
                     refreshLiveConsole()
+                }
+                if (counter % 10 == 0) {
                     refreshBalance()
                 }
 
-                delay(2500L) // Fast 2.5s poll rate
+                delay(1000L) // Instant 1-second OTP poll rate
             }
         }
     }
@@ -791,6 +840,9 @@ object PremiumNumberV2Manager {
             // Trigger notification, sound/vibration, and auto-copy to clipboard
             if (ctx != null) {
                 mainHandler.post {
+                    if (_state.value.isSoundEnabled) {
+                        playOtpAlertSound(ctx)
+                    }
                     for ((item, otp) in newlyArrived) {
                         ClipboardHelper.copyToClipboard(ctx, otp, "OTP")
                         OtpNotificationHelper.showOtpNotification(
@@ -804,6 +856,19 @@ object PremiumNumberV2Manager {
                     }
                 }
             }
+        }
+    }
+
+    private fun playOtpAlertSound(context: Context) {
+        try {
+            val notificationUri = android.media.RingtoneManager.getDefaultUri(android.media.RingtoneManager.TYPE_NOTIFICATION)
+            val ringtone = android.media.RingtoneManager.getRingtone(context, notificationUri)
+            ringtone?.play()
+        } catch (_: Exception) {
+            try {
+                val toneGen = android.media.ToneGenerator(android.media.AudioManager.STREAM_NOTIFICATION, 100)
+                toneGen.startTone(android.media.ToneGenerator.TONE_PROP_BEEP2, 350)
+            } catch (_: Exception) {}
         }
     }
 
@@ -864,7 +929,7 @@ object PremiumNumberV2Manager {
                         otpMessage = obj.optString("otpMessage", "").ifEmpty { null },
                         range = obj.optString("range", ""),
                         timestamp = obj.optLong("timestamp", System.currentTimeMillis()),
-                        expiresAt = obj.optLong("expiresAt", System.currentTimeMillis() + 900_000L),
+                        expiresAt = obj.optLong("expiresAt", System.currentTimeMillis() + AUTO_RETURN_TIMEOUT_MS),
                         gateway = obj.optString("gateway", "PREMIUM_V2"),
                         rate = obj.optDouble("rate", 0.50),
                         rentalId = obj.optString("rentalId", "").ifEmpty { null },
@@ -873,6 +938,6 @@ object PremiumNumberV2Manager {
                 )
             }
         } catch (_: Exception) {}
-        return list
+        return list.sortedByDescending { it.timestamp }
     }
 }

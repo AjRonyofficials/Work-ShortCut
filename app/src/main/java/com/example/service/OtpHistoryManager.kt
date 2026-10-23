@@ -47,6 +47,7 @@ data class DailyOtpSummary(
     val unixCount: Int,
     val zenexCount: Int,
     val kop2Count: Int = 0,
+    val v2Count: Int = 0,
     val unixRateOnDay: Double,
     val records: List<OtpHistoryRecord>
 )
@@ -56,13 +57,16 @@ data class OtpHistoryState(
     val unixTotalAllTime: Int = 0,
     val zenexTotalAllTime: Int = 0,
     val kop2TotalAllTime: Int = 0,
+    val v2TotalAllTime: Int = 0,
     val todayOtps: Int = 0,
     val unixTodayOtps: Int = 0,
     val zenexTodayOtps: Int = 0,
     val kop2TodayOtps: Int = 0,
+    val v2TodayOtps: Int = 0,
     val currentUnixRate: Double = 0.50,
     val currentZenexRate: Double = 0.50,
     val currentKop2Rate: Double = 0.50,
+    val currentV2Rate: Double = 0.50,
     val last7DaysSummaries: List<DailyOtpSummary> = emptyList(),
     val last30DaysSummaries: List<DailyOtpSummary> = emptyList(),
     val last7DaysOtps: Int = 0,
@@ -381,6 +385,12 @@ object OtpHistoryManager {
         val currentUnixRate = UnixSmsManager.state.value.otpRatePerSms
         val currentZenexRate = VirtualNumberManager.zenexOtpRate.value
         val currentKop2Rate = KopEngine2Manager.kop2OtpRate.value
+        val currentV2Rate = PremiumNumberV2Manager.otpRate.value
+
+        // Helper to check platform types
+        fun isUnix(p: String) = (p.contains("Unix", ignoreCase = true) || p.contains("Lamix", ignoreCase = true) || p.contains("Premium", ignoreCase = true)) && !p.contains("V2", ignoreCase = true)
+        fun isKop2(p: String) = p.contains("Kop Engine 2", ignoreCase = true) || p.contains("Kop2", ignoreCase = true) || p.contains("Kop 2", ignoreCase = true)
+        fun isV2(p: String) = p.contains("V2", ignoreCase = true) || p.contains("Premium Number V2", ignoreCase = true) || p.contains("Premium V2", ignoreCase = true)
 
         // Compute 30 days breakdown (Today = Day 0, ..., Day -29)
         val days30List = mutableListOf<DailyOtpSummary>()
@@ -394,11 +404,12 @@ object OtpHistoryManager {
                 else -> displayFormat.format(checkCal.time)
             }
             val matched = records.filter { it.dateKey == dKey }
-            val unixCount = matched.count { it.platform.contains("Unix", ignoreCase = true) }
-            val kop2Count = matched.count { it.platform.contains("Kop Engine 2", ignoreCase = true) || it.platform.contains("Kop2", ignoreCase = true) }
-            val zenexCount = matched.count { !it.platform.contains("Unix", ignoreCase = true) && !it.platform.contains("Kop Engine 2", ignoreCase = true) && !it.platform.contains("Kop2", ignoreCase = true) }
+            val unixCount = matched.count { isUnix(it.platform) }
+            val kop2Count = matched.count { isKop2(it.platform) }
+            val v2Count = matched.count { isV2(it.platform) }
+            val zenexCount = matched.count { !isUnix(it.platform) && !isKop2(it.platform) && !isV2(it.platform) }
 
-            val dayRate = matched.firstOrNull { it.platform.contains("Unix", ignoreCase = true) }?.rate ?: currentUnixRate
+            val dayRate = matched.firstOrNull { isUnix(it.platform) }?.rate ?: currentUnixRate
 
             days30List.add(
                 DailyOtpSummary(
@@ -408,6 +419,7 @@ object OtpHistoryManager {
                     unixCount = unixCount,
                     zenexCount = zenexCount,
                     kop2Count = kop2Count,
+                    v2Count = v2Count,
                     unixRateOnDay = dayRate,
                     records = matched
                 )
@@ -422,10 +434,12 @@ object OtpHistoryManager {
         val todayUnix = todaySummary?.unixCount ?: 0
         val todayZenex = todaySummary?.zenexCount ?: 0
         val todayKop2 = todaySummary?.kop2Count ?: 0
+        val todayV2 = todaySummary?.v2Count ?: 0
 
-        val unixTotal = records.count { it.platform.contains("Unix", ignoreCase = true) }
-        val kop2Total = records.count { it.platform.contains("Kop Engine 2", ignoreCase = true) || it.platform.contains("Kop2", ignoreCase = true) }
-        val zenexTotal = records.count { !it.platform.contains("Unix", ignoreCase = true) && !it.platform.contains("Kop Engine 2", ignoreCase = true) && !it.platform.contains("Kop2", ignoreCase = true) }
+        val unixTotal = records.count { isUnix(it.platform) }
+        val kop2Total = records.count { isKop2(it.platform) }
+        val v2Total = records.count { isV2(it.platform) }
+        val zenexTotal = records.count { !isUnix(it.platform) && !isKop2(it.platform) && !isV2(it.platform) }
 
         val sum7Days = days7List.sumOf { it.totalCount }
         val sum30Days = days30List.sumOf { it.totalCount }
@@ -449,13 +463,16 @@ object OtpHistoryManager {
                 unixTotalAllTime = unixTotal,
                 zenexTotalAllTime = zenexTotal,
                 kop2TotalAllTime = kop2Total,
+                v2TotalAllTime = v2Total,
                 todayOtps = todayTotal,
                 unixTodayOtps = todayUnix,
                 zenexTodayOtps = todayZenex,
                 kop2TodayOtps = todayKop2,
+                v2TodayOtps = todayV2,
                 currentUnixRate = currentUnixRate,
                 currentZenexRate = currentZenexRate,
                 currentKop2Rate = currentKop2Rate,
+                currentV2Rate = currentV2Rate,
                 last7DaysSummaries = days7List,
                 last30DaysSummaries = days30List,
                 last7DaysOtps = sum7Days,

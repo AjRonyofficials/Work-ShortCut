@@ -771,7 +771,7 @@ fun AdminUnixSmsCard(
                 onDismissRequest = { showCustomPremiumV2RateDialog = false },
                 containerColor = Color(0xFF101C2B),
                 title = {
-                    Text("PREMIUM NUMBER V2 (SL Api) রেট পরিবর্তন", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                    Text("PREMIUM NUMBER V2 রেট পরিবর্তন", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 15.sp)
                 },
                 text = {
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -1609,7 +1609,12 @@ fun AdminUnixSmsCard(
                 HorizontalDivider(color = Color(0xFF1E2D40))
                 Spacer(modifier = Modifier.height(14.dp))
 
-                // 4. PREMIUM NUMBER V2 (SL Api) Rate Header
+                // 4. PREMIUM NUMBER V2 (LIVE POOL) Rate Header
+                val v2State by com.example.service.PremiumNumberV2Manager.state.collectAsState()
+                val livePoolCountries = remember(v2State.liveConsoleFeed) {
+                    v2State.liveConsoleFeed.map { it.flag to it.country }.distinctBy { it.second }
+                }
+
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -1619,7 +1624,7 @@ fun AdminUnixSmsCard(
                         Icon(Icons.Default.Bolt, contentDescription = null, tint = Color(0xFF38BDF8), modifier = Modifier.size(18.dp))
                         Spacer(modifier = Modifier.width(6.dp))
                         Text(
-                            text = "4. PREMIUM NUMBER V2 (SL Api) OTP RATE",
+                            text = "4. PREMIUM NUMBER V2 (LIVE POOL) OTP RATE",
                             fontSize = 12.sp,
                             fontWeight = FontWeight.Bold,
                             color = Color.White
@@ -1788,24 +1793,82 @@ fun AdminUnixSmsCard(
 
                     Spacer(modifier = Modifier.height(10.dp))
 
-                    // Live Range Pool Notice for V2
+                    // Live Range Pool Active Countries for V2
                     Surface(
-                        color = Color(0xFF0369A1).copy(alpha = 0.15f),
+                        color = Color(0xFF081526),
                         shape = RoundedCornerShape(8.dp),
-                        border = BorderStroke(1.dp, Color(0xFF0284C7).copy(alpha = 0.35f)),
+                        border = BorderStroke(1.dp, Color(0xFF0284C7).copy(alpha = 0.4f)),
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        Row(
-                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text("⚡", fontSize = 13.sp)
-                            Spacer(modifier = Modifier.width(6.dp))
+                        Column(modifier = Modifier.padding(10.dp)) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text("🌐", fontSize = 12.sp)
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text(
+                                        text = "Active Live Pool Countries",
+                                        color = Color(0xFF38BDF8),
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                                Text(
+                                    text = if (livePoolCountries.isNotEmpty()) "${livePoolCountries.size} Active" else "Scanning...",
+                                    color = Color(0xFF7DD3FC),
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                            }
+
+                            Spacer(modifier = Modifier.height(6.dp))
+
+                            if (livePoolCountries.isNotEmpty()) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .horizontalScroll(rememberScrollState()),
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    livePoolCountries.forEach { (flag, country) ->
+                                        Surface(
+                                            color = Color(0xFF0B243B),
+                                            shape = RoundedCornerShape(6.dp),
+                                            border = BorderStroke(1.dp, Color(0xFF0284C7).copy(alpha = 0.6f))
+                                        ) {
+                                            Row(
+                                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                Text(flag, fontSize = 12.sp)
+                                                Spacer(modifier = Modifier.width(4.dp))
+                                                Text(
+                                                    country,
+                                                    color = Color.White,
+                                                    fontSize = 10.5.sp,
+                                                    fontWeight = FontWeight.Medium
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                            } else {
+                                Text(
+                                    text = "লাইভ পুল স্ক্যান হচ্ছে... শুধুমাত্র সক্রিয় লাইভ পুলের দেশসমূহ রেট তালিকায় থাকবে",
+                                    color = Color(0xFF64748B),
+                                    fontSize = 10.sp
+                                )
+                            }
+
+                            Spacer(modifier = Modifier.height(6.dp))
                             Text(
-                                text = "V2 নম্বরগুলো সরাসরি লাইভ রেঞ্জ (Live Range) থেকে আসে। কোনো দেশ বাছাই করার প্রয়োজন নেই।",
-                                color = Color(0xFF7DD3FC),
-                                fontSize = 10.5.sp,
-                                lineHeight = 14.sp
+                                text = "💡 এই রেট পরিবর্তন স্বয়ংক্রিয়ভাবে শুধুমাত্র লাইভ পুলে থাকা এই সক্রিয় দেশগুলোতে প্রযোজ্য। লাইভ পুলে নেই এমন কোনো দেশ আসবে না।",
+                                color = Color(0xFF94A3B8),
+                                fontSize = 9.5.sp,
+                                lineHeight = 13.sp
                             )
                         }
                     }

@@ -9,6 +9,8 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -33,11 +35,14 @@ import androidx.compose.material.icons.filled.AccountBalanceWallet
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material.icons.filled.NotificationsOff
 import androidx.compose.material.icons.filled.Phone
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Public
@@ -147,13 +152,68 @@ fun PremiumNumberV2SectionContent(
     var selectedSubTab by remember { mutableIntStateOf(0) } // 0: Get Number (Operator Desk), 1: Live Console / Live OTP
     var filterTab by remember { mutableStateOf("ALL") } // "ALL", "WAITING", "RECEIVED", "EXPIRED"
 
-    // Dropdown expanded states for Allocation Desk (Screenshot 1)
+    // Dropdown expanded states for Allocation Desk
     var serviceDropdownExpanded by remember { mutableStateOf(false) }
     var countryDropdownExpanded by remember { mutableStateOf(false) }
+    var quantityDropdownExpanded by remember { mutableStateOf(false) }
 
-    // Live console filter chip state (Screenshot 2)
+    // Live console filter chip state
     var selectedConsoleCategory by remember { mutableStateOf("ALL") } // "ALL", "Facebook", "WhatsApp", "Instagram", "Telegram", "Other"
-    var isLiveStreamPaused by remember { mutableStateOf(false) }
+    var liveFeedSearchQuery by remember { mutableStateOf("") }
+
+    // Dynamically derive ONLY countries present in Live Pool
+    val livePoolCountries = remember(state.liveConsoleFeed) {
+        val list = mutableListOf<V2CountryPreset>()
+        val seen = mutableSetOf<String>()
+        list.add(V2CountryPreset("ANY", "ANY (All Live Pool)", "🌐", "", "POOL"))
+        for (item in state.liveConsoleFeed) {
+            val iso = item.iso.uppercase()
+            if (iso.isNotBlank() && !seen.contains(iso)) {
+                seen.add(iso)
+                val info = com.example.util.AllCountriesProvider.findByCode(iso)
+                    ?: com.example.util.AllCountriesProvider.findByNameOrCode(item.country)
+                val dial = info?.dialCode ?: if (item.rangePrefix.isNotBlank()) "+${item.rangePrefix}" else ""
+                list.add(
+                    V2CountryPreset(
+                        code = iso,
+                        name = item.country.ifBlank { info?.name ?: iso },
+                        flag = item.flag.ifBlank { info?.flag ?: "🌐" },
+                        dialCode = dial,
+                        rateText = "LIVE"
+                    )
+                )
+            }
+        }
+        if (list.size <= 1) {
+            listOf(
+                V2CountryPreset("ANY", "ANY (All Live Pool)", "🌐", "", "POOL"),
+                V2CountryPreset("ZW", "Zimbabwe", "🇿🇼", "+263", "LIVE"),
+                V2CountryPreset("SD", "Sudan", "🇸🇩", "+249", "LIVE"),
+                V2CountryPreset("FR", "France", "🇫🇷", "+33", "LIVE"),
+                V2CountryPreset("ZM", "Zambia", "🇿🇲", "+260", "LIVE")
+            )
+        } else list
+    }
+
+    // Dynamic Live Prefixes available in feed
+    val livePrefixes = remember(state.liveConsoleFeed) {
+        state.liveConsoleFeed
+            .map { it.rangePrefix }
+            .filter { it.isNotBlank() }
+            .distinct()
+            .take(6)
+    }
+
+    // Auto-select valid Live Pool country if current one is invalid
+    LaunchedEffect(livePoolCountries) {
+        val currentCode = state.selectedCountryCode
+        if (currentCode != "ANY" && livePoolCountries.none { it.code.equals(currentCode, ignoreCase = true) }) {
+            val firstReal = livePoolCountries.firstOrNull { it.code != "ANY" } ?: livePoolCountries.firstOrNull()
+            if (firstReal != null) {
+                PremiumNumberV2Manager.setSelectedCountry(firstReal.code)
+            }
+        }
+    }
 
     var nowTick by remember { mutableStateOf(System.currentTimeMillis()) }
 
@@ -233,57 +293,76 @@ fun PremiumNumberV2SectionContent(
                             }
                         }
                         Text(
-                            text = "Zero Deposit OTP Earning Engine",
+                            text = "Carrier Live Pool Engine",
                             color = Color(0xFF64748B),
                             fontSize = 9.5.sp
                         )
                     }
                 }
 
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                    // API Health Connection Pill (Live Pool status)
                     Surface(
-                        color = Color(0xFF064E3B).copy(alpha = 0.4f),
+                        color = if (state.isApiConnected) Color(0xFF064E3B).copy(alpha = 0.45f) else Color(0xFF7F1D1D).copy(alpha = 0.45f),
                         shape = RoundedCornerShape(14.dp),
-                        border = BorderStroke(1.dp, Color(0xFF059669))
+                        border = BorderStroke(1.dp, if (state.isApiConnected) Color(0xFF059669) else Color(0xFFEF4444))
                     ) {
                         Row(
-                            modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp),
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Box(
                                 modifier = Modifier
                                     .size(6.dp)
                                     .clip(CircleShape)
-                                    .background(Color(0xFF10B981))
+                                    .background(if (state.isApiConnected) Color(0xFF10B981) else Color(0xFFEF4444))
                             )
                             Spacer(modifier = Modifier.width(4.dp))
                             Text(
-                                text = "REAL-TIME",
-                                color = Color(0xFF34D399),
-                                fontSize = 8.5.sp,
+                                text = if (state.isApiConnected) "LIVE POOL (3s)" else "OFFLINE",
+                                color = if (state.isApiConnected) Color(0xFF34D399) else Color(0xFFF87171),
+                                fontSize = 8.sp,
                                 fontWeight = FontWeight.Bold
                             )
                         }
                     }
 
+                    // Sound Alert Toggle Button
+                    Surface(
+                        color = Color(0xFF0E1A29),
+                        shape = RoundedCornerShape(8.dp),
+                        border = BorderStroke(1.dp, if (state.isSoundEnabled) Color(0xFF00E5FF).copy(alpha = 0.5f) else Color(0xFF1E2D40)),
+                        modifier = Modifier.clickable {
+                            val next = !state.isSoundEnabled
+                            PremiumNumberV2Manager.setSoundEnabled(next)
+                            Toast.makeText(context, if (next) "🔔 ওটিপি সাউন্ড অ্যালার্ট চালু" else "🔕 ওটিপি সাউন্ড অ্যালার্ট বন্ধ", Toast.LENGTH_SHORT).show()
+                        }
+                    ) {
+                        Box(modifier = Modifier.padding(5.dp), contentAlignment = Alignment.Center) {
+                            Icon(
+                                if (state.isSoundEnabled) Icons.Default.Notifications else Icons.Default.NotificationsOff,
+                                contentDescription = "OTP Sound Alert",
+                                tint = if (state.isSoundEnabled) Color(0xFF00E5FF) else Color(0xFF64748B),
+                                modifier = Modifier.size(15.dp)
+                            )
+                        }
+                    }
+
+                    // User OTP Rate
                     Surface(
                         color = Color(0xFF0F2537),
                         shape = RoundedCornerShape(8.dp),
-                        border = BorderStroke(1.dp, Color(0xFF0284C7)),
-                        modifier = Modifier.clickable {
-                            PremiumNumberV2Manager.refreshBalance()
-                            Toast.makeText(context, "ব্যালেন্স রিফ্রেশ হচ্ছে...", Toast.LENGTH_SHORT).show()
-                        }
+                        border = BorderStroke(1.dp, Color(0xFF0284C7))
                     ) {
                         Row(
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                            modifier = Modifier.padding(horizontal = 7.dp, vertical = 4.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text("💵 $", color = Color(0xFF38BDF8), fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                            Text("Rate: ", color = Color(0xFF38BDF8), fontSize = 9.5.sp, fontWeight = FontWeight.Bold)
                             Text(
-                                text = String.format(Locale.US, "%.2f", state.balanceUsd),
+                                text = "${String.format(Locale.US, "%.2f", otpRate)}৳",
                                 color = Color.White,
-                                fontSize = 11.5.sp,
+                                fontSize = 11.sp,
                                 fontWeight = FontWeight.ExtraBold
                             )
                         }
@@ -373,13 +452,13 @@ fun PremiumNumberV2SectionContent(
                         }
 
                         Surface(
-                            color = Color(0xFF064E3B).copy(alpha = 0.5f),
+                            color = Color(0xFF0284C7).copy(alpha = 0.2f),
                             shape = RoundedCornerShape(4.dp),
-                            border = BorderStroke(0.8.dp, Color(0xFF10B981).copy(alpha = 0.6f))
+                            border = BorderStroke(0.8.dp, Color(0xFF00E5FF).copy(alpha = 0.5f))
                         ) {
                             Text(
-                                text = "$0 FREE DEPOSIT // PER-NUMBER REVENUE",
-                                color = Color(0xFF34D399),
+                                text = "LIVE POOL",
+                                color = Color(0xFF00E5FF),
                                 fontSize = 8.5.sp,
                                 fontWeight = FontWeight.Bold,
                                 modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
@@ -387,23 +466,16 @@ fun PremiumNumberV2SectionContent(
                         }
                     }
 
-                    // SERVICE & COUNTRY SELECTORS ROW (Screenshot 1)
+                    // SERVICE, COUNTRY (LIVE POOL ONLY), COMPACT QTY, & GET NUMBER ROW
                     Row(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         // 1. SERVICE Dropdown
-                        Column(modifier = Modifier.weight(1f)) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text("SERVICE", color = Color(0xFF94A3B8), fontSize = 10.sp, fontWeight = FontWeight.Bold)
-                                Text("+ Add Service", color = Color(0xFF00E5FF), fontSize = 9.sp, fontWeight = FontWeight.SemiBold)
-                            }
-                            Spacer(modifier = Modifier.height(4.dp))
+                        Column(modifier = Modifier.weight(1.1f)) {
+                            Text("SERVICE", color = Color(0xFF94A3B8), fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                            Spacer(modifier = Modifier.height(3.dp))
 
                             Box {
                                 Surface(
@@ -415,22 +487,19 @@ fun PremiumNumberV2SectionContent(
                                         .clickable { serviceDropdownExpanded = true }
                                 ) {
                                     Row(
-                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 9.dp),
+                                        modifier = Modifier.padding(horizontal = 7.dp, vertical = 8.dp),
                                         horizontalArrangement = Arrangement.SpaceBetween,
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
-                                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
-                                            Text("((o))", fontSize = 10.sp, color = Color(0xFF00E5FF))
-                                            Spacer(modifier = Modifier.width(4.dp))
-                                            Text(
-                                                text = state.selectedService,
-                                                color = Color.White,
-                                                fontSize = 11.5.sp,
-                                                fontWeight = FontWeight.Bold,
-                                                maxLines = 1,
-                                                overflow = TextOverflow.Ellipsis
-                                            )
-                                        }
+                                        Text(
+                                            text = state.selectedService,
+                                            color = Color.White,
+                                            fontSize = 10.5.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                            modifier = Modifier.weight(1f)
+                                        )
                                         Icon(Icons.Default.ArrowDropDown, contentDescription = null, tint = Color(0xFF00E5FF), modifier = Modifier.size(16.dp))
                                     }
                                 }
@@ -443,14 +512,12 @@ fun PremiumNumberV2SectionContent(
                                     ALLOCATION_SERVICES.forEach { srv ->
                                         DropdownMenuItem(
                                             text = {
-                                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                                    Text(
-                                                        text = srv,
-                                                        color = if (state.selectedService == srv) Color(0xFF00E5FF) else Color.White,
-                                                        fontSize = 12.sp,
-                                                        fontWeight = if (state.selectedService == srv) FontWeight.Bold else FontWeight.Normal
-                                                    )
-                                                }
+                                                Text(
+                                                    text = srv,
+                                                    color = if (state.selectedService == srv) Color(0xFF00E5FF) else Color.White,
+                                                    fontSize = 11.5.sp,
+                                                    fontWeight = if (state.selectedService == srv) FontWeight.Bold else FontWeight.Normal
+                                                )
                                             },
                                             onClick = {
                                                 PremiumNumberV2Manager.setSelectedService(srv)
@@ -462,10 +529,10 @@ fun PremiumNumberV2SectionContent(
                             }
                         }
 
-                        // 2. COUNTRY Dropdown
-                        Column(modifier = Modifier.weight(1.2f)) {
-                            Text("COUNTRY", color = Color(0xFF94A3B8), fontSize = 10.sp, fontWeight = FontWeight.Bold)
-                            Spacer(modifier = Modifier.height(4.dp))
+                        // 2. COUNTRY Dropdown (ONLY COUNTRIES IN LIVE POOL)
+                        Column(modifier = Modifier.weight(1.35f)) {
+                            Text("COUNTRY (POOL)", color = Color(0xFF94A3B8), fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                            Spacer(modifier = Modifier.height(3.dp))
 
                             Box {
                                 Surface(
@@ -477,36 +544,21 @@ fun PremiumNumberV2SectionContent(
                                         .clickable { countryDropdownExpanded = true }
                                 ) {
                                     Row(
-                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 9.dp),
+                                        modifier = Modifier.padding(horizontal = 7.dp, vertical = 8.dp),
                                         horizontalArrangement = Arrangement.SpaceBetween,
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
                                         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
-                                            Text(text = state.selectedCountryFlag, fontSize = 13.sp)
-                                            Spacer(modifier = Modifier.width(4.dp))
+                                            Text(text = state.selectedCountryFlag, fontSize = 12.sp)
+                                            Spacer(modifier = Modifier.width(3.dp))
                                             Text(
                                                 text = state.selectedCountryName,
                                                 color = Color.White,
-                                                fontSize = 11.5.sp,
+                                                fontSize = 10.5.sp,
                                                 fontWeight = FontWeight.Bold,
                                                 maxLines = 1,
                                                 overflow = TextOverflow.Ellipsis
                                             )
-                                            if (state.selectedCountryDial.isNotBlank()) {
-                                                Spacer(modifier = Modifier.width(3.dp))
-                                                Surface(
-                                                    color = Color(0xFF0284C7).copy(alpha = 0.25f),
-                                                    shape = RoundedCornerShape(3.dp)
-                                                ) {
-                                                    Text(
-                                                        text = state.selectedCountryDial,
-                                                        color = Color(0xFF38BDF8),
-                                                        fontSize = 8.5.sp,
-                                                        fontWeight = FontWeight.Bold,
-                                                        modifier = Modifier.padding(horizontal = 3.dp, vertical = 1.dp)
-                                                    )
-                                                }
-                                            }
                                         }
                                         Icon(Icons.Default.ArrowDropDown, contentDescription = null, tint = Color(0xFF00E5FF), modifier = Modifier.size(16.dp))
                                     }
@@ -517,7 +569,7 @@ fun PremiumNumberV2SectionContent(
                                     onDismissRequest = { countryDropdownExpanded = false },
                                     modifier = Modifier.background(Color(0xFF091422))
                                 ) {
-                                    ALLOCATION_COUNTRIES.forEach { cp ->
+                                    livePoolCountries.forEach { cp ->
                                         DropdownMenuItem(
                                             text = {
                                                 Row(
@@ -526,20 +578,31 @@ fun PremiumNumberV2SectionContent(
                                                     verticalAlignment = Alignment.CenterVertically
                                                 ) {
                                                     Row(verticalAlignment = Alignment.CenterVertically) {
-                                                        Text(text = cp.flag, fontSize = 14.sp)
-                                                        Spacer(modifier = Modifier.width(6.dp))
+                                                        Text(text = cp.flag, fontSize = 13.sp)
+                                                        Spacer(modifier = Modifier.width(5.dp))
                                                         Text(
                                                             text = cp.name,
-                                                            color = if (state.selectedCountryCode == cp.code) Color(0xFF00E5FF) else Color.White,
-                                                            fontSize = 11.5.sp,
-                                                            fontWeight = if (state.selectedCountryCode == cp.code) FontWeight.Bold else FontWeight.Normal
+                                                            color = if (state.selectedCountryCode.equals(cp.code, ignoreCase = true)) Color(0xFF00E5FF) else Color.White,
+                                                            fontSize = 11.sp,
+                                                            fontWeight = if (state.selectedCountryCode.equals(cp.code, ignoreCase = true)) FontWeight.Bold else FontWeight.Normal
                                                         )
                                                         if (cp.dialCode.isNotBlank()) {
                                                             Spacer(modifier = Modifier.width(4.dp))
-                                                            Text(text = cp.dialCode, color = Color(0xFF64748B), fontSize = 10.sp)
+                                                            Text(text = cp.dialCode, color = Color(0xFF64748B), fontSize = 9.5.sp)
                                                         }
                                                     }
-                                                    Text(text = cp.rateText, color = Color(0xFF34D399), fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                                                    Surface(
+                                                        color = Color(0xFF0284C7).copy(alpha = 0.2f),
+                                                        shape = RoundedCornerShape(3.dp)
+                                                    ) {
+                                                        Text(
+                                                            text = cp.rateText,
+                                                            color = Color(0xFF38BDF8),
+                                                            fontSize = 8.sp,
+                                                            fontWeight = FontWeight.Bold,
+                                                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                                                        )
+                                                    }
                                                 }
                                             },
                                             onClick = {
@@ -552,37 +615,91 @@ fun PremiumNumberV2SectionContent(
                             }
                         }
 
-                        // 3. GET NUMBER BUTTON (Cyan Button matching Screenshot 1)
-                        Column(
-                            horizontalAlignment = Alignment.End,
-                            modifier = Modifier.padding(top = 16.dp)
-                        ) {
+                        // 3. Compact Qty Button (Styled small like other panels)
+                        Column {
+                            Text("QTY", color = Color(0xFF94A3B8), fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                            Spacer(modifier = Modifier.height(3.dp))
+
+                            Box {
+                                Surface(
+                                    color = Color(0xFF0F1A28),
+                                    shape = RoundedCornerShape(8.dp),
+                                    border = BorderStroke(1.dp, Color(0xFF1E3A56)),
+                                    modifier = Modifier.clickable { quantityDropdownExpanded = true }
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(horizontal = 7.dp, vertical = 8.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(
+                                            text = "Qty: ${state.requestCount}",
+                                            color = Color(0xFF00E5FF),
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                        Spacer(modifier = Modifier.width(2.dp))
+                                        Icon(
+                                            Icons.Default.ArrowDropDown,
+                                            contentDescription = null,
+                                            tint = Color(0xFF00E5FF),
+                                            modifier = Modifier.size(15.dp)
+                                        )
+                                    }
+                                }
+
+                                DropdownMenu(
+                                    expanded = quantityDropdownExpanded,
+                                    onDismissRequest = { quantityDropdownExpanded = false },
+                                    modifier = Modifier.background(Color(0xFF091422))
+                                ) {
+                                    listOf(1, 2, 3, 5, 10).forEach { q ->
+                                        DropdownMenuItem(
+                                            text = {
+                                                Text(
+                                                    text = "Qty: $q",
+                                                    color = if (state.requestCount == q) Color(0xFF00E5FF) else Color.White,
+                                                    fontSize = 11.5.sp,
+                                                    fontWeight = if (state.requestCount == q) FontWeight.Bold else FontWeight.Normal
+                                                )
+                                            },
+                                            onClick = {
+                                                PremiumNumberV2Manager.setRequestCount(q)
+                                                quantityDropdownExpanded = false
+                                            }
+                                        )
+                                    }
+                                }
+                            }
+                        }
+
+                        // 4. GET NUMBER BUTTON
+                        Column(modifier = Modifier.padding(top = 15.dp)) {
                             Button(
                                 onClick = { PremiumNumberV2Manager.acquireNumbers(context) },
                                 enabled = !state.isLoading,
-                                shape = RoundedCornerShape(10.dp),
+                                shape = RoundedCornerShape(8.dp),
                                 colors = ButtonDefaults.buttonColors(
                                     containerColor = Color(0xFF00E5FF),
                                     contentColor = Color(0xFF041B26),
                                     disabledContainerColor = Color(0xFF1E3A56),
                                     disabledContentColor = Color(0xFF64748B)
                                 ),
-                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 9.dp),
+                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 7.dp),
                                 modifier = Modifier
-                                    .height(42.dp)
+                                    .height(36.dp)
                                     .testTag("btn_get_number_v2")
                             ) {
                                 if (state.isLoading) {
                                     CircularProgressIndicator(
                                         color = Color(0xFF041B26),
-                                        modifier = Modifier.size(16.dp),
+                                        modifier = Modifier.size(14.dp),
                                         strokeWidth = 2.dp
                                     )
                                 } else {
-                                    Icon(Icons.Default.Phone, contentDescription = null, modifier = Modifier.size(14.dp))
-                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Icon(Icons.Default.Phone, contentDescription = null, modifier = Modifier.size(13.dp))
+                                    Spacer(modifier = Modifier.width(3.dp))
                                     Text(
-                                        text = "Get Number",
+                                        text = "Get",
                                         fontWeight = FontWeight.Black,
                                         fontSize = 11.5.sp
                                     )
@@ -591,62 +708,85 @@ fun PremiumNumberV2SectionContent(
                         }
                     }
 
-                    // QUANTITY SELECTOR (1-10 numbers as requested)
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
+                    // SPATIOUS LIVE PREFIX SECTION (BEAUTIFUL & NEVER SQUEEZED)
+                    Surface(
+                        color = Color(0xFF070E18),
+                        shape = RoundedCornerShape(8.dp),
+                        border = BorderStroke(0.8.dp, Color(0xFF162D42)),
+                        modifier = Modifier.fillMaxWidth()
                     ) {
-                        Text(
-                            text = "QUANTITY (১ - ১০টি নম্বর):",
-                            color = Color(0xFF94A3B8),
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-
-                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                            listOf(1, 2, 3, 5, 10).forEach { q ->
-                                val isSelected = state.requestCount == q
-                                Surface(
-                                    color = if (isSelected) Color(0xFF00E5FF) else Color(0xFF0F1A28),
-                                    shape = RoundedCornerShape(6.dp),
-                                    border = BorderStroke(1.dp, if (isSelected) Color(0xFF00E5FF) else Color(0xFF1E3A56)),
-                                    modifier = Modifier.clickable { PremiumNumberV2Manager.setRequestCount(q) }
-                                ) {
+                        Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text("🎯", fontSize = 11.sp)
+                                    Spacer(modifier = Modifier.width(4.dp))
                                     Text(
-                                        text = "$q",
-                                        color = if (isSelected) Color(0xFF041B26) else Color.White,
-                                        fontSize = 11.sp,
+                                        text = "LIVE RANGE PREFIX (ঐচ্ছিক)",
+                                        color = Color(0xFF94A3B8),
+                                        fontSize = 9.5.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                                if (state.rangePrefix.isNotBlank()) {
+                                    Text(
+                                        text = "মুছুন ✕",
+                                        color = Color(0xFFEF4444),
+                                        fontSize = 9.sp,
                                         fontWeight = FontWeight.Bold,
-                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                                        modifier = Modifier.clickable { PremiumNumberV2Manager.setRangePrefix("") }
                                     )
                                 }
                             }
-                        }
-                    }
 
-                    // Optional Range Prefix
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        OutlinedTextField(
-                            value = state.rangePrefix,
-                            onValueChange = { PremiumNumberV2Manager.setRangePrefix(it) },
-                            placeholder = { Text("Range Prefix (ঐচ্ছিক e.g. 263, 39, 44)", fontSize = 10.5.sp, color = Color(0xFF64748B)) },
-                            singleLine = true,
-                            colors = OutlinedTextFieldDefaults.colors(
-                                focusedBorderColor = Color(0xFF00E5FF),
-                                unfocusedBorderColor = Color(0xFF1E3A56),
-                                focusedTextColor = Color.White,
-                                unfocusedTextColor = Color.White
-                            ),
-                            shape = RoundedCornerShape(8.dp),
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(42.dp)
-                        )
+                            OutlinedTextField(
+                                value = state.rangePrefix,
+                                onValueChange = { PremiumNumberV2Manager.setRangePrefix(it) },
+                                placeholder = { Text("Prefix লিখুন যেমন: 263, 249, 33 (বা নিচের থেকে ট্যাপ করুন)", fontSize = 10.sp, color = Color(0xFF64748B)) },
+                                singleLine = true,
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    focusedBorderColor = Color(0xFF00E5FF),
+                                    unfocusedBorderColor = Color(0xFF1E3A56),
+                                    focusedTextColor = Color.White,
+                                    unfocusedTextColor = Color.White
+                                ),
+                                shape = RoundedCornerShape(8.dp),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(46.dp)
+                            )
+
+                            // Quick select chips for live prefixes from the pool
+                            if (livePrefixes.isNotEmpty()) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text("Live Pool Prefixes:", color = Color(0xFF64748B), fontSize = 8.5.sp)
+                                    livePrefixes.forEach { pfx ->
+                                        val isSel = state.rangePrefix == pfx
+                                        Surface(
+                                            color = if (isSel) Color(0xFF00E5FF) else Color(0xFF0F1E2E),
+                                            shape = RoundedCornerShape(4.dp),
+                                            border = BorderStroke(0.6.dp, if (isSel) Color(0xFF00E5FF) else Color(0xFF1E3A56)),
+                                            modifier = Modifier.clickable { PremiumNumberV2Manager.setRangePrefix(pfx) }
+                                        ) {
+                                            Text(
+                                                text = "+$pfx",
+                                                color = if (isSel) Color(0xFF041B26) else Color(0xFF38BDF8),
+                                                fontSize = 9.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
                     }
 
                     // INDICATORS ROW (Screenshot 1: 15-min hold, Live polling 3s, Auto-copied, National Format)
@@ -759,22 +899,70 @@ fun PremiumNumberV2SectionContent(
                             }
                         }
 
-                        if (state.activeNumbers.isNotEmpty()) {
-                            Surface(
-                                color = Color(0xFF7F1D1D).copy(alpha = 0.3f),
-                                shape = RoundedCornerShape(6.dp),
-                                modifier = Modifier.clickable {
-                                    PremiumNumberV2Manager.clearAllNumbers()
-                                    Toast.makeText(context, "লিস্ট ক্লিয়ার হয়েছে", Toast.LENGTH_SHORT).show()
-                                }
-                            ) {
-                                Row(
-                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp),
-                                    verticalAlignment = Alignment.CenterVertically
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            // Copy All Numbers Button
+                            if (filteredList.isNotEmpty()) {
+                                Surface(
+                                    color = Color(0xFF0284C7).copy(alpha = 0.2f),
+                                    shape = RoundedCornerShape(6.dp),
+                                    border = BorderStroke(0.8.dp, Color(0xFF00E5FF).copy(alpha = 0.5f)),
+                                    modifier = Modifier.clickable {
+                                        val allText = filteredList.joinToString("\n") { it.number }
+                                        ClipboardHelper.copyToClipboard(context, allText, "Active Numbers")
+                                        Toast.makeText(context, "✓ ${filteredList.size} টি নম্বর ক্লিপবোর্ডে কপি হয়েছে!", Toast.LENGTH_SHORT).show()
+                                    }
                                 ) {
-                                    Icon(Icons.Default.Delete, contentDescription = null, tint = Color(0xFFEF4444), modifier = Modifier.size(11.dp))
-                                    Spacer(modifier = Modifier.width(2.dp))
-                                    Text("মুছুন", color = Color(0xFFEF4444), fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                                    Row(
+                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Icon(Icons.Default.ContentCopy, contentDescription = null, tint = Color(0xFF00E5FF), modifier = Modifier.size(10.dp))
+                                        Spacer(modifier = Modifier.width(3.dp))
+                                        Text("Copy All", color = Color(0xFF00E5FF), fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                                    }
+                                }
+                            }
+
+                            // Smart Clear Expired / Completed Numbers Button
+                            if (state.activeNumbers.any { it.status == "expired" || it.status == "cancelled" || !it.otpCode.isNullOrEmpty() || nowTick >= it.expiresAt }) {
+                                Surface(
+                                    color = Color(0xFFF59E0B).copy(alpha = 0.18f),
+                                    shape = RoundedCornerShape(6.dp),
+                                    border = BorderStroke(0.8.dp, Color(0xFFF59E0B).copy(alpha = 0.5f)),
+                                    modifier = Modifier.clickable {
+                                        PremiumNumberV2Manager.clearExpiredOrCompletedNumbers()
+                                        Toast.makeText(context, "✓ এক্সপায়ার্ড নম্বরগুলো ক্লিয়ার হয়েছে", Toast.LENGTH_SHORT).show()
+                                    }
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Icon(Icons.Default.Clear, contentDescription = null, tint = Color(0xFFF59E0B), modifier = Modifier.size(10.dp))
+                                        Spacer(modifier = Modifier.width(2.dp))
+                                        Text("এক্সপায়ার্ড", color = Color(0xFFF59E0B), fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                                    }
+                                }
+                            }
+
+                            // Clear All Button
+                            if (state.activeNumbers.isNotEmpty()) {
+                                Surface(
+                                    color = Color(0xFF7F1D1D).copy(alpha = 0.3f),
+                                    shape = RoundedCornerShape(6.dp),
+                                    modifier = Modifier.clickable {
+                                        PremiumNumberV2Manager.clearAllNumbers()
+                                        Toast.makeText(context, "সব নম্বর ক্লিয়ার হয়েছে", Toast.LENGTH_SHORT).show()
+                                    }
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Icon(Icons.Default.Delete, contentDescription = null, tint = Color(0xFFEF4444), modifier = Modifier.size(10.dp))
+                                        Spacer(modifier = Modifier.width(2.dp))
+                                        Text("মুছুন", color = Color(0xFFEF4444), fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                                    }
                                 }
                             }
                         }
@@ -951,195 +1139,136 @@ fun PremiumNumberV2SectionContent(
                             }
                         }
 
-                        // Stats Row: SERVICES LIVE & COUNTRIES LIVE (Screenshot 2)
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            Surface(
-                                color = Color(0xFF0B1726),
-                                shape = RoundedCornerShape(10.dp),
-                                border = BorderStroke(0.8.dp, Color(0xFF1B3550)),
-                                modifier = Modifier.weight(1f)
-                            ) {
-                                Row(
-                                    modifier = Modifier.padding(10.dp),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Column {
-                                        Text("SERVICES LIVE", color = Color(0xFF64748B), fontSize = 8.5.sp, fontWeight = FontWeight.Bold)
-                                        Text("${state.servicesLive}", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Black)
-                                    }
-                                    Text("📈", fontSize = 16.sp)
-                                }
-                            }
-
-                            Surface(
-                                color = Color(0xFF0B1726),
-                                shape = RoundedCornerShape(10.dp),
-                                border = BorderStroke(0.8.dp, Color(0xFF1B3550)),
-                                modifier = Modifier.weight(1f)
-                            ) {
-                                Row(
-                                    modifier = Modifier.padding(10.dp),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Column {
-                                        Text("COUNTRIES LIVE", color = Color(0xFF64748B), fontSize = 8.5.sp, fontWeight = FontWeight.Bold)
-                                        Text("${state.countriesLive}", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Black)
-                                    }
-                                    Text("✨", fontSize = 16.sp)
-                                }
-                            }
+                        val activeCountriesInFeed = remember(state.liveConsoleFeed) {
+                            state.liveConsoleFeed.map { it.flag to it.country }.distinctBy { it.second }
+                        }
+                        val activeServicesInFeed = remember(state.liveConsoleFeed) {
+                            state.liveConsoleFeed.map { it.service }.distinct()
                         }
 
-                        // LIVE THROUGHPUT CARD (Screenshot 2)
+                        // LIVE POOL ACTIVE REAL-TIME METRICS (UPDATES DYNAMICALLY)
                         Surface(
                             color = Color(0xFF0B1726),
-                            shape = RoundedCornerShape(10.dp),
-                            border = BorderStroke(0.8.dp, Color(0xFF1B3550)),
+                            shape = RoundedCornerShape(12.dp),
+                            border = BorderStroke(0.9.dp, Color(0xFF1B3550)),
                             modifier = Modifier.fillMaxWidth()
                         ) {
-                            Column(modifier = Modifier.padding(12.dp)) {
+                            Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),
                                     horizontalArrangement = Arrangement.SpaceBetween,
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Text("⚡", fontSize = 11.sp, color = Color(0xFF00E5FF))
-                                        Spacer(modifier = Modifier.width(4.dp))
-                                        Text("LIVE THROUGHPUT", color = Color(0xFF00E5FF), fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                        Box(
+                                            modifier = Modifier
+                                                .size(7.dp)
+                                                .clip(CircleShape)
+                                                .background(Color(0xFF00E5FF))
+                                        )
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text(
+                                            text = "LIVE POOL REAL-TIME STATUS",
+                                            color = Color.White,
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Bold
+                                        )
                                     }
-                                    Text("Last 5 min", color = Color(0xFF64748B), fontSize = 9.sp)
+
+                                    Surface(
+                                        color = Color(0xFF00E5FF).copy(alpha = 0.15f),
+                                        shape = RoundedCornerShape(4.dp)
+                                    ) {
+                                        Text(
+                                            text = "((o)) ${state.liveConsoleFeed.size} LIVE EVENTS",
+                                            color = Color(0xFF00E5FF),
+                                            fontSize = 8.5.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                        )
+                                    }
                                 }
 
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.Bottom
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                                 ) {
-                                    Column {
-                                        Text("50", color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.Black)
-                                        Text("OTP / MIN", color = Color(0xFF94A3B8), fontSize = 9.sp, fontWeight = FontWeight.Bold)
-                                    }
-
-                                    // Mini Cyan Curve Canvas
-                                    Canvas(modifier = Modifier.size(width = 120.dp, height = 32.dp)) {
-                                        val path = Path().apply {
-                                            moveTo(0f, size.height * 0.9f)
-                                            cubicTo(
-                                                size.width * 0.4f, size.height * 0.85f,
-                                                size.width * 0.7f, size.height * 0.7f,
-                                                size.width, size.height * 0.15f
-                                            )
-                                        }
-                                        drawPath(
-                                            path = path,
-                                            color = Color(0xFF00E5FF),
-                                            style = Stroke(width = 2.5f.dp.toPx())
-                                        )
-                                    }
-                                }
-                            }
-                        }
-
-                        // TOP APPS & COUNTRY DISTRIBUTION (Screenshot 2)
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            // TOP APPS
-                            Surface(
-                                color = Color(0xFF0B1726),
-                                shape = RoundedCornerShape(10.dp),
-                                border = BorderStroke(0.8.dp, Color(0xFF1B3550)),
-                                modifier = Modifier.weight(1f)
-                            ) {
-                                Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.SpaceBetween
+                                    // Active Countries Box
+                                    Surface(
+                                        color = Color(0xFF070E18),
+                                        shape = RoundedCornerShape(8.dp),
+                                        border = BorderStroke(0.8.dp, Color(0xFF162D42)),
+                                        modifier = Modifier.weight(1f)
                                     ) {
-                                        Text("TOP APPS", color = Color(0xFF94A3B8), fontSize = 9.5.sp, fontWeight = FontWeight.Bold)
-                                        Text("by volume", color = Color(0xFF64748B), fontSize = 8.5.sp)
-                                    }
-
-                                    // Facebook
-                                    Column {
-                                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                            Text("● Facebook", color = Color(0xFF38BDF8), fontSize = 9.sp, fontWeight = FontWeight.Bold)
-                                            Text("46", color = Color(0xFF94A3B8), fontSize = 9.sp)
+                                        Column(modifier = Modifier.padding(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                            Row(
+                                                modifier = Modifier.fillMaxWidth(),
+                                                horizontalArrangement = Arrangement.SpaceBetween,
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                Text("ACTIVE COUNTRIES", color = Color(0xFF94A3B8), fontSize = 8.5.sp, fontWeight = FontWeight.Bold)
+                                                Text("${activeCountriesInFeed.size}", color = Color(0xFF38BDF8), fontSize = 11.sp, fontWeight = FontWeight.ExtraBold)
+                                            }
+                                            FlowRow(
+                                                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                                verticalArrangement = Arrangement.spacedBy(4.dp)
+                                            ) {
+                                                activeCountriesInFeed.forEach { (flag, cName) ->
+                                                    Surface(
+                                                        color = Color(0xFF0F1E2E),
+                                                        shape = RoundedCornerShape(4.dp),
+                                                        border = BorderStroke(0.6.dp, Color(0xFF1E3A56))
+                                                    ) {
+                                                        Row(
+                                                            modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp),
+                                                            verticalAlignment = Alignment.CenterVertically
+                                                        ) {
+                                                            Text(flag, fontSize = 9.5.sp)
+                                                            Spacer(modifier = Modifier.width(3.dp))
+                                                            Text(cName, color = Color.White, fontSize = 8.5.sp, fontWeight = FontWeight.Medium)
+                                                        }
+                                                    }
+                                                }
+                                            }
                                         }
-                                        LinearProgressIndicator(
-                                            progress = { 0.92f },
-                                            color = Color(0xFF0284C7),
-                                            trackColor = Color(0xFF162A3E),
-                                            modifier = Modifier.fillMaxWidth().height(3.dp).clip(RoundedCornerShape(2.dp))
-                                        )
                                     }
 
-                                    // Apple
-                                    Column {
-                                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                            Text("● Apple", color = Color(0xFF00E5FF), fontSize = 9.sp, fontWeight = FontWeight.Bold)
-                                            Text("3", color = Color(0xFF94A3B8), fontSize = 9.sp)
-                                        }
-                                        LinearProgressIndicator(
-                                            progress = { 0.15f },
-                                            color = Color(0xFF00E5FF),
-                                            trackColor = Color(0xFF162A3E),
-                                            modifier = Modifier.fillMaxWidth().height(3.dp).clip(RoundedCornerShape(2.dp))
-                                        )
-                                    }
-
-                                    // WhatsApp
-                                    Column {
-                                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                            Text("● WhatsApp", color = Color(0xFF10B981), fontSize = 9.sp, fontWeight = FontWeight.Bold)
-                                            Text("1", color = Color(0xFF94A3B8), fontSize = 9.sp)
-                                        }
-                                        LinearProgressIndicator(
-                                            progress = { 0.08f },
-                                            color = Color(0xFF10B981),
-                                            trackColor = Color(0xFF162A3E),
-                                            modifier = Modifier.fillMaxWidth().height(3.dp).clip(RoundedCornerShape(2.dp))
-                                        )
-                                    }
-                                }
-                            }
-
-                            // COUNTRY DISTRIBUTION
-                            Surface(
-                                color = Color(0xFF0B1726),
-                                shape = RoundedCornerShape(10.dp),
-                                border = BorderStroke(0.8.dp, Color(0xFF1B3550)),
-                                modifier = Modifier.weight(1.1f)
-                            ) {
-                                Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.SpaceBetween
+                                    // Active Services Box
+                                    Surface(
+                                        color = Color(0xFF070E18),
+                                        shape = RoundedCornerShape(8.dp),
+                                        border = BorderStroke(0.8.dp, Color(0xFF162D42)),
+                                        modifier = Modifier.weight(1f)
                                     ) {
-                                        Text("COUNTRY SHARE", color = Color(0xFF94A3B8), fontSize = 9.5.sp, fontWeight = FontWeight.Bold)
-                                        Text("50 TOTAL", color = Color(0xFF00E5FF), fontSize = 8.5.sp, fontWeight = FontWeight.Bold)
-                                    }
-
-                                    listOf(
-                                        "🇫🇷 France" to "26 • 52%",
-                                        "🇿🇼 Zimbabwe" to "10 • 20%",
-                                        "🇸🇩 Sudan" to "10 • 20%",
-                                        "🇿🇲 Zambia" to "4 • 8%"
-                                    ).forEach { (cName, pct) ->
-                                        Row(
-                                            modifier = Modifier.fillMaxWidth(),
-                                            horizontalArrangement = Arrangement.SpaceBetween,
-                                            verticalAlignment = Alignment.CenterVertically
-                                        ) {
-                                            Text(cName, color = Color.White, fontSize = 9.sp)
-                                            Text(pct, color = Color(0xFF34D399), fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                                        Column(modifier = Modifier.padding(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                            Row(
+                                                modifier = Modifier.fillMaxWidth(),
+                                                horizontalArrangement = Arrangement.SpaceBetween,
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                Text("ACTIVE SERVICES", color = Color(0xFF94A3B8), fontSize = 8.5.sp, fontWeight = FontWeight.Bold)
+                                                Text("${activeServicesInFeed.size}", color = Color(0xFF34D399), fontSize = 11.sp, fontWeight = FontWeight.ExtraBold)
+                                            }
+                                            FlowRow(
+                                                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                                verticalArrangement = Arrangement.spacedBy(4.dp)
+                                            ) {
+                                                activeServicesInFeed.forEach { srv ->
+                                                    Surface(
+                                                        color = Color(0xFF063321),
+                                                        shape = RoundedCornerShape(4.dp),
+                                                        border = BorderStroke(0.6.dp, Color(0xFF059669).copy(alpha = 0.5f))
+                                                    ) {
+                                                        Text(
+                                                            text = srv,
+                                                            color = Color(0xFF86EFAC),
+                                                            fontSize = 8.5.sp,
+                                                            fontWeight = FontWeight.Bold,
+                                                            modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
+                                                        )
+                                                    }
+                                                }
+                                            }
                                         }
                                     }
                                 }
@@ -1148,7 +1277,7 @@ fun PremiumNumberV2SectionContent(
                     }
                 }
 
-                // LIVE OTP STREAMING FEED (Screenshot 2)
+                // LIVE OTP STREAMING FEED
                 Card(
                     colors = CardDefaults.cardColors(containerColor = Color(0xFF09121D)),
                     shape = RoundedCornerShape(14.dp),
@@ -1184,23 +1313,6 @@ fun PremiumNumberV2SectionContent(
                                     color = Color(0xFF1E293B),
                                     shape = RoundedCornerShape(4.dp),
                                     modifier = Modifier.clickable {
-                                        isLiveStreamPaused = !isLiveStreamPaused
-                                        Toast.makeText(context, if (isLiveStreamPaused) "স্ট্রীম পজ করা হয়েছে" else "স্ট্রীম চালু হয়েছে", Toast.LENGTH_SHORT).show()
-                                    }
-                                ) {
-                                    Text(
-                                        text = if (isLiveStreamPaused) "▶ Resume" else "⏸ Pause",
-                                        color = Color.White,
-                                        fontSize = 9.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp)
-                                    )
-                                }
-
-                                Surface(
-                                    color = Color(0xFF1E293B),
-                                    shape = RoundedCornerShape(4.dp),
-                                    modifier = Modifier.clickable {
                                         PremiumNumberV2Manager.refreshLiveConsole()
                                         Toast.makeText(context, "লাইভ ওটিপি ফিড রিফ্রেশ হয়েছে", Toast.LENGTH_SHORT).show()
                                     }
@@ -1215,12 +1327,42 @@ fun PremiumNumberV2SectionContent(
                             }
                         }
 
-                        // Filter Chips: ALL, Facebook, WhatsApp, Instagram, Telegram, Other (Screenshot 2)
+                        // Search Input for Live OTP Feed
+                        OutlinedTextField(
+                            value = liveFeedSearchQuery,
+                            onValueChange = { liveFeedSearchQuery = it },
+                            placeholder = { Text("সার্ভিস, দেশ বা নম্বর খুঁজুন...", color = Color(0xFF64748B), fontSize = 11.sp) },
+                            singleLine = true,
+                            leadingIcon = {
+                                Icon(Icons.Default.Search, contentDescription = null, tint = Color(0xFF00E5FF), modifier = Modifier.size(15.dp))
+                            },
+                            trailingIcon = {
+                                if (liveFeedSearchQuery.isNotEmpty()) {
+                                    IconButton(onClick = { liveFeedSearchQuery = "" }, modifier = Modifier.size(24.dp)) {
+                                        Icon(Icons.Default.Close, contentDescription = "Clear", tint = Color(0xFF94A3B8), modifier = Modifier.size(14.dp))
+                                    }
+                                }
+                            },
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedTextColor = Color.White,
+                                unfocusedTextColor = Color.White,
+                                focusedBorderColor = Color(0xFF00E5FF),
+                                unfocusedBorderColor = Color(0xFF1E3A56),
+                                focusedContainerColor = Color(0xFF070E18),
+                                unfocusedContainerColor = Color(0xFF070E18)
+                            ),
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier.fillMaxWidth().height(44.dp)
+                        )
+
+                        // Scrollable Category Filter Chips
                         Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .horizontalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(5.dp)
                         ) {
-                            listOf("ALL", "Facebook", "WhatsApp", "Instagram", "Telegram", "Other").forEach { cat ->
+                            listOf("ALL", "WhatsApp", "Telegram", "Facebook", "Apple", "Google", "Instagram", "TikTok", "Other").forEach { cat ->
                                 val isSel = selectedConsoleCategory.equals(cat, ignoreCase = true)
                                 Surface(
                                     color = if (isSel) Color(0xFF00E5FF) else Color(0xFF0E1A29),
@@ -1233,24 +1375,38 @@ fun PremiumNumberV2SectionContent(
                                         color = if (isSel) Color(0xFF041B26) else Color(0xFF94A3B8),
                                         fontSize = 9.5.sp,
                                         fontWeight = if (isSel) FontWeight.Bold else FontWeight.Normal,
-                                        modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.5.dp)
+                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
                                     )
                                 }
                             }
                         }
 
-                        val feedItems = remember(state.liveConsoleFeed, selectedConsoleCategory) {
-                            if (selectedConsoleCategory == "ALL") state.liveConsoleFeed
+                        val feedItems = remember(state.liveConsoleFeed, selectedConsoleCategory, liveFeedSearchQuery) {
+                            var list = if (selectedConsoleCategory == "ALL") state.liveConsoleFeed
                             else if (selectedConsoleCategory == "Other") {
                                 state.liveConsoleFeed.filter {
                                     !it.service.contains("facebook", ignoreCase = true) &&
                                     !it.service.contains("whatsapp", ignoreCase = true) &&
                                     !it.service.contains("instagram", ignoreCase = true) &&
-                                    !it.service.contains("telegram", ignoreCase = true)
+                                    !it.service.contains("telegram", ignoreCase = true) &&
+                                    !it.service.contains("apple", ignoreCase = true) &&
+                                    !it.service.contains("google", ignoreCase = true)
                                 }
                             } else {
                                 state.liveConsoleFeed.filter { it.service.contains(selectedConsoleCategory, ignoreCase = true) }
                             }
+
+                            if (liveFeedSearchQuery.isNotBlank()) {
+                                val q = liveFeedSearchQuery.trim().lowercase()
+                                list = list.filter {
+                                    it.country.lowercase().contains(q) ||
+                                    it.service.lowercase().contains(q) ||
+                                    it.maskedNumber.contains(q) ||
+                                    it.rangePrefix.contains(q) ||
+                                    it.rawSnippet.lowercase().contains(q)
+                                }
+                            }
+                            list
                         }
 
                         if (feedItems.isEmpty()) {
@@ -1488,13 +1644,12 @@ fun PremiumV2NumberCard(
                         }
 
                         if (!item.otpMessage.isNullOrEmpty()) {
-                            Spacer(modifier = Modifier.height(4.dp))
+                            Spacer(modifier = Modifier.height(6.dp))
                             Text(
                                 text = item.otpMessage,
                                 color = Color(0xFFCBD5E1),
-                                fontSize = 10.sp,
-                                maxLines = 2,
-                                overflow = TextOverflow.Ellipsis
+                                fontSize = 10.5.sp,
+                                lineHeight = 15.sp
                             )
                         }
                     }
@@ -1657,8 +1812,7 @@ fun LiveOtpStreamCard(
                             text = item.rawSnippet,
                             color = Color(0xFF94A3B8),
                             fontSize = 9.5.sp,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
+                            lineHeight = 14.sp
                         )
                     }
                 }

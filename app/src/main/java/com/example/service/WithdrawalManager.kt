@@ -208,13 +208,15 @@ object WithdrawalManager {
         val currentUnixRate = UnixSmsManager.state.value.otpRatePerSms
         val currentZenexRate = VirtualNumberManager.zenexOtpRate.value
         val currentKop2Rate = KopEngine2Manager.kop2OtpRate.value
+        val currentV2Rate = PremiumNumberV2Manager.otpRate.value
 
         val otpEarnedTk = if (records.isNotEmpty()) {
             records.sumOf { rec ->
                 val rate = if (rec.rate > 0.0) rec.rate else {
                     when {
-                        rec.platform.contains("Unix", ignoreCase = true) -> currentUnixRate
-                        rec.platform.contains("Kop Engine 2", ignoreCase = true) || rec.platform.contains("Kop2", ignoreCase = true) -> currentKop2Rate
+                        rec.platform.contains("V2", ignoreCase = true) || rec.platform.contains("Premium Number V2", ignoreCase = true) || rec.platform.contains("Premium V2", ignoreCase = true) -> currentV2Rate
+                        rec.platform.contains("Unix", ignoreCase = true) || rec.platform.contains("Lamix", ignoreCase = true) || (rec.platform.contains("Premium", ignoreCase = true) && !rec.platform.contains("V2", ignoreCase = true)) -> currentUnixRate
+                        rec.platform.contains("Kop Engine 2", ignoreCase = true) || rec.platform.contains("Kop2", ignoreCase = true) || rec.platform.contains("Kop 2", ignoreCase = true) -> currentKop2Rate
                         else -> currentZenexRate
                     }
                 }
@@ -224,7 +226,8 @@ object WithdrawalManager {
             val unixCount = OtpHistoryManager.state.value.unixTotalAllTime
             val zenexCount = OtpHistoryManager.state.value.zenexTotalAllTime
             val kop2Count = OtpHistoryManager.state.value.kop2TotalAllTime
-            (unixCount * currentUnixRate) + (zenexCount * currentZenexRate) + (kop2Count * currentKop2Rate)
+            val v2Count = OtpHistoryManager.state.value.v2TotalAllTime
+            (unixCount * currentUnixRate) + (zenexCount * currentZenexRate) + (kop2Count * currentKop2Rate) + (v2Count * currentV2Rate)
         }
 
         val totalEarned = baseCredit + otpEarnedTk

@@ -79,6 +79,8 @@ import com.example.service.UnixSmsManager
 import com.example.service.VirtualNumberManager
 import com.example.util.ClipboardHelper
 import android.widget.Toast
+import kotlinx.coroutines.delay
+import java.util.Locale
 
 /**
  * Ultra-Premium, Glassmorphic Floating Overlay UI:
@@ -1314,6 +1316,14 @@ fun VirtualNumbersOverlaySection(
     val v2State by PremiumNumberV2Manager.state.collectAsState()
     var dropdownExpanded by remember { mutableStateOf(false) }
 
+    var nowTick by remember { mutableStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            delay(1000L)
+            nowTick = System.currentTimeMillis()
+        }
+    }
+
     val activeCount = when (selectedPanel) {
         0 -> unixState.activeNumbers.size
         1 -> vnState.provisionedNumbers.size
@@ -1879,12 +1889,27 @@ fun VirtualNumbersOverlaySection(
                                                     )
                                                 }
                                             } else {
-                                                Text(
-                                                    text = "Wait...",
-                                                    color = Color(0xFFFFD600),
-                                                    fontSize = 8.sp,
-                                                    fontWeight = FontWeight.Bold
-                                                )
+                                                val msRemaining = (item.expiresAt - nowTick).coerceAtLeast(0L)
+                                                val mins = msRemaining / 60000L
+                                                val secs = (msRemaining % 60000L) / 1000L
+                                                val countdownText = String.format(Locale.US, "%02d:%02d", mins, secs)
+
+                                                Surface(
+                                                    color = if (msRemaining > 0L) Color(0xFFD97706).copy(alpha = 0.22f) else Color(0xFFEF4444).copy(alpha = 0.22f),
+                                                    shape = RoundedCornerShape(3.dp),
+                                                    border = androidx.compose.foundation.BorderStroke(
+                                                        0.5.dp,
+                                                        if (msRemaining > 0L) Color(0xFFFFD600).copy(alpha = 0.7f) else Color(0xFFEF4444).copy(alpha = 0.7f)
+                                                    )
+                                                ) {
+                                                    Text(
+                                                        text = if (msRemaining > 0L) "⏱ $countdownText" else "Expired",
+                                                        color = if (msRemaining > 0L) Color(0xFFFFD600) else Color(0xFFF87171),
+                                                        fontSize = 7.5.sp,
+                                                        fontWeight = FontWeight.Bold,
+                                                        modifier = Modifier.padding(horizontal = 3.dp, vertical = 1.dp)
+                                                    )
+                                                }
                                             }
                                         }
                                     }

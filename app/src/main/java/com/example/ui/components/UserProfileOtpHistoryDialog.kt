@@ -912,9 +912,9 @@ fun UserProfileOtpHistoryDialog(
                                             shape = RoundedCornerShape(4.dp)
                                         ) {
                                             Text(
-                                                text = "Unix: ${String.format(Locale.US, "%.2f", otpState.currentUnixRate)}৳ • Kop 1: ${String.format(Locale.US, "%.2f", otpState.currentZenexRate)}৳ • Kop 2: ${String.format(Locale.US, "%.2f", otpState.currentKop2Rate)}৳",
+                                                text = "Unix: ${String.format(Locale.US, "%.2f", otpState.currentUnixRate)}৳ • Kop 1: ${String.format(Locale.US, "%.2f", otpState.currentZenexRate)}৳ • Kop 2: ${String.format(Locale.US, "%.2f", otpState.currentKop2Rate)}৳ • V2: ${String.format(Locale.US, "%.2f", otpState.currentV2Rate)}৳",
                                                 color = Color(0xFF38BDF8),
-                                                fontSize = 9.sp,
+                                                fontSize = 8.5.sp,
                                                 fontWeight = FontWeight.Bold,
                                                 modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                                             )
@@ -923,116 +923,160 @@ fun UserProfileOtpHistoryDialog(
 
                                     Spacer(modifier = Modifier.height(10.dp))
 
-                                    Row(
+                                    // 2x2 Grid of Platforms
+                                    Column(
                                         modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                        verticalArrangement = Arrangement.spacedBy(8.dp)
                                     ) {
-                                        // Unix SMS Box
-                                        Surface(
-                                            color = Color(0xFF0284C7).copy(alpha = 0.12f),
-                                            shape = RoundedCornerShape(10.dp),
-                                            border = BorderStroke(1.dp, Color(0xFF0284C7).copy(alpha = 0.4f)),
-                                            modifier = Modifier.weight(1f)
+                                        // Row 1: Premium & Kop 1
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.spacedBy(8.dp)
                                         ) {
-                                            Column(modifier = Modifier.padding(8.dp)) {
-                                                Text(
-                                                    text = "1. Premium",
-                                                    color = Color(0xFF38BDF8),
-                                                    fontSize = 10.5.sp,
-                                                    fontWeight = FontWeight.Bold
-                                                )
-                                                Text(
-                                                    text = "Rate: ${String.format(Locale.US, "%.2f", otpState.currentUnixRate)}৳",
-                                                    color = Color(0xFF67E8F9),
-                                                    fontSize = 9.sp,
-                                                    fontWeight = FontWeight.SemiBold
-                                                )
-                                                Spacer(modifier = Modifier.height(4.dp))
-                                                Text(
-                                                    text = "Today: ${otpState.unixTodayOtps}",
-                                                    color = Color.White,
-                                                    fontSize = 11.sp,
-                                                    fontWeight = FontWeight.ExtraBold
-                                                )
-                                                Text(
-                                                    text = "Total: ${otpState.unixTotalAllTime}",
-                                                    color = Color(0xFF94A3B8),
-                                                    fontSize = 9.sp
-                                                )
+                                            // 1. Premium Box
+                                            Surface(
+                                                color = Color(0xFF0284C7).copy(alpha = 0.12f),
+                                                shape = RoundedCornerShape(10.dp),
+                                                border = BorderStroke(1.dp, Color(0xFF0284C7).copy(alpha = 0.4f)),
+                                                modifier = Modifier.weight(1f)
+                                            ) {
+                                                Column(modifier = Modifier.padding(8.dp)) {
+                                                    Text(
+                                                        text = "1. Premium",
+                                                        color = Color(0xFF38BDF8),
+                                                        fontSize = 11.sp,
+                                                        fontWeight = FontWeight.Bold
+                                                    )
+                                                    Text(
+                                                        text = "Rate: ${String.format(Locale.US, "%.2f", otpState.currentUnixRate)}৳",
+                                                        color = Color(0xFF67E8F9),
+                                                        fontSize = 9.sp,
+                                                        fontWeight = FontWeight.SemiBold
+                                                    )
+                                                    Spacer(modifier = Modifier.height(4.dp))
+                                                    Text(
+                                                        text = "Today: ${otpState.unixTodayOtps}",
+                                                        color = Color.White,
+                                                        fontSize = 11.5.sp,
+                                                        fontWeight = FontWeight.ExtraBold
+                                                    )
+                                                    Text(
+                                                        text = "Total: ${otpState.unixTotalAllTime}",
+                                                        color = Color(0xFF94A3B8),
+                                                        fontSize = 9.sp
+                                                    )
+                                                }
                                             }
-                                        }
 
-                                        // Kop Engine Box
-                                        Surface(
-                                            color = Color(0xFF10B981).copy(alpha = 0.12f),
-                                            shape = RoundedCornerShape(10.dp),
-                                            border = BorderStroke(1.dp, Color(0xFF10B981).copy(alpha = 0.4f)),
-                                            modifier = Modifier.weight(1f)
-                                        ) {
-                                            Column(modifier = Modifier.padding(8.dp)) {
-                                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                            // 2. Kop 1 Box
+                                            Surface(
+                                                color = Color(0xFF10B981).copy(alpha = 0.12f),
+                                                shape = RoundedCornerShape(10.dp),
+                                                border = BorderStroke(1.dp, Color(0xFF10B981).copy(alpha = 0.4f)),
+                                                modifier = Modifier.weight(1f)
+                                            ) {
+                                                Column(modifier = Modifier.padding(8.dp)) {
                                                     Text(
                                                         text = "2. Kop 1",
                                                         color = Color(0xFF34D399),
-                                                        fontSize = 10.5.sp,
+                                                        fontSize = 11.sp,
                                                         fontWeight = FontWeight.Bold
                                                     )
+                                                    Text(
+                                                        text = "Rate: ${String.format(Locale.US, "%.2f", otpState.currentZenexRate)}৳",
+                                                        color = Color(0xFFA7F3D0),
+                                                        fontSize = 9.sp,
+                                                        fontWeight = FontWeight.SemiBold
+                                                    )
+                                                    Spacer(modifier = Modifier.height(4.dp))
+                                                    Text(
+                                                        text = "Today: ${otpState.zenexTodayOtps}",
+                                                        color = Color.White,
+                                                        fontSize = 11.5.sp,
+                                                        fontWeight = FontWeight.ExtraBold
+                                                    )
+                                                    Text(
+                                                        text = "Total: ${otpState.zenexTotalAllTime}",
+                                                        color = Color(0xFF94A3B8),
+                                                        fontSize = 9.sp
+                                                    )
                                                 }
-                                                Text(
-                                                    text = "Rate: ${String.format(Locale.US, "%.2f", otpState.currentZenexRate)}৳",
-                                                    color = Color(0xFFA7F3D0),
-                                                    fontSize = 9.sp,
-                                                    fontWeight = FontWeight.SemiBold
-                                                )
-                                                Spacer(modifier = Modifier.height(4.dp))
-                                                Text(
-                                                    text = "Today: ${otpState.zenexTodayOtps}",
-                                                    color = Color.White,
-                                                    fontSize = 11.sp,
-                                                    fontWeight = FontWeight.ExtraBold
-                                                )
-                                                Text(
-                                                    text = "Total: ${otpState.zenexTotalAllTime}",
-                                                    color = Color(0xFF94A3B8),
-                                                    fontSize = 9.sp
-                                                )
                                             }
                                         }
 
-                                        // Kop Engine 2 Box
-                                        Surface(
-                                            color = Color(0xFF8B5CF6).copy(alpha = 0.12f),
-                                            shape = RoundedCornerShape(10.dp),
-                                            border = BorderStroke(1.dp, Color(0xFF8B5CF6).copy(alpha = 0.4f)),
-                                            modifier = Modifier.weight(1f)
+                                        // Row 2: Kop 2 & Premium V2
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.spacedBy(8.dp)
                                         ) {
-                                            Column(modifier = Modifier.padding(8.dp)) {
-                                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                            // 3. Kop 2 Box
+                                            Surface(
+                                                color = Color(0xFF8B5CF6).copy(alpha = 0.12f),
+                                                shape = RoundedCornerShape(10.dp),
+                                                border = BorderStroke(1.dp, Color(0xFF8B5CF6).copy(alpha = 0.4f)),
+                                                modifier = Modifier.weight(1f)
+                                            ) {
+                                                Column(modifier = Modifier.padding(8.dp)) {
                                                     Text(
                                                         text = "3. Kop 2",
                                                         color = Color(0xFFA78BFA),
-                                                        fontSize = 10.5.sp,
+                                                        fontSize = 11.sp,
                                                         fontWeight = FontWeight.Bold
                                                     )
+                                                    Text(
+                                                        text = "Rate: ${String.format(Locale.US, "%.2f", otpState.currentKop2Rate)}৳",
+                                                        color = Color(0xFFDDD6FE),
+                                                        fontSize = 9.sp,
+                                                        fontWeight = FontWeight.SemiBold
+                                                    )
+                                                    Spacer(modifier = Modifier.height(4.dp))
+                                                    Text(
+                                                        text = "Today: ${otpState.kop2TodayOtps}",
+                                                        color = Color.White,
+                                                        fontSize = 11.5.sp,
+                                                        fontWeight = FontWeight.ExtraBold
+                                                    )
+                                                    Text(
+                                                        text = "Total: ${otpState.kop2TotalAllTime}",
+                                                        color = Color(0xFF94A3B8),
+                                                        fontSize = 9.sp
+                                                    )
                                                 }
-                                                Text(
-                                                    text = "Rate: ${String.format(Locale.US, "%.2f", otpState.currentKop2Rate)}৳",
-                                                    color = Color(0xFFDDD6FE),
-                                                    fontSize = 9.sp,
-                                                    fontWeight = FontWeight.SemiBold
-                                                )
-                                                Spacer(modifier = Modifier.height(4.dp))
-                                                Text(
-                                                    text = "Today: ${otpState.kop2TodayOtps}",
-                                                    color = Color.White,
-                                                    fontSize = 11.sp,
-                                                    fontWeight = FontWeight.ExtraBold
-                                                )
-                                                Text(
-                                                    text = "Total: ${otpState.kop2TotalAllTime}",
-                                                    color = Color(0xFF94A3B8),
-                                                    fontSize = 9.sp
-                                                )
+                                            }
+
+                                            // 4. Premium V2 Box
+                                            Surface(
+                                                color = Color(0xFFF59E0B).copy(alpha = 0.12f),
+                                                shape = RoundedCornerShape(10.dp),
+                                                border = BorderStroke(1.dp, Color(0xFFF59E0B).copy(alpha = 0.4f)),
+                                                modifier = Modifier.weight(1f)
+                                            ) {
+                                                Column(modifier = Modifier.padding(8.dp)) {
+                                                    Text(
+                                                        text = "4. Prem V2",
+                                                        color = Color(0xFFFBBF24),
+                                                        fontSize = 11.sp,
+                                                        fontWeight = FontWeight.Bold
+                                                    )
+                                                    Text(
+                                                        text = "Rate: ${String.format(Locale.US, "%.2f", otpState.currentV2Rate)}৳",
+                                                        color = Color(0xFFFDE68A),
+                                                        fontSize = 9.sp,
+                                                        fontWeight = FontWeight.SemiBold
+                                                    )
+                                                    Spacer(modifier = Modifier.height(4.dp))
+                                                    Text(
+                                                        text = "Today: ${otpState.v2TodayOtps}",
+                                                        color = Color.White,
+                                                        fontSize = 11.5.sp,
+                                                        fontWeight = FontWeight.ExtraBold
+                                                    )
+                                                    Text(
+                                                        text = "Total: ${otpState.v2TotalAllTime}",
+                                                        color = Color(0xFF94A3B8),
+                                                        fontSize = 9.sp
+                                                    )
+                                                }
                                             }
                                         }
                                     }
@@ -1291,7 +1335,7 @@ fun DailyOtpRowItem(
                         fontWeight = if (isToday) FontWeight.Bold else FontWeight.Medium
                     )
                     Text(
-                        text = "Unix: ${summary.unixCount} • Kop 1: ${summary.zenexCount} • Kop 2: ${summary.kop2Count}",
+                        text = "Unix: ${summary.unixCount} • Kop 1: ${summary.zenexCount} • Kop 2: ${summary.kop2Count} • V2: ${summary.v2Count}",
                         color = Color(0xFF94A3B8),
                         fontSize = 9.sp
                     )
@@ -1331,7 +1375,23 @@ fun RecentOtpLogItem(
     context: Context
 ) {
     val timeStr = SimpleDateFormat("hh:mm a", Locale.US).format(Date(rec.timestamp))
-    val isUnix = rec.platform.contains("Unix", ignoreCase = true)
+    val isUnix = rec.platform.contains("Unix", ignoreCase = true) || rec.platform.contains("Lamix", ignoreCase = true)
+    val isV2 = rec.platform.contains("V2", ignoreCase = true) || rec.platform.contains("Premium Number V2", ignoreCase = true) || rec.platform.contains("Premium V2", ignoreCase = true)
+    val isKop2 = rec.platform.contains("Kop 2", ignoreCase = true) || rec.platform.contains("Kop Engine 2", ignoreCase = true) || rec.platform.contains("Kop2", ignoreCase = true)
+
+    val badgeBg = when {
+        isV2 -> Color(0xFFF59E0B).copy(alpha = 0.2f)
+        isUnix -> Color(0xFF0091EA).copy(alpha = 0.2f)
+        isKop2 -> Color(0xFF8B5CF6).copy(alpha = 0.2f)
+        else -> Color(0xFF10B981).copy(alpha = 0.2f)
+    }
+    val badgeTextColor = when {
+        isV2 -> Color(0xFFFBBF24)
+        isUnix -> Color(0xFF81D4FA)
+        isKop2 -> Color(0xFFDDD6FE)
+        else -> Color(0xFF34D399)
+    }
+    val displayRate = if (rec.rate > 0.0) rec.rate else 0.50
 
     Surface(
         color = Color(0xFF09121D),
@@ -1358,12 +1418,12 @@ fun RecentOtpLogItem(
                     )
                     Spacer(modifier = Modifier.width(6.dp))
                     Surface(
-                        color = if (isUnix) Color(0xFF0091EA).copy(alpha = 0.2f) else Color(0xFF10B981).copy(alpha = 0.2f),
+                        color = badgeBg,
                         shape = RoundedCornerShape(3.dp)
                     ) {
                         Text(
-                            text = "${rec.service} (${rec.platform}: +৳${String.format(Locale.US, "%.2f", rec.rate * 120.0)})",
-                            color = if (isUnix) Color(0xFF81D4FA) else Color(0xFF34D399),
+                            text = "${rec.service} (${rec.platform}: +৳${String.format(Locale.US, "%.2f", displayRate)})",
+                            color = badgeTextColor,
                             fontSize = 8.sp,
                             fontWeight = FontWeight.Bold,
                             modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
