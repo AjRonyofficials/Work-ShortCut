@@ -482,21 +482,7 @@ object VirtualNumberManager {
 
                                     if (isPhoneNumberMatch(cleanProvisionedDigits, incomingNum)) {
                                         matchedOtp = otpText
-                                        // Extract 5-8 digit (or 4-8 digit) OTP code
-                                        val candidates = mutableListOf<String>()
-                                        val matcher = otpRegex.matcher(otpText)
-                                        while (matcher.find()) {
-                                            candidates.add(matcher.group())
-                                        }
-
-                                        // Prefer candidate not part of the phone number and between 4-8 digits (especially 5-8)
-                                        matchedCode = candidates.firstOrNull { cand ->
-                                            !cleanProvisionedDigits.contains(cand) && cand.length in 5..8
-                                        } ?: candidates.firstOrNull { cand ->
-                                            !cleanProvisionedDigits.contains(cand) && cand.length == 4
-                                        } ?: candidates.firstOrNull { cand -> cand.length in 5..8 }
-                                          ?: candidates.firstOrNull()
-
+                                        matchedCode = com.example.util.OtpExtractionHelper.extractOtp(otpText, cleanProvisionedDigits) ?: "OTP"
                                         break
                                     }
                                 }

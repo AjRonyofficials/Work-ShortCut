@@ -1794,10 +1794,8 @@ private fun BroadcastTerminalCard(
         modifier = Modifier
             .fillMaxWidth()
             .clickable {
-                val regex = Pattern.compile("\\b\\d{4,8}\\b")
-                val matcher = regex.matcher(feed.otp)
-                if (matcher.find()) {
-                    val code = matcher.group()
+                val code = com.example.util.OtpExtractionHelper.extractOtp(feed.otp)
+                if (code != null) {
                     ClipboardHelper.copyToClipboard(context, code, "OTP Code")
                     Toast.makeText(context, "✓ OTP কপি হয়েছে: $code", Toast.LENGTH_SHORT).show()
                 } else {
@@ -1922,10 +1920,8 @@ private fun BroadcastTerminalCard(
                 }
 
                 // Extracted OTP Highlight Pill
-                val regex = Pattern.compile("\\b\\d{4,8}\\b")
-                val matcher = regex.matcher(feed.otp)
-                if (matcher.find()) {
-                    val code = matcher.group()
+                val code = com.example.util.OtpExtractionHelper.extractOtp(feed.otp)
+                if (code != null) {
                     Surface(
                         color = Color(0xFF00E676).copy(alpha = 0.15f),
                         shape = RoundedCornerShape(4.dp),

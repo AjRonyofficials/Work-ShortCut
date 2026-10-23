@@ -1421,6 +1421,12 @@ fun PremiumNumberV2SectionContent(
                                 LiveOtpStreamCard(
                                     item = item,
                                     onGetNumber = {
+                                        if (item.rangePrefix.isNotBlank()) {
+                                            PremiumNumberV2Manager.setRangePrefix(item.rangePrefix)
+                                        }
+                                        if (item.iso.isNotBlank() && item.iso != "ANY") {
+                                            PremiumNumberV2Manager.setSelectedCountry(item.iso)
+                                        }
                                         PremiumNumberV2Manager.rentDirectFromConsoleItem(item, context)
                                     }
                                 )
@@ -1804,15 +1810,17 @@ fun LiveOtpStreamCard(
                 ) {
                     Row(
                         modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
-                        verticalAlignment = Alignment.CenterVertically
+                        verticalAlignment = Alignment.Top
                     ) {
-                        Text("💬", fontSize = 10.sp)
+                        Text("💬", fontSize = 10.sp, modifier = Modifier.padding(top = 1.dp))
                         Spacer(modifier = Modifier.width(6.dp))
                         Text(
                             text = item.rawSnippet,
-                            color = Color(0xFF94A3B8),
-                            fontSize = 9.5.sp,
-                            lineHeight = 14.sp
+                            color = Color(0xFFCBD5E1),
+                            fontSize = 10.sp,
+                            lineHeight = 15.sp,
+                            maxLines = Int.MAX_VALUE,
+                            softWrap = true
                         )
                     }
                 }

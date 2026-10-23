@@ -623,8 +623,7 @@ fun UnixSmsSectionContent(
             val totalDlrCount = unixState.liveCdrRecords.size
             val withOtpCount = remember(unixState.liveCdrRecords) {
                 unixState.liveCdrRecords.count {
-                    val p = java.util.regex.Pattern.compile("\\b\\d{4,8}\\b")
-                    p.matcher(it.message).find()
+                    com.example.util.OtpExtractionHelper.extractOtp(it.message) != null
                 }
             }
 
@@ -732,8 +731,7 @@ fun UnixSmsSectionContent(
                             cdr.message.contains(consoleSearchFilter, ignoreCase = true)
 
                     val matchesTab = if (dlrFilterTab == "OTP_ONLY") {
-                        val p = java.util.regex.Pattern.compile("\\b\\d{4,8}\\b")
-                        p.matcher(cdr.message).find()
+                        com.example.util.OtpExtractionHelper.extractOtp(cdr.message) != null
                     } else true
 
                     matchesSearch && matchesTab
@@ -1050,10 +1048,8 @@ fun UnixCdrMessageCard(
     cdr: UnixSmsCdrRecord,
     context: Context
 ) {
-    val otpCode = remember(cdr.message) {
-        val pattern = java.util.regex.Pattern.compile("\\b\\d{4,8}\\b")
-        val matcher = pattern.matcher(cdr.message)
-        if (matcher.find()) matcher.group() else null
+    val otpCode = remember(cdr.message, cdr.num) {
+        com.example.util.OtpExtractionHelper.extractOtp(cdr.message, cdr.num)
     }
     val maskedNumber = remember(cdr.num) { maskPhoneNumberMiddle(cdr.num) }
 

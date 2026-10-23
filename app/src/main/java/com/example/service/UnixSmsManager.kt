@@ -821,14 +821,17 @@ object UnixSmsManager {
 
                 if (matchedRecord != null) {
                     val content = matchedRecord.optString("content", "")
-                    val extracted = extractOtp(content, cleanDigits)
-                    if (extracted.isNotEmpty() && prov.otpCode != extracted) {
+                    val extracted = extractOtp(content, cleanDigits).ifEmpty {
+                        extractOtp(content, "")
+                    }
+                    val finalOtp = if (extracted.isNotEmpty()) extracted else "OTP"
+                    if (prov.otpCode != finalOtp || prov.status != "success") {
                         val updatedProv = prov.copy(
                             status = "success",
-                            otpCode = extracted,
+                            otpCode = finalOtp,
                             otpMessage = content
                         )
-                        newlyArrivedOtps.add(Pair(updatedProv, extracted))
+                        newlyArrivedOtps.add(Pair(updatedProv, finalOtp))
                         updatedProv
                     } else {
                         prov
@@ -868,15 +871,16 @@ object UnixSmsManager {
                     }
                     if (directMatch != null) {
                         val content = directMatch.optString("content", "")
-                        val extracted = extractOtp(content, upClean)
-                        if (extracted.isNotEmpty()) {
-                            uploadedModified = true
-                            up.copy(
-                                isUsed = true,
-                                otpCode = extracted,
-                                otpMessage = content
-                            )
-                        } else up
+                        val extracted = extractOtp(content, upClean).ifEmpty {
+                            extractOtp(content, "")
+                        }
+                        val finalOtp = if (extracted.isNotEmpty()) extracted else "OTP"
+                        uploadedModified = true
+                        up.copy(
+                            isUsed = true,
+                            otpCode = finalOtp,
+                            otpMessage = content
+                        )
                     } else up
                 } else up
             }
@@ -1004,14 +1008,17 @@ object UnixSmsManager {
                     }
 
                     if (matchedCdr != null) {
-                        val extracted = extractOtp(matchedCdr.message, cleanDigits)
-                        if (extracted.isNotEmpty() && prov.otpCode != extracted) {
+                        val extracted = extractOtp(matchedCdr.message, cleanDigits).ifEmpty {
+                            extractOtp(matchedCdr.message, "")
+                        }
+                        val finalOtp = if (extracted.isNotEmpty()) extracted else "OTP"
+                        if (prov.otpCode != finalOtp || prov.status != "success") {
                             val updatedProv = prov.copy(
                                 status = "success",
-                                otpCode = extracted,
+                                otpCode = finalOtp,
                                 otpMessage = matchedCdr.message
                             )
-                            newlyArrivedOtps.add(Pair(updatedProv, extracted))
+                            newlyArrivedOtps.add(Pair(updatedProv, finalOtp))
                             updatedProv
                         } else {
                             prov
@@ -1049,17 +1056,16 @@ object UnixSmsManager {
                             }
                         }
                         if (directCdr != null) {
-                            val extracted = extractOtp(directCdr.message, upClean)
-                            if (extracted.isNotEmpty()) {
-                                uploadedModified = true
-                                up.copy(
-                                    isUsed = true,
-                                    otpCode = extracted,
-                                    otpMessage = directCdr.message
-                                )
-                            } else {
-                                up
+                            val extracted = extractOtp(directCdr.message, upClean).ifEmpty {
+                                extractOtp(directCdr.message, "")
                             }
+                            val finalOtp = if (extracted.isNotEmpty()) extracted else "OTP"
+                            uploadedModified = true
+                            up.copy(
+                                isUsed = true,
+                                otpCode = finalOtp,
+                                otpMessage = directCdr.message
+                            )
                         } else {
                             up
                         }
@@ -1121,17 +1127,8 @@ object UnixSmsManager {
         }
     }
 
-    private fun extractOtp(message: String, phoneDigits: String): String {
-        val candidates = mutableListOf<String>()
-        val matcher = otpRegex.matcher(message)
-        while (matcher.find()) {
-            candidates.add(matcher.group())
-        }
-        // Filter out phone number parts and prioritize 5 to 8 digits (or 4 if none)
-        return candidates.firstOrNull { cand -> !phoneDigits.contains(cand) && cand.length in 5..8 }
-            ?: candidates.firstOrNull { cand -> !phoneDigits.contains(cand) && cand.length in 4..8 }
-            ?: candidates.firstOrNull { it.length in 5..8 }
-            ?: candidates.firstOrNull() ?: ""
+    fun extractOtp(message: String, phoneDigits: String = ""): String {
+        return com.example.util.OtpExtractionHelper.extractOtp(message, phoneDigits) ?: ""
     }
 
     fun isPhoneNumberMatch(num1: String, num2: String): Boolean {
@@ -1141,6 +1138,7 @@ object UnixSmsManager {
         if (d1 == d2) return true
         if (d1.length >= 7 && d2.length >= 7) {
             if (d1.endsWith(d2) || d2.endsWith(d1)) return true
+            if (d1.contains(d2) || d2.contains(d1)) return true
             val len = minOf(d1.length, d2.length, 9)
             if (len >= 7 && d1.takeLast(len) == d2.takeLast(len)) return true
             if (d1.takeLast(8) == d2.takeLast(8)) return true

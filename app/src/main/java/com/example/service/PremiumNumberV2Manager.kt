@@ -69,6 +69,7 @@ data class PremiumNumberV2UiState(
     val isSoundEnabled: Boolean = true,
     val lastError: String? = null,
     val lastSyncTime: Long = 0L,
+    val countryRates: Map<String, Double> = emptyMap(),
     // Live Stats matching Screenshot 2
     val servicesLive: Int = 3,
     val countriesLive: Int = 4,
@@ -113,6 +114,8 @@ object PremiumNumberV2Manager {
             val savedRate = prefs?.getFloat("otp_rate", 0.50f)?.toDouble() ?: 0.50
             _otpRate.value = Math.round(savedRate * 100.0) / 100.0
 
+            val savedCountryRates = loadCountryRates()
+
             val savedCountry = prefs?.getString("country_code", "IT") ?: "IT"
             val countryInfo = AllCountriesProvider.findByCode(savedCountry)
             val savedService = prefs?.getString("service", "WhatsApp") ?: "WhatsApp"
@@ -135,7 +138,8 @@ object PremiumNumberV2Manager {
                     requestCount = savedCount,
                     todayOtpCount = todayOtps,
                     activeNumbers = savedNumbers,
-                    isSoundEnabled = savedSound
+                    isSoundEnabled = savedSound,
+                    countryRates = savedCountryRates
                 )
             }
 
@@ -167,28 +171,69 @@ object PremiumNumberV2Manager {
         _otpRate.value = rounded
     }
 
+    /**
+     * Get configured rate for specific country, falling back to base rate
+     */
+    fun getRateForCountry(countryCode: String?): Double {
+        if (countryCode.isNullOrBlank() || countryCode == "ALL" || countryCode == "ANY") {
+            return _otpRate.value
+        }
+        val key = countryCode.trim().uppercase()
+        return _state.value.countryRates[key] ?: _otpRate.value
+    }
+
+    /**
+     * Admin Panel: Set country-specific rate permanently
+     */
+    fun setRateForCountry(countryCode: String?, rate: Double) {
+        val rounded = Math.round(rate.coerceAtLeast(0.01) * 100.0) / 100.0
+        if (countryCode.isNullOrBlank() || countryCode == "ALL" || countryCode == "ANY") {
+            setOtpRate(rounded)
+            return
+        }
+        val key = countryCode.trim().uppercase()
+        val updatedMap = _state.value.countryRates.toMutableMap()
+        updatedMap[key] = rounded
+        saveCountryRates(updatedMap)
+        _state.update { it.copy(countryRates = updatedMap) }
+    }
+
     fun setSelectedCountry(code: String) {
         if (code.equals("ANY", ignoreCase = true) || code.equals("ALL", ignoreCase = true)) {
             prefs?.edit()?.putString("country_code", "ANY")?.apply()
+            // Auto-update prefix from top feed item
+            val topPfx = _state.value.liveConsoleFeed.firstOrNull { it.rangePrefix.isNotBlank() }?.rangePrefix ?: ""
             _state.update {
                 it.copy(
                     selectedCountryCode = "ANY",
                     selectedCountryName = "ANY (All Countries)",
                     selectedCountryFlag = "🌐",
-                    selectedCountryDial = ""
+                    selectedCountryDial = "",
+                    rangePrefix = if (topPfx.isNotBlank()) topPfx else it.rangePrefix
                 )
             }
             return
         }
-        val info = AllCountriesProvider.findByCode(code)
+        val info = AllCountriesProvider.findByCode(code) ?: AllCountriesProvider.findByNameOrCode(code)
         if (info != null) {
             prefs?.edit()?.putString("country_code", info.code)?.apply()
+            // Auto-update live prefix to match this country from live pool
+            val matchingFeedPfx = _state.value.liveConsoleFeed
+                .firstOrNull { it.iso.equals(info.code, ignoreCase = true) || it.country.equals(info.name, ignoreCase = true) }
+                ?.rangePrefix
+            val autoPfx = when {
+                !matchingFeedPfx.isNullOrBlank() -> matchingFeedPfx
+                info.dialCode.isNotBlank() -> info.dialCode.replace("+", "")
+                else -> _state.value.rangePrefix
+            }
+
             _state.update {
                 it.copy(
                     selectedCountryCode = info.code,
                     selectedCountryName = info.name,
                     selectedCountryFlag = info.flag,
-                    selectedCountryDial = info.dialCode
+                    selectedCountryDial = info.dialCode,
+                    rangePrefix = autoPfx
                 )
             }
         }
@@ -240,7 +285,7 @@ object PremiumNumberV2Manager {
         val flag = currentState.selectedCountryFlag
         val service = currentState.selectedService
         val rangePrefix = currentState.rangePrefix
-        val activeRate = _otpRate.value
+        val activeRate = getRateForCountry(countryCode)
 
         _state.update { it.copy(isLoading = true, lastError = null) }
 
@@ -446,7 +491,7 @@ object PremiumNumberV2Manager {
      */
     fun rentDirectFromConsoleItem(item: PremiumV2ConsoleItem, context: Context) {
         val apiKey = _state.value.apiKey
-        val activeRate = _otpRate.value
+        val activeRate = getRateForCountry(item.iso)
         _state.update { it.copy(isLoading = true, lastError = null) }
 
         scope.launch {
@@ -534,27 +579,37 @@ object PremiumNumberV2Manager {
         }
     }
 
-    fun formatMaskedNumber(raw: String): String {
+    fun formatMaskedNumber(raw: String, itemId: String = "", rangePrefix: String = ""): String {
         val trimmed = raw.trim()
         if (trimmed.isBlank()) return "+2637••••0889"
-        if (trimmed.contains("••••") || trimmed.contains("****")) return trimmed
-        val digits = trimmed.replace("[^0-9+]".toRegex(), "")
-        if (digits.length <= 7) return digits
-        val prefixLen = if (digits.startsWith("+")) 5 else 4
-        val suffixLen = 4
-        return if (digits.length > prefixLen + suffixLen) {
-            val start = digits.take(prefixLen)
-            val end = digits.takeLast(suffixLen)
-            "$start••••$end"
+
+        // If already formatted like +2519••••8156 with 4 trailing digits
+        val exactMatch = Pattern.compile("^\\+[0-9]{3,5}••••[0-9]{4}$").matcher(trimmed)
+        if (exactMatch.matches()) return trimmed
+
+        val rawDigits = trimmed.replace("[^0-9]".toRegex(), "")
+
+        // 1. Prefix: e.g. 2519, 3932, 3365, 2637, 2491
+        val prefixPart = if (rangePrefix.isNotBlank()) {
+            val pfxClean = rangePrefix.replace("[^0-9]".toRegex(), "")
+            if (pfxClean.length >= 4) pfxClean.take(4) else pfxClean
+        } else if (rawDigits.length >= 4) {
+            rawDigits.take(4)
+        } else "2637"
+
+        // 2. 4-digit suffix
+        val suffixPart = if (rawDigits.length >= 8 && !trimmed.contains("X", ignoreCase = true) && !trimmed.contains("*")) {
+            rawDigits.takeLast(4)
         } else {
-            val start = digits.take(digits.length / 2)
-            val end = digits.takeLast(2)
-            "$start••••$end"
+            val seed = if (itemId.isNotBlank()) Math.abs(itemId.hashCode()) else Math.abs(trimmed.hashCode())
+            String.format(Locale.US, "%04d", (seed % 9000) + 1000)
         }
+
+        return "+$prefixPart••••$suffixPart"
     }
 
     /**
-     * Fetch Live Console Feed (Carrier global stream - Hubu same as slvirtualnumber.com)
+     * Fetch Live Console Feed (Carrier global stream - Hubu same as Screenshot 1 on slvirtualnumber.com)
      */
     fun refreshLiveConsole(limit: Int = 50) {
         val apiKey = _state.value.apiKey
@@ -576,8 +631,18 @@ object PremiumNumberV2Manager {
                                 val items = mutableListOf<PremiumV2ConsoleItem>()
                                 for (i in 0 until dataArr.length()) {
                                     val obj = dataArr.optJSONObject(i) ?: continue
+                                    val idStr = obj.optString("id", java.util.UUID.randomUUID().toString())
                                     val rawNum = obj.optString("maskedNumber", obj.optString("phoneNumber", ""))
-                                    val formattedNum = formatMaskedNumber(if (rawNum.isNotBlank()) rawNum else "+26371145${1000 + i}")
+
+                                    var itemPrefix = obj.optString("rangePrefix", "")
+                                    if (itemPrefix.isBlank()) {
+                                        val digits = rawNum.replace("[^0-9]".toRegex(), "")
+                                        itemPrefix = if (digits.length >= 4) digits.take(4) else digits
+                                    } else if (itemPrefix.length > 4) {
+                                        itemPrefix = itemPrefix.take(4)
+                                    }
+
+                                    val formattedNum = formatMaskedNumber(raw = rawNum, itemId = idStr, rangePrefix = itemPrefix)
                                     val autoC = com.example.util.AllCountriesProvider.findByPhoneNumber(rawNum)
                                         ?: com.example.util.AllCountriesProvider.findByNameOrCode(obj.optString("country", ""))
                                     val cName = autoC?.name ?: obj.optString("country", "Zimbabwe")
@@ -585,24 +650,40 @@ object PremiumNumberV2Manager {
                                     val cFlag = autoC?.flag ?: obj.optString("flag", "🇿🇼")
                                     val srv = obj.optString("service", "FACEBOOK").uppercase()
 
+                                    val fullMsg = obj.optString("rawSnippet", obj.optString("message", "<#> ****** is your $srv code")).trim()
+
                                     items.add(
                                         PremiumV2ConsoleItem(
-                                            id = obj.optString("id", java.util.UUID.randomUUID().toString()),
+                                            id = idStr,
                                             maskedNumber = formattedNum,
-                                            rangePrefix = obj.optString("rangePrefix", ""),
+                                            rangePrefix = itemPrefix,
                                             service = srv,
                                             country = cName,
                                             iso = cIso,
                                             flag = cFlag,
                                             otpCode = obj.optString("otpCode", "******"),
-                                            rawSnippet = obj.optString("rawSnippet", obj.optString("message", "<#> ****** is your $srv code")),
+                                            rawSnippet = fullMsg,
                                             receivedAt = obj.optString("receivedAt", ""),
                                             timeAgo = obj.optString("timeAgo", if (i == 0) "just now" else "${i * 2} mins ago")
                                         )
                                     )
                                 }
                                 if (items.isNotEmpty()) {
-                                    _state.update { it.copy(liveConsoleFeed = items, isApiConnected = true) }
+                                    // Auto-update range prefix if current prefix is blank
+                                    val currentPfx = _state.value.rangePrefix
+                                    val autoPfx = if (currentPfx.isBlank()) {
+                                        val match = items.firstOrNull { it.iso.equals(_state.value.selectedCountryCode, ignoreCase = true) }
+                                            ?: items.firstOrNull()
+                                        match?.rangePrefix ?: ""
+                                    } else currentPfx
+
+                                    _state.update {
+                                        it.copy(
+                                            liveConsoleFeed = items,
+                                            rangePrefix = autoPfx,
+                                            isApiConnected = true
+                                        )
+                                    }
                                     return@launch
                                 }
                             }
@@ -614,9 +695,11 @@ object PremiumNumberV2Manager {
                 _state.update { it.copy(isApiConnected = false) }
             }
 
-            // Fallback default stream items matching Screenshot 2 if network feed is unavailable
+            // Fallback default stream items matching Screenshot 1/2 if network feed is unavailable
             if (_state.value.liveConsoleFeed.isEmpty()) {
-                _state.update { it.copy(liveConsoleFeed = getDefaultLiveConsoleFeed()) }
+                val defaults = getDefaultLiveConsoleFeed()
+                val defPfx = if (_state.value.rangePrefix.isBlank()) defaults.firstOrNull()?.rangePrefix ?: "" else _state.value.rangePrefix
+                _state.update { it.copy(liveConsoleFeed = defaults, rangePrefix = defPfx) }
             }
         }
     }
@@ -624,87 +707,75 @@ object PremiumNumberV2Manager {
     fun getDefaultLiveConsoleFeed(): List<PremiumV2ConsoleItem> = listOf(
         PremiumV2ConsoleItem(
             id = "live-1",
-            maskedNumber = "+2637••••0889",
-            rangePrefix = "263",
+            maskedNumber = "+2519••••8156",
+            rangePrefix = "2519",
             service = "FACEBOOK",
-            country = "Zimbabwe",
-            iso = "ZW",
-            flag = "🇿🇼",
+            country = "Ethiopia",
+            iso = "ET",
+            flag = "🇪🇹",
             otpCode = "H29Q+Fsn4Sr",
-            rawSnippet = "<#> ****** is your Facebook code H29Q+Fsn4Sr",
+            rawSnippet = "<#> ****** is your Facebook code\nH29Q+Fsn4Sr",
             timeAgo = "just now"
         ),
         PremiumV2ConsoleItem(
             id = "live-2",
-            maskedNumber = "+2491••••4505",
-            rangePrefix = "249",
-            service = "APPLE",
-            country = "Sudan",
-            iso = "SD",
-            flag = "🇸🇩",
-            otpCode = "026AD8",
-            rawSnippet = "REG-RESP?v=5;r=******;n=+249114505702;s=026AD8A5ECFFFFFFFF27519349BDD645354BC0D99536C1EC7E2E091C50",
-            timeAgo = "2 mins ago"
+            maskedNumber = "+3932••••1114",
+            rangePrefix = "3932",
+            service = "FACEBOOK",
+            country = "Italy",
+            iso = "IT",
+            flag = "🇮🇹",
+            otpCode = "H29Q+Fsn4Sr",
+            rawSnippet = "<#> ****** is your Facebook code\nH29Q+Fsn4Sr",
+            timeAgo = "just now"
         ),
         PremiumV2ConsoleItem(
             id = "live-3",
-            maskedNumber = "+3365••••3422",
-            rangePrefix = "33",
+            maskedNumber = "+2519••••8156",
+            rangePrefix = "2519",
             service = "FACEBOOK",
-            country = "France",
-            iso = "FR",
-            flag = "🇫🇷",
-            otpCode = "GdDGcw",
-            rawSnippet = "# ****** is your Instagram code Dont share it GdDGcwrWHVm",
-            timeAgo = "5 mins ago"
+            country = "Ethiopia",
+            iso = "ET",
+            flag = "🇪🇹",
+            otpCode = "H29Q+Fsn4Sr",
+            rawSnippet = "<#> ****** is your Facebook code\nH29Q+Fsn4Sr",
+            timeAgo = "1 min ago"
         ),
         PremiumV2ConsoleItem(
             id = "live-4",
+            maskedNumber = "+3932••••1114",
+            rangePrefix = "3932",
+            service = "FACEBOOK",
+            country = "Italy",
+            iso = "IT",
+            flag = "🇮🇹",
+            otpCode = "H29Q+Fsn4Sr",
+            rawSnippet = "<#> ****** is your Facebook code\nH29Q+Fsn4Sr",
+            timeAgo = "2 mins ago"
+        ),
+        PremiumV2ConsoleItem(
+            id = "live-5",
             maskedNumber = "+3365••••3422",
-            rangePrefix = "33",
+            rangePrefix = "3365",
             service = "FACEBOOK",
             country = "France",
             iso = "FR",
             flag = "🇫🇷",
             otpCode = "LaznxC",
-            rawSnippet = "# ****** is your Facebook code LaznxCarLW",
-            timeAgo = "8 mins ago"
-        ),
-        PremiumV2ConsoleItem(
-            id = "live-5",
-            maskedNumber = "+3365••••3422",
-            rangePrefix = "33",
-            service = "FACEBOOK",
-            country = "France",
-            iso = "FR",
-            flag = "🇫🇷",
-            otpCode = "GdDGcw",
-            rawSnippet = "# ****** is your Instagram code Dont share it GdDGcwrWHVm",
-            timeAgo = "10 mins ago"
+            rawSnippet = "<#> ****** is your Facebook code\nLaz+nxCarLW",
+            timeAgo = "4 mins ago"
         ),
         PremiumV2ConsoleItem(
             id = "live-6",
-            maskedNumber = "+2637••••0883",
-            rangePrefix = "263",
+            maskedNumber = "+9617••••1890",
+            rangePrefix = "9617",
             service = "FACEBOOK",
-            country = "Zimbabwe",
-            iso = "ZW",
-            flag = "🇿🇼",
-            otpCode = "7yKqw1",
-            rawSnippet = "<#> ****** is your Facebook code 7yKqw193Pq",
-            timeAgo = "10 mins ago"
-        ),
-        PremiumV2ConsoleItem(
-            id = "live-7",
-            maskedNumber = "+2609••••1120",
-            rangePrefix = "260",
-            service = "WHATSAPP",
-            country = "Zambia",
-            iso = "ZM",
-            flag = "🇿🇲",
-            otpCode = "******",
-            rawSnippet = "Your WhatsApp code: ******",
-            timeAgo = "12 mins ago"
+            country = "Lebanon",
+            iso = "LB",
+            flag = "🇱🇧",
+            otpCode = "941028",
+            rawSnippet = "هو الرمز الخاص بك على Facebook: ******",
+            timeAgo = "6 mins ago"
         )
     )
 
@@ -939,5 +1010,27 @@ object PremiumNumberV2Manager {
             }
         } catch (_: Exception) {}
         return list.sortedByDescending { it.timestamp }
+    }
+
+    private fun saveCountryRates(rates: Map<String, Double>) {
+        try {
+            val obj = JSONObject()
+            rates.forEach { (k, v) -> obj.put(k, v) }
+            prefs?.edit()?.putString("v2_country_rates", obj.toString())?.apply()
+        } catch (_: Exception) {}
+    }
+
+    private fun loadCountryRates(): Map<String, Double> {
+        val result = mutableMapOf<String, Double>()
+        try {
+            val json = prefs?.getString("v2_country_rates", "{}") ?: "{}"
+            val obj = JSONObject(json)
+            val keys = obj.keys()
+            while (keys.hasNext()) {
+                val k = keys.next()
+                result[k] = obj.optDouble(k, 0.50)
+            }
+        } catch (_: Exception) {}
+        return result
     }
 }

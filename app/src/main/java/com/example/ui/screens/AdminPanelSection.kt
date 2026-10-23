@@ -600,6 +600,7 @@ fun AdminUnixSmsCard(
         var showCustomZenexRateDialog by remember { mutableStateOf(false) }
         var showCustomKop2RateDialog by remember { mutableStateOf(false) }
         var showCustomPremiumV2RateDialog by remember { mutableStateOf(false) }
+        var selectedV2CountryCode by remember { mutableStateOf("ALL") }
         var showAllWorldCountriesDialog by remember { mutableStateOf(false) }
         var showApiKeyConfigDialog by remember { mutableStateOf(false) }
         var allCountriesSearchQuery by remember { mutableStateOf("") }
@@ -767,15 +768,16 @@ fun AdminUnixSmsCard(
         }
 
         if (showCustomPremiumV2RateDialog) {
+            val targetCountryLabel = if (selectedV2CountryCode == "ALL") "All Countries (Default)" else selectedV2CountryCode
             AlertDialog(
                 onDismissRequest = { showCustomPremiumV2RateDialog = false },
                 containerColor = Color(0xFF101C2B),
                 title = {
-                    Text("PREMIUM NUMBER V2 রেট পরিবর্তন", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                    Text("PREMIUM NUMBER V2 রেট ($targetCountryLabel)", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 15.sp)
                 },
                 text = {
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text("যেকোনো ওটিপি রেট লিখুন (টাকা / ৳):", color = Color(0xFF94A3B8), fontSize = 12.sp)
+                        Text("$targetCountryLabel এর জন্য ওটিপি রেট লিখুন (টাকা / ৳):", color = Color(0xFF94A3B8), fontSize = 12.sp)
                         OutlinedTextField(
                             value = customRateInputText,
                             onValueChange = { customRateInputText = it },
@@ -799,9 +801,13 @@ fun AdminUnixSmsCard(
                         onClick = {
                             val r = customRateInputText.toDoubleOrNull()
                             if (r != null && r >= 0.01) {
-                                com.example.service.PremiumNumberV2Manager.setOtpRate(r)
+                                if (selectedV2CountryCode == "ALL") {
+                                    com.example.service.PremiumNumberV2Manager.setOtpRate(r)
+                                } else {
+                                    com.example.service.PremiumNumberV2Manager.setRateForCountry(selectedV2CountryCode, r)
+                                }
                                 com.example.service.WithdrawalManager.refreshBalances()
-                                Toast.makeText(context, "Premium Number V2 ওটিপি রেট সেট হয়েছে: ${String.format(java.util.Locale.US, "%.2f", r)} ৳", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(context, "$targetCountryLabel রেট সেট হয়েছে: ${String.format(java.util.Locale.US, "%.2f", r)} ৳", Toast.LENGTH_SHORT).show()
                                 showCustomPremiumV2RateDialog = false
                             } else {
                                 Toast.makeText(context, "সঠিক রেট লিখুন (কমপক্ষে 0.01)", Toast.LENGTH_SHORT).show()
@@ -1612,7 +1618,19 @@ fun AdminUnixSmsCard(
                 // 4. PREMIUM NUMBER V2 (LIVE POOL) Rate Header
                 val v2State by com.example.service.PremiumNumberV2Manager.state.collectAsState()
                 val livePoolCountries = remember(v2State.liveConsoleFeed) {
-                    v2State.liveConsoleFeed.map { it.flag to it.country }.distinctBy { it.second }
+                    v2State.liveConsoleFeed.map { 
+                        Triple(it.flag, it.country, it.iso.uppercase(java.util.Locale.US)) 
+                    }.distinctBy { it.third }
+                }
+
+                val activeEffectiveRate = if (selectedV2CountryCode == "ALL") {
+                    premiumV2Rate
+                } else {
+                    com.example.service.PremiumNumberV2Manager.getRateForCountry(selectedV2CountryCode)
+                }
+
+                val selectedCountryInfo = remember(selectedV2CountryCode, livePoolCountries) {
+                    livePoolCountries.find { it.third == selectedV2CountryCode }
                 }
 
                 Row(
@@ -1637,12 +1655,41 @@ fun AdminUnixSmsCard(
                         border = BorderStroke(1.dp, Color(0xFF38BDF8).copy(alpha = 0.5f))
                     ) {
                         Text(
-                            text = "${String.format(java.util.Locale.US, "%.2f", premiumV2Rate)} ৳ / OTP",
+                            text = "${String.format(java.util.Locale.US, "%.2f", activeEffectiveRate)} ৳ / OTP",
                             color = Color(0xFF38BDF8),
                             fontSize = 11.sp,
                             fontWeight = FontWeight.ExtraBold,
                             modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
                         )
+                    }
+                }
+
+                if (selectedV2CountryCode != "ALL") {
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Surface(
+                        color = Color(0xFF0B253A),
+                        shape = RoundedCornerShape(6.dp),
+                        border = BorderStroke(1.dp, Color(0xFF0284C7))
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "🎯 নির্বাচিত দেশ: ${selectedCountryInfo?.first ?: "🌐"} ${selectedCountryInfo?.second ?: selectedV2CountryCode} ($selectedV2CountryCode)",
+                                color = Color(0xFF7DD3FC),
+                                fontSize = 10.5.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                text = "সব দেশে ফিরুন ✕",
+                                color = Color(0xFFF87171),
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.clickable { selectedV2CountryCode = "ALL" }
+                            )
+                        }
                     }
                 }
 
@@ -1654,88 +1701,35 @@ fun AdminUnixSmsCard(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
-                        Button(
-                            onClick = {
-                                val newRate = (premiumV2Rate - 0.10).coerceAtLeast(0.01)
-                                com.example.service.PremiumNumberV2Manager.setOtpRate(newRate)
-                                com.example.service.WithdrawalManager.refreshBalances()
-                            },
-                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E293B)),
-                            shape = RoundedCornerShape(8.dp),
-                            contentPadding = PaddingValues(horizontal = 4.dp),
-                            modifier = Modifier.weight(1f).height(38.dp)
-                        ) {
-                            Text("-0.10", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color(0xFFEF4444))
-                        }
-
-                        Button(
-                            onClick = {
-                                val newRate = (premiumV2Rate - 0.05).coerceAtLeast(0.01)
-                                com.example.service.PremiumNumberV2Manager.setOtpRate(newRate)
-                                com.example.service.WithdrawalManager.refreshBalances()
-                            },
-                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E293B)),
-                            shape = RoundedCornerShape(8.dp),
-                            contentPadding = PaddingValues(horizontal = 4.dp),
-                            modifier = Modifier.weight(1f).height(38.dp)
-                        ) {
-                            Text("-0.05", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color(0xFFF87171))
-                        }
-
-                        Button(
-                            onClick = {
-                                val newRate = (premiumV2Rate - 0.01).coerceAtLeast(0.01)
-                                com.example.service.PremiumNumberV2Manager.setOtpRate(newRate)
-                                com.example.service.WithdrawalManager.refreshBalances()
-                            },
-                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E293B)),
-                            shape = RoundedCornerShape(8.dp),
-                            contentPadding = PaddingValues(horizontal = 4.dp),
-                            modifier = Modifier.weight(1f).height(38.dp)
-                        ) {
-                            Text("-0.01", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color(0xFFFCA5A5))
-                        }
-
-                        Button(
-                            onClick = {
-                                val newRate = premiumV2Rate + 0.01
-                                com.example.service.PremiumNumberV2Manager.setOtpRate(newRate)
-                                com.example.service.WithdrawalManager.refreshBalances()
-                            },
-                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E293B)),
-                            shape = RoundedCornerShape(8.dp),
-                            contentPadding = PaddingValues(horizontal = 4.dp),
-                            modifier = Modifier.weight(1f).height(38.dp)
-                        ) {
-                            Text("+0.01", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color(0xFF6EE7B7))
-                        }
-
-                        Button(
-                            onClick = {
-                                val newRate = premiumV2Rate + 0.05
-                                com.example.service.PremiumNumberV2Manager.setOtpRate(newRate)
-                                com.example.service.WithdrawalManager.refreshBalances()
-                            },
-                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E293B)),
-                            shape = RoundedCornerShape(8.dp),
-                            contentPadding = PaddingValues(horizontal = 4.dp),
-                            modifier = Modifier.weight(1f).height(38.dp)
-                        ) {
-                            Text("+0.05", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color(0xFF34D399))
-                        }
-
-                        Button(
-                            onClick = {
-                                val newRate = premiumV2Rate + 0.10
-                                com.example.service.PremiumNumberV2Manager.setOtpRate(newRate)
-                                com.example.service.WithdrawalManager.refreshBalances()
-                            },
-                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E293B)),
-                            shape = RoundedCornerShape(8.dp),
-                            contentPadding = PaddingValues(horizontal = 4.dp),
-                            modifier = Modifier.weight(1f).height(38.dp)
-                        ) {
-                            Text("+0.10", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color(0xFF10B981))
+                        val deltas = listOf(-0.10, -0.05, -0.01, 0.01, 0.05, 0.10)
+                        val deltaColors = listOf(
+                            Color(0xFFEF4444),
+                            Color(0xFFF87171),
+                            Color(0xFFFCA5A5),
+                            Color(0xFF6EE7B7),
+                            Color(0xFF34D399),
+                            Color(0xFF10B981)
+                        )
+                        deltas.forEachIndexed { idx, delta ->
+                            val label = if (delta > 0) "+${String.format(java.util.Locale.US, "%.2f", delta)}" else String.format(java.util.Locale.US, "%.2f", delta)
+                            Button(
+                                onClick = {
+                                    val currentRate = if (selectedV2CountryCode == "ALL") premiumV2Rate else com.example.service.PremiumNumberV2Manager.getRateForCountry(selectedV2CountryCode)
+                                    val newRate = Math.round((currentRate + delta).coerceAtLeast(0.01) * 100.0) / 100.0
+                                    if (selectedV2CountryCode == "ALL") {
+                                        com.example.service.PremiumNumberV2Manager.setOtpRate(newRate)
+                                    } else {
+                                        com.example.service.PremiumNumberV2Manager.setRateForCountry(selectedV2CountryCode, newRate)
+                                    }
+                                    com.example.service.WithdrawalManager.refreshBalances()
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E293B)),
+                                shape = RoundedCornerShape(8.dp),
+                                contentPadding = PaddingValues(horizontal = 2.dp),
+                                modifier = Modifier.weight(1f).height(38.dp)
+                            ) {
+                                Text(label, fontSize = 9.5.sp, fontWeight = FontWeight.Bold, color = deltaColors[idx])
+                            }
                         }
                     }
 
@@ -1748,7 +1742,7 @@ fun AdminUnixSmsCard(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         listOf(0.30, 0.40, 0.48, 0.50, 0.70, 1.00).forEach { presetRate ->
-                            val isSel = Math.abs(premiumV2Rate - presetRate) < 0.005
+                            val isSel = Math.abs(activeEffectiveRate - presetRate) < 0.005
                             Surface(
                                 color = if (isSel) Color(0xFF0284C7) else Color(0xFF0B141E),
                                 shape = RoundedCornerShape(6.dp),
@@ -1756,7 +1750,11 @@ fun AdminUnixSmsCard(
                                 modifier = Modifier
                                     .weight(1f)
                                     .clickable {
-                                        com.example.service.PremiumNumberV2Manager.setOtpRate(presetRate)
+                                        if (selectedV2CountryCode == "ALL") {
+                                            com.example.service.PremiumNumberV2Manager.setOtpRate(presetRate)
+                                        } else {
+                                            com.example.service.PremiumNumberV2Manager.setRateForCountry(selectedV2CountryCode, presetRate)
+                                        }
                                         com.example.service.WithdrawalManager.refreshBalances()
                                     }
                             ) {
@@ -1776,7 +1774,7 @@ fun AdminUnixSmsCard(
                             shape = RoundedCornerShape(6.dp),
                             border = BorderStroke(1.dp, Color(0xFF38BDF8)),
                             modifier = Modifier.clickable {
-                                customRateInputText = String.format(java.util.Locale.US, "%.2f", premiumV2Rate)
+                                customRateInputText = String.format(java.util.Locale.US, "%.2f", activeEffectiveRate)
                                 showCustomPremiumV2RateDialog = true
                             }
                         ) {
@@ -1817,7 +1815,7 @@ fun AdminUnixSmsCard(
                                     )
                                 }
                                 Text(
-                                    text = if (livePoolCountries.isNotEmpty()) "${livePoolCountries.size} Active" else "Scanning...",
+                                    text = if (livePoolCountries.isNotEmpty()) "${livePoolCountries.size} Active (ক্লিক করে এডিট করুন)" else "Scanning...",
                                     color = Color(0xFF7DD3FC),
                                     fontSize = 10.sp,
                                     fontWeight = FontWeight.SemiBold
@@ -1833,23 +1831,54 @@ fun AdminUnixSmsCard(
                                         .horizontalScroll(rememberScrollState()),
                                     horizontalArrangement = Arrangement.spacedBy(6.dp)
                                 ) {
-                                    livePoolCountries.forEach { (flag, country) ->
+                                    // First chip: All Countries
+                                    val isAllSel = selectedV2CountryCode == "ALL"
+                                    Surface(
+                                        color = if (isAllSel) Color(0xFF0284C7) else Color(0xFF0B243B),
+                                        shape = RoundedCornerShape(6.dp),
+                                        border = BorderStroke(1.dp, if (isAllSel) Color(0xFF38BDF8) else Color(0xFF0284C7).copy(alpha = 0.6f)),
+                                        modifier = Modifier.clickable {
+                                            selectedV2CountryCode = "ALL"
+                                        }
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Text("🌐", fontSize = 12.sp)
+                                            Spacer(modifier = Modifier.width(4.dp))
+                                            Text(
+                                                "সব দেশ (${String.format(java.util.Locale.US, "%.2f", premiumV2Rate)}৳)",
+                                                color = Color.White,
+                                                fontSize = 10.5.sp,
+                                                fontWeight = if (isAllSel) FontWeight.ExtraBold else FontWeight.Medium
+                                            )
+                                        }
+                                    }
+
+                                    // Each active live pool country
+                                    livePoolCountries.forEach { (flag, country, iso) ->
+                                        val isSel = selectedV2CountryCode == iso
+                                        val cRate = com.example.service.PremiumNumberV2Manager.getRateForCountry(iso)
                                         Surface(
-                                            color = Color(0xFF0B243B),
+                                            color = if (isSel) Color(0xFF0284C7) else Color(0xFF0B243B),
                                             shape = RoundedCornerShape(6.dp),
-                                            border = BorderStroke(1.dp, Color(0xFF0284C7).copy(alpha = 0.6f))
+                                            border = BorderStroke(1.dp, if (isSel) Color(0xFF38BDF8) else Color(0xFF0284C7).copy(alpha = 0.6f)),
+                                            modifier = Modifier.clickable {
+                                                selectedV2CountryCode = iso
+                                            }
                                         ) {
                                             Row(
-                                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp),
                                                 verticalAlignment = Alignment.CenterVertically
                                             ) {
                                                 Text(flag, fontSize = 12.sp)
                                                 Spacer(modifier = Modifier.width(4.dp))
                                                 Text(
-                                                    country,
+                                                    "$country (${String.format(java.util.Locale.US, "%.2f", cRate)}৳)",
                                                     color = Color.White,
                                                     fontSize = 10.5.sp,
-                                                    fontWeight = FontWeight.Medium
+                                                    fontWeight = if (isSel) FontWeight.ExtraBold else FontWeight.Medium
                                                 )
                                             }
                                         }
@@ -1865,7 +1894,7 @@ fun AdminUnixSmsCard(
 
                             Spacer(modifier = Modifier.height(6.dp))
                             Text(
-                                text = "💡 এই রেট পরিবর্তন স্বয়ংক্রিয়ভাবে শুধুমাত্র লাইভ পুলে থাকা এই সক্রিয় দেশগুলোতে প্রযোজ্য। লাইভ পুলে নেই এমন কোনো দেশ আসবে না।",
+                                text = "💡 লাইভ পুলে থাকা যেকোনো দেশে ক্লিক করে তার একক রেট সেট করতে পারেন। এটি স্থায়ীভাবে সেভ থাকবে।",
                                 color = Color(0xFF94A3B8),
                                 fontSize = 9.5.sp,
                                 lineHeight = 13.sp
