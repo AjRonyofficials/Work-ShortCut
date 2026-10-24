@@ -247,28 +247,55 @@ object AllCountriesProvider {
         val trimmed = input.trim()
         if (trimmed.isEmpty()) return null
 
-        // 1. Direct ISO code match
+        // 1. Direct ISO code match (e.g. "GN", "SD", "CM", "BD", "US")
         allCountries.firstOrNull { it.code.equals(trimmed, ignoreCase = true) }?.let { return it }
-        // 2. Name or dial code match
-        findByNameOrCode(trimmed)?.let { return it }
 
-        // 3. Clean digits for dial code, phone number, or range prefix (e.g. 237620XXX, 237, +237...)
-        val clean = trimmed.replace("[^0-9]".toRegex(), "")
+        // 2. Exact country name match or exact dial code match
+        allCountries.firstOrNull { it.name.equals(trimmed, ignoreCase = true) }?.let { return it }
+        val cleanInputDial = trimmed.replace("+", "").trim()
+        allCountries.firstOrNull { it.dialCode.replace("+", "") == cleanInputDial }?.let { return it }
+
+        // 3. Clean numeric digits for dial code, phone number, or range prefix
+        var clean = trimmed.replace("[^0-9]".toRegex(), "")
+        if (clean.startsWith("00")) {
+            clean = clean.substring(2)
+        }
+
         if (clean.isNotEmpty()) {
+            // First check if the clean digits exactly equal any country's dial code
             allCountries.firstOrNull { it.dialCode.replace("+", "") == clean }?.let { return it }
-            allCountries
+
+            // Match dial codes sorted in descending order of length (so +1868 matches before +1, +880 before +88, etc.)
+            val matchedByDial = allCountries
                 .sortedByDescending { it.dialCode.replace("+", "").length }
                 .firstOrNull {
                     val dc = it.dialCode.replace("+", "")
                     clean.startsWith(dc)
-                }?.let { return it }
+                }
+            if (matchedByDial != null) {
+                return matchedByDial
+            }
+
+            // Bangladesh local prefix detection (e.g. 013, 014, 015, 016, 017, 018, 019)
+            if (clean.startsWith("013") || clean.startsWith("014") || clean.startsWith("015") ||
+                clean.startsWith("016") || clean.startsWith("017") || clean.startsWith("018") ||
+                clean.startsWith("019")) {
+                allCountries.firstOrNull { it.code == "BD" }?.let { return it }
+            }
         }
 
-        // 4. Substring match on country name (e.g. "Cameroon MTN" -> Cameroon)
-        return allCountries.firstOrNull {
+        // 4. Substring word match on country name (e.g. "Guinea FB Clone" -> Guinea, "Sudan Zain" -> Sudan, "Cameroon MTN" -> Cameroon)
+        val words = trimmed.split("[^A-Za-z]+".toRegex()).filter { it.length >= 3 }
+        for (w in words) {
+            allCountries.firstOrNull { it.name.equals(w, ignoreCase = true) }?.let { return it }
+            allCountries.firstOrNull { it.code.equals(w, ignoreCase = true) }?.let { return it }
+        }
+        allCountries.firstOrNull {
             trimmed.contains(it.name, ignoreCase = true) ||
             it.name.contains(trimmed, ignoreCase = true)
-        }
+        }?.let { return it }
+
+        return null
     }
 
     fun search(query: String): List<AdminCountryInfo> {

@@ -16,8 +16,8 @@ android {
     applicationId = "com.aistudio.workshortcut.kxmpzq"
     minSdk = 24
     targetSdk = 36
-    val runNumber = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 115
-    versionCode = if (runNumber >= 115) runNumber else 115
+    val runNumber = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 1
+    versionCode = 120 + runNumber
     versionName = "1.0.${versionCode}"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
