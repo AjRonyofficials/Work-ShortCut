@@ -143,7 +143,7 @@ data class AdminCountryInfo(
 
 val ADMIN_PRESET_COUNTRIES = AllCountriesProvider.allCountries
 
-val ADMIN_SERVICES = listOf("Facebook", "Instagram", "WhatsApp")
+val ADMIN_SERVICES = listOf("Facebook", "WhatsApp", "Instagram", "OTP Work")
 
 @Composable
 fun AdminPanelSection(
@@ -543,6 +543,7 @@ fun AdminUnixSmsCard(
 ) {
     var selectedCountry by remember { mutableStateOf(ADMIN_PRESET_COUNTRIES.first()) }
     var selectedService by remember { mutableStateOf(ADMIN_SERVICES.first()) }
+    var selectedNumberType by remember { mutableStateOf("Fresh") } // "Fresh" (New Fresh Number) or "PC Clone" (PC Clone Number)
     var numbersInput by remember { mutableStateOf("") }
     var countryDropdownExpanded by remember { mutableStateOf(false) }
     var showCountrySearchDialog by remember { mutableStateOf(false) }
@@ -602,6 +603,8 @@ fun AdminUnixSmsCard(
         var showCustomPremiumV2RateDialog by remember { mutableStateOf(false) }
         var selectedV2CountryCode by remember { mutableStateOf("ALL") }
         var showAllWorldCountriesDialog by remember { mutableStateOf(false) }
+        var showV2AllWorldCountriesSearchDialog by remember { mutableStateOf(false) }
+        var v2AllCountriesSearchQuery by remember { mutableStateOf("") }
         var showApiKeyConfigDialog by remember { mutableStateOf(false) }
         var allCountriesSearchQuery by remember { mutableStateOf("") }
         var customRateInputText by remember { mutableStateOf("") }
@@ -821,6 +824,122 @@ fun AdminUnixSmsCard(
                 dismissButton = {
                     TextButton(onClick = { showCustomPremiumV2RateDialog = false }) {
                         Text("বাতিল", color = Color(0xFF94A3B8))
+                    }
+                }
+            )
+        }
+
+        if (showV2AllWorldCountriesSearchDialog) {
+            val allWorldList: List<AdminCountryInfo> = remember { AllCountriesProvider.allCountries }
+            val filteredV2Countries: List<AdminCountryInfo> = remember(v2AllCountriesSearchQuery, allWorldList) {
+                if (v2AllCountriesSearchQuery.isBlank()) {
+                    allWorldList
+                } else {
+                    val q = v2AllCountriesSearchQuery.trim().lowercase(Locale.US)
+                    allWorldList.filter { country ->
+                        country.name.lowercase(Locale.US).contains(q) ||
+                        country.code.lowercase(Locale.US).contains(q) ||
+                        country.dialCode.contains(q)
+                    }
+                }
+            }
+
+            AlertDialog(
+                onDismissRequest = { showV2AllWorldCountriesSearchDialog = false },
+                containerColor = Color(0xFF0D1826),
+                title = {
+                    Column {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.Public, contentDescription = null, tint = Color(0xFF38BDF8), modifier = Modifier.size(20.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("বিশ্বের সকল দেশ - Premium V2 (${allWorldList.size})", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                        }
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text("যেকোনো দেশ সিলেক্ট করে তার নির্দিষ্ট OTP রেট সেট করুন", color = Color(0xFF94A3B8), fontSize = 11.sp)
+                    }
+                },
+                text = {
+                    Column(modifier = Modifier.height(440.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedTextField(
+                            value = v2AllCountriesSearchQuery,
+                            onValueChange = { v2AllCountriesSearchQuery = it },
+                            placeholder = { Text("দেশ খুঁজুন (যেমন Zimbabwe, France, +263, +33)...", color = Color(0xFF64748B), fontSize = 12.sp) },
+                            singleLine = true,
+                            leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = Color(0xFF38BDF8), modifier = Modifier.size(16.dp)) },
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedTextColor = Color.White,
+                                unfocusedTextColor = Color.White,
+                                focusedBorderColor = Color(0xFF38BDF8),
+                                unfocusedBorderColor = Color(0xFF1E2D40),
+                                focusedContainerColor = Color(0xFF090E17),
+                                unfocusedContainerColor = Color(0xFF090E17)
+                            ),
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+
+                        Text("পাওয়া গেছে: ${filteredV2Countries.size} টি দেশ", color = Color(0xFF38BDF8), fontSize = 11.sp, fontWeight = FontWeight.Bold)
+
+                        androidx.compose.foundation.lazy.LazyColumn(
+                            modifier = Modifier.weight(1f),
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            items(items = filteredV2Countries, key = { it.code }) { country ->
+                                val isSelected = country.code.equals(selectedV2CountryCode, ignoreCase = true)
+                                val currentRate = com.example.service.PremiumNumberV2Manager.getRateForCountry(country.code)
+                                Surface(
+                                    color = if (isSelected) Color(0xFF0369A1) else Color(0xFF132237),
+                                    shape = RoundedCornerShape(8.dp),
+                                    border = BorderStroke(1.dp, if (isSelected) Color(0xFF38BDF8) else Color(0xFF1E3A56)),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.SpaceBetween
+                                    ) {
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            modifier = Modifier
+                                                .weight(1f)
+                                                .clickable {
+                                                    selectedV2CountryCode = country.code
+                                                    customRateInputText = String.format(Locale.US, "%.2f", currentRate)
+                                                    showV2AllWorldCountriesSearchDialog = false
+                                                    showCustomPremiumV2RateDialog = true
+                                                }
+                                        ) {
+                                            Text(country.flag, fontSize = 20.sp)
+                                            Spacer(modifier = Modifier.width(8.dp))
+                                            Column {
+                                                Text(country.name, color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                                Text("${country.code} • ${country.dialCode}", color = Color(0xFF94A3B8), fontSize = 10.sp)
+                                            }
+                                        }
+
+                                        Button(
+                                            onClick = {
+                                                selectedV2CountryCode = country.code
+                                                customRateInputText = String.format(Locale.US, "%.2f", currentRate)
+                                                showV2AllWorldCountriesSearchDialog = false
+                                                showCustomPremiumV2RateDialog = true
+                                            },
+                                            shape = RoundedCornerShape(6.dp),
+                                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0284C7)),
+                                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                                            modifier = Modifier.height(28.dp)
+                                        ) {
+                                            Text("${String.format(Locale.US, "%.2f", currentRate)}৳ ✏️", fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                confirmButton = {
+                    TextButton(onClick = { showV2AllWorldCountriesSearchDialog = false }) {
+                        Text("বন্ধ করুন", color = Color(0xFF38BDF8), fontWeight = FontWeight.Bold)
                     }
                 }
             )
@@ -1904,40 +2023,20 @@ fun AdminUnixSmsCard(
 
                     Spacer(modifier = Modifier.height(8.dp))
 
-                    // Buttons for API Key & Balance
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    // Search all world countries button to set any country rate
+                    Button(
+                        onClick = {
+                            v2AllCountriesSearchQuery = ""
+                            showV2AllWorldCountriesSearchDialog = true
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0284C7)),
+                        shape = RoundedCornerShape(8.dp),
+                        border = BorderStroke(1.dp, Color(0xFF38BDF8)),
+                        modifier = Modifier.fillMaxWidth().height(42.dp)
                     ) {
-                        Button(
-                            onClick = {
-                                customApiKeyInputText = com.example.service.PremiumNumberV2Manager.state.value.apiKey
-                                showApiKeyConfigDialog = true
-                            },
-                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E293B)),
-                            shape = RoundedCornerShape(8.dp),
-                            border = BorderStroke(1.dp, Color(0xFF38BDF8)),
-                            modifier = Modifier.weight(1f)
-                        ) {
-                            Icon(Icons.Default.Settings, contentDescription = null, tint = Color(0xFF38BDF8), modifier = Modifier.size(14.dp))
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text("API Key কনফিগার", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFF38BDF8))
-                        }
-
-                        Button(
-                            onClick = {
-                                com.example.service.PremiumNumberV2Manager.refreshBalance()
-                                Toast.makeText(context, "ব্যালেন্স রিফ্রেশ হচ্ছে...", Toast.LENGTH_SHORT).show()
-                            },
-                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0F273E)),
-                            shape = RoundedCornerShape(8.dp),
-                            border = BorderStroke(1.dp, Color(0xFF0284C7)),
-                            modifier = Modifier.weight(1f)
-                        ) {
-                            Icon(Icons.Default.Refresh, contentDescription = null, tint = Color(0xFF38BDF8), modifier = Modifier.size(14.dp))
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text("ব্যালেন্স চেক ($)", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFF38BDF8))
-                        }
+                        Icon(Icons.Default.Search, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("🔍 বিশ্বের সকল দেশ খুঁজুন ও ওটিপি রেট সেট করুন", fontSize = 11.5.sp, fontWeight = FontWeight.Bold, color = Color.White)
                     }
                 } else {
                     Surface(
@@ -1988,7 +2087,7 @@ fun AdminUnixSmsCard(
                 Spacer(modifier = Modifier.height(6.dp))
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
                     val isLamix = selectedGateway == "LAMIX"
                     Surface(
@@ -2003,19 +2102,19 @@ fun AdminUnixSmsCard(
                             }
                     ) {
                         Column(
-                            modifier = Modifier.padding(vertical = 8.dp, horizontal = 10.dp),
+                            modifier = Modifier.padding(vertical = 8.dp, horizontal = 6.dp),
                             horizontalAlignment = Alignment.CenterHorizontally
                         ) {
                             Text(
                                 text = "⚡ Lamix SMS",
                                 color = if (isLamix) Color(0xFF38BDF8) else Color(0xFF94A3B8),
                                 fontWeight = FontWeight.Bold,
-                                fontSize = 11.5.sp
+                                fontSize = 10.5.sp
                             )
                             Text(
-                                text = "panel.lamix.org",
+                                text = "Lamix Panel",
                                 color = if (isLamix) Color(0xFF7DD3FC) else Color(0xFF64748B),
-                                fontSize = 8.5.sp
+                                fontSize = 8.sp
                             )
                         }
                     }
@@ -2033,19 +2132,49 @@ fun AdminUnixSmsCard(
                             }
                     ) {
                         Column(
-                            modifier = Modifier.padding(vertical = 8.dp, horizontal = 10.dp),
+                            modifier = Modifier.padding(vertical = 8.dp, horizontal = 6.dp),
                             horizontalAlignment = Alignment.CenterHorizontally
                         ) {
                             Text(
                                 text = "🌐 Unix SMS",
                                 color = if (isUnix) Color(0xFF38BDF8) else Color(0xFF94A3B8),
                                 fontWeight = FontWeight.Bold,
-                                fontSize = 11.5.sp
+                                fontSize = 10.5.sp
                             )
                             Text(
-                                text = "agent-api.unixsms.com",
+                                text = "Unix API",
                                 color = if (isUnix) Color(0xFF7DD3FC) else Color(0xFF64748B),
-                                fontSize = 8.5.sp
+                                fontSize = 8.sp
+                            )
+                        }
+                    }
+
+                    val isHadi = selectedGateway == "HADI"
+                    Surface(
+                        color = if (isHadi) Color(0xFF0284C7).copy(alpha = 0.25f) else Color(0xFF090E17),
+                        shape = RoundedCornerShape(10.dp),
+                        border = BorderStroke(1.dp, if (isHadi) Color(0xFF00E5FF) else Color(0xFF243B55)),
+                        modifier = Modifier
+                            .weight(1f)
+                            .clickable {
+                                selectedGateway = "HADI"
+                                UnixSmsManager.setSelectedUploadGateway("HADI")
+                            }
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(vertical = 8.dp, horizontal = 6.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Text(
+                                text = "🔥 Hadi SMS",
+                                color = if (isHadi) Color(0xFF00E5FF) else Color(0xFF94A3B8),
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 10.5.sp
+                            )
+                            Text(
+                                text = "CR Hadi (1s)",
+                                color = if (isHadi) Color(0xFF7DD3FC) else Color(0xFF64748B),
+                                fontSize = 8.sp
                             )
                         }
                     }
@@ -2335,7 +2464,8 @@ fun AdminUnixSmsCard(
                         val serviceColor = when (serviceName) {
                             "Facebook" -> Color(0xFF1877F2)
                             "Instagram" -> Color(0xFFE1306C)
-                            else -> Color(0xFF25D366) // WhatsApp
+                            "WhatsApp" -> Color(0xFF25D366)
+                            else -> Color(0xFFFF9100) // OTP Work
                         }
 
                         Surface(
@@ -2354,8 +2484,48 @@ fun AdminUnixSmsCard(
                                 Text(
                                     text = serviceName,
                                     color = if (isSelected) Color.White else Color(0xFF94A3B8),
-                                    fontSize = 11.sp,
+                                    fontSize = 10.sp,
                                     fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
+                                )
+                            }
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // Number Type Selector: New Fresh Number vs PC Clone Number
+                Text(text = "3. নাম্বার টাইপ নির্বাচন করুন (Fresh vs PC Clone):", fontSize = 11.sp, color = Color(0xFF94A3B8), fontWeight = FontWeight.SemiBold)
+                Spacer(modifier = Modifier.height(4.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    listOf(
+                        Pair("Fresh", "🟢 New Fresh Number"),
+                        Pair("PC Clone", "🖥️ PC Clone Number")
+                    ).forEach { (tKey, tLabel) ->
+                        val isSel = selectedNumberType == tKey
+                        val tColor = if (tKey == "Fresh") Color(0xFF00E676) else Color(0xFF38BDF8)
+                        Surface(
+                            color = if (isSel) tColor.copy(alpha = 0.22f) else Color(0xFF090E17),
+                            shape = RoundedCornerShape(10.dp),
+                            border = BorderStroke(1.2.dp, if (isSel) tColor else Color(0xFF243B55)),
+                            modifier = Modifier
+                                .weight(1f)
+                                .clickable { selectedNumberType = tKey }
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(vertical = 9.dp, horizontal = 6.dp),
+                                horizontalArrangement = Arrangement.Center,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = tLabel,
+                                    color = if (isSel) Color.White else Color(0xFF94A3B8),
+                                    fontSize = 11.sp,
+                                    fontWeight = if (isSel) FontWeight.Bold else FontWeight.Medium
                                 )
                             }
                         }
@@ -2370,7 +2540,7 @@ fun AdminUnixSmsCard(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text(text = "3. নাম্বার লিখুন বা ফাইল আপলোড করুন:", fontSize = 11.sp, color = Color(0xFF94A3B8), fontWeight = FontWeight.SemiBold)
+                    Text(text = "4. নাম্বার লিখুন বা ফাইল আপলোড করুন:", fontSize = 11.sp, color = Color(0xFF94A3B8), fontWeight = FontWeight.SemiBold)
 
                     // File upload button
                     OutlinedButton(
@@ -2430,11 +2600,13 @@ fun AdminUnixSmsCard(
                             flag = selectedCountry.flag,
                             service = selectedService,
                             gateway = selectedGateway,
-                            customRate = currentCountryRate
+                            customRate = currentCountryRate,
+                            numberType = selectedNumberType
                         )
                         isUploading = false
                         if (addedCount > 0) {
-                            Toast.makeText(context, "✓ $addedCount টি নতুন $selectedGateway নাম্বার সফলভাবে প্যানেলে যোগ হয়েছে ও সকল ইউজারের কাছে লাইভ সিঙ্ক হয়েছে!", Toast.LENGTH_LONG).show()
+                            val typeLabel = if (selectedNumberType == "Fresh") "Fresh" else "PC Clone"
+                            Toast.makeText(context, "✓ $addedCount টি নতুন $selectedCountry.name [$typeLabel] নাম্বার সফলভাবে আপলোড হয়েছে!", Toast.LENGTH_LONG).show()
                             numbersInput = ""
                             VibrationHelper.vibrateSuccess(context)
                         } else {
@@ -3530,6 +3702,13 @@ fun AdminWithdrawRequestsCard(
     var filterStatus by remember { mutableStateOf("ALL") } // "ALL", "PENDING", "APPROVED", "REJECTED"
     var searchQuery by remember { mutableStateOf("") }
 
+    val limits by com.example.service.WithdrawalManager.limits.collectAsState()
+    var editLimitsModalOpen by remember { mutableStateOf(false) }
+    var binanceLimitInput by remember(limits) { mutableStateOf(String.format(java.util.Locale.US, "%.0f", limits.minBinance)) }
+    var bkashLimitInput by remember(limits) { mutableStateOf(String.format(java.util.Locale.US, "%.0f", limits.minBkash)) }
+    var nagadLimitInput by remember(limits) { mutableStateOf(String.format(java.util.Locale.US, "%.0f", limits.minNagad)) }
+    var rocketLimitInput by remember(limits) { mutableStateOf(String.format(java.util.Locale.US, "%.0f", limits.minRocket)) }
+
     val pendingCount = withdrawState.allRequests.count { it.status == "PENDING" }
     val approvedCount = withdrawState.allRequests.count { it.status == "APPROVED" }
     val rejectedCount = withdrawState.allRequests.count { it.status == "REJECTED" }
@@ -3552,7 +3731,177 @@ fun AdminWithdrawRequestsCard(
         }
     }
 
+    if (editLimitsModalOpen) {
+        AlertDialog(
+            onDismissRequest = { editLimitsModalOpen = false },
+            containerColor = Color(0xFF0F1A28),
+            shape = RoundedCornerShape(16.dp),
+            title = { Text("উইথড্র লিমিট পরিবর্তন (Set Limits)", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(
+                        value = binanceLimitInput,
+                        onValueChange = { binanceLimitInput = it },
+                        label = { Text("Binance সর্বনিম্ন টাকা (BDT)") },
+                        singleLine = true,
+                        colors = OutlinedTextFieldDefaults.colors(focusedTextColor = Color.White, unfocusedTextColor = Color.White, focusedBorderColor = Color(0xFFF0B90B), unfocusedBorderColor = Color(0xFF334155))
+                    )
+                    OutlinedTextField(
+                        value = bkashLimitInput,
+                        onValueChange = { bkashLimitInput = it },
+                        label = { Text("bKash সর্বনিম্ন টাকা (BDT)") },
+                        singleLine = true,
+                        colors = OutlinedTextFieldDefaults.colors(focusedTextColor = Color.White, unfocusedTextColor = Color.White, focusedBorderColor = Color(0xFFE2136E), unfocusedBorderColor = Color(0xFF334155))
+                    )
+                    OutlinedTextField(
+                        value = nagadLimitInput,
+                        onValueChange = { nagadLimitInput = it },
+                        label = { Text("Nagad সর্বনিম্ন টাকা (BDT)") },
+                        singleLine = true,
+                        colors = OutlinedTextFieldDefaults.colors(focusedTextColor = Color.White, unfocusedTextColor = Color.White, focusedBorderColor = Color(0xFFF7931A), unfocusedBorderColor = Color(0xFF334155))
+                    )
+                    OutlinedTextField(
+                        value = rocketLimitInput,
+                        onValueChange = { rocketLimitInput = it },
+                        label = { Text("Rocket সর্বনিম্ন টাকা (BDT)") },
+                        singleLine = true,
+                        colors = OutlinedTextFieldDefaults.colors(focusedTextColor = Color.White, unfocusedTextColor = Color.White, focusedBorderColor = Color(0xFF8C30F5), unfocusedBorderColor = Color(0xFF334155))
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val b = binanceLimitInput.toDoubleOrNull() ?: limits.minBinance
+                        val bk = bkashLimitInput.toDoubleOrNull() ?: limits.minBkash
+                        val n = nagadLimitInput.toDoubleOrNull() ?: limits.minNagad
+                        val r = rocketLimitInput.toDoubleOrNull() ?: limits.minRocket
+                        com.example.service.WithdrawalManager.updateLimits(b, bk, n, r)
+                        editLimitsModalOpen = false
+                        Toast.makeText(context, "উইথড্র লিমিট সফলভাবে সেভ হয়েছে!", Toast.LENGTH_SHORT).show()
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00E676))
+                ) {
+                    Text("সেভ করুন", color = Color.Black, fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                OutlinedButton(onClick = { editLimitsModalOpen = false }) {
+                    Text("বাতিল", color = Color.White)
+                }
+            }
+        )
+    }
+
     Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+        // 0. Withdrawal Limits Control Card (Admin can increase/decrease minimum withdraw limits)
+        Card(
+            colors = CardDefaults.cardColors(containerColor = Color(0xFF0F1A28)),
+            shape = RoundedCornerShape(14.dp),
+            border = BorderStroke(1.dp, Color(0xFF1E354F)),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(modifier = Modifier.padding(12.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.Settings, contentDescription = null, tint = Color(0xFF38BDF8), modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = "উইথড্র লিমিট নিয়ন্ত্রণ (WITHDRAW LIMITS)",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White
+                        )
+                    }
+
+                    OutlinedButton(
+                        onClick = { editLimitsModalOpen = true },
+                        shape = RoundedCornerShape(8.dp),
+                        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                        modifier = Modifier.height(28.dp),
+                        border = BorderStroke(1.dp, Color(0xFF38BDF8))
+                    ) {
+                        Text("কাস্টম লিমিট ✏️", fontSize = 9.5.sp, color = Color(0xFF38BDF8), fontWeight = FontWeight.Bold)
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    listOf(
+                        Triple("Binance", limits.minBinance, Color(0xFFF0B90B)),
+                        Triple("bKash", limits.minBkash, Color(0xFFE2136E)),
+                        Triple("Nagad", limits.minNagad, Color(0xFFF7931A)),
+                        Triple("Rocket", limits.minRocket, Color(0xFF8C30F5))
+                    ).forEach { (mName, mMin, mCol) ->
+                        Surface(
+                            color = Color(0xFF070E18),
+                            shape = RoundedCornerShape(10.dp),
+                            border = BorderStroke(1.dp, mCol.copy(alpha = 0.5f)),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 6.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally
+                            ) {
+                                Text(text = mName, fontSize = 10.sp, color = mCol, fontWeight = FontWeight.Bold)
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Text(
+                                    text = "৳${String.format(java.util.Locale.US, "%.0f", mMin)}",
+                                    fontSize = 12.sp,
+                                    color = Color.White,
+                                    fontWeight = FontWeight.ExtraBold
+                                )
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                    Surface(
+                                        color = Color(0xFF1E2D40),
+                                        shape = RoundedCornerShape(4.dp),
+                                        modifier = Modifier.size(22.dp).clickable {
+                                            val newBinance = if (mName == "Binance") (limits.minBinance - 5).coerceAtLeast(1.0) else limits.minBinance
+                                            val newBkash = if (mName == "bKash") (limits.minBkash - 5).coerceAtLeast(1.0) else limits.minBkash
+                                            val newNagad = if (mName == "Nagad") (limits.minNagad - 5).coerceAtLeast(1.0) else limits.minNagad
+                                            val newRocket = if (mName == "Rocket") (limits.minRocket - 5).coerceAtLeast(1.0) else limits.minRocket
+                                            com.example.service.WithdrawalManager.updateLimits(newBinance, newBkash, newNagad, newRocket)
+                                            Toast.makeText(context, "$mName লিমিট কমানো হয়েছে: ৳${String.format(java.util.Locale.US, "%.0f", if (mName == "Binance") newBinance else if (mName == "bKash") newBkash else if (mName == "Nagad") newNagad else newRocket)}", Toast.LENGTH_SHORT).show()
+                                        }
+                                    ) {
+                                        Box(contentAlignment = Alignment.Center) {
+                                            Text("-5", color = Color(0xFFEF4444), fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                                        }
+                                    }
+
+                                    Surface(
+                                        color = Color(0xFF1E2D40),
+                                        shape = RoundedCornerShape(4.dp),
+                                        modifier = Modifier.size(22.dp).clickable {
+                                            val newBinance = if (mName == "Binance") (limits.minBinance + 5) else limits.minBinance
+                                            val newBkash = if (mName == "bKash") (limits.minBkash + 5) else limits.minBkash
+                                            val newNagad = if (mName == "Nagad") (limits.minNagad + 5) else limits.minNagad
+                                            val newRocket = if (mName == "Rocket") (limits.minRocket + 5) else limits.minRocket
+                                            com.example.service.WithdrawalManager.updateLimits(newBinance, newBkash, newNagad, newRocket)
+                                            Toast.makeText(context, "$mName লিমিট বাড়ানো হয়েছে: ৳${String.format(java.util.Locale.US, "%.0f", if (mName == "Binance") newBinance else if (mName == "bKash") newBkash else if (mName == "Nagad") newNagad else newRocket)}", Toast.LENGTH_SHORT).show()
+                                        }
+                                    ) {
+                                        Box(contentAlignment = Alignment.Center) {
+                                            Text("+5", color = Color(0xFF00E676), fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         // Summary Pills
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -4758,6 +5107,197 @@ fun AdminUserItemRow(
                     )
                 }
             }
+
+            // Device Sessions & ID Detection Controls
+            Spacer(modifier = Modifier.height(6.dp))
+            var showDeviceSessions by remember { mutableStateOf(false) }
+            val onlineDevCount = user.deviceSessions.count { it.isOnline && !it.isRevoked }
+            val totalDevCount = user.deviceSessions.size
+
+            Surface(
+                color = Color(0xFF0F172A),
+                shape = RoundedCornerShape(6.dp),
+                border = BorderStroke(1.dp, Color(0xFF334155)),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(modifier = Modifier.padding(8.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.Phone, contentDescription = null, tint = Color(0xFF38BDF8), modifier = Modifier.size(13.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                text = "ডিভাইস সেশন ($onlineDevCount অনলাইন / $totalDevCount মোট)",
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color.White
+                            )
+                        }
+
+                        Surface(
+                            color = Color(0xFF38BDF8).copy(alpha = 0.15f),
+                            shape = RoundedCornerShape(4.dp),
+                            border = BorderStroke(1.dp, Color(0xFF38BDF8).copy(alpha = 0.4f)),
+                            modifier = Modifier.clickable { showDeviceSessions = !showDeviceSessions }
+                        ) {
+                            Text(
+                                text = if (showDeviceSessions) "লুকান ▲" else "ম্যানেজ করুন ▼",
+                                color = Color(0xFF38BDF8),
+                                fontSize = 8.5.sp,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                            )
+                        }
+                    }
+
+                    if (showDeviceSessions) {
+                        Spacer(modifier = Modifier.height(6.dp))
+                        if (user.deviceSessions.isEmpty()) {
+                            Text(
+                                text = "কোনো সংরক্ষিত ডিভাইস সেশন নেই (লগইন করলে স্বয়ংক্রিয়ভাবে ডিটেক্ট হবে)",
+                                fontSize = 9.sp,
+                                color = Color(0xFF94A3B8)
+                            )
+                        } else {
+                            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                user.deviceSessions.forEach { session ->
+                                    Surface(
+                                        color = if (session.isRevoked) Color(0xFF7F1D1D).copy(alpha = 0.2f)
+                                                else if (session.isOnline) Color(0xFF064E3B).copy(alpha = 0.3f)
+                                                else Color(0xFF1E293B).copy(alpha = 0.5f),
+                                        shape = RoundedCornerShape(4.dp),
+                                        border = BorderStroke(1.dp, if (session.isRevoked) Color(0xFFEF4444) else if (session.isOnline) Color(0xFF10B981) else Color(0xFF475569)),
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(horizontal = 6.dp, vertical = 4.dp),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Column(modifier = Modifier.weight(1f)) {
+                                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                                    Text(
+                                                        text = if (session.isRevoked) "🚫 বাতিল" else if (session.isOnline) "🟢 অনলাইন" else "⚪ অফলাইন",
+                                                        fontSize = 8.5.sp,
+                                                        fontWeight = FontWeight.Bold,
+                                                        color = if (session.isRevoked) Color(0xFFF87171) else if (session.isOnline) Color(0xFF34D399) else Color(0xFF94A3B8)
+                                                    )
+                                                    Spacer(modifier = Modifier.width(4.dp))
+                                                    Text(
+                                                        text = session.deviceModel.ifEmpty { "Android" },
+                                                        fontSize = 9.sp,
+                                                        fontWeight = FontWeight.Bold,
+                                                        color = Color.White
+                                                    )
+                                                }
+                                                Text(
+                                                    text = "ID: ${session.deviceId.take(16)}...",
+                                                    fontSize = 8.sp,
+                                                    color = Color(0xFF94A3B8),
+                                                    fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
+                                                )
+                                            }
+
+                                            if (session.isRevoked) {
+                                                OutlinedButton(
+                                                    onClick = { AuthManager.restoreDeviceSession(user.email, session.deviceId) },
+                                                    shape = RoundedCornerShape(4.dp),
+                                                    border = BorderStroke(1.dp, Color(0xFF10B981)),
+                                                    contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 6.dp, vertical = 1.dp),
+                                                    modifier = Modifier.height(22.dp)
+                                                ) {
+                                                    Text("রিস্টোর", fontSize = 8.5.sp, color = Color(0xFF34D399), fontWeight = FontWeight.Bold)
+                                                }
+                                            } else {
+                                                Button(
+                                                    onClick = { AuthManager.revokeDeviceSession(user.email, session.deviceId) },
+                                                    shape = RoundedCornerShape(4.dp),
+                                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFDC2626)),
+                                                    contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 6.dp, vertical = 1.dp),
+                                                    modifier = Modifier.height(22.dp)
+                                                ) {
+                                                    Text("সেশন বাতিল", fontSize = 8.5.sp, color = Color.White, fontWeight = FontWeight.Bold)
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Section Access / Option Toggles for User
+            Spacer(modifier = Modifier.height(6.dp))
+            Surface(
+                color = Color(0xFF0F172A),
+                shape = RoundedCornerShape(6.dp),
+                border = BorderStroke(1.dp, Color(0xFF1E293B)),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(modifier = Modifier.padding(8.dp)) {
+                    Text(
+                        text = "🔒 সেকশন এক্সেস নিয়ন্ত্রণ (অন / অফ করতে ট্যাপ করুন):",
+                        fontSize = 9.5.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFFA5B4FC)
+                    )
+                    Spacer(modifier = Modifier.height(5.dp))
+                    val sections = listOf(
+                        "UNIX_SMS" to "Unix SMS 🔥",
+                        "PREMIUM_V2" to "Prem V2 🚀",
+                        "KOP_1" to "Kop 1 🌐",
+                        "KOP_2" to "Kop 2 ⚡",
+                        "WITHDRAWAL" to "উইথড্র ৳",
+                        "OVERLAY" to "ওভারলে 📱",
+                        "PROXY" to "প্রক্সি/VPN 🛡️",
+                        "TWO_FACTOR" to "2FA কোড 🔑",
+                        "PW_COPY" to "পাসওয়ার্ড 📋",
+                        "NAME_GENERATOR" to "নাম জেন 👤",
+                        "EXCEL_COLLECTOR" to "শিট 📊",
+                        "CLEAR_DATA" to "ডাটা ক্লিয়ার 🗑️",
+                        "APP_SHORTCUTS" to "শর্টকাট ⚡"
+                    )
+                    sections.chunked(3).forEach { chunk ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            chunk.forEach { (key, label) ->
+                                val isAllowed = !user.disabledSections.contains(key)
+                                Surface(
+                                    color = if (isAllowed) Color(0xFF10B981).copy(alpha = 0.15f) else Color(0xFFEF4444).copy(alpha = 0.15f),
+                                    shape = RoundedCornerShape(4.dp),
+                                    border = BorderStroke(1.dp, if (isAllowed) Color(0xFF10B981).copy(alpha = 0.5f) else Color(0xFFEF4444).copy(alpha = 0.5f)),
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .clickable { AuthManager.toggleUserSectionPermission(user.email, key) }
+                                ) {
+                                    Text(
+                                        text = if (isAllowed) "$label ✓" else "$label ✕",
+                                        color = if (isAllowed) Color(0xFF34D399) else Color(0xFFF87171),
+                                        fontSize = 8.2.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        modifier = Modifier.padding(vertical = 4.dp, horizontal = 2.dp),
+                                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                                    )
+                                }
+                            }
+                            // Fill remaining slots if chunk has fewer than 3
+                            repeat(3 - chunk.size) {
+                                Spacer(modifier = Modifier.weight(1f))
+                            }
+                        }
+                        Spacer(modifier = Modifier.height(4.dp))
+                    }
+                }
+            }
         }
     }
 
@@ -5301,6 +5841,74 @@ fun AdminDeviceAndSystemMonitorCard(
                                     fontSize = 9.5.sp,
                                     color = Color(0xFF64748B)
                                 )
+                            }
+                        }
+
+                        // Display device sessions with revoke buttons in monitor card
+                        if (user.deviceSessions.isNotEmpty()) {
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Text(
+                                text = "📱 লগইনকৃত ডিভাইস সেশন (${user.deviceSessions.size}টি):",
+                                fontSize = 9.5.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFF38BDF8)
+                            )
+                            Spacer(modifier = Modifier.height(3.dp))
+                            user.deviceSessions.forEach { dev ->
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = 2.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Row(
+                                        modifier = Modifier.weight(1f),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(
+                                            text = if (dev.isRevoked) "🚫" else if (dev.isOnline) "🟢" else "⚪",
+                                            fontSize = 9.sp
+                                        )
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Column {
+                                            Text(
+                                                text = "${dev.deviceModel} (ID: ${dev.deviceId.take(8)}...)",
+                                                fontSize = 9.sp,
+                                                fontWeight = FontWeight.Medium,
+                                                color = if (dev.isRevoked) Color(0xFFF87171) else Color(0xFFCBD5E1)
+                                            )
+                                            if (dev.isRevoked) {
+                                                Text(
+                                                    text = "সেশন বাতিলকৃত (Blocked)",
+                                                    fontSize = 7.5.sp,
+                                                    color = Color(0xFFF87171)
+                                                )
+                                            }
+                                        }
+                                    }
+                                    if (dev.isRevoked) {
+                                        OutlinedButton(
+                                            onClick = { AuthManager.restoreDeviceSession(user.email, dev.deviceId) },
+                                            shape = RoundedCornerShape(3.dp),
+                                            border = BorderStroke(1.dp, Color(0xFF10B981)),
+                                            contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp),
+                                            modifier = Modifier.height(20.dp)
+                                        ) {
+                                            Text("রিস্টোর", fontSize = 8.sp, color = Color(0xFF34D399), fontWeight = FontWeight.Bold)
+                                        }
+                                    } else {
+                                        Button(
+                                            onClick = { AuthManager.revokeDeviceSession(user.email, dev.deviceId) },
+                                            shape = RoundedCornerShape(3.dp),
+                                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFDC2626)),
+                                            contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp),
+                                            modifier = Modifier.height(20.dp)
+                                        ) {
+                                            Text("Revoke", fontSize = 8.sp, color = Color.White, fontWeight = FontWeight.Bold)
+                                        }
+                                    }
+                                }
                             }
                         }
                     }

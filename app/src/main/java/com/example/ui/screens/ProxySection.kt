@@ -133,6 +133,39 @@ fun ProxySection(
     var appSearchQuery by remember { mutableStateOf("") }
     var isAppSelectionExpanded by remember { mutableStateOf(false) }
 
+    val proxyPrefs = remember { context.getSharedPreferences("proxy_settings_prefs", Context.MODE_PRIVATE) }
+
+    // Persistent Auto-load: Keep selected proxy profile active without needing to re-select
+    androidx.compose.runtime.LaunchedEffect(savedProxies) {
+        if (savedProxies.isNotEmpty()) {
+            val lastId = proxyPrefs.getLong("last_selected_proxy_id", -1L)
+            val target = savedProxies.firstOrNull { it.id == lastId }
+                ?: savedProxies.firstOrNull { it.isActive }
+                ?: savedProxies.firstOrNull()
+
+            if (target != null && (serverHost.isBlank() || serverHost == "127.0.0.1" || profileName.isBlank() || profileName == "Default Profile")) {
+                profileName = target.name
+                serverHost = target.host
+                serverPort = target.port.toString()
+                protocol = target.protocol
+                username = target.username
+                password = target.password
+                countryCode = target.countryCode
+                requiresAuth = target.username.isNotBlank() || target.password.isNotBlank()
+
+                OverlayStateManager.updateSuperProxyProfile(
+                    profileName = target.name,
+                    server = target.host,
+                    port = target.port,
+                    protocol = target.protocol,
+                    countryCode = target.countryCode,
+                    username = target.username,
+                    password = target.password
+                )
+            }
+        }
+    }
+
     val installedApps = remember {
         try {
             val pm = context.packageManager
@@ -1079,6 +1112,7 @@ fun ProxySection(
                                         )
                                         scope.launch {
                                             repository?.setActiveProxy(profileItem.id)
+                                            proxyPrefs.edit().putLong("last_selected_proxy_id", profileItem.id).apply()
                                         }
                                         Toast.makeText(context, "Loaded: ${profileItem.name}", Toast.LENGTH_SHORT).show()
                                     },

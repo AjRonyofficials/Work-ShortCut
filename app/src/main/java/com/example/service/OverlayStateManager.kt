@@ -117,7 +117,8 @@ data class OverlayUiState(
     val isVirtualNumbersOverlayExpanded: Boolean = false,
     val autoCopyOtp: Boolean = true,
     val otpSoundVibrationEnabled: Boolean = true,
-    val uploadNumberTxtLocked: Boolean = true
+    val uploadNumberTxtLocked: Boolean = true,
+    val overlayScale: Float = 1.0f
 )
 
 object OverlayStateManager {
@@ -319,6 +320,7 @@ object OverlayStateManager {
                     autoCopyOtp = p.getBoolean("auto_copy_otp", true),
                     otpSoundVibrationEnabled = p.getBoolean("otp_sound_vibration_enabled", true),
                     uploadNumberTxtLocked = p.getBoolean("upload_number_txt_locked", true),
+                    overlayScale = p.getFloat("overlay_scale_factor", 1.0f).coerceIn(0.20f, 2.00f),
                     proxyState = it.proxyState.copy(
                         profileName = profileName,
                         host = proxyHost,
@@ -413,6 +415,13 @@ object OverlayStateManager {
 
     fun toggleOtpSoundVibrationEnabled() {
         setOtpSoundVibrationEnabled(!_uiState.value.otpSoundVibrationEnabled)
+    }
+
+    fun setOverlayScale(scale: Float) {
+        val clamped = scale.coerceIn(0.20f, 2.00f)
+        val rounded = Math.round(clamped * 100.0f) / 100.0f
+        _uiState.update { it.copy(overlayScale = rounded) }
+        prefs?.edit()?.putFloat("overlay_scale_factor", rounded)?.apply()
     }
 
     fun setRandomPasswordMode(enabled: Boolean) {

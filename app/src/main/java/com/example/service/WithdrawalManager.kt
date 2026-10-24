@@ -29,13 +29,27 @@ import com.example.util.AppLifecycleTracker
 data class WithdrawalRequest(
     val id: String = java.util.UUID.randomUUID().toString(),
     val userEmail: String,
-    val method: String, // "Binance", "bKash", "Nagad"
+    val method: String, // "Binance", "bKash", "Nagad", "Rocket"
     val accountNumber: String,
     val amount: Double,
     val status: String = "PENDING", // "PENDING", "APPROVED", "REJECTED"
     val requestTimestamp: Long = System.currentTimeMillis(),
     val processedTimestamp: Long? = null,
     val note: String = ""
+)
+
+data class WithdrawalLimits(
+    val minBinance: Double = 20.0,
+    val minBkash: Double = 50.0,
+    val minNagad: Double = 50.0,
+    val minRocket: Double = 50.0
+)
+
+data class UserPayoutAccounts(
+    val binanceId: String = "",
+    val bkashNumber: String = "",
+    val nagadNumber: String = "",
+    val rocketNumber: String = ""
 )
 
 data class WithdrawalState(
@@ -52,6 +66,10 @@ object WithdrawalManager {
     private const val KEY_REQUESTS_JSON = "withdrawals_requests_json"
     private const val KEY_BASE_CREDIT = "base_earned_credit_tk"
     private const val KEY_CREDIT_RESET_V2 = "credit_cleaned_v2"
+    private const val KEY_MIN_BINANCE = "min_binance_limit_tk"
+    private const val KEY_MIN_BKASH = "min_bkash_limit_tk"
+    private const val KEY_MIN_NAGAD = "min_nagad_limit_tk"
+    private const val KEY_MIN_ROCKET = "min_rocket_limit_tk"
 
     private const val SUPABASE_BASE_URL = "https://fbtqjpuclmnsiqehalow.supabase.co/rest/v1"
     private const val SUPABASE_KEY = "sb_publishable_zBqxIMDPy4yHEuAdJJUlxg_wSCRF9u5"
@@ -59,6 +77,7 @@ object WithdrawalManager {
     const val MIN_BINANCE_TK = 20.0
     const val MIN_BKASH_TK = 50.0
     const val MIN_NAGAD_TK = 50.0
+    const val MIN_ROCKET_TK = 50.0
 
     private val httpClient = OkHttpClient.Builder()
         .connectTimeout(6, TimeUnit.SECONDS)
@@ -69,6 +88,9 @@ object WithdrawalManager {
     private var isPolling = false
 
     private var prefs: SharedPreferences? = null
+
+    private val _limits = MutableStateFlow(WithdrawalLimits())
+    val limits: StateFlow<WithdrawalLimits> = _limits.asStateFlow()
 
     private val _state = MutableStateFlow(WithdrawalState())
     val state: StateFlow<WithdrawalState> = _state.asStateFlow()
@@ -186,6 +208,13 @@ object WithdrawalManager {
             }
         } catch (_: Exception) {}
 
+        // Load dynamic withdrawal limits
+        val minBinance = prefs?.getFloat(KEY_MIN_BINANCE, 20.0f)?.toDouble() ?: 20.0
+        val minBkash = prefs?.getFloat(KEY_MIN_BKASH, 50.0f)?.toDouble() ?: 50.0
+        val minNagad = prefs?.getFloat(KEY_MIN_NAGAD, 50.0f)?.toDouble() ?: 50.0
+        val minRocket = prefs?.getFloat(KEY_MIN_ROCKET, 50.0f)?.toDouble() ?: 50.0
+        _limits.value = WithdrawalLimits(minBinance, minBkash, minNagad, minRocket)
+
         // One-time cleanup of legacy test 60 Tk credit
         val hasReset = prefs?.getBoolean(KEY_CREDIT_RESET_V2, false) ?: false
         if (!hasReset) {
@@ -203,7 +232,6 @@ object WithdrawalManager {
     }
 
     private fun recomputeBalances(requests: List<WithdrawalRequest>, baseCredit: Double) {
-        // Additional earned from received OTPs panel by panel according to each OTP's recorded rate:
         val records = OtpHistoryManager.state.value.recentRecords
         val currentUnixRate = UnixSmsManager.state.value.otpRatePerSms
         val currentZenexRate = VirtualNumberManager.zenexOtpRate.value
@@ -220,7 +248,7 @@ object WithdrawalManager {
                         else -> currentZenexRate
                     }
                 }
-                rate // Rate is directly in BDT (৳) e.g. 0.50৳ per OTP
+                rate
             }
         } else {
             val unixCount = OtpHistoryManager.state.value.unixTotalAllTime
@@ -248,7 +276,6 @@ object WithdrawalManager {
 
     private fun saveRequests(list: List<WithdrawalRequest>) {
         val arr = JSONArray()
-        // Keep recent 50 withdrawal requests to avoid storage bloat
         val trimmed = list.take(50)
         for (r in trimmed) {
             val o = JSONObject()
@@ -268,10 +295,47 @@ object WithdrawalManager {
         prefs?.edit()?.putString(KEY_REQUESTS_JSON, arr.toString())?.apply()
     }
 
+    fun updateLimits(minBinance: Double, minBkash: Double, minNagad: Double, minRocket: Double) {
+        val b = (Math.round(minBinance.coerceAtLeast(1.0) * 100.0) / 100.0)
+        val bk = (Math.round(minBkash.coerceAtLeast(1.0) * 100.0) / 100.0)
+        val n = (Math.round(minNagad.coerceAtLeast(1.0) * 100.0) / 100.0)
+        val r = (Math.round(minRocket.coerceAtLeast(1.0) * 100.0) / 100.0)
+        _limits.value = WithdrawalLimits(b, bk, n, r)
+        prefs?.edit()
+            ?.putFloat(KEY_MIN_BINANCE, b.toFloat())
+            ?.putFloat(KEY_MIN_BKASH, bk.toFloat())
+            ?.putFloat(KEY_MIN_NAGAD, n.toFloat())
+            ?.putFloat(KEY_MIN_ROCKET, r.toFloat())
+            ?.apply()
+    }
+
+    fun getSavedAccounts(email: String): UserPayoutAccounts {
+        val safeKey = email.ifBlank { "default" }.replace("[^a-zA-Z0-9]".toRegex(), "_")
+        val b = prefs?.getString("payout_binance_$safeKey", "") ?: ""
+        val bk = prefs?.getString("payout_bkash_$safeKey", "") ?: ""
+        val n = prefs?.getString("payout_nagad_$safeKey", "") ?: ""
+        val r = prefs?.getString("payout_rocket_$safeKey", "") ?: ""
+        return UserPayoutAccounts(b, bk, n, r)
+    }
+
+    fun saveAccounts(email: String, binance: String, bkash: String, nagad: String, rocket: String) {
+        val safeKey = email.ifBlank { "default" }.replace("[^a-zA-Z0-9]".toRegex(), "_")
+        prefs?.edit()
+            ?.putString("payout_binance_$safeKey", binance.trim())
+            ?.putString("payout_bkash_$safeKey", bkash.trim())
+            ?.putString("payout_nagad_$safeKey", nagad.trim())
+            ?.putString("payout_rocket_$safeKey", rocket.trim())
+            ?.apply()
+    }
+
     fun getMinimumAmountForMethod(method: String): Double {
+        val lim = _limits.value
         return when (method.trim().lowercase()) {
-            "binance" -> MIN_BINANCE_TK
-            else -> MIN_BKASH_TK
+            "binance" -> lim.minBinance
+            "bkash" -> lim.minBkash
+            "nagad" -> lim.minNagad
+            "rocket" -> lim.minRocket
+            else -> lim.minBkash
         }
     }
 

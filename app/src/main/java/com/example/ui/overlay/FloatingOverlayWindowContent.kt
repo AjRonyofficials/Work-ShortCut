@@ -61,6 +61,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
@@ -145,6 +147,12 @@ fun FloatingOverlayWindowContent(
     Box(
         modifier = Modifier
             .wrapContentSize()
+            .graphicsLayer {
+                val s = state.overlayScale.coerceIn(0.20f, 2.00f)
+                scaleX = s
+                scaleY = s
+                transformOrigin = if (isLeft) TransformOrigin(0f, 0.5f) else TransformOrigin(1f, 0.5f)
+            }
             .pointerInput(Unit) {
                 detectDragGestures(
                     onDragStart = { offset -> onDragStart(offset.x, offset.y) },
@@ -213,13 +221,14 @@ fun FloatingOverlayWindowContent(
                 }
             }
         } else {
-            // Elegant Frosted Dark Glass Dock Chassis / Container
+            // Elegant Frosted Dark Glass Dock Chassis / Container (Fixed Proportions - NEVER Squashed)
+            val chassisWidth = if (state.isVirtualNumbersOverlayExpanded) 195.dp else 94.dp
             Surface(
                 shape = dockChassisShape,
                 color = Color.Transparent,
                 shadowElevation = 14.dp,
                 modifier = Modifier
-                    .wrapContentSize()
+                    .width(chassisWidth)
                     .clip(dockChassisShape)
                     .background(
                         Brush.verticalGradient(
@@ -246,7 +255,7 @@ fun FloatingOverlayWindowContent(
                     verticalArrangement = Arrangement.spacedBy(6.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
                     modifier = Modifier
-                        .wrapContentSize()
+                        .fillMaxWidth()
                         .padding(horizontal = 6.dp, vertical = 8.dp)
                         .testTag("floating_edge_tabs_column")
                 ) {

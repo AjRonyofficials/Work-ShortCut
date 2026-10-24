@@ -33,13 +33,14 @@ data class UploadedNumberItem(
     val countryCode: String, // e.g. "US", "BD", "CM", "GB"
     val countryName: String,
     val flag: String,
-    val service: String, // "Facebook", "Instagram", "WhatsApp"
+    val service: String, // "Facebook", "Instagram", "WhatsApp", "OTP Work"
     val gateway: String = "LAMIX", // "LAMIX" or "UNIX"
     val customRate: Double? = null,
     val addedAt: Long = System.currentTimeMillis(),
     val isUsed: Boolean = false,
     val otpCode: String? = null,
-    val otpMessage: String? = null
+    val otpMessage: String? = null,
+    val numberType: String = "Fresh" // "Fresh" (New Fresh Number) or "PC Clone" (Pc clone number)
 )
 
 data class UnixSmsCdrRecord(
@@ -49,13 +50,15 @@ data class UnixSmsCdrRecord(
     val message: String,
     val payout: String,
     val countryName: String = "",
-    val countryFlag: String = ""
+    val countryFlag: String = "",
+    val timestamp: Long = System.currentTimeMillis()
 )
 
 data class UnixSmsState(
     val apiToken: String = "simple_v2_fQxnBh-RLx8BIZS2Zjx8TGVLYLv6aqPkATsrIqEKFbxIaowb",
     val lamixApiToken: String = "pMRolCWFnQI0PjGibIKWOpeefLn8HbS6AqGS3BqPZlg",
-    val selectedUploadGateway: String = "LAMIX", // "LAMIX" or "UNIX"
+    val hadiApiToken: String = "QlBYQklBUzRdV4hea5VzRXSJYnlDjGtKXWFmg4NoaGViYm2AX3eHZg==",
+    val selectedUploadGateway: String = "LAMIX", // "LAMIX", "UNIX", or "HADI"
     val uploadedNumbers: List<UploadedNumberItem> = emptyList(),
     val activeNumbers: List<ProvisionedNumber> = emptyList(),
     val liveCdrRecords: List<UnixSmsCdrRecord> = emptyList(),
@@ -93,6 +96,7 @@ object UnixSmsManager {
     private const val PREFS_NAME = "unix_sms_manager_prefs"
     private const val KEY_API_TOKEN = "unix_api_token"
     private const val KEY_LAMIX_API_TOKEN = "lamix_api_token"
+    private const val KEY_HADI_API_TOKEN = "hadi_api_token"
     private const val KEY_SELECTED_UPLOAD_GATEWAY = "unix_selected_upload_gateway"
     private const val KEY_UPLOADED_NUMBERS = "uploaded_numbers_json"
     private const val KEY_ACTIVE_NUMBERS = "active_numbers_json"
@@ -103,6 +107,8 @@ object UnixSmsManager {
     private const val KEY_PERMANENTLY_USED_DIGITS = "permanently_used_number_digits_set"
     const val DEFAULT_TOKEN = "simple_v2_fQxnBh-RLx8BIZS2Zjx8TGVLYLv6aqPkATsrIqEKFbxIaowb"
     const val DEFAULT_LAMIX_TOKEN = "pMRolCWFnQI0PjGibIKWOpeefLn8HbS6AqGS3BqPZlg"
+    const val DEFAULT_HADI_TOKEN = "QlBYQklBUzRdV4hea5VzRXSJYnlDjGtKXWFmg4NoaGViYm2AX3eHZg=="
+    const val HADI_BASE_URL = "http://147.135.212.197/crapi/had/viewstats"
 
     private val scope = CoroutineScope(Dispatchers.IO + Job())
     private var prefs: SharedPreferences? = null
@@ -136,6 +142,8 @@ object UnixSmsManager {
                 prefs?.edit()?.putString(KEY_LAMIX_API_TOKEN, DEFAULT_LAMIX_TOKEN)?.apply()
                 DEFAULT_LAMIX_TOKEN
             } else rawLamix
+            val rawHadi = prefs?.getString(KEY_HADI_API_TOKEN, DEFAULT_HADI_TOKEN) ?: DEFAULT_HADI_TOKEN
+            val hadiToken = if (rawHadi.isBlank()) DEFAULT_HADI_TOKEN else rawHadi
             val gateway = prefs?.getString(KEY_SELECTED_UPLOAD_GATEWAY, "LAMIX") ?: "LAMIX"
             val todayOtp = prefs?.getInt(KEY_TODAY_OTP, 0) ?: 0
             val rawSavedRate = prefs?.getFloat(KEY_OTP_RATE, 0.50f)?.toDouble() ?: 0.50
@@ -170,6 +178,7 @@ object UnixSmsManager {
                 current.copy(
                     apiToken = token,
                     lamixApiToken = lamixToken,
+                    hadiApiToken = hadiToken,
                     selectedUploadGateway = gateway,
                     uploadedNumbers = finalUploaded,
                     activeNumbers = if (current.activeNumbers.isNotEmpty()) current.activeNumbers else active,
@@ -329,7 +338,8 @@ object UnixSmsManager {
                         addedAt = o.optLong("addedAt", System.currentTimeMillis()),
                         isUsed = o.optBoolean("isUsed", false),
                         otpCode = if (o.has("otpCode")) o.optString("otpCode") else null,
-                        otpMessage = if (o.has("otpMessage")) o.optString("otpMessage") else null
+                        otpMessage = if (o.has("otpMessage")) o.optString("otpMessage") else null,
+                        numberType = o.optString("numberType", "Fresh")
                     )
                 )
             }
@@ -353,6 +363,7 @@ object UnixSmsManager {
             o.put("isUsed", item.isUsed)
             item.otpCode?.let { o.put("otpCode", it) }
             item.otpMessage?.let { o.put("otpMessage", it) }
+            o.put("numberType", item.numberType)
             arr.put(o)
         }
         prefs?.edit()?.putString(KEY_UPLOADED_NUMBERS, arr.toString())?.apply()
@@ -384,7 +395,8 @@ object UnixSmsManager {
                 )
             }
         } catch (_: Exception) {}
-        return list
+        val cutoff = System.currentTimeMillis() - 24 * 60 * 60 * 1000L
+        return list.filter { it.timestamp >= cutoff }
     }
 
     private fun saveActiveNumbers(list: List<ProvisionedNumber>) {
@@ -419,6 +431,12 @@ object UnixSmsManager {
         val clean = token.trim()
         _state.update { it.copy(lamixApiToken = clean) }
         prefs?.edit()?.putString(KEY_LAMIX_API_TOKEN, clean)?.apply()
+    }
+
+    fun setHadiApiToken(token: String) {
+        val clean = token.trim()
+        _state.update { it.copy(hadiApiToken = clean) }
+        prefs?.edit()?.putString(KEY_HADI_API_TOKEN, clean)?.apply()
     }
 
     fun setSelectedUploadGateway(gateway: String) {
@@ -461,7 +479,8 @@ object UnixSmsManager {
         flag: String,
         service: String,
         gateway: String = _state.value.selectedUploadGateway,
-        customRate: Double? = null
+        customRate: Double? = null,
+        numberType: String = "Fresh"
     ): Int {
         val lines = rawContent.lines()
             .flatMap { it.split(",", ";", " ", "\t") }
@@ -480,7 +499,8 @@ object UnixSmsManager {
                 flag = flag,
                 service = service,
                 gateway = gateway.uppercase(),
-                customRate = customRate
+                customRate = customRate,
+                numberType = if (numberType.contains("clone", ignoreCase = true)) "PC Clone" else "Fresh"
             )
         }
 
@@ -604,6 +624,7 @@ object UnixSmsManager {
         countryCode: String,
         service: String,
         count: Int = _state.value.requestCount,
+        numberType: String = "ALL",
         onResult: (Boolean, String) -> Unit
     ) {
         val safeCount = count.coerceIn(1, 10)
@@ -616,6 +637,7 @@ object UnixSmsManager {
             !permanentlyUsedDigits.contains(cleanDigits) &&
             !activeNumbers.any { isPhoneNumberMatch(it.number, cleanDigits) } &&
             (countryCode == "ALL" || item.countryCode.equals(countryCode, ignoreCase = true)) &&
+            (numberType == "ALL" || item.numberType.equals(numberType, ignoreCase = true)) &&
             (item.service.isBlank() || item.service.equals("ALL", ignoreCase = true) || item.service.equals(service, ignoreCase = true))
         }
 
@@ -651,7 +673,11 @@ object UnixSmsManager {
             val now = System.currentTimeMillis()
             val newProvs = chosen.map { item ->
                 val gw = item.gateway.uppercase().ifEmpty { "LAMIX" }
-                val opName = if (gw == "LAMIX") "Lamix SMS ⚡" else "Unix SMS 🌐"
+                val opName = when (gw) {
+                    "HADI" -> "Hadi SMS 🔥"
+                    "LAMIX" -> "Lamix SMS ⚡"
+                    else -> "Unix SMS 🌐"
+                }
                 val r = item.customRate ?: getRateForCountry(item.countryCode)
                 ProvisionedNumber(
                     number = item.number,
@@ -704,13 +730,21 @@ object UnixSmsManager {
         service: String,
         onResult: (Boolean, String) -> Unit
     ) {
-        getNumbersForUser(context, countryCode, service, _state.value.requestCount, onResult)
+        getNumbersForUser(
+            context = context,
+            countryCode = countryCode,
+            service = service,
+            count = _state.value.requestCount,
+            numberType = "ALL",
+            onResult = onResult
+        )
     }
 
     private var lastUnixPollTime = 0L
+    private var lastPurgeTime = 0L
 
     /**
-     * Fast OTP Polling using Lamix and Unix SMS CDR API
+     * Fast OTP Polling using Hadi SMS (1s), Lamix SMS (1s), and Unix SMS CDR API (2.5s)
      */
     fun startFastOtpPolling(context: Context) {
         if (pollingJob?.isActive == true) return
@@ -723,6 +757,14 @@ object UnixSmsManager {
                     continue
                 }
                 try {
+                    val now = System.currentTimeMillis()
+
+                    // 24-hour auto purge runs every 30 seconds
+                    if (now - lastPurgeTime >= 30_000L) {
+                        lastPurgeTime = now
+                        purgeOlderThan24Hours()
+                    }
+
                     val activeNums = _state.value.activeNumbers
                     val uploadedNums = _state.value.uploadedNumbers
 
@@ -730,16 +772,20 @@ object UnixSmsManager {
                     val hasPendingUploaded = uploadedNums.any { it.otpCode.isNullOrEmpty() }
 
                     if (hasPendingActive || hasPendingUploaded) {
+                        // 1. Fast 1-Second Hadi SMS CDR Polling (CR Hadi API)
+                        pollHadiSmsCdr(context)
+
+                        // 2. Fast 1-Second Lamix SMS Polling
                         pollLamixSms(context)
-                        val now = System.currentTimeMillis()
-                        // Ensure at least 2500ms between Unix SMS API calls to never violate 2s rate limit
+
+                        // 3. Unix SMS API (throttled to at least 2500ms to stay within 2s rate limit)
                         if (now - lastUnixPollTime >= 2500L) {
                             lastUnixPollTime = now
                             pollUnixSmsCdr(context)
                         }
                     }
                 } catch (_: Exception) {}
-                delay(1500L)
+                delay(1000L) // Fast 1-second interval as requested!
             }
         }
     }
@@ -748,6 +794,252 @@ object UnixSmsManager {
         pollingJob?.cancel()
         pollingJob = null
         _state.update { it.copy(isPolling = false) }
+    }
+
+    /**
+     * Auto-purges CDR records, expired active numbers, and older OTPs across Unix SMS and Hadi SMS after 24 hours.
+     */
+    fun purgeOlderThan24Hours() {
+        val nowTime = System.currentTimeMillis()
+        val cutoff = nowTime - 24 * 60 * 60 * 1000L
+
+        val currentCdr = _state.value.liveCdrRecords
+        val filteredCdr = currentCdr.filter { it.timestamp > cutoff }
+
+        val currentActive = _state.value.activeNumbers
+        val filteredActive = currentActive.filter { it.timestamp > cutoff || !it.otpCode.isNullOrEmpty() }
+
+        if (filteredCdr.size != currentCdr.size || filteredActive.size != currentActive.size) {
+            _state.update {
+                it.copy(
+                    liveCdrRecords = filteredCdr,
+                    activeNumbers = filteredActive
+                )
+            }
+            saveActiveNumbers(filteredActive)
+        }
+    }
+
+    /**
+     * Fast 1-Second CR Hadi API SMS Gateway Polling (/crapi/had/viewstats)
+     * Actively fetches messages and individual phone query for every active taken number!
+     */
+    private suspend fun pollHadiSmsCdr(context: Context) {
+        val token = _state.value.hadiApiToken.ifEmpty { DEFAULT_HADI_TOKEN }
+        val url = "$HADI_BASE_URL?token=${URLEncoder.encode(token, "UTF-8")}&records=100"
+
+        val request = Request.Builder()
+            .url(url)
+            .header("User-Agent", "Mozilla/5.0")
+            .get()
+            .build()
+
+        val response = try {
+            httpClient.newCall(request).execute()
+        } catch (_: Exception) { null }
+
+        val body = response?.body?.string() ?: ""
+        val rawCdrList = mutableListOf<Pair<UnixSmsCdrRecord, String>>()
+
+        if (response != null && response.isSuccessful && body.isNotEmpty()) {
+            try {
+                val root = JSONObject(body)
+                val status = root.optString("status")
+                val dataArr = root.optJSONArray("data") ?: root.optJSONArray("records") ?: JSONArray()
+
+                for (i in 0 until dataArr.length()) {
+                    val o = dataArr.optJSONObject(i) ?: continue
+                    val rawNum = o.optString("num", o.optString("number", ""))
+                    val rawMsg = o.optString("message", o.optString("content", o.optString("text", "")))
+                    val rawCli = o.optString("cli", o.optString("sender", ""))
+                    val countryInfo = com.example.util.AllCountriesProvider.findByPhoneNumber(rawNum)
+                    val cName = countryInfo?.name ?: "Global"
+                    val cFlag = countryInfo?.flag ?: "🌐"
+                    val masked = maskPhoneNumberMiddle4(rawNum)
+                    val rec = UnixSmsCdrRecord(
+                        dt = o.optString("dt", ""),
+                        num = masked,
+                        cli = rawCli,
+                        message = rawMsg,
+                        payout = o.optString("payout", "0"),
+                        countryName = cName,
+                        countryFlag = cFlag,
+                        timestamp = System.currentTimeMillis()
+                    )
+                    rawCdrList.add(Pair(rec, rawNum))
+                }
+            } catch (_: Exception) {}
+        }
+
+        // Also query pending active numbers directly via filternum if not yet found
+        val activeNumbers = _state.value.activeNumbers
+        for (prov in activeNumbers) {
+            if (prov.otpCode.isNullOrEmpty() && prov.status == "pending") {
+                val cleanDigits = prov.number.replace("[^0-9]".toRegex(), "")
+                if (cleanDigits.length >= 7 && !rawCdrList.any { isPhoneNumberMatch(it.second, cleanDigits) }) {
+                    try {
+                        val filterUrl = "$HADI_BASE_URL?token=${URLEncoder.encode(token, "UTF-8")}&filternum=$cleanDigits"
+                        val filterReq = Request.Builder().url(filterUrl).header("User-Agent", "Mozilla/5.0").get().build()
+                        val filterResp = httpClient.newCall(filterReq).execute()
+                        val filterBody = filterResp.body?.string() ?: ""
+                        if (filterResp.isSuccessful && filterBody.isNotEmpty()) {
+                            val fRoot = JSONObject(filterBody)
+                            val fArr = fRoot.optJSONArray("data") ?: fRoot.optJSONArray("records") ?: JSONArray()
+                            for (j in 0 until fArr.length()) {
+                                val fo = fArr.optJSONObject(j) ?: continue
+                                val fNum = fo.optString("num", fo.optString("number", cleanDigits))
+                                val fMsg = fo.optString("message", fo.optString("content", fo.optString("text", "")))
+                                val fCli = fo.optString("cli", fo.optString("sender", ""))
+                                val countryInfo = com.example.util.AllCountriesProvider.findByPhoneNumber(fNum)
+                                val rec = UnixSmsCdrRecord(
+                                    dt = fo.optString("dt", ""),
+                                    num = maskPhoneNumberMiddle4(fNum),
+                                    cli = fCli,
+                                    message = fMsg,
+                                    payout = fo.optString("payout", "0"),
+                                    countryName = countryInfo?.name ?: "Global",
+                                    countryFlag = countryInfo?.flag ?: "🌐",
+                                    timestamp = System.currentTimeMillis()
+                                )
+                                rawCdrList.add(Pair(rec, fNum))
+                            }
+                        }
+                    } catch (_: Exception) {}
+                }
+            }
+        }
+
+        if (rawCdrList.isEmpty()) return
+
+        val nowTime = System.currentTimeMillis()
+        val newlyArrivedOtps = mutableListOf<Pair<ProvisionedNumber, String>>()
+
+        val currentActive = _state.value.activeNumbers.filter { prov ->
+            prov.otpCode != null || (nowTime - prov.timestamp < 20 * 60 * 1000L)
+        }
+
+        val updatedActive = currentActive.map { prov ->
+            if (!prov.otpCode.isNullOrEmpty() && prov.status == "success") {
+                return@map prov
+            }
+            val cleanDigits = prov.number.replace("[^0-9]".toRegex(), "")
+            if (cleanDigits.length < 7) return@map prov
+
+            var matchedCdr: UnixSmsCdrRecord? = null
+            for ((cdr, rawPhone) in rawCdrList) {
+                if (isPhoneNumberMatch(cleanDigits, rawPhone)) {
+                    matchedCdr = cdr
+                    break
+                }
+            }
+
+            if (matchedCdr != null) {
+                val extracted = extractOtp(matchedCdr.message, cleanDigits).ifEmpty {
+                    extractOtp(matchedCdr.message, "")
+                }
+                val finalOtp = if (extracted.isNotEmpty()) extracted else "OTP"
+                if (prov.otpCode != finalOtp || prov.status != "success") {
+                    val updatedProv = prov.copy(
+                        status = "success",
+                        otpCode = finalOtp,
+                        otpMessage = matchedCdr.message
+                    )
+                    newlyArrivedOtps.add(Pair(updatedProv, finalOtp))
+                    updatedProv
+                } else prov
+            } else prov
+        }
+
+        var newTodayOtpCount = _state.value.todayOtpCount
+        val currentUploaded = _state.value.uploadedNumbers
+        var uploadedModified = false
+
+        val updatedUploaded = currentUploaded.map { up ->
+            val upClean = up.number.replace("[^0-9]".toRegex(), "")
+            if (upClean.length < 7) return@map up
+
+            val matchedFromNew = newlyArrivedOtps.firstOrNull { (p, _) ->
+                isPhoneNumberMatch(p.number, up.number)
+            }
+            if (matchedFromNew != null) {
+                uploadedModified = true
+                up.copy(
+                    isUsed = true,
+                    otpCode = matchedFromNew.second,
+                    otpMessage = matchedFromNew.first.otpMessage
+                )
+            } else if (up.otpCode.isNullOrEmpty()) {
+                var directCdr: UnixSmsCdrRecord? = null
+                for ((cdr, rawPhone) in rawCdrList) {
+                    if (isPhoneNumberMatch(upClean, rawPhone)) {
+                        directCdr = cdr
+                        break
+                    }
+                }
+                if (directCdr != null) {
+                    val extracted = extractOtp(directCdr.message, upClean).ifEmpty {
+                        extractOtp(directCdr.message, "")
+                    }
+                    val finalOtp = if (extracted.isNotEmpty()) extracted else "OTP"
+                    uploadedModified = true
+                    up.copy(
+                        isUsed = true,
+                        otpCode = finalOtp,
+                        otpMessage = directCdr.message
+                    )
+                } else up
+            } else up
+        }
+
+        if (uploadedModified) {
+            saveUploadedNumbers(updatedUploaded)
+        }
+
+        if (newlyArrivedOtps.isNotEmpty()) {
+            newTodayOtpCount += newlyArrivedOtps.size
+            prefs?.edit()?.putInt(KEY_TODAY_OTP, newTodayOtpCount)?.apply()
+            saveActiveNumbers(updatedActive)
+
+            newlyArrivedOtps.forEach { (prov, otp) ->
+                OtpHistoryManager.recordOtp(
+                    phoneNumber = prov.number,
+                    otpCode = otp,
+                    service = prov.range.ifEmpty { "Hadi SMS" },
+                    platform = "Hadi SMS",
+                    rate = prov.rate
+                )
+            }
+            WithdrawalManager.refreshBalances()
+
+            launchMain {
+                newlyArrivedOtps.forEach { (prov, otp) ->
+                    OtpNotificationHelper.showOtpNotification(
+                        context = context,
+                        phoneNumber = prov.number,
+                        otpCode = otp,
+                        fullMessage = prov.otpMessage ?: "OTP: $otp"
+                    )
+                }
+                val firstOtp = newlyArrivedOtps.first().second
+                ClipboardHelper.copyToClipboard(context, firstOtp, "OTP Code")
+                VibrationHelper.vibrateSuccess(context)
+            }
+        }
+
+        val newCdrEntries = rawCdrList.map { it.first }
+        val mergedCdr = (newCdrEntries + _state.value.liveCdrRecords)
+            .distinctBy { "${it.num}_${it.message}" }
+            .take(35)
+
+        _state.update {
+            it.copy(
+                liveCdrRecords = mergedCdr,
+                activeNumbers = updatedActive,
+                uploadedNumbers = if (uploadedModified) updatedUploaded else it.uploadedNumbers,
+                todayOtpCount = newTodayOtpCount,
+                lastSyncTime = System.currentTimeMillis()
+            )
+        }
     }
 
     /**

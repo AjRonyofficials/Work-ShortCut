@@ -32,6 +32,7 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Phone
 import androidx.compose.material.icons.filled.Refresh
@@ -86,7 +87,7 @@ import com.example.service.UploadedNumberItem
 import com.example.util.ClipboardHelper
 import com.example.util.VibrationHelper
 
-val UNIX_SUPPORTED_SERVICES = listOf("Facebook", "Instagram", "WhatsApp")
+val UNIX_SUPPORTED_SERVICES = listOf("Facebook", "WhatsApp", "Instagram", "OTP Work")
 
 @Composable
 fun UnixSmsSectionContent(
@@ -98,6 +99,7 @@ fun UnixSmsSectionContent(
     var selectedSubTab by remember { mutableIntStateOf(0) } // 0: Get Number, 1: Live Console
     var selectedService by remember { mutableStateOf(UNIX_SUPPORTED_SERVICES.first()) }
     var selectedCountryCode by remember(unixState.selectedCountry) { mutableStateOf(unixState.selectedCountry) }
+    var selectedNumberType by remember { mutableStateOf("ALL") } // "ALL", "Fresh", "PC Clone"
     var isRequestingNumber by remember { mutableStateOf(false) }
     var consoleSearchFilter by remember { mutableStateOf("") }
     var dlrFilterTab by remember { mutableStateOf("ALL") } // "ALL", "OTP_ONLY"
@@ -245,14 +247,16 @@ fun UnixSmsSectionContent(
 
                     Row(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
                         UNIX_SUPPORTED_SERVICES.forEach { sName ->
                             val isSelected = selectedService.equals(sName, ignoreCase = true)
                             val accentColor = when (sName) {
                                 "Facebook" -> Color(0xFF1877F2)
                                 "Instagram" -> Color(0xFFE1306C)
-                                else -> Color(0xFF25D366) // WhatsApp
+                                "WhatsApp" -> Color(0xFF25D366)
+                                "OTP Work" -> Color(0xFFFF9100)
+                                else -> Color(0xFF00E5FF)
                             }
 
                             Surface(
@@ -264,23 +268,24 @@ fun UnixSmsSectionContent(
                                     .clickable { selectedService = sName }
                             ) {
                                 Column(
-                                    modifier = Modifier.padding(vertical = 10.dp),
+                                    modifier = Modifier.padding(vertical = 9.dp, horizontal = 2.dp),
                                     horizontalAlignment = Alignment.CenterHorizontally
                                 ) {
                                     Text(
                                         text = sName,
                                         color = if (isSelected) Color.White else Color(0xFF90A4AE),
-                                        fontSize = 12.sp,
-                                        fontWeight = if (isSelected) FontWeight.ExtraBold else FontWeight.SemiBold
+                                        fontSize = 11.sp,
+                                        fontWeight = if (isSelected) FontWeight.ExtraBold else FontWeight.SemiBold,
+                                        maxLines = 1
                                     )
                                     Spacer(modifier = Modifier.height(2.dp))
                                     val count = unixState.uploadedNumbers.count {
                                         !it.isUsed && (it.service.isBlank() || it.service.equals("ALL", ignoreCase = true) || it.service.equals(sName, ignoreCase = true))
                                     }
                                     Text(
-                                        text = "$count available",
+                                        text = "$count nos",
                                         color = if (count > 0) Color(0xFF00E676) else Color(0xFF78909C),
-                                        fontSize = 9.sp
+                                        fontSize = 8.5.sp
                                     )
                                 }
                             }
@@ -289,16 +294,25 @@ fun UnixSmsSectionContent(
                 }
             }
 
-            // 2. Country Picker with Flags
+            // 2. Country Picker with Flags and Fresh vs PC Clone
             val availableNumbersForService = unixState.uploadedNumbers.filter {
                 !it.isUsed && (it.service.isBlank() || it.service.equals("ALL", ignoreCase = true) || it.service.equals(selectedService, ignoreCase = true))
             }
 
             val availableCountries = availableNumbersForService
-                .groupBy { it.countryCode }
-                .map { (code, items) ->
+                .groupBy { "${it.countryCode}:::${it.numberType.ifEmpty { "Fresh" }}" }
+                .map { (key, items) ->
+                    val parts = key.split(":::")
+                    val code = parts[0]
+                    val nType = if (parts.size > 1) parts[1] else "Fresh"
                     val first = items.first()
-                    CountryBadge(code = code, name = first.countryName, flag = first.flag, count = items.size)
+                    CountryBadge(
+                        code = code,
+                        name = first.countryName,
+                        flag = first.flag,
+                        count = items.size,
+                        numberType = nType
+                    )
                 }
 
             Card(
@@ -309,7 +323,7 @@ fun UnixSmsSectionContent(
             ) {
                 Column(modifier = Modifier.padding(12.dp)) {
                     Text(
-                        text = "দেশ নির্বাচন করুন (SELECT COUNTRY):",
+                        text = "দেশ ও ধরণ নির্বাচন করুন (COUNTRY & TYPE):",
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Bold,
                         color = Color(0xFF81D4FA)
@@ -337,7 +351,7 @@ fun UnixSmsSectionContent(
                                 )
                                 Spacer(modifier = Modifier.height(4.dp))
                                 Text(
-                                    text = "এডমিন প্যানেলে গিয়ে (Menu -> Admin Panel) $selectedService এর নাম্বার আপলোড করুন।",
+                                    text = "এডমিন প্যানেলে গিয়ে (Menu -> Admin Panel) $selectedService এর Fresh বা PC Clone নাম্বার আপলোড করুন।",
                                     color = Color(0xFF90A4AE),
                                     fontSize = 10.sp
                                 )
@@ -349,13 +363,14 @@ fun UnixSmsSectionContent(
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             item {
-                                val isAllSelected = selectedCountryCode == "ALL"
+                                val isAllSelected = selectedCountryCode == "ALL" && selectedNumberType == "ALL"
                                 Surface(
                                     color = if (isAllSelected) Color(0xFF0091EA).copy(alpha = 0.3f) else Color(0xFF0A111A),
                                     shape = RoundedCornerShape(10.dp),
                                     border = BorderStroke(1.dp, if (isAllSelected) Color(0xFF00B0FF) else Color(0xFF1D2F42)),
                                     modifier = Modifier.clickable {
                                         selectedCountryCode = "ALL"
+                                        selectedNumberType = "ALL"
                                         UnixSmsManager.setSelectedCountry("ALL")
                                     }
                                 ) {
@@ -385,19 +400,25 @@ fun UnixSmsSectionContent(
                             }
 
                             items(availableCountries) { c ->
-                                val isSelected = selectedCountryCode.equals(c.code, ignoreCase = true)
+                                val isSelected = selectedCountryCode.equals(c.code, ignoreCase = true) &&
+                                        (selectedNumberType.equals(c.numberType, ignoreCase = true) || selectedNumberType == "ALL")
                                 val cRate = UnixSmsManager.getRateForCountry(c.code)
+                                val isPc = c.numberType.equals("PC Clone", ignoreCase = true)
+                                val tagColor = if (isPc) Color(0xFFFF9100) else Color(0xFF00E676)
+                                val tagLabel = if (isPc) "PC Clone" else "Fresh"
+
                                 Surface(
-                                    color = if (isSelected) Color(0xFF0091EA).copy(alpha = 0.3f) else Color(0xFF0A111A),
+                                    color = if (isSelected) Color(0xFF0091EA).copy(alpha = 0.35f) else Color(0xFF0A111A),
                                     shape = RoundedCornerShape(10.dp),
                                     border = BorderStroke(1.dp, if (isSelected) Color(0xFF00B0FF) else Color(0xFF1D2F42)),
                                     modifier = Modifier.clickable {
                                         selectedCountryCode = c.code
+                                        selectedNumberType = c.numberType
                                         UnixSmsManager.setSelectedCountry(c.code)
                                     }
                                 ) {
                                     Column(
-                                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp),
+                                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp),
                                         horizontalAlignment = Alignment.CenterHorizontally
                                     ) {
                                         Text(text = c.flag, fontSize = 20.sp)
@@ -408,11 +429,25 @@ fun UnixSmsSectionContent(
                                             fontSize = 11.sp,
                                             fontWeight = FontWeight.Bold
                                         )
+                                        // Fresh vs PC Clone Indicator
+                                        Surface(
+                                            color = tagColor.copy(alpha = 0.22f),
+                                            shape = RoundedCornerShape(4.dp),
+                                            modifier = Modifier.padding(vertical = 2.dp)
+                                        ) {
+                                            Text(
+                                                text = tagLabel,
+                                                color = tagColor,
+                                                fontSize = 8.sp,
+                                                fontWeight = FontWeight.ExtraBold,
+                                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                                            )
+                                        }
                                         Text(
                                             text = "(${c.count} nos)",
-                                            color = Color(0xFF00E676),
+                                            color = Color(0xFF81D4FA),
                                             fontSize = 8.5.sp,
-                                            fontWeight = FontWeight.Bold
+                                            fontWeight = FontWeight.Medium
                                         )
                                         Spacer(modifier = Modifier.height(2.dp))
                                         // Country specific OTP rate pill
@@ -438,7 +473,7 @@ fun UnixSmsSectionContent(
 
                     // Dynamic Selected Country & OTP Rate Summary Box
                     val activeSelectedRate = UnixSmsManager.getRateForCountry(selectedCountryCode)
-                    val selectedCountryDisplayName = when (selectedCountryCode) {
+                    val baseCountryDisplayName = when (selectedCountryCode) {
                         "ALL" -> "🌐 ANY COUNTRY (যে কোনো দেশ)"
                         "BD" -> "🇧🇩 Bangladesh (BD)"
                         "US" -> "🇺🇸 United States (US)"
@@ -452,6 +487,7 @@ fun UnixSmsSectionContent(
                             if (preset != null) "${preset.flag} ${preset.name} (${preset.code})" else selectedCountryCode
                         }
                     }
+                    val selectedCountryDisplayName = if (selectedNumberType != "ALL") "$baseCountryDisplayName • $selectedNumberType" else baseCountryDisplayName
 
                     Spacer(modifier = Modifier.height(10.dp))
 
@@ -532,7 +568,8 @@ fun UnixSmsSectionContent(
                                 context = context,
                                 countryCode = selectedCountryCode,
                                 service = selectedService,
-                                count = unixState.requestCount
+                                count = unixState.requestCount,
+                                numberType = selectedNumberType
                             ) { success, msg ->
                                 isRequestingNumber = false
                                 Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
@@ -584,13 +621,61 @@ fun UnixSmsSectionContent(
                             color = Color.White
                         )
 
-                        if (unixState.activeNumbers.isNotEmpty()) {
-                            Text(
-                                text = "1s Auto-Poll Active",
-                                color = Color(0xFF00E676),
-                                fontSize = 10.sp,
-                                fontWeight = FontWeight.SemiBold
-                            )
+                        val successfulUnixNumbers = remember(unixState.activeNumbers) {
+                            unixState.activeNumbers.filter { !it.otpCode.isNullOrEmpty() || it.status.equals("success", true) }
+                        }
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Surface(
+                                color = if (successfulUnixNumbers.isNotEmpty()) Color(0xFF0091EA).copy(alpha = 0.25f) else Color(0xFF1E293B),
+                                shape = RoundedCornerShape(6.dp),
+                                border = BorderStroke(1.dp, if (successfulUnixNumbers.isNotEmpty()) Color(0xFF00B0FF) else Color(0xFF334155)),
+                                modifier = Modifier.clickable {
+                                    if (successfulUnixNumbers.isEmpty()) {
+                                        Toast.makeText(context, "ডাউনলোড করার মতো কোনো সফল OTP নম্বর পাওয়া যায়নি", Toast.LENGTH_SHORT).show()
+                                    } else {
+                                        val exportItems = successfulUnixNumbers.map { num ->
+                                            val cInfo = com.example.util.AllCountriesProvider.detectCountry(num.number)
+                                                ?: com.example.util.AllCountriesProvider.detectCountry(num.country)
+                                            com.example.util.ExportOtpItem(
+                                                phoneNumber = num.number,
+                                                country = cInfo?.name ?: num.country,
+                                                iso = (cInfo?.code ?: num.iso).uppercase(),
+                                                flag = cInfo?.flag ?: "🌐",
+                                                serviceOrRange = num.range.ifEmpty { "Premium Number" },
+                                                otpCode = num.otpCode ?: "",
+                                                otpMessage = num.otpMessage,
+                                                timestamp = num.timestamp,
+                                                rate = num.rate
+                                            )
+                                        }
+                                        com.example.util.OtpExportHelper.exportOtps(context, "Premium Numbers (Unix)", exportItems)
+                                    }
+                                }
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(Icons.Default.Download, contentDescription = null, tint = if (successfulUnixNumbers.isNotEmpty()) Color(0xFF00B0FF) else Color(0xFF94A3B8), modifier = Modifier.size(12.dp))
+                                    Spacer(modifier = Modifier.width(3.dp))
+                                    Text(
+                                        text = if (successfulUnixNumbers.isNotEmpty()) "📥 ডাউনলোড (${successfulUnixNumbers.size})" else "📥 ডাউনলোড",
+                                        fontSize = 9.5.sp,
+                                        color = if (successfulUnixNumbers.isNotEmpty()) Color.White else Color(0xFF94A3B8),
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                            }
+
+                            if (unixState.activeNumbers.isNotEmpty()) {
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = "1s Auto-Poll",
+                                    color = Color(0xFF00E676),
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                            }
                         }
                     }
 
@@ -772,7 +857,8 @@ data class CountryBadge(
     val code: String,
     val name: String,
     val flag: String,
-    val count: Int
+    val count: Int,
+    val numberType: String = "Fresh"
 )
 
 @Composable
@@ -883,11 +969,13 @@ fun UnixActiveNumberRow(
                     Spacer(modifier = Modifier.height(3.dp))
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         val countryInfo = remember(prov.number, prov.country) {
-                            com.example.util.AllCountriesProvider.findByPhoneNumber(prov.number)
+                            com.example.util.AllCountriesProvider.detectCountry(prov.number)
+                                ?: com.example.util.AllCountriesProvider.findByPhoneNumber(prov.number)
                                 ?: com.example.util.AllCountriesProvider.findByNameOrCode(prov.country)
                         }
                         val flag = countryInfo?.flag ?: "🌐"
                         val countryName = countryInfo?.name ?: prov.country
+                        val isoShort = (countryInfo?.code ?: prov.iso).uppercase()
 
                         Surface(
                             color = Color(0xFF162536),
@@ -901,7 +989,7 @@ fun UnixActiveNumberRow(
                                 Text(text = flag, fontSize = 11.sp)
                                 Spacer(modifier = Modifier.width(3.dp))
                                 Text(
-                                    text = countryName,
+                                    text = "$countryName [$isoShort]",
                                     color = Color(0xFFE2E8F0),
                                     fontSize = 9.5.sp,
                                     fontWeight = FontWeight.SemiBold

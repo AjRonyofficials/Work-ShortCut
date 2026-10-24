@@ -257,29 +257,72 @@ fun MainScreen(
                     .padding(paddingValues)
                     .imePadding()
             ) {
-                when (selectedTab) {
-                    AppNavTab.VIRTUAL_NUMBERS -> VirtualNumbersSection()
-                    AppNavTab.SHORTCUTS -> AppShortcutsSection(state = state)
-                    AppNavTab.NAMES -> NameGeneratorSection(state = state)
-                    AppNavTab.EXCEL -> ExcelCollectorSection(
-                        state = state,
-                        savedRows = savedExcelRows,
-                        repository = repository
-                    )
-                    AppNavTab.TWO_FACTOR -> TwoFactorSection(
-                        state = state,
-                        savedKeys = savedTwoFactorKeys,
-                        repository = repository
-                    )
-                    AppNavTab.PW_COPY -> PwCopySection(state = state)
-                    AppNavTab.PROXY -> ProxySection(
-                        state = state,
-                        savedProxies = savedProxies,
-                        repository = repository
-                    )
-                    AppNavTab.CLEAR_DATA -> ClearDataSection(state = state)
-                    AppNavTab.SETTINGS -> SettingsSection(state = state)
-                    AppNavTab.ADMIN_PANEL -> AdminPanelSection()
+                val isCurrentTabAllowed = when (selectedTab) {
+                    AppNavTab.VIRTUAL_NUMBERS -> true
+                    AppNavTab.SHORTCUTS -> com.example.service.AuthManager.isSectionAllowedForCurrentUser("APP_SHORTCUTS")
+                    AppNavTab.NAMES -> com.example.service.AuthManager.isSectionAllowedForCurrentUser("NAME_GENERATOR")
+                    AppNavTab.EXCEL -> com.example.service.AuthManager.isSectionAllowedForCurrentUser("EXCEL_COLLECTOR")
+                    AppNavTab.TWO_FACTOR -> com.example.service.AuthManager.isSectionAllowedForCurrentUser("TWO_FACTOR")
+                    AppNavTab.PW_COPY -> com.example.service.AuthManager.isSectionAllowedForCurrentUser("PW_COPY")
+                    AppNavTab.PROXY -> com.example.service.AuthManager.isSectionAllowedForCurrentUser("PROXY")
+                    AppNavTab.CLEAR_DATA -> com.example.service.AuthManager.isSectionAllowedForCurrentUser("CLEAR_DATA")
+                    AppNavTab.SETTINGS -> true
+                    AppNavTab.ADMIN_PANEL -> true
+                }
+
+                if (!isCurrentTabAllowed) {
+                    Box(
+                        modifier = Modifier.fillMaxSize().padding(24.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Surface(
+                            color = Color(0xFF1E151A),
+                            shape = RoundedCornerShape(16.dp),
+                            border = androidx.compose.foundation.BorderStroke(1.2.dp, Color(0xFFEF4444)),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(24.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally
+                            ) {
+                                Icon(Icons.Default.Close, contentDescription = null, tint = Color(0xFFEF4444), modifier = Modifier.size(42.dp))
+                                Spacer(modifier = Modifier.height(12.dp))
+                                Text("🚫 অপশন এক্সেস সীমিত", color = Color.White, fontWeight = FontWeight.ExtraBold, fontSize = 16.sp)
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Text(
+                                    text = "এডমিন কর্তৃক এই অপশনটির এক্সেস আপনার জন্য সাময়িকভাবে বন্ধ রাখা হয়েছে। পুনরায় চালু করতে এডমিনের সাথে যোগাযোগ করুন।",
+                                    color = Color(0xFFCBD5E1),
+                                    fontSize = 12.sp,
+                                    textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                                )
+                            }
+                        }
+                    }
+                } else {
+                    when (selectedTab) {
+                        AppNavTab.VIRTUAL_NUMBERS -> VirtualNumbersSection()
+                        AppNavTab.SHORTCUTS -> AppShortcutsSection(state = state)
+                        AppNavTab.NAMES -> NameGeneratorSection(state = state)
+                        AppNavTab.EXCEL -> ExcelCollectorSection(
+                            state = state,
+                            savedRows = savedExcelRows,
+                            repository = repository
+                        )
+                        AppNavTab.TWO_FACTOR -> TwoFactorSection(
+                            state = state,
+                            savedKeys = savedTwoFactorKeys,
+                            repository = repository
+                        )
+                        AppNavTab.PW_COPY -> PwCopySection(state = state)
+                        AppNavTab.PROXY -> ProxySection(
+                            state = state,
+                            savedProxies = savedProxies,
+                            repository = repository
+                        )
+                        AppNavTab.CLEAR_DATA -> ClearDataSection(state = state)
+                        AppNavTab.SETTINGS -> SettingsSection(state = state)
+                        AppNavTab.ADMIN_PANEL -> AdminPanelSection()
+                    }
                 }
             }
         }

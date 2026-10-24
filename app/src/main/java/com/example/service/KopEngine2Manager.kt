@@ -203,6 +203,16 @@ object KopEngine2Manager {
         }
     }
 
+    fun purgeOlderThan24Hours() {
+        val cutoff = System.currentTimeMillis() - 24 * 60 * 60 * 1000L
+        val filteredNumbers = _state.value.provisionedNumbers.filter { it.timestamp >= cutoff }
+        val filteredFeed = _state.value.broadcastFeed.filter { it.time >= cutoff }
+        if (filteredNumbers.size != _state.value.provisionedNumbers.size || filteredFeed.size != _state.value.broadcastFeed.size) {
+            saveUserProvisionedNumbers(filteredNumbers)
+            _state.update { it.copy(provisionedNumbers = filteredNumbers, broadcastFeed = filteredFeed) }
+        }
+    }
+
     fun setTargetRange(range: String) {
         val cleaned = range.trim().uppercase()
         prefs?.edit()?.putString("target_range", cleaned)?.apply()
@@ -306,8 +316,8 @@ object KopEngine2Manager {
                                 dataObj.optString("full_number")
                             }
                             val reqId = dataObj.optLong("request_id", 0L)
-                            val country = dataObj.optString("country", "Zambia")
-                            val operator = dataObj.optString("operator", "Zamtel")
+                            val rawCountry = dataObj.optString("country", "Zambia")
+                            val operator = dataObj.optString("operator", "Mobile")
                             val status = dataObj.optString("status", "pending")
                             val secondsRemaining = dataObj.optLong("seconds_remaining", 900L)
 
@@ -319,11 +329,17 @@ object KopEngine2Manager {
                                     if (!rawNum.startsWith("+")) "+$rawNum" else rawNum
                                 }
 
+                                val detected = com.example.util.AllCountriesProvider.detectCountry(formattedNum)
+                                    ?: com.example.util.AllCountriesProvider.detectCountry(range)
+                                    ?: com.example.util.AllCountriesProvider.detectCountry(rawCountry)
+                                val resolvedCountry = detected?.name ?: rawCountry
+                                val resolvedIso = detected?.code?.lowercase() ?: getIsoForCountry(rawCountry)
+
                                 val item = ProvisionedNumber(
                                     number = formattedNum,
-                                    country = country,
+                                    country = resolvedCountry,
                                     operator = operator,
-                                    iso = getIsoForCountry(country),
+                                    iso = resolvedIso,
                                     status = status,
                                     range = range,
                                     timestamp = now,
@@ -563,9 +579,11 @@ object KopEngine2Manager {
 
                 // 3-second live auto sync for console signals & active ranges
                 syncTicks++
-                if (syncTicks >= 3) {
-                    syncTicks = 0
+                if (syncTicks % 3 == 0) {
                     fetchRadarData()
+                }
+                if (syncTicks % 30 == 0) {
+                    purgeOlderThan24Hours()
                 }
 
                 delay(1000L)
@@ -776,7 +794,8 @@ object KopEngine2Manager {
                 )
             }
         } catch (_: Exception) {}
-        return list
+        val cutoff = System.currentTimeMillis() - 24 * 60 * 60 * 1000L
+        return list.filter { it.timestamp >= cutoff }
     }
 
     private fun saveUserProvisionedNumbers(list: List<ProvisionedNumber>) {

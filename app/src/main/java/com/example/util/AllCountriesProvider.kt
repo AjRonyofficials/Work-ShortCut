@@ -236,6 +236,41 @@ object AllCountriesProvider {
         }
     }
 
+    fun findCountry(query: String): AdminCountryInfo? {
+        val q = query.trim()
+        if (q.isEmpty()) return null
+        return allCountries.firstOrNull { it.code.equals(q, ignoreCase = true) }
+            ?: findByNameOrCode(q)
+    }
+
+    fun detectCountry(input: String): AdminCountryInfo? {
+        val trimmed = input.trim()
+        if (trimmed.isEmpty()) return null
+
+        // 1. Direct ISO code match
+        allCountries.firstOrNull { it.code.equals(trimmed, ignoreCase = true) }?.let { return it }
+        // 2. Name or dial code match
+        findByNameOrCode(trimmed)?.let { return it }
+
+        // 3. Clean digits for dial code, phone number, or range prefix (e.g. 237620XXX, 237, +237...)
+        val clean = trimmed.replace("[^0-9]".toRegex(), "")
+        if (clean.isNotEmpty()) {
+            allCountries.firstOrNull { it.dialCode.replace("+", "") == clean }?.let { return it }
+            allCountries
+                .sortedByDescending { it.dialCode.replace("+", "").length }
+                .firstOrNull {
+                    val dc = it.dialCode.replace("+", "")
+                    clean.startsWith(dc)
+                }?.let { return it }
+        }
+
+        // 4. Substring match on country name (e.g. "Cameroon MTN" -> Cameroon)
+        return allCountries.firstOrNull {
+            trimmed.contains(it.name, ignoreCase = true) ||
+            it.name.contains(trimmed, ignoreCase = true)
+        }
+    }
+
     fun search(query: String): List<AdminCountryInfo> {
         val q = query.trim().lowercase()
         if (q.isEmpty()) return allCountries

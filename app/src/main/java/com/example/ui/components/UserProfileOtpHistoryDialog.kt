@@ -95,15 +95,39 @@ fun UserProfileOtpHistoryDialog(
     val currentEmail by AuthManager.currentEmail.collectAsState()
     val otpState by OtpHistoryManager.state.collectAsState()
     val withdrawState by WithdrawalManager.state.collectAsState()
+    val limits by WithdrawalManager.limits.collectAsState()
 
     var dailyCountdownString by remember { mutableStateOf(OtpHistoryManager.getFormattedDailyResetCountdown()) }
     var monthlyCountdownString by remember { mutableStateOf(OtpHistoryManager.getFormatted1MonthRemainingCountdown()) }
 
+    // User Payout Profile Accounts (Binance, bKash, Nagad, Rocket)
+    var binanceProfileInput by remember { mutableStateOf("") }
+    var bkashProfileInput by remember { mutableStateOf("") }
+    var nagadProfileInput by remember { mutableStateOf("") }
+    var rocketProfileInput by remember { mutableStateOf("") }
+
     // Withdrawal Form State
-    var selectedMethod by remember { mutableStateOf("Binance") } // "Binance", "bKash", "Nagad"
+    var selectedMethod by remember { mutableStateOf("Binance") } // "Binance", "bKash", "Nagad", "Rocket"
     var accountInput by remember { mutableStateOf("") }
     var amountInput by remember { mutableStateOf("") }
     var isSubmittingWithdraw by remember { mutableStateOf(false) }
+
+    LaunchedEffect(currentEmail) {
+        val accs = WithdrawalManager.getSavedAccounts(currentEmail)
+        binanceProfileInput = accs.binanceId
+        bkashProfileInput = accs.bkashNumber
+        nagadProfileInput = accs.nagadNumber
+        rocketProfileInput = accs.rocketNumber
+        if (accountInput.isBlank()) {
+            accountInput = when (selectedMethod.lowercase()) {
+                "binance" -> accs.binanceId
+                "bkash" -> accs.bkashNumber
+                "nagad" -> accs.nagadNumber
+                "rocket" -> accs.rocketNumber
+                else -> ""
+            }
+        }
+    }
 
     LaunchedEffect(Unit) {
         OtpHistoryManager.init(context)
@@ -577,7 +601,162 @@ fun UserProfileOtpHistoryDialog(
                             }
                         }
 
-                        // 4. WITHDRAW OPTION CARD (Binance, bKash, Nagad)
+                        // 3.5. PAYOUT ACCOUNTS PROFILE CARD (Binance, bKash, Nagad, Rocket)
+                        item {
+                            Card(
+                                colors = CardDefaults.cardColors(containerColor = Color(0xFF101C2B)),
+                                shape = RoundedCornerShape(16.dp),
+                                border = BorderStroke(1.dp, Color(0xFF1E354F)),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Column(modifier = Modifier.padding(14.dp)) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Icon(Icons.Default.AccountBalanceWallet, contentDescription = null, tint = Color(0xFF38BDF8), modifier = Modifier.size(17.dp))
+                                            Spacer(modifier = Modifier.width(6.dp))
+                                            Text(
+                                                text = "পেমেন্ট একাউন্ট প্রোফাইল (PAYOUT PROFILE)",
+                                                fontSize = 11.5.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = Color.White
+                                            )
+                                        }
+
+                                        Surface(
+                                            color = Color(0xFF0284C7).copy(alpha = 0.2f),
+                                            shape = RoundedCornerShape(4.dp)
+                                        ) {
+                                            Text(
+                                                text = "SAVED PROFILE",
+                                                color = Color(0xFF38BDF8),
+                                                fontSize = 9.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                            )
+                                        }
+                                    }
+
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    Text(
+                                        text = "আপনার Binance, bKash, Nagad এবং Rocket একাউন্ট নাম্বারগুলো সেভ রাখুন যাতে উইথড্র করার সময় বারবার লিখতে না হয়:",
+                                        fontSize = 10.sp,
+                                        color = Color(0xFF94A3B8),
+                                        lineHeight = 14.sp
+                                    )
+
+                                    Spacer(modifier = Modifier.height(10.dp))
+
+                                    // Binance Pay ID / USDT
+                                    OutlinedTextField(
+                                        value = binanceProfileInput,
+                                        onValueChange = { binanceProfileInput = it },
+                                        label = { Text("Binance Pay ID / USDT Address", fontSize = 11.sp) },
+                                        singleLine = true,
+                                        modifier = Modifier.fillMaxWidth(),
+                                        shape = RoundedCornerShape(8.dp),
+                                        colors = OutlinedTextFieldDefaults.colors(
+                                            focusedTextColor = Color.White,
+                                            unfocusedTextColor = Color.White,
+                                            focusedBorderColor = Color(0xFFF0B90B),
+                                            unfocusedBorderColor = Color(0xFF1E2D40),
+                                            focusedContainerColor = Color(0xFF090E17),
+                                            unfocusedContainerColor = Color(0xFF090E17)
+                                        )
+                                    )
+
+                                    Spacer(modifier = Modifier.height(6.dp))
+
+                                    // bKash Number
+                                    OutlinedTextField(
+                                        value = bkashProfileInput,
+                                        onValueChange = { bkashProfileInput = it },
+                                        label = { Text("bKash নাম্বার (01XXXXXXXXX)", fontSize = 11.sp) },
+                                        singleLine = true,
+                                        modifier = Modifier.fillMaxWidth(),
+                                        shape = RoundedCornerShape(8.dp),
+                                        colors = OutlinedTextFieldDefaults.colors(
+                                            focusedTextColor = Color.White,
+                                            unfocusedTextColor = Color.White,
+                                            focusedBorderColor = Color(0xFFE2136E),
+                                            unfocusedBorderColor = Color(0xFF1E2D40),
+                                            focusedContainerColor = Color(0xFF090E17),
+                                            unfocusedContainerColor = Color(0xFF090E17)
+                                        )
+                                    )
+
+                                    Spacer(modifier = Modifier.height(6.dp))
+
+                                    // Nagad Number
+                                    OutlinedTextField(
+                                        value = nagadProfileInput,
+                                        onValueChange = { nagadProfileInput = it },
+                                        label = { Text("Nagad নাম্বার (01XXXXXXXXX)", fontSize = 11.sp) },
+                                        singleLine = true,
+                                        modifier = Modifier.fillMaxWidth(),
+                                        shape = RoundedCornerShape(8.dp),
+                                        colors = OutlinedTextFieldDefaults.colors(
+                                            focusedTextColor = Color.White,
+                                            unfocusedTextColor = Color.White,
+                                            focusedBorderColor = Color(0xFFF7931A),
+                                            unfocusedBorderColor = Color(0xFF1E2D40),
+                                            focusedContainerColor = Color(0xFF090E17),
+                                            unfocusedContainerColor = Color(0xFF090E17)
+                                        )
+                                    )
+
+                                    Spacer(modifier = Modifier.height(6.dp))
+
+                                    // Rocket Number
+                                    OutlinedTextField(
+                                        value = rocketProfileInput,
+                                        onValueChange = { rocketProfileInput = it },
+                                        label = { Text("Rocket নাম্বার (01XXXXXXXXX)", fontSize = 11.sp) },
+                                        singleLine = true,
+                                        modifier = Modifier.fillMaxWidth(),
+                                        shape = RoundedCornerShape(8.dp),
+                                        colors = OutlinedTextFieldDefaults.colors(
+                                            focusedTextColor = Color.White,
+                                            unfocusedTextColor = Color.White,
+                                            focusedBorderColor = Color(0xFF8C30F5),
+                                            unfocusedBorderColor = Color(0xFF1E2D40),
+                                            focusedContainerColor = Color(0xFF090E17),
+                                            unfocusedContainerColor = Color(0xFF090E17)
+                                        )
+                                    )
+
+                                    Spacer(modifier = Modifier.height(10.dp))
+
+                                    Button(
+                                        onClick = {
+                                            WithdrawalManager.saveAccounts(
+                                                email = currentEmail,
+                                                binance = binanceProfileInput,
+                                                bkash = bkashProfileInput,
+                                                nagad = nagadProfileInput,
+                                                rocket = rocketProfileInput
+                                            )
+                                            if (selectedMethod == "Binance" && binanceProfileInput.isNotBlank()) accountInput = binanceProfileInput
+                                            if (selectedMethod == "bKash" && bkashProfileInput.isNotBlank()) accountInput = bkashProfileInput
+                                            if (selectedMethod == "Nagad" && nagadProfileInput.isNotBlank()) accountInput = nagadProfileInput
+                                            if (selectedMethod == "Rocket" && rocketProfileInput.isNotBlank()) accountInput = rocketProfileInput
+                                            Toast.makeText(context, "✓ পেমেন্ট একাউন্টসমূহ সফলভাবে প্রোফাইলে সেভ হয়েছে!", Toast.LENGTH_SHORT).show()
+                                            VibrationHelper.vibrateSuccess(context)
+                                        },
+                                        modifier = Modifier.fillMaxWidth().height(40.dp),
+                                        shape = RoundedCornerShape(8.dp),
+                                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0284C7))
+                                    ) {
+                                        Text("💾 প্রোফাইলে একাউন্ট সেভ করুন", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 11.5.sp)
+                                    }
+                                }
+                            }
+                        }
+
+                        // 4. WITHDRAW OPTION CARD (Binance, bKash, Nagad, Rocket)
                         item {
                             Card(
                                 colors = CardDefaults.cardColors(containerColor = Color(0xFF101C2B)),
@@ -623,7 +802,7 @@ fun UserProfileOtpHistoryDialog(
 
                                     Spacer(modifier = Modifier.height(6.dp))
                                     Text(
-                                        text = "পেমেন্ট মাধ্যম বেছে নিন: Binance (মিনিমাম ২০ টাকা), bKash/Nagad (মিনিমাম ৫০ টাকা)",
+                                        text = "পেমেন্ট মাধ্যম বেছে নিন: Binance (মিনিমাম ৳${String.format(Locale.US, "%.0f", limits.minBinance)}), bKash (মিনিমাম ৳${String.format(Locale.US, "%.0f", limits.minBkash)}), Nagad (মিনিমাম ৳${String.format(Locale.US, "%.0f", limits.minNagad)}), Rocket (মিনিমাম ৳${String.format(Locale.US, "%.0f", limits.minRocket)})",
                                         fontSize = 10.sp,
                                         color = Color(0xFF94A3B8)
                                     )
@@ -633,18 +812,20 @@ fun UserProfileOtpHistoryDialog(
                                     // Payment Method Buttons
                                     Row(
                                         modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp)
                                     ) {
                                         listOf(
-                                            Triple("Binance", "Binance Pay", "Min: ৳20"),
-                                            Triple("bKash", "বিকাশ", "Min: ৳50"),
-                                            Triple("Nagad", "নগদ", "Min: ৳50")
+                                            Triple("Binance", "Binance Pay", "Min: ৳${String.format(Locale.US, "%.0f", limits.minBinance)}"),
+                                            Triple("bKash", "বিকাশ", "Min: ৳${String.format(Locale.US, "%.0f", limits.minBkash)}"),
+                                            Triple("Nagad", "নগদ", "Min: ৳${String.format(Locale.US, "%.0f", limits.minNagad)}"),
+                                            Triple("Rocket", "রকেট", "Min: ৳${String.format(Locale.US, "%.0f", limits.minRocket)}")
                                         ).forEach { (mKey, mTitle, minLabel) ->
                                             val isSel = selectedMethod == mKey
                                             val methodColor = when (mKey) {
                                                 "Binance" -> Color(0xFFF0B90B)
                                                 "bKash" -> Color(0xFFE2136E)
-                                                else -> Color(0xFFF7931A) // Nagad
+                                                "Nagad" -> Color(0xFFF7931A)
+                                                else -> Color(0xFF8C30F5) // Rocket
                                             }
 
                                             Surface(
@@ -655,23 +836,33 @@ fun UserProfileOtpHistoryDialog(
                                                     .weight(1f)
                                                     .clickable {
                                                         selectedMethod = mKey
+                                                        val savedAcc = when (mKey) {
+                                                            "Binance" -> binanceProfileInput
+                                                            "bKash" -> bkashProfileInput
+                                                            "Nagad" -> nagadProfileInput
+                                                            "Rocket" -> rocketProfileInput
+                                                            else -> ""
+                                                        }
+                                                        if (savedAcc.isNotBlank()) {
+                                                            accountInput = savedAcc
+                                                        }
                                                     }
                                             ) {
                                                 Column(
-                                                    modifier = Modifier.padding(vertical = 8.dp, horizontal = 4.dp),
+                                                    modifier = Modifier.padding(vertical = 8.dp, horizontal = 2.dp),
                                                     horizontalAlignment = Alignment.CenterHorizontally
                                                 ) {
                                                     Text(
                                                         text = mTitle,
                                                         color = if (isSel) Color.White else Color(0xFF90A4AE),
-                                                        fontSize = 11.sp,
+                                                        fontSize = 10.5.sp,
                                                         fontWeight = if (isSel) FontWeight.Bold else FontWeight.Medium
                                                     )
                                                     Spacer(modifier = Modifier.height(2.dp))
                                                     Text(
                                                         text = minLabel,
                                                         color = if (isSel) methodColor else Color(0xFF64748B),
-                                                        fontSize = 8.sp,
+                                                        fontSize = 7.5.sp,
                                                         fontWeight = FontWeight.SemiBold
                                                     )
                                                 }
@@ -1135,7 +1326,7 @@ fun UserProfileOtpHistoryDialog(
                             }
                         }
 
-                        // 8. Recent OTP Records List
+                        // 7.5 Connected SMS Gateways & Engine Status (CR Hadi 1s, Lamix, Unix)
                         item {
                             Card(
                                 colors = CardDefaults.cardColors(containerColor = Color(0xFF101C2B)),
@@ -1149,12 +1340,109 @@ fun UserProfileOtpHistoryDialog(
                                         horizontalArrangement = Arrangement.SpaceBetween,
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
-                                        Text(
-                                            text = "RECENT RECEIVED OTPS (${otpState.recentRecords.size})",
-                                            fontSize = 11.sp,
-                                            fontWeight = FontWeight.Bold,
-                                            color = Color.White
-                                        )
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Icon(Icons.Default.Bolt, contentDescription = null, tint = Color(0xFFFF9100), modifier = Modifier.size(16.dp))
+                                            Spacer(modifier = Modifier.width(6.dp))
+                                            Text(
+                                                text = "CONNECTED SMS GATEWAYS & CR HADI",
+                                                fontSize = 11.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = Color.White
+                                            )
+                                        }
+                                        Surface(
+                                            color = Color(0xFF00E676).copy(alpha = 0.15f),
+                                            shape = RoundedCornerShape(4.dp)
+                                        ) {
+                                            Text(
+                                                text = "⚡ 1s Ultra Fast",
+                                                color = Color(0xFF00E676),
+                                                fontSize = 9.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                            )
+                                        }
+                                    }
+
+                                    Spacer(modifier = Modifier.height(8.dp))
+
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                    ) {
+                                        Surface(
+                                            color = Color(0xFFFF9100).copy(alpha = 0.12f),
+                                            shape = RoundedCornerShape(8.dp),
+                                            border = BorderStroke(1.dp, Color(0xFFFF9100).copy(alpha = 0.35f)),
+                                            modifier = Modifier.weight(1f)
+                                        ) {
+                                            Column(modifier = Modifier.padding(8.dp)) {
+                                                Text("🔥 CR Hadi SMS", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color(0xFFFFB74D))
+                                                Text("1s Auto Polling", fontSize = 8.5.sp, color = Color(0xFFCBD5E1))
+                                                Text("Active ✓", fontSize = 8.sp, color = Color(0xFF00E676), fontWeight = FontWeight.Bold)
+                                            }
+                                        }
+                                        Surface(
+                                            color = Color(0xFF00E5FF).copy(alpha = 0.12f),
+                                            shape = RoundedCornerShape(8.dp),
+                                            border = BorderStroke(1.dp, Color(0xFF00E5FF).copy(alpha = 0.35f)),
+                                            modifier = Modifier.weight(1f)
+                                        ) {
+                                            Column(modifier = Modifier.padding(8.dp)) {
+                                                Text("⚡ Lamix SMS", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color(0xFF80D8FF))
+                                                Text("1s Poll Interval", fontSize = 8.5.sp, color = Color(0xFFCBD5E1))
+                                                Text("Active ✓", fontSize = 8.sp, color = Color(0xFF00E676), fontWeight = FontWeight.Bold)
+                                            }
+                                        }
+                                        Surface(
+                                            color = Color(0xFF7C4DFF).copy(alpha = 0.12f),
+                                            shape = RoundedCornerShape(8.dp),
+                                            border = BorderStroke(1.dp, Color(0xFF7C4DFF).copy(alpha = 0.35f)),
+                                            modifier = Modifier.weight(1f)
+                                        ) {
+                                            Column(modifier = Modifier.padding(8.dp)) {
+                                                Text("🌐 Unix CDR", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color(0xFFB388FF))
+                                                Text("2.5s Sync Stream", fontSize = 8.5.sp, color = Color(0xFFCBD5E1))
+                                                Text("Active ✓", fontSize = 8.sp, color = Color(0xFF00E676), fontWeight = FontWeight.Bold)
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        // 8. Recent OTP Records List (24-Hour Auto-Purge Active)
+                        item {
+                            val now = System.currentTimeMillis()
+                            val filteredRecentRecords = remember(otpState.recentRecords) {
+                                otpState.recentRecords.filter { now - it.timestamp <= 24 * 60 * 60 * 1000L }
+                            }
+
+                            Card(
+                                colors = CardDefaults.cardColors(containerColor = Color(0xFF101C2B)),
+                                shape = RoundedCornerShape(16.dp),
+                                border = BorderStroke(1.dp, Color(0xFF1E354F)),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Column(modifier = Modifier.padding(14.dp)) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Column {
+                                            Text(
+                                                text = "RECENT RECEIVED OTPS (${filteredRecentRecords.size})",
+                                                fontSize = 11.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = Color.White
+                                            )
+                                            Text(
+                                                text = "⏱️ ২৪ ঘণ্টার অটো ডিলিট কার্যকর (24h Auto-Purge)",
+                                                fontSize = 8.5.sp,
+                                                color = Color(0xFF38BDF8)
+                                            )
+                                        }
 
                                         Text(
                                             text = "1-Tap Copy",
@@ -1165,7 +1453,7 @@ fun UserProfileOtpHistoryDialog(
 
                                     Spacer(modifier = Modifier.height(10.dp))
 
-                                    if (otpState.recentRecords.isEmpty()) {
+                                    if (filteredRecentRecords.isEmpty()) {
                                         Box(
                                             modifier = Modifier
                                                 .fillMaxWidth()
@@ -1173,14 +1461,14 @@ fun UserProfileOtpHistoryDialog(
                                             contentAlignment = Alignment.Center
                                         ) {
                                             Text(
-                                                text = "কোনো ওটিপি এখনও রিসিভ হয়নি",
+                                                text = "গত ২৪ ঘণ্টায় কোনো ওটিপি রিসিভ হয়নি",
                                                 color = Color(0xFF64748B),
                                                 fontSize = 11.sp
                                             )
                                         }
                                     } else {
                                         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                                            otpState.recentRecords.take(15).forEach { rec ->
+                                            filteredRecentRecords.take(15).forEach { rec ->
                                                 RecentOtpLogItem(rec = rec, context = context)
                                             }
                                         }

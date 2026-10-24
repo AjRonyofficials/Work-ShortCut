@@ -264,6 +264,16 @@ object PremiumNumberV2Manager {
         _state.update { it.copy(isSoundEnabled = enabled) }
     }
 
+    fun purgeOlderThan24Hours() {
+        val cutoff = System.currentTimeMillis() - 24 * 60 * 60 * 1000L
+        val filteredNumbers = _state.value.activeNumbers.filter { it.timestamp >= cutoff }
+        val filteredFeed = _state.value.liveConsoleFeed.filter { it.timestamp >= cutoff }
+        if (filteredNumbers.size != _state.value.activeNumbers.size || filteredFeed.size != _state.value.liveConsoleFeed.size) {
+            saveNumbers(filteredNumbers)
+            _state.update { it.copy(activeNumbers = filteredNumbers, liveConsoleFeed = filteredFeed) }
+        }
+    }
+
     fun clearExpiredOrCompletedNumbers() {
         val now = System.currentTimeMillis()
         val remaining = _state.value.activeNumbers.filter {
@@ -387,8 +397,14 @@ object PremiumNumberV2Manager {
                         lastSyncTime = System.currentTimeMillis()
                     )
                 }
+
+                // Auto copy all acquired numbers to clipboard together (newline separated, stripped of '+')
+                val allNumbersText = newNumbers.joinToString("\n") { it.number.replace("+", "").trim() }
                 mainHandler.post {
-                    Toast.makeText(context, "✓ $successCount টি নম্বর সফলভাবে সংগ্রহ হয়েছে! (১৪ মিনিট ৪০ সেকেন্ড মেয়াদ)", Toast.LENGTH_SHORT).show()
+                    com.example.util.ClipboardHelper.copyToClipboard(context, allNumbersText, "Premium V2 Numbers")
+                    com.example.util.VibrationHelper.vibrateSuccess(context)
+                    val copyMsg = if (newNumbers.size > 1) "✓ ${newNumbers.size} টি নম্বর এক সাথে অটো কপি হয়েছে!" else "✓ নম্বর ${newNumbers.first().number} অটো কপি হয়েছে!"
+                    Toast.makeText(context, "$copyMsg (১৪ মিনিট ৪০ সেকেন্ড মেয়াদ)", Toast.LENGTH_SHORT).show()
                 }
                 startBackgroundPolling(context)
                 refreshBalance()
@@ -816,6 +832,10 @@ object PremiumNumberV2Manager {
                 if (counter % 10 == 0) {
                     refreshBalance()
                 }
+                // 4. Auto-purge records older than 24 hours every 30 seconds
+                if (counter % 30 == 0) {
+                    purgeOlderThan24Hours()
+                }
 
                 delay(1000L) // Instant 1-second OTP poll rate
             }
@@ -1009,7 +1029,8 @@ object PremiumNumberV2Manager {
                 )
             }
         } catch (_: Exception) {}
-        return list.sortedByDescending { it.timestamp }
+        val cutoff = System.currentTimeMillis() - 24 * 60 * 60 * 1000L
+        return list.filter { it.timestamp >= cutoff }.sortedByDescending { it.timestamp }
     }
 
     private fun saveCountryRates(rates: Map<String, Double>) {

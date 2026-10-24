@@ -133,7 +133,8 @@ object GlobalCloudSyncService {
                                     addedAt = o.optLong("addedAt", System.currentTimeMillis()),
                                     isUsed = o.optBoolean("isUsed", false),
                                     otpCode = if (o.has("otpCode") && !o.isNull("otpCode")) o.optString("otpCode") else null,
-                                    otpMessage = if (o.has("otpMessage") && !o.isNull("otpMessage")) o.optString("otpMessage") else null
+                                    otpMessage = if (o.has("otpMessage") && !o.isNull("otpMessage")) o.optString("otpMessage") else null,
+                                    numberType = o.optString("numberType", "Fresh")
                                 )
                             )
                         }
@@ -230,6 +231,7 @@ object GlobalCloudSyncService {
                 o.put("isUsed", item.isUsed)
                 item.otpCode?.let { o.put("otpCode", it) }
                 item.otpMessage?.let { o.put("otpMessage", it) }
+                o.put("numberType", item.numberType)
                 numArr.put(o)
             }
 

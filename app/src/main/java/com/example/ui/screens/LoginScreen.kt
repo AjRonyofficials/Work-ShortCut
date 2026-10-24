@@ -209,7 +209,7 @@ fun LoginScreen(
                         imeAction = ImeAction.Done
                     ),
                     keyboardActions = KeyboardActions(onDone = {
-                        val (success, msg) = AuthManager.login(email, password)
+                        val (success, msg) = AuthManager.login(email, password, context)
                         if (success) {
                             Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
                             onLoginSuccess()
@@ -254,7 +254,7 @@ fun LoginScreen(
                             errorMessage = null
                             coroutineScope.launch {
                                 val (success, msg) = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                                    AuthManager.login(email, password)
+                                    AuthManager.login(email, password, context)
                                 }
                                 isLoggingIn = false
                                 if (success) {

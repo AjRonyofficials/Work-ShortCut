@@ -2,6 +2,7 @@ package com.example.ui.screens
 
 import android.content.Context
 import android.widget.Toast
+import com.example.ui.components.KopRangeSelectorBox
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -25,6 +26,7 @@ import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Phone
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Schedule
@@ -511,94 +513,15 @@ fun KopEngine2SectionContent(
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(modifier = Modifier.padding(14.dp)) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = "TARGET RANGE / PREFIX:",
-                            fontSize = 11.5.sp,
-                            fontWeight = FontWeight.ExtraBold,
-                            color = ThemeSkyBright,
-                            letterSpacing = 0.5.sp
-                        )
-                        // Rate Pill
-                        Surface(
-                            color = ThemeSky.copy(alpha = 0.2f),
-                            shape = RoundedCornerShape(8.dp),
-                            border = BorderStroke(1.dp, ThemeSky.copy(alpha = 0.5f))
-                        ) {
-                            Text(
-                                text = "Rate: ${String.format(Locale.US, "%.2f", kop2OtpRate)} ৳ / OTP",
-                                color = ThemeSkyBright,
-                                fontSize = 10.5.sp,
-                                fontWeight = FontWeight.Bold,
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
-                            )
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(10.dp))
-
-                    OutlinedTextField(
-                        value = state.targetRange,
-                        onValueChange = { KopEngine2Manager.setTargetRange(it) },
-                        placeholder = { Text("e.g. 237626XXX, 224655XXX, 261385XXX...", color = Color(0xFF64748B), fontSize = 12.sp) },
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true,
-                        shape = RoundedCornerShape(12.dp),
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedTextColor = Color.White,
-                            unfocusedTextColor = Color.White,
-                            focusedBorderColor = ThemeSkyBright,
-                            unfocusedBorderColor = ThemeBorder,
-                            focusedContainerColor = ThemeSurfaceDark,
-                            unfocusedContainerColor = ThemeSurfaceDark
-                        )
+                    KopRangeSelectorBox(
+                        title = "TARGET RANGE / PRESET COUNTRY (KOP 2)",
+                        currentRange = state.targetRange,
+                        onRangeSelected = { KopEngine2Manager.setTargetRange(it) },
+                        activeRanges = state.activeRanges,
+                        accentColor = ThemeSkyBright
                     )
-                    Spacer(modifier = Modifier.height(10.dp))
 
-                    // Active suggestions
-                    if (state.activeRanges.isNotEmpty()) {
-                        Text(
-                            text = "Live Active Signals / Ranges (ট্যাপ করে সিলেক্ট করুন):",
-                            color = ThemeMuted,
-                            fontSize = 10.5.sp,
-                            fontWeight = FontWeight.SemiBold
-                        )
-                        Spacer(modifier = Modifier.height(5.dp))
-                        FlowRow(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(6.dp),
-                            verticalArrangement = Arrangement.spacedBy(5.dp)
-                        ) {
-                            state.activeRanges.forEach { item ->
-                                val isSelected = state.targetRange == item.range
-                                Surface(
-                                    color = if (isSelected) ThemeSky.copy(alpha = 0.35f) else ThemeSurfaceDark,
-                                    shape = RoundedCornerShape(8.dp),
-                                    border = BorderStroke(
-                                        1.dp,
-                                        if (isSelected) ThemeSkyBright else ThemeBorder
-                                    ),
-                                    modifier = Modifier.clickable {
-                                        KopEngine2Manager.setTargetRange(item.range)
-                                    }
-                                ) {
-                                    val label = if (item.hits > 0) "${item.range} (${item.service} • ${item.hits})" else "${item.range} (${item.service})"
-                                    Text(
-                                        text = label,
-                                        color = if (isSelected) Color.White else Color(0xFFCBD5E1),
-                                        fontSize = 10.5.sp,
-                                        fontWeight = FontWeight.SemiBold,
-                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                                    )
-                                }
-                            }
-                        }
-                        Spacer(modifier = Modifier.height(10.dp))
-                    }
+                    Spacer(modifier = Modifier.height(12.dp))
 
                     // Checkboxes & Quantity Dropdown in Row
                     Row(
@@ -737,6 +660,52 @@ fun KopEngine2SectionContent(
                 }
 
                 Row(verticalAlignment = Alignment.CenterVertically) {
+                    val successfulNumbers = remember(state.provisionedNumbers) {
+                        state.provisionedNumbers.filter { !it.otpCode.isNullOrEmpty() || it.status.equals("success", true) }
+                    }
+                    Surface(
+                        color = if (successfulNumbers.isNotEmpty()) Color(0xFF0284C7).copy(alpha = 0.25f) else Color(0xFF1E293B),
+                        shape = RoundedCornerShape(8.dp),
+                        border = BorderStroke(1.dp, if (successfulNumbers.isNotEmpty()) Color(0xFF38BDF8) else Color(0xFF475569)),
+                        modifier = Modifier.clickable {
+                            if (successfulNumbers.isEmpty()) {
+                                Toast.makeText(context, "ডাউনলোড করার মতো কোনো সফল OTP নম্বর পাওয়া যায়নি", Toast.LENGTH_SHORT).show()
+                            } else {
+                                val exportItems = successfulNumbers.map { num ->
+                                    val cInfo = com.example.util.AllCountriesProvider.detectCountry(num.number)
+                                        ?: com.example.util.AllCountriesProvider.detectCountry(num.range ?: "")
+                                        ?: com.example.util.AllCountriesProvider.detectCountry(num.country)
+                                    com.example.util.ExportOtpItem(
+                                        phoneNumber = num.number,
+                                        country = cInfo?.name ?: num.country,
+                                        iso = (cInfo?.code ?: num.iso).uppercase(),
+                                        flag = cInfo?.flag ?: "🌐",
+                                        serviceOrRange = num.range ?: "Kop 2",
+                                        otpCode = num.otpCode ?: "",
+                                        otpMessage = num.otpMessage,
+                                        timestamp = num.timestamp,
+                                        rate = kop2OtpRate
+                                    )
+                                }
+                                com.example.util.OtpExportHelper.exportOtps(context, "Kop Engine 2", exportItems)
+                            }
+                        }
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(Icons.Default.Download, contentDescription = null, tint = if (successfulNumbers.isNotEmpty()) Color(0xFF38BDF8) else Color(0xFF94A3B8), modifier = Modifier.size(13.dp))
+                            Spacer(modifier = Modifier.width(3.dp))
+                            Text(
+                                text = if (successfulNumbers.isNotEmpty()) "📥 ডাউনলোড (${successfulNumbers.size})" else "📥 ডাউনলোড",
+                                fontSize = 10.sp,
+                                color = if (successfulNumbers.isNotEmpty()) Color.White else Color(0xFF94A3B8),
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                    Spacer(modifier = Modifier.width(5.dp))
                     Surface(
                         color = ThemeEmerald.copy(alpha = 0.15f),
                         shape = RoundedCornerShape(8.dp),
@@ -880,19 +849,35 @@ private fun Kop2ProvisionedNumberCard(
                             KopEngine2Manager.copyAndRemovePlus(context, item.number)
                         }
                     )
+                    val countryInfo = remember(item.number, item.range, item.country, item.iso) {
+                        com.example.util.AllCountriesProvider.detectCountry(item.number)
+                            ?: com.example.util.AllCountriesProvider.detectCountry(item.range ?: "")
+                            ?: com.example.util.AllCountriesProvider.findCountry(item.iso)
+                            ?: com.example.util.AllCountriesProvider.detectCountry(item.country)
+                    }
+                    val flag = countryInfo?.flag ?: "🌐"
+                    val countryName = countryInfo?.name ?: item.country
+                    val isoShort = (countryInfo?.code ?: item.iso).uppercase()
+
                     Spacer(modifier = Modifier.width(6.dp))
                     Surface(
                         color = ThemeSurfaceDark,
                         shape = RoundedCornerShape(4.dp),
                         border = BorderStroke(0.8.dp, ThemeBorder)
                     ) {
-                        Text(
-                            text = item.country.uppercase(),
-                            color = ThemeSkyBright,
-                            fontSize = 9.sp,
-                            fontWeight = FontWeight.Bold,
-                            modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
-                        )
+                        Row(
+                            modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(text = flag, fontSize = 11.sp)
+                            Spacer(modifier = Modifier.width(3.dp))
+                            Text(
+                                text = "$countryName [$isoShort]",
+                                color = ThemeSkyBright,
+                                fontSize = 9.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
                     }
                     IconButton(
                         onClick = {

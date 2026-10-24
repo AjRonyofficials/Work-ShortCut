@@ -223,6 +223,16 @@ object VirtualNumberManager {
         }
     }
 
+    fun purgeOlderThan24Hours() {
+        val cutoff = System.currentTimeMillis() - 24 * 60 * 60 * 1000L
+        val filtered = _state.value.provisionedNumbers.filter { it.timestamp >= cutoff }
+        val filteredFeed = _state.value.broadcastFeed.filter { it.time >= cutoff }
+        if (filtered.size != _state.value.provisionedNumbers.size || filteredFeed.size != _state.value.broadcastFeed.size) {
+            saveUserProvisionedNumbers(filtered)
+            _state.update { it.copy(provisionedNumbers = filtered, broadcastFeed = filteredFeed) }
+        }
+    }
+
     private fun getTodayKey(): String {
         val sdf = SimpleDateFormat("yyyy_MM_dd", Locale.US)
         return "otp_today_" + sdf.format(Date())
@@ -278,7 +288,8 @@ object VirtualNumberManager {
                     )
                 )
             }
-            list
+            val cutoff = System.currentTimeMillis() - 24 * 60 * 60 * 1000L
+            list.filter { it.timestamp >= cutoff }
         } catch (_: Exception) {
             emptyList()
         }
@@ -356,18 +367,24 @@ object VirtualNumberManager {
                             val num = dataObj.optString("number").ifEmpty {
                                 dataObj.optString("copy").ifEmpty { dataObj.optString("full_number") }
                             }
-                            val country = dataObj.optString("country", "Global")
+                            val rawCountry = dataObj.optString("country", "Global")
                             val operator = dataObj.optString("operator", "Mobile")
-                            val iso = dataObj.optString("iso", "gb")
+                            val rawIso = dataObj.optString("iso", "gb")
                             val status = dataObj.optString("status", "pending")
+
+                            val detected = com.example.util.AllCountriesProvider.detectCountry(num)
+                                ?: com.example.util.AllCountriesProvider.detectCountry(range)
+                                ?: com.example.util.AllCountriesProvider.detectCountry(rawCountry)
+                            val resolvedCountry = detected?.name ?: rawCountry
+                            val resolvedIso = detected?.code?.lowercase() ?: rawIso
 
                             if (num.isNotEmpty()) {
                                 val now = System.currentTimeMillis()
                                 val item = ProvisionedNumber(
                                     number = num,
-                                    country = country,
+                                    country = resolvedCountry,
                                     operator = operator,
-                                    iso = iso,
+                                    iso = resolvedIso,
                                     status = status,
                                     range = range,
                                     timestamp = now,
@@ -554,14 +571,19 @@ object VirtualNumberManager {
     fun startAutoPolling(context: Context, autoCopy: Boolean = true) {
         if (pollingJob?.isActive == true) return
         _state.update { it.copy(isPolling = true) }
+        var pollCounter = 0
         pollingJob = scope.launch {
             while (isActive) {
                 if (!com.example.util.AppLifecycleTracker.canRunBackgroundWork()) {
                     delay(10000L)
                     continue
                 }
+                pollCounter++
                 checkNumberTimeouts()
                 fetchIncomingOtps(context, autoCopy = autoCopy)
+                if (pollCounter % 30 == 0) {
+                    purgeOlderThan24Hours()
+                }
                 delay(1000L) // Ultra-fast 1-second background auto fetch
             }
         }

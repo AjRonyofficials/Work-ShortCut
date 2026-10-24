@@ -39,6 +39,7 @@ import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Notifications
@@ -652,7 +653,7 @@ fun PremiumNumberV2SectionContent(
                                     onDismissRequest = { quantityDropdownExpanded = false },
                                     modifier = Modifier.background(Color(0xFF091422))
                                 ) {
-                                    listOf(1, 2, 3, 5, 10).forEach { q ->
+                                    (1..10).forEach { q ->
                                         DropdownMenuItem(
                                             text = {
                                                 Text(
@@ -708,82 +709,162 @@ fun PremiumNumberV2SectionContent(
                         }
                     }
 
-                    // SPATIOUS LIVE PREFIX SECTION (BEAUTIFUL & NEVER SQUEEZED)
+                    // ACTIVE LIVE POOL COUNTRIES & PANEL-CONFIGURED OTP RATES
                     Surface(
                         color = Color(0xFF070E18),
-                        shape = RoundedCornerShape(8.dp),
-                        border = BorderStroke(0.8.dp, Color(0xFF162D42)),
+                        shape = RoundedCornerShape(10.dp),
+                        border = BorderStroke(1.dp, Color(0xFF162D42)),
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Text("🎯", fontSize = 11.sp)
-                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text("🌐", fontSize = 13.sp)
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Column {
+                                        Text(
+                                            text = "LIVE POOL COUNTRIES & RATES",
+                                            color = Color(0xFF38BDF8),
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                        Text(
+                                            text = "লাইভ পুলের সক্রিয় দেশসমূহ ও ওটিপি রেট",
+                                            color = Color(0xFF64748B),
+                                            fontSize = 9.sp
+                                        )
+                                    }
+                                }
+
+                                Surface(
+                                    color = Color(0xFF0284C7).copy(alpha = 0.2f),
+                                    shape = RoundedCornerShape(6.dp),
+                                    border = BorderStroke(1.dp, Color(0xFF38BDF8).copy(alpha = 0.5f))
+                                ) {
                                     Text(
-                                        text = "LIVE RANGE PREFIX (ঐচ্ছিক)",
-                                        color = Color(0xFF94A3B8),
+                                        text = "${livePoolCountries.size} Countries",
+                                        color = Color(0xFF38BDF8),
                                         fontSize = 9.5.sp,
-                                        fontWeight = FontWeight.Bold
+                                        fontWeight = FontWeight.Bold,
+                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                                     )
                                 }
+                            }
+
+                            // Horizontal scroll of active Live Pool Countries with their OTP rates
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .horizontalScroll(rememberScrollState()),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                livePoolCountries.forEach { c ->
+                                    val isSelected = state.selectedCountryCode.equals(c.code, ignoreCase = true)
+                                    val cRate = PremiumNumberV2Manager.getRateForCountry(c.code)
+                                    Surface(
+                                        color = if (isSelected) Color(0xFF0C2A44) else Color(0xFF0B1626),
+                                        shape = RoundedCornerShape(8.dp),
+                                        border = BorderStroke(
+                                            if (isSelected) 1.5.dp else 0.8.dp,
+                                            if (isSelected) Color(0xFF00E5FF) else Color(0xFF1B314B)
+                                        ),
+                                        modifier = Modifier.clickable {
+                                            PremiumNumberV2Manager.setSelectedCountry(c.code)
+                                            if (c.dialCode.isNotBlank()) {
+                                                PremiumNumberV2Manager.setRangePrefix(c.dialCode.replace("+", ""))
+                                            }
+                                        }
+                                    ) {
+                                        Column(
+                                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp),
+                                            horizontalAlignment = Alignment.CenterHorizontally
+                                        ) {
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                Text(c.flag, fontSize = 14.sp)
+                                                Spacer(modifier = Modifier.width(5.dp))
+                                                Text(
+                                                    text = c.name.take(12),
+                                                    color = if (isSelected) Color.White else Color(0xFFCBD5E1),
+                                                    fontSize = 11.sp,
+                                                    fontWeight = if (isSelected) FontWeight.ExtraBold else FontWeight.Bold
+                                                )
+                                            }
+
+                                            Spacer(modifier = Modifier.height(3.dp))
+
+                                            Row(
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                            ) {
+                                                if (c.dialCode.isNotBlank()) {
+                                                    Surface(
+                                                        color = Color(0xFF1E293B),
+                                                        shape = RoundedCornerShape(3.dp)
+                                                    ) {
+                                                        Text(
+                                                            text = c.dialCode,
+                                                            color = Color(0xFF94A3B8),
+                                                            fontSize = 9.sp,
+                                                            fontWeight = FontWeight.SemiBold,
+                                                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                                                        )
+                                                    }
+                                                }
+
+                                                Surface(
+                                                    color = Color(0xFF00E676).copy(alpha = 0.15f),
+                                                    shape = RoundedCornerShape(3.dp),
+                                                    border = BorderStroke(0.6.dp, Color(0xFF00E676).copy(alpha = 0.5f))
+                                                ) {
+                                                    Text(
+                                                        text = "${String.format(Locale.US, "%.2f", cRate)}৳",
+                                                        color = Color(0xFF00E676),
+                                                        fontSize = 9.5.sp,
+                                                        fontWeight = FontWeight.ExtraBold,
+                                                        modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp)
+                                                    )
+                                                }
+                                            }
+
+                                            if (isSelected) {
+                                                Spacer(modifier = Modifier.height(3.dp))
+                                                Text(
+                                                    text = "✓ SELECTED",
+                                                    color = Color(0xFF00E5FF),
+                                                    fontSize = 8.sp,
+                                                    fontWeight = FontWeight.Black
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            // Optional manual prefix fine-tuning input
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = if (state.rangePrefix.isNotBlank()) "Prefix: +${state.rangePrefix}" else "Auto Prefix active",
+                                    color = Color(0xFF94A3B8),
+                                    fontSize = 9.sp,
+                                    fontWeight = FontWeight.Medium
+                                )
                                 if (state.rangePrefix.isNotBlank()) {
                                     Text(
-                                        text = "মুছুন ✕",
+                                        text = "Reset Prefix ✕",
                                         color = Color(0xFFEF4444),
                                         fontSize = 9.sp,
                                         fontWeight = FontWeight.Bold,
                                         modifier = Modifier.clickable { PremiumNumberV2Manager.setRangePrefix("") }
                                     )
-                                }
-                            }
-
-                            OutlinedTextField(
-                                value = state.rangePrefix,
-                                onValueChange = { PremiumNumberV2Manager.setRangePrefix(it) },
-                                placeholder = { Text("Prefix লিখুন যেমন: 263, 249, 33 (বা নিচের থেকে ট্যাপ করুন)", fontSize = 10.sp, color = Color(0xFF64748B)) },
-                                singleLine = true,
-                                colors = OutlinedTextFieldDefaults.colors(
-                                    focusedBorderColor = Color(0xFF00E5FF),
-                                    unfocusedBorderColor = Color(0xFF1E3A56),
-                                    focusedTextColor = Color.White,
-                                    unfocusedTextColor = Color.White
-                                ),
-                                shape = RoundedCornerShape(8.dp),
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(46.dp)
-                            )
-
-                            // Quick select chips for live prefixes from the pool
-                            if (livePrefixes.isNotEmpty()) {
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Text("Live Pool Prefixes:", color = Color(0xFF64748B), fontSize = 8.5.sp)
-                                    livePrefixes.forEach { pfx ->
-                                        val isSel = state.rangePrefix == pfx
-                                        Surface(
-                                            color = if (isSel) Color(0xFF00E5FF) else Color(0xFF0F1E2E),
-                                            shape = RoundedCornerShape(4.dp),
-                                            border = BorderStroke(0.6.dp, if (isSel) Color(0xFF00E5FF) else Color(0xFF1E3A56)),
-                                            modifier = Modifier.clickable { PremiumNumberV2Manager.setRangePrefix(pfx) }
-                                        ) {
-                                            Text(
-                                                text = "+$pfx",
-                                                color = if (isSel) Color(0xFF041B26) else Color(0xFF38BDF8),
-                                                fontSize = 9.sp,
-                                                fontWeight = FontWeight.Bold,
-                                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                                            )
-                                        }
-                                    }
                                 }
                             }
                         }
@@ -900,6 +981,52 @@ fun PremiumNumberV2SectionContent(
                         }
 
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            // Download OTP Button
+                            val successfulV2Numbers = remember(state.activeNumbers) {
+                                state.activeNumbers.filter { !it.otpCode.isNullOrEmpty() || it.status.equals("success", true) }
+                            }
+                            Surface(
+                                color = if (successfulV2Numbers.isNotEmpty()) Color(0xFF0284C7).copy(alpha = 0.25f) else Color(0xFF1E293B),
+                                shape = RoundedCornerShape(6.dp),
+                                border = BorderStroke(1.dp, if (successfulV2Numbers.isNotEmpty()) Color(0xFF00E5FF) else Color(0xFF334155)),
+                                modifier = Modifier.clickable {
+                                    if (successfulV2Numbers.isEmpty()) {
+                                        Toast.makeText(context, "ডাউনলোড করার মতো কোনো সফল OTP নম্বর পাওয়া যায়নি", Toast.LENGTH_SHORT).show()
+                                    } else {
+                                        val exportItems = successfulV2Numbers.map { num ->
+                                            val cInfo = com.example.util.AllCountriesProvider.detectCountry(num.number)
+                                                ?: com.example.util.AllCountriesProvider.detectCountry(num.country)
+                                            com.example.util.ExportOtpItem(
+                                                phoneNumber = num.number,
+                                                country = cInfo?.name ?: num.country,
+                                                iso = (cInfo?.code ?: num.iso).uppercase(),
+                                                flag = cInfo?.flag ?: num.flag ?: "🌐",
+                                                serviceOrRange = num.range ?: "Premium V2",
+                                                otpCode = num.otpCode ?: "",
+                                                otpMessage = num.otpMessage,
+                                                timestamp = num.timestamp,
+                                                rate = num.rate
+                                            )
+                                        }
+                                        com.example.util.OtpExportHelper.exportOtps(context, "Premium Number V2", exportItems)
+                                    }
+                                }
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(Icons.Default.Download, contentDescription = null, tint = if (successfulV2Numbers.isNotEmpty()) Color(0xFF00E5FF) else Color(0xFF94A3B8), modifier = Modifier.size(11.dp))
+                                    Spacer(modifier = Modifier.width(3.dp))
+                                    Text(
+                                        text = if (successfulV2Numbers.isNotEmpty()) "📥 ডাউনলোড (${successfulV2Numbers.size})" else "📥 ডাউনলোড",
+                                        color = if (successfulV2Numbers.isNotEmpty()) Color.White else Color(0xFF94A3B8),
+                                        fontSize = 9.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                            }
+
                             // Copy All Numbers Button
                             if (filteredList.isNotEmpty()) {
                                 Surface(
@@ -1486,10 +1613,19 @@ fun PremiumV2NumberCard(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(text = item.flag ?: "🌐", fontSize = 18.sp)
+                    val detected = remember(item.number, item.country, item.iso) {
+                        com.example.util.AllCountriesProvider.detectCountry(item.number)
+                            ?: com.example.util.AllCountriesProvider.findCountry(item.iso)
+                            ?: com.example.util.AllCountriesProvider.detectCountry(item.country)
+                    }
+                    val flag = item.flag ?: detected?.flag ?: "🌐"
+                    val countryName = detected?.name ?: item.country
+                    val isoShort = (detected?.code ?: item.iso).uppercase()
+
+                    Text(text = flag, fontSize = 18.sp)
                     Spacer(modifier = Modifier.width(6.dp))
                     Text(
-                        text = item.country,
+                        text = "$countryName [$isoShort]",
                         color = Color.White,
                         fontSize = 12.5.sp,
                         fontWeight = FontWeight.Bold

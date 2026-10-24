@@ -33,10 +33,12 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Key
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.example.service.OverlayStateManager
+import com.example.ui.components.KopRangeSelectorBox
 import com.example.ui.components.UserProfileOtpHistoryDialog
 import com.example.util.VibrationHelper
 import androidx.compose.material.icons.filled.KeyboardArrowDown
@@ -443,7 +445,39 @@ fun VirtualNumbersSection(
             }
         }
 
-        if (selectedPanel == 0) {
+        val isPanelAllowed = when (selectedPanel) {
+            0 -> com.example.service.AuthManager.isSectionAllowedForCurrentUser("UNIX_SMS")
+            3 -> com.example.service.AuthManager.isSectionAllowedForCurrentUser("PREMIUM_V2")
+            2 -> com.example.service.AuthManager.isSectionAllowedForCurrentUser("KOP_2")
+            else -> com.example.service.AuthManager.isSectionAllowedForCurrentUser("KOP_1")
+        }
+
+        if (!isPanelAllowed) {
+            item {
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFF1E151A)),
+                    shape = RoundedCornerShape(16.dp),
+                    border = BorderStroke(1.2.dp, Color(0xFFEF4444)),
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp)
+                ) {
+                    Column(
+                        modifier = Modifier.padding(20.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Icon(Icons.Default.Close, contentDescription = null, tint = Color(0xFFEF4444), modifier = Modifier.size(36.dp))
+                        Spacer(modifier = Modifier.height(10.dp))
+                        Text("🚫 এক্সেস সীমিত (ACCESS RESTRICTED)", color = Color.White, fontWeight = FontWeight.ExtraBold, fontSize = 14.sp)
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Text(
+                            text = "এডমিন কর্তৃক এই প্যানেলটির এক্সেস আপনার অ্যাকাউন্টের জন্য সাময়িকভাবে বন্ধ রাখা হয়েছে। পুনরায় চালু করার জন্য এডমিনের সাথে যোগাযোগ করুন।",
+                            color = Color(0xFFCBD5E1),
+                            fontSize = 12.sp,
+                            textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                        )
+                    }
+                }
+            }
+        } else if (selectedPanel == 0) {
             item {
                 UnixSmsSectionContent()
             }
@@ -831,68 +865,15 @@ fun VirtualNumbersSection(
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Column(modifier = Modifier.padding(14.dp)) {
-                        Text(
-                            text = "TARGET RANGE / CODE",
-                            color = Color(0xFF90A4AE),
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold,
-                            letterSpacing = 0.5.sp
+                        KopRangeSelectorBox(
+                            title = "TARGET RANGE / PRESET COUNTRY",
+                            currentRange = state.targetRange,
+                            onRangeSelected = { VirtualNumberManager.setTargetRange(it) },
+                            activeRanges = state.activeRanges,
+                            accentColor = Color(0xFF00B0FF)
                         )
 
-                        Spacer(modifier = Modifier.height(6.dp))
-
-                        OutlinedTextField(
-                            value = state.targetRange,
-                            onValueChange = { VirtualNumberManager.setTargetRange(it) },
-                            placeholder = { Text("e.g. 237620XXX", color = Color(0xFF546E7A)) },
-                            colors = OutlinedTextFieldDefaults.colors(
-                                focusedTextColor = Color.White,
-                                unfocusedTextColor = Color.White,
-                                focusedBorderColor = Color(0xFF00B0FF),
-                                unfocusedBorderColor = Color(0xFF26415E),
-                                focusedContainerColor = Color(0xFF0B141E),
-                                unfocusedContainerColor = Color(0xFF0B141E)
-                            ),
-                            shape = RoundedCornerShape(10.dp),
-                            singleLine = true,
-                            modifier = Modifier.fillMaxWidth()
-                        )
-
-                        Spacer(modifier = Modifier.height(10.dp))
-
-                        // Quick Range Chips from Active Ranges
-                        if (state.activeRanges.isNotEmpty()) {
-                            Text(
-                                text = "Active Suggestions:",
-                                color = Color(0xFF78909C),
-                                fontSize = 10.sp
-                            )
-                            Spacer(modifier = Modifier.height(4.dp))
-                            FlowRow(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                                verticalArrangement = Arrangement.spacedBy(4.dp)
-                            ) {
-                                state.activeRanges.take(4).forEach { item ->
-                                    Surface(
-                                        color = if (state.targetRange == item.range) Color(0xFF0091EA) else Color(0xFF192C3D),
-                                        shape = RoundedCornerShape(6.dp),
-                                        modifier = Modifier.clickable {
-                                            VirtualNumberManager.setTargetRange(item.range)
-                                        }
-                                    ) {
-                                        Text(
-                                            text = "${item.range} (${item.service})",
-                                            color = Color.White,
-                                            fontSize = 10.sp,
-                                            fontWeight = FontWeight.Medium,
-                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp)
-                                        )
-                                    }
-                                }
-                            }
-                            Spacer(modifier = Modifier.height(10.dp))
-                        }
+                        Spacer(modifier = Modifier.height(12.dp))
 
                         // Checkboxes & Quantity Dropdown in Row
                         Row(
@@ -1054,6 +1035,54 @@ fun VirtualNumbersSection(
                             fontSize = 13.sp,
                             fontWeight = FontWeight.Bold
                         )
+
+                        val successfulKop1Numbers = remember(state.provisionedNumbers) {
+                            state.provisionedNumbers.filter { !it.otpCode.isNullOrEmpty() || it.status.equals("success", true) }
+                        }
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Surface(
+                            color = if (successfulKop1Numbers.isNotEmpty()) Color(0xFF0091EA).copy(alpha = 0.25f) else Color(0xFF142434),
+                            shape = RoundedCornerShape(6.dp),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, if (successfulKop1Numbers.isNotEmpty()) Color(0xFF00B0FF) else Color(0xFF26415E)),
+                            modifier = Modifier.clickable {
+                                if (successfulKop1Numbers.isEmpty()) {
+                                    Toast.makeText(context, "ডাউনলোড করার মতো কোনো সফল OTP নম্বর পাওয়া যায়নি", Toast.LENGTH_SHORT).show()
+                                } else {
+                                    val exportItems = successfulKop1Numbers.map { num ->
+                                        val cInfo = com.example.util.AllCountriesProvider.detectCountry(num.number)
+                                            ?: com.example.util.AllCountriesProvider.detectCountry(num.range ?: "")
+                                            ?: com.example.util.AllCountriesProvider.detectCountry(num.country)
+                                        com.example.util.ExportOtpItem(
+                                            phoneNumber = num.number,
+                                            country = cInfo?.name ?: num.country,
+                                            iso = (cInfo?.code ?: num.iso).uppercase(),
+                                            flag = cInfo?.flag ?: "🌐",
+                                            serviceOrRange = num.range ?: "Kop 1",
+                                            otpCode = num.otpCode ?: "",
+                                            otpMessage = num.otpMessage,
+                                            timestamp = num.timestamp,
+                                            rate = zenexOtpRate
+                                        )
+                                    }
+                                    com.example.util.OtpExportHelper.exportOtps(context, "Kop Engine 1", exportItems)
+                                }
+                            }
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.5.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(Icons.Default.Download, contentDescription = null, tint = if (successfulKop1Numbers.isNotEmpty()) Color(0xFF00B0FF) else Color(0xFF90A4AE), modifier = Modifier.size(11.dp))
+                                Spacer(modifier = Modifier.width(3.dp))
+                                Text(
+                                    text = if (successfulKop1Numbers.isNotEmpty()) "📥 ডাউনলোড (${successfulKop1Numbers.size})" else "📥 ডাউনলোড",
+                                    fontSize = 9.sp,
+                                    color = if (successfulKop1Numbers.isNotEmpty()) Color.White else Color(0xFF90A4AE),
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
+
                         IconButton(
                             onClick = {
                                 VirtualNumberManager.fetchIncomingOtps(context, autoCopy = true)
@@ -1537,18 +1566,35 @@ private fun ProvisionedNumberCard(
                                 ClipboardHelper.copyToClipboard(context, item.number, "Phone Number")
                             }
                         )
+                        val countryInfo = remember(item.number, item.range, item.country, item.iso) {
+                            com.example.util.AllCountriesProvider.detectCountry(item.number)
+                                ?: com.example.util.AllCountriesProvider.detectCountry(item.range ?: "")
+                                ?: com.example.util.AllCountriesProvider.findCountry(item.iso)
+                                ?: com.example.util.AllCountriesProvider.detectCountry(item.country)
+                        }
+                        val flag = countryInfo?.flag ?: "🌐"
+                        val countryName = countryInfo?.name ?: item.country
+                        val isoShort = (countryInfo?.code ?: item.iso).uppercase()
+
                         Spacer(modifier = Modifier.width(6.dp))
                         Surface(
                             color = Color(0xFF1E2D3B),
-                            shape = RoundedCornerShape(4.dp)
+                            shape = RoundedCornerShape(4.dp),
+                            border = androidx.compose.foundation.BorderStroke(0.6.dp, Color(0xFF26415E))
                         ) {
-                            Text(
-                                text = item.country.uppercase(),
-                                color = Color(0xFF90A4AE),
-                                fontSize = 8.5.sp,
-                                fontWeight = FontWeight.Bold,
-                                modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
-                            )
+                            Row(
+                                modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(text = flag, fontSize = 11.sp)
+                                Spacer(modifier = Modifier.width(3.dp))
+                                Text(
+                                    text = "$countryName [$isoShort]",
+                                    color = Color(0xFF81D4FA),
+                                    fontSize = 9.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
                         }
                         IconButton(
                             onClick = {

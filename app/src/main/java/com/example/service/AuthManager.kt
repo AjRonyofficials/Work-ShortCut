@@ -22,6 +22,15 @@ data class SubAdminPermissions(
     val canBroadcastNotify: Boolean = false
 )
 
+data class UserDeviceSession(
+    val deviceId: String,
+    val deviceModel: String,
+    val loginTime: Long = System.currentTimeMillis(),
+    val lastActiveTime: Long = System.currentTimeMillis(),
+    val isOnline: Boolean = true,
+    val isRevoked: Boolean = false
+)
+
 data class AuthUser(
     val email: String,
     val passwordHash: String,
@@ -41,7 +50,9 @@ data class AuthUser(
     val last30DaysOtps: Int = 0,
     val lastActive: Long = 0L,
     val isOnline: Boolean = false,
-    val permissions: SubAdminPermissions = SubAdminPermissions()
+    val permissions: SubAdminPermissions = SubAdminPermissions(),
+    val deviceSessions: List<UserDeviceSession> = emptyList(),
+    val disabledSections: List<String> = emptyList()
 )
 
 object AuthManager {
@@ -128,6 +139,28 @@ object AuthManager {
                     SubAdminPermissions()
                 }
 
+                val devArr = obj.optJSONArray("deviceSessions") ?: JSONArray()
+                val devList = mutableListOf<UserDeviceSession>()
+                for (di in 0 until devArr.length()) {
+                    val dObj = devArr.optJSONObject(di) ?: continue
+                    devList.add(
+                        UserDeviceSession(
+                            deviceId = dObj.optString("deviceId", ""),
+                            deviceModel = dObj.optString("deviceModel", "Android"),
+                            loginTime = dObj.optLong("loginTime", System.currentTimeMillis()),
+                            lastActiveTime = dObj.optLong("lastActiveTime", System.currentTimeMillis()),
+                            isOnline = dObj.optBoolean("isOnline", true),
+                            isRevoked = dObj.optBoolean("isRevoked", false)
+                        )
+                    )
+                }
+
+                val secArr = obj.optJSONArray("disabledSections") ?: JSONArray()
+                val secList = mutableListOf<String>()
+                for (si in 0 until secArr.length()) {
+                    secList.add(secArr.optString(si))
+                }
+
                 list.add(
                     AuthUser(
                         email = obj.getString("email"),
@@ -146,7 +179,9 @@ object AuthManager {
                         todayOtps = obj.optInt("todayOtps", 0),
                         last7DaysOtps = obj.optInt("last7DaysOtps", 0),
                         last30DaysOtps = obj.optInt("last30DaysOtps", 0),
-                        permissions = perms
+                        permissions = perms,
+                        deviceSessions = devList,
+                        disabledSections = secList
                     )
                 )
             }
@@ -201,6 +236,11 @@ object AuthManager {
                     val now = System.currentTimeMillis()
                     val isOnline = (now - lastActive) < 180_000L && lastActive > 0L
 
+                    // Find any existing local device sessions to preserve
+                    val existingUser = _managedUsers.value.firstOrNull { it.email.equals(obj.getString("email"), ignoreCase = true) }
+                    val devSessions = existingUser?.deviceSessions ?: emptyList()
+                    val disabledSecs = existingUser?.disabledSections ?: emptyList()
+
                     cloudUsers.add(
                         AuthUser(
                             email = obj.getString("email"),
@@ -211,7 +251,7 @@ object AuthManager {
                             isActive = statusStr != "INACTIVE" && statusStr != "BANNED",
                             isBanned = statusStr == "BANNED",
                             loginCount = obj.optInt("loginCount", 1),
-                            activeDevicesCount = if (isOnline) 1 else 0,
+                            activeDevicesCount = if (devSessions.isNotEmpty()) devSessions.count { it.isOnline && !it.isRevoked } else (if (isOnline) 1 else 0),
                             lastLoginAt = if (lastActive > 0L) lastActive else obj.optLong("lastLoginAt", 0L),
                             lastDeviceName = devModel,
                             totalOtps = obj.optInt("total_otps", 0),
@@ -221,7 +261,9 @@ object AuthManager {
                             last30DaysOtps = obj.optInt("otp_30days", 0),
                             lastActive = lastActive,
                             isOnline = isOnline,
-                            permissions = perms
+                            permissions = perms,
+                            deviceSessions = devSessions,
+                            disabledSections = disabledSecs
                         )
                     )
                 }
@@ -268,6 +310,27 @@ object AuthManager {
                 put("canBroadcastNotify", u.permissions.canBroadcastNotify)
             }
             obj.put("permissions", permObj)
+
+            val devArr = JSONArray()
+            for (d in u.deviceSessions) {
+                val dObj = JSONObject().apply {
+                    put("deviceId", d.deviceId)
+                    put("deviceModel", d.deviceModel)
+                    put("loginTime", d.loginTime)
+                    put("lastActiveTime", d.lastActiveTime)
+                    put("isOnline", d.isOnline)
+                    put("isRevoked", d.isRevoked)
+                }
+                devArr.put(dObj)
+            }
+            obj.put("deviceSessions", devArr)
+
+            val secArr = JSONArray()
+            for (s in u.disabledSections) {
+                secArr.put(s)
+            }
+            obj.put("disabledSections", secArr)
+
             arr.put(obj)
         }
         return arr
@@ -318,16 +381,39 @@ object AuthManager {
         syncToCloud(list)
     }
 
+    private var currentDeviceId: String = ""
+
+    fun getOrCreateDeviceId(context: Context?): String {
+        if (currentDeviceId.isNotEmpty()) return currentDeviceId
+        val saved = prefs?.getString("current_device_id", "") ?: ""
+        if (saved.isNotEmpty()) {
+            currentDeviceId = saved
+            return saved
+        }
+        val androidId = if (context != null) {
+            try {
+                android.provider.Settings.Secure.getString(context.contentResolver, android.provider.Settings.Secure.ANDROID_ID)
+            } catch (_: Exception) { null }
+        } else null
+        val finalId = if (!androidId.isNullOrBlank() && androidId != "9774d56d682e549c") androidId else java.util.UUID.randomUUID().toString()
+        currentDeviceId = finalId
+        prefs?.edit()?.putString("current_device_id", finalId)?.apply()
+        return finalId
+    }
+
     /**
      * Checks credentials against Admin master account OR admin-created managed users
      */
-    fun login(emailInput: String, passInput: String): Pair<Boolean, String> {
+    fun login(emailInput: String, passInput: String, context: Context? = null): Pair<Boolean, String> {
         val email = emailInput.trim().lowercase()
         val pass = passInput.trim()
 
         if (email.isEmpty() || pass.isEmpty()) {
             return Pair(false, "ইমেইল ও পাসওয়ার্ড প্রদান করুন")
         }
+
+        val myDeviceId = getOrCreateDeviceId(context)
+        val deviceName = "${Build.MANUFACTURER} ${Build.MODEL}"
 
         // 1. Check Master Admin
         if (email == ADMIN_EMAIL.lowercase() && pass == ADMIN_PASS) {
@@ -368,16 +454,37 @@ object AuthManager {
             if (!user.isActive) {
                 return Pair(false, "আপনার অ্যাকাউন্টটি নিষ্ক্রিয় (Inactive)। এডমিনের সাথে যোগাযোগ করুন: $TELEGRAM_CONTACT")
             }
+
+            // Check if this specific device was revoked by admin
+            val existingDevSession = user.deviceSessions.firstOrNull { it.deviceId == myDeviceId }
+            if (existingDevSession != null && existingDevSession.isRevoked) {
+                return Pair(false, "আপনার এই ডিভাইসের সেশনটি এডমিন কর্তৃক বাতিল (Revoked) করা হয়েছে! যোগাযোগ: $TELEGRAM_CONTACT")
+            }
+
             if (user.passwordHash == pass) {
-                // Track device and login count
-                val deviceName = "${Build.MANUFACTURER} ${Build.MODEL}"
+                // Track device session
+                val nowTime = System.currentTimeMillis()
+                val currentSessions = user.deviceSessions.filterNot { it.deviceId == myDeviceId }
+                val newSession = UserDeviceSession(
+                    deviceId = myDeviceId,
+                    deviceModel = deviceName,
+                    loginTime = nowTime,
+                    lastActiveTime = nowTime,
+                    isOnline = true,
+                    isRevoked = false
+                )
+                val updatedSessions = (currentSessions + newSession).sortedByDescending { it.lastActiveTime }
+
                 val newLoginCount = user.loginCount + 1
-                val newActiveDevices = maxOf(1, user.activeDevicesCount + 1)
+                val activeDevCount = updatedSessions.count { it.isOnline && !it.isRevoked }
                 val updatedUser = user.copy(
                     loginCount = newLoginCount,
-                    activeDevicesCount = newActiveDevices,
-                    lastLoginAt = System.currentTimeMillis(),
-                    lastDeviceName = deviceName
+                    activeDevicesCount = maxOf(1, activeDevCount),
+                    lastLoginAt = nowTime,
+                    lastDeviceName = deviceName,
+                    isOnline = true,
+                    lastActive = nowTime,
+                    deviceSessions = updatedSessions
                 )
 
                 val updatedList = _managedUsers.value.map {
@@ -648,9 +755,75 @@ object AuthManager {
         }
     }
 
+    fun revokeDeviceSession(email: String, deviceId: String) {
+        val target = email.lowercase()
+        val list = _managedUsers.value.map { user ->
+            if (user.email.lowercase() == target) {
+                val updatedSessions = user.deviceSessions.map { dev ->
+                    if (dev.deviceId == deviceId) dev.copy(isRevoked = true, isOnline = false) else dev
+                }
+                user.copy(
+                    deviceSessions = updatedSessions,
+                    activeDevicesCount = updatedSessions.count { it.isOnline && !it.isRevoked }
+                )
+            } else user
+        }
+        saveUsers(list)
+    }
+
+    fun restoreDeviceSession(email: String, deviceId: String) {
+        val target = email.lowercase()
+        val list = _managedUsers.value.map { user ->
+            if (user.email.lowercase() == target) {
+                val updatedSessions = user.deviceSessions.map { dev ->
+                    if (dev.deviceId == deviceId) dev.copy(isRevoked = false) else dev
+                }
+                user.copy(
+                    deviceSessions = updatedSessions,
+                    activeDevicesCount = updatedSessions.count { it.isOnline && !it.isRevoked }
+                )
+            } else user
+        }
+        saveUsers(list)
+    }
+
+    fun toggleUserSectionPermission(email: String, sectionKey: String) {
+        val target = email.lowercase()
+        val list = _managedUsers.value.map { user ->
+            if (user.email.lowercase() == target) {
+                val current = user.disabledSections
+                val updated = if (current.contains(sectionKey)) {
+                    current.filterNot { it == sectionKey }
+                } else {
+                    current + sectionKey
+                }
+                user.copy(disabledSections = updated)
+            } else user
+        }
+        saveUsers(list)
+    }
+
+    fun isSectionAllowedForCurrentUser(sectionKey: String): Boolean {
+        if (isPrimeAdmin() || isSubAdmin()) return true
+        val current = _currentEmail.value.lowercase()
+        val user = _managedUsers.value.firstOrNull { it.email.lowercase() == current } ?: return true
+        return !user.disabledSections.contains(sectionKey)
+    }
+
     fun sendHeartbeat() {
         val email = _currentEmail.value.trim().lowercase()
         if (email.isEmpty() || email == ADMIN_EMAIL.lowercase()) return
+
+        // Auto-detect if current device was revoked by admin
+        val user = _managedUsers.value.firstOrNull { it.email.lowercase() == email }
+        if (user != null && currentDeviceId.isNotEmpty()) {
+            val devSession = user.deviceSessions.firstOrNull { it.deviceId == currentDeviceId }
+            if (devSession != null && devSession.isRevoked) {
+                logout()
+                return
+            }
+        }
+
         authScope.launch {
             try {
                 val deviceModel = "${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}"
