@@ -221,7 +221,7 @@ fun PremiumNumberV2SectionContent(
     LaunchedEffect(Unit) {
         PremiumNumberV2Manager.init(context)
         while (true) {
-            delay(1000L)
+            delay(4000L)
             nowTick = System.currentTimeMillis()
         }
     }

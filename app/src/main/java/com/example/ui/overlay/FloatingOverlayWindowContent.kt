@@ -1325,14 +1325,6 @@ fun VirtualNumbersOverlaySection(
     val v2State by PremiumNumberV2Manager.state.collectAsState()
     var dropdownExpanded by remember { mutableStateOf(false) }
 
-    var nowTick by remember { mutableStateOf(System.currentTimeMillis()) }
-    LaunchedEffect(Unit) {
-        while (true) {
-            delay(1000L)
-            nowTick = System.currentTimeMillis()
-        }
-    }
-
     val activeCount = when (selectedPanel) {
         0 -> unixState.activeNumbers.size
         1 -> vnState.provisionedNumbers.size
@@ -1898,27 +1890,7 @@ fun VirtualNumbersOverlaySection(
                                                     )
                                                 }
                                             } else {
-                                                val msRemaining = (item.expiresAt - nowTick).coerceAtLeast(0L)
-                                                val mins = msRemaining / 60000L
-                                                val secs = (msRemaining % 60000L) / 1000L
-                                                val countdownText = String.format(Locale.US, "%02d:%02d", mins, secs)
-
-                                                Surface(
-                                                    color = if (msRemaining > 0L) Color(0xFFD97706).copy(alpha = 0.22f) else Color(0xFFEF4444).copy(alpha = 0.22f),
-                                                    shape = RoundedCornerShape(3.dp),
-                                                    border = androidx.compose.foundation.BorderStroke(
-                                                        0.5.dp,
-                                                        if (msRemaining > 0L) Color(0xFFFFD600).copy(alpha = 0.7f) else Color(0xFFEF4444).copy(alpha = 0.7f)
-                                                    )
-                                                ) {
-                                                    Text(
-                                                        text = if (msRemaining > 0L) "⏱ $countdownText" else "Expired",
-                                                        color = if (msRemaining > 0L) Color(0xFFFFD600) else Color(0xFFF87171),
-                                                        fontSize = 7.5.sp,
-                                                        fontWeight = FontWeight.Bold,
-                                                        modifier = Modifier.padding(horizontal = 3.dp, vertical = 1.dp)
-                                                    )
-                                                }
+                                                OverlayCountdownBadge(expiresAt = item.expiresAt)
                                             }
                                         }
                                     }
@@ -1929,6 +1901,38 @@ fun VirtualNumbersOverlaySection(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun OverlayCountdownBadge(expiresAt: Long) {
+    var now by remember { mutableStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(expiresAt) {
+        while (expiresAt > System.currentTimeMillis()) {
+            delay(1000L)
+            now = System.currentTimeMillis()
+        }
+    }
+    val msRemaining = (expiresAt - now).coerceAtLeast(0L)
+    val mins = msRemaining / 60000L
+    val secs = (msRemaining % 60000L) / 1000L
+    val countdownText = String.format(Locale.US, "%02d:%02d", mins, secs)
+
+    Surface(
+        color = if (msRemaining > 0L) Color(0xFFD97706).copy(alpha = 0.22f) else Color(0xFFEF4444).copy(alpha = 0.22f),
+        shape = RoundedCornerShape(3.dp),
+        border = androidx.compose.foundation.BorderStroke(
+            0.5.dp,
+            if (msRemaining > 0L) Color(0xFFFFD600).copy(alpha = 0.7f) else Color(0xFFEF4444).copy(alpha = 0.7f)
+        )
+    ) {
+        Text(
+            text = if (msRemaining > 0L) "⏱ $countdownText" else "Expired",
+            color = if (msRemaining > 0L) Color(0xFFFFD600) else Color(0xFFF87171),
+            fontSize = 7.5.sp,
+            fontWeight = FontWeight.Bold,
+            modifier = Modifier.padding(horizontal = 3.dp, vertical = 1.dp)
+        )
     }
 }
 

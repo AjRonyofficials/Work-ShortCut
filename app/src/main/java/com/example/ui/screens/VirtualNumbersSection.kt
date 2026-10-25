@@ -153,10 +153,10 @@ fun VirtualNumbersSection(
         VirtualNumberManager.fetchGlobalBroadcast()
         var pollCounter = 0
         while (true) {
-            delay(1000L)
+            delay(4000L)
             nowTick = System.currentTimeMillis()
             pollCounter++
-            if (pollCounter >= 10) {
+            if (pollCounter >= 3) {
                 pollCounter = 0
                 VirtualNumberManager.fetchActiveRanges()
                 VirtualNumberManager.fetchGlobalBroadcast()
@@ -1388,51 +1388,7 @@ fun VirtualNumbersSection(
                         modifier = Modifier.weight(1f)
                     )
 
-                    var syncCountdown by remember { mutableIntStateOf(3) }
-                    LaunchedEffect(Unit) {
-                        while (true) {
-                            delay(1000L)
-                            if (syncCountdown <= 1) {
-                                syncCountdown = 3
-                                VirtualNumberManager.fetchGlobalBroadcast()
-                                VirtualNumberManager.fetchActiveRanges()
-                            } else {
-                                syncCountdown -= 1
-                            }
-                        }
-                    }
-
-                    Surface(
-                        color = Color(0xFF0D1B2A),
-                        shape = RoundedCornerShape(10.dp),
-                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF1A3959)),
-                        modifier = Modifier
-                            .height(52.dp)
-                            .clickable {
-                                syncCountdown = 3
-                                VirtualNumberManager.fetchGlobalBroadcast()
-                                VirtualNumberManager.fetchActiveRanges()
-                            }
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(horizontal = 10.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Refresh,
-                                contentDescription = "Sync",
-                                tint = Color(0xFF81D4FA),
-                                modifier = Modifier.size(16.dp)
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text(
-                                text = "Auto Sync: ${syncCountdown}s",
-                                color = Color(0xFFB0BEC5),
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.SemiBold
-                            )
-                        }
-                    }
+                    LiveConsoleSyncBadge()
                 }
             }
 
@@ -1722,57 +1678,7 @@ private fun ProvisionedNumberCard(
             // PENDING STATUS: TIME REMAINING COUNTDOWN CARD (Live expiresAt - now)
             if (item.status == "pending") {
                 Spacer(modifier = Modifier.height(8.dp))
-                val remainingMs = (item.expiresAt - now).coerceAtLeast(0)
-                val remainingStr = formatTimeRemaining(item.expiresAt, now)
-                val progressRatio = (remainingMs.toFloat() / 1_200_000f).coerceIn(0f, 1f)
-
-                Surface(
-                    color = Color(0xFF131D24),
-                    shape = RoundedCornerShape(8.dp),
-                    border = androidx.compose.foundation.BorderStroke(0.8.dp, Color(0xFFFFD600).copy(alpha = 0.35f)),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Column(modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(
-                                    imageVector = Icons.Default.Bolt,
-                                    contentDescription = null,
-                                    tint = Color(0xFFFFD600),
-                                    modifier = Modifier.size(13.dp)
-                                )
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text(
-                                    text = "Time Remaining:",
-                                    color = Color(0xFFFFE082),
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.Medium
-                                )
-                            }
-                            Text(
-                                text = remainingStr,
-                                color = if (remainingMs > 60_000L) Color(0xFFFFD600) else Color(0xFFFF5252),
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.ExtraBold,
-                                fontFamily = FontFamily.Monospace
-                            )
-                        }
-                        Spacer(modifier = Modifier.height(4.dp))
-                        LinearProgressIndicator(
-                            progress = { progressRatio },
-                            color = if (remainingMs > 60_000L) Color(0xFFFFD600) else Color(0xFFFF5252),
-                            trackColor = Color(0xFF1C2731),
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(3.dp)
-                                .clip(RoundedCornerShape(2.dp))
-                        )
-                    }
-                }
+                PendingCardCountdown(expiresAt = item.expiresAt)
             }
 
             // SUCCESS STATUS: OTP RESULT BOX
@@ -2032,4 +1938,116 @@ private fun BroadcastTerminalCard(
         }
     }
 }
+
+@Composable
+private fun LiveConsoleSyncBadge() {
+    var syncCountdown by remember { mutableIntStateOf(3) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            delay(1000L)
+            if (syncCountdown <= 1) {
+                syncCountdown = 3
+                VirtualNumberManager.fetchGlobalBroadcast()
+                VirtualNumberManager.fetchActiveRanges()
+            } else {
+                syncCountdown -= 1
+            }
+        }
+    }
+
+    Surface(
+        color = Color(0xFF0D1B2A),
+        shape = RoundedCornerShape(10.dp),
+        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF1A3959)),
+        modifier = Modifier
+            .height(52.dp)
+            .clickable {
+                syncCountdown = 3
+                VirtualNumberManager.fetchGlobalBroadcast()
+                VirtualNumberManager.fetchActiveRanges()
+            }
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 10.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                imageVector = Icons.Default.Refresh,
+                contentDescription = "Sync",
+                tint = Color(0xFF81D4FA),
+                modifier = Modifier.size(16.dp)
+            )
+            Spacer(modifier = Modifier.width(6.dp))
+            Text(
+                text = "Auto Sync: ${syncCountdown}s",
+                color = Color(0xFFB0BEC5),
+                fontSize = 11.sp,
+                fontWeight = FontWeight.SemiBold
+            )
+        }
+    }
+}
+
+@Composable
+private fun PendingCardCountdown(expiresAt: Long) {
+    var localNow by remember { mutableStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(expiresAt) {
+        while (expiresAt > System.currentTimeMillis()) {
+            delay(1000L)
+            localNow = System.currentTimeMillis()
+        }
+    }
+    val remainingMs = (expiresAt - localNow).coerceAtLeast(0)
+    val remainingStr = formatTimeRemaining(expiresAt, localNow)
+    val progressRatio = (remainingMs.toFloat() / 1_200_000f).coerceIn(0f, 1f)
+
+    Surface(
+        color = Color(0xFF131D24),
+        shape = RoundedCornerShape(8.dp),
+        border = androidx.compose.foundation.BorderStroke(0.8.dp, Color(0xFFFFD600).copy(alpha = 0.35f)),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Default.Bolt,
+                        contentDescription = null,
+                        tint = Color(0xFFFFD600),
+                        modifier = Modifier.size(13.dp)
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(
+                        text = "Time Remaining:",
+                        color = Color(0xFFFFE082),
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
+                Text(
+                    text = remainingStr,
+                    color = if (remainingMs > 60_000L) Color(0xFFFFD600) else Color(0xFFFF5252),
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.ExtraBold,
+                    fontFamily = FontFamily.Monospace
+                )
+            }
+            Spacer(modifier = Modifier.height(4.dp))
+            LinearProgressIndicator(
+                progress = { progressRatio },
+                color = if (remainingMs > 60_000L) Color(0xFFFFD600) else Color(0xFFFF5252),
+                trackColor = Color(0xFF1C2731),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(3.dp)
+                    .clip(RoundedCornerShape(2.dp))
+            )
+        }
+    }
+}
+
 

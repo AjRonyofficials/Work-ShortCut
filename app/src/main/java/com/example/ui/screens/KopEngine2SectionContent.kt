@@ -110,21 +110,15 @@ fun KopEngine2SectionContent(
     var selectedSubTab by remember { mutableIntStateOf(0) } // 0: Get Numbers & Active Feed, 1: Signal (Live Feed)
     var consoleFilter by remember { mutableStateOf("") }
     var nowTick by remember { mutableLongStateOf(System.currentTimeMillis()) }
-    var syncCountdown by remember { mutableIntStateOf(3) }
 
-    // Fast 1s Real-Time Clock Tick & 3s Live API Auto Sync without duplicate network calls
+    // Throttled clock tick & radar data sync (preserves 60+ FPS UI smoothness)
     LaunchedEffect(Unit) {
         KopEngine2Manager.init(context)
         KopEngine2Manager.startAutoPolling(context, autoCopy = true)
         KopEngine2Manager.fetchRadarData()
         while (true) {
-            delay(1000L)
+            delay(4000L)
             nowTick = System.currentTimeMillis()
-            if (syncCountdown <= 1) {
-                syncCountdown = 3
-            } else {
-                syncCountdown -= 1
-            }
         }
     }
 
@@ -787,10 +781,8 @@ fun KopEngine2SectionContent(
                 state = state,
                 consoleFilter = consoleFilter,
                 onFilterChange = { consoleFilter = it },
-                syncCountdown = syncCountdown,
                 nowTick = nowTick,
                 onManualRefresh = {
-                    syncCountdown = 3
                     KopEngine2Manager.fetchGlobalBroadcast()
                     KopEngine2Manager.fetchActiveRanges()
                     KopEngine2Manager.fetchIncomingOtps(context, autoCopy = true)
@@ -1109,7 +1101,6 @@ private fun Kop2LiveConsoleTab(
     state: com.example.service.VirtualNumbersUiState,
     consoleFilter: String,
     onFilterChange: (String) -> Unit,
-    syncCountdown: Int,
     nowTick: Long,
     onManualRefresh: () -> Unit,
     context: Context
@@ -1147,30 +1138,7 @@ private fun Kop2LiveConsoleTab(
 
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     // Live 3s Auto-Sync Badge
-                    Surface(
-                        color = ThemeEmerald.copy(alpha = 0.15f),
-                        shape = RoundedCornerShape(20.dp),
-                        border = BorderStroke(1.dp, ThemeEmerald.copy(alpha = 0.5f))
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .size(5.dp)
-                                    .clip(CircleShape)
-                                    .background(ThemeEmerald)
-                            )
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text(
-                                text = "Auto Sync: ${syncCountdown}s",
-                                color = ThemeEmerald,
-                                fontSize = 10.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                        }
-                    }
+                    Kop2AutoSyncBadge()
                     Spacer(modifier = Modifier.width(6.dp))
 
                     // Records Count Badge
@@ -1492,3 +1460,45 @@ private fun MkLiveOtpFeedCard(
         }
     }
 }
+
+@Composable
+private fun Kop2AutoSyncBadge() {
+    var syncCountdown by remember { mutableIntStateOf(3) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            delay(1000L)
+            if (syncCountdown <= 1) {
+                syncCountdown = 3
+                KopEngine2Manager.fetchGlobalBroadcast()
+                KopEngine2Manager.fetchActiveRanges()
+            } else {
+                syncCountdown -= 1
+            }
+        }
+    }
+    Surface(
+        color = ThemeEmerald.copy(alpha = 0.15f),
+        shape = RoundedCornerShape(20.dp),
+        border = BorderStroke(1.dp, ThemeEmerald.copy(alpha = 0.5f))
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(5.dp)
+                    .clip(CircleShape)
+                    .background(ThemeEmerald)
+            )
+            Spacer(modifier = Modifier.width(4.dp))
+            Text(
+                text = "Auto Sync: ${syncCountdown}s",
+                color = ThemeEmerald,
+                fontSize = 10.sp,
+                fontWeight = FontWeight.Bold
+            )
+        }
+    }
+}
+

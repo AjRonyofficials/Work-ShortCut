@@ -137,6 +137,7 @@ class FloatingOverlayService : Service(), LifecycleOwner, ViewModelStoreOwner, S
 
         var dragAccumulatorX = 0f
         var dragAccumulatorY = 0f
+        var lastLayoutUpdateTime = 0L
 
         overlayComposeView = ComposeView(this).apply {
             setViewTreeLifecycleOwner(this@FloatingOverlayService)
@@ -156,20 +157,25 @@ class FloatingOverlayService : Service(), LifecycleOwner, ViewModelStoreOwner, S
                         onDragStart = { _, _ ->
                             dragAccumulatorX = 0f
                             dragAccumulatorY = 0f
+                            lastLayoutUpdateTime = 0L
                         },
                         onDragDelta = { dx, dy ->
                             this@FloatingOverlayService.windowLayoutParams?.let { p ->
                                 dragAccumulatorX += dx
                                 dragAccumulatorY += dy
-                                val stepX = dragAccumulatorX.toInt()
-                                val stepY = dragAccumulatorY.toInt()
-                                if (stepX != 0 || stepY != 0) {
-                                    p.gravity = Gravity.TOP or Gravity.START
-                                    p.x = (p.x + stepX).coerceAtLeast(0)
-                                    p.y = (p.y + stepY).coerceAtLeast(40)
-                                    dragAccumulatorX -= stepX
-                                    dragAccumulatorY -= stepY
-                                    windowManager?.updateViewLayout(this@apply, p)
+                                val now = android.os.SystemClock.uptimeMillis()
+                                if (now - lastLayoutUpdateTime >= 16L || lastLayoutUpdateTime == 0L) {
+                                    val stepX = dragAccumulatorX.toInt()
+                                    val stepY = dragAccumulatorY.toInt()
+                                    if (stepX != 0 || stepY != 0) {
+                                        p.gravity = Gravity.TOP or Gravity.START
+                                        p.x = (p.x + stepX).coerceAtLeast(0)
+                                        p.y = (p.y + stepY).coerceAtLeast(40)
+                                        dragAccumulatorX -= stepX
+                                        dragAccumulatorY -= stepY
+                                        windowManager?.updateViewLayout(this@apply, p)
+                                        lastLayoutUpdateTime = now
+                                    }
                                 }
                             }
                         },
