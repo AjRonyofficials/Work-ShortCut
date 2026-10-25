@@ -1665,6 +1665,12 @@ private fun ProvisionedNumberCard(
                             Color(0xFFFF5252).copy(alpha = 0.6f),
                             "🔴 TAKEN (USED)"
                         )
+                        PhoneItem.TagType.UNKNOWN -> listOf(
+                            Color(0xFF262615),
+                            Color(0xFFFFD54F),
+                            Color(0xFFFFD54F).copy(alpha = 0.5f),
+                            "❓ UNKNOWN"
+                        )
                         PhoneItem.TagType.ERROR -> listOf(
                             Color(0xFF2E1C0A),
                             Color(0xFFFF9800),
@@ -2443,6 +2449,12 @@ fun VirtualNumberFreshCheckerDialog(
                                     Color(0xFFFF5252),
                                     Color(0xFFFF5252).copy(alpha = 0.5f),
                                     "🔴 Taken (Used)"
+                                )
+                                PhoneItem.TagType.UNKNOWN -> listOf(
+                                    Color(0xFF262615),
+                                    Color(0xFFFFD54F),
+                                    Color(0xFFFFD54F).copy(alpha = 0.5f),
+                                    "❓ Unknown"
                                 )
                                 PhoneItem.TagType.ERROR -> listOf(
                                     Color(0xFF2E1C0A),
