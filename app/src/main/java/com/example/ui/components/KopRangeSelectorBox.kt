@@ -29,10 +29,14 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.ElectricBolt
 import androidx.compose.material.icons.filled.Public
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Sensors
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedTextField
@@ -40,7 +44,6 @@ import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -57,7 +60,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.example.data.model.ActiveRangeItem
-import com.example.service.UnixSmsManager
+import com.example.data.model.BroadcastFeedItem
 import com.example.util.AllCountriesProvider
 import com.example.util.ClipboardHelper
 
@@ -73,76 +76,19 @@ data class PresetRangeEntry(
     val isLive: Boolean = true
 )
 
-val KOP_PRESET_RANGES: List<PresetRangeEntry> = listOf(
-    // Guinea
-    PresetRangeEntry(countryName = "Guinea", countryCode = "GN", flag = "🇬🇳", dialCode = "+224", range = "224651XXXX", tag = "FB Clone ⚡", hits = 88),
-    PresetRangeEntry(countryName = "Guinea", countryCode = "GN", flag = "🇬🇳", dialCode = "+224", range = "224620XXXX", tag = "New Fresh 🟢", hits = 62),
-    PresetRangeEntry(countryName = "Guinea", countryCode = "GN", flag = "🇬🇳", dialCode = "+224", range = "224664XXXX", tag = "PC Clone 🖥️", hits = 45),
-
-    // Sudan
-    PresetRangeEntry(countryName = "Sudan", countryCode = "SD", flag = "🇸🇩", dialCode = "+249", range = "249912XXXX", tag = "FB Clone ⚡", hits = 112),
-    PresetRangeEntry(countryName = "Sudan", countryCode = "SD", flag = "🇸🇩", dialCode = "+249", range = "249123XXXX", tag = "PC Clone 🖥️", hits = 94),
-    PresetRangeEntry(countryName = "Sudan", countryCode = "SD", flag = "🇸🇩", dialCode = "+249", range = "249900XXXX", tag = "New Fresh 🟢", hits = 56),
-
-    // Cameroon
-    PresetRangeEntry(countryName = "Cameroon", countryCode = "CM", flag = "🇨🇲", dialCode = "+237", range = "237620XXXX", tag = "FB Clone ⚡", hits = 98),
-    PresetRangeEntry(countryName = "Cameroon", countryCode = "CM", flag = "🇨🇲", dialCode = "+237", range = "237626XXXX", tag = "New Fresh 🟢", hits = 73),
-    PresetRangeEntry(countryName = "Cameroon", countryCode = "CM", flag = "🇨🇲", dialCode = "+237", range = "237650XXXX", tag = "PC Clone 🖥️", hits = 65),
-    PresetRangeEntry(countryName = "Cameroon", countryCode = "CM", flag = "🇨🇲", dialCode = "+237", range = "237670XXXX", tag = "WhatsApp 💬", hits = 81),
-
-    // Nigeria
-    PresetRangeEntry(countryName = "Nigeria", countryCode = "NG", flag = "🇳🇬", dialCode = "+234", range = "234803XXXX", tag = "FB Clone ⚡", hits = 120),
-    PresetRangeEntry(countryName = "Nigeria", countryCode = "NG", flag = "🇳🇬", dialCode = "+234", range = "234901XXXX", tag = "New Fresh 🟢", hits = 89),
-    PresetRangeEntry(countryName = "Nigeria", countryCode = "NG", flag = "🇳🇬", dialCode = "+234", range = "234706XXXX", tag = "PC Clone 🖥️", hits = 58),
-
-    // Zambia
-    PresetRangeEntry(countryName = "Zambia", countryCode = "ZM", flag = "🇿🇲", dialCode = "+260", range = "260971XXXX", tag = "FB Clone ⚡", hits = 77),
-    PresetRangeEntry(countryName = "Zambia", countryCode = "ZM", flag = "🇿🇲", dialCode = "+260", range = "260762XXXX", tag = "OTP Work 🔥", hits = 64),
-
-    // Bolivia
-    PresetRangeEntry(countryName = "Bolivia", countryCode = "BO", flag = "🇧🇴", dialCode = "+591", range = "591700XXXX", tag = "FB Clone ⚡", hits = 83),
-    PresetRangeEntry(countryName = "Bolivia", countryCode = "BO", flag = "🇧🇴", dialCode = "+591", range = "591715XXXX", tag = "New Fresh 🟢", hits = 51),
-
-    // Zimbabwe
-    PresetRangeEntry(countryName = "Zimbabwe", countryCode = "ZW", flag = "🇿🇼", dialCode = "+263", range = "263771XXXX", tag = "New Fresh 🟢", hits = 42),
-
-    // Kenya
-    PresetRangeEntry(countryName = "Kenya", countryCode = "KE", flag = "🇰🇪", dialCode = "+254", range = "254712XXXX", tag = "WhatsApp 💬", hits = 68),
-    PresetRangeEntry(countryName = "Kenya", countryCode = "KE", flag = "🇰🇪", dialCode = "+254", range = "254708XXXX", tag = "FB Clone ⚡", hits = 59),
-
-    // South Africa
-    PresetRangeEntry(countryName = "South Africa", countryCode = "ZA", flag = "🇿🇦", dialCode = "+27", range = "278212XXXX", tag = "OTP Work 🔥", hits = 71),
-
-    // Bangladesh
-    PresetRangeEntry(countryName = "Bangladesh", countryCode = "BD", flag = "🇧🇩", dialCode = "+880", range = "8801700XXXX", tag = "New Fresh 🟢", hits = 92),
-    PresetRangeEntry(countryName = "Bangladesh", countryCode = "BD", flag = "🇧🇩", dialCode = "+880", range = "8801819XXXX", tag = "FB Clone ⚡", hits = 85),
-
-    // India
-    PresetRangeEntry(countryName = "India", countryCode = "IN", flag = "🇮🇳", dialCode = "+91", range = "919810XXXX", tag = "FB Clone ⚡", hits = 105),
-
-    // Indonesia & Philippines
-    PresetRangeEntry(countryName = "Indonesia", countryCode = "ID", flag = "🇮🇩", dialCode = "+62", range = "628123XXXX", tag = "FB Clone ⚡", hits = 79),
-    PresetRangeEntry(countryName = "Philippines", countryCode = "PH", flag = "🇵🇭", dialCode = "+63", range = "639171XXXX", tag = "FB Clone ⚡", hits = 74),
-
-    // Egypt
-    PresetRangeEntry(countryName = "Egypt", countryCode = "EG", flag = "🇪🇬", dialCode = "+20", range = "201001XXXX", tag = "New Fresh 🟢", hits = 53),
-
-    // Global
-    PresetRangeEntry(countryName = "United States", countryCode = "US", flag = "🇺🇸", dialCode = "+1", range = "1202555XXXX", tag = "Global Live 🌐", hits = 60),
-    PresetRangeEntry(countryName = "United Kingdom", countryCode = "GB", flag = "🇬🇧", dialCode = "+44", range = "447911XXXX", tag = "Global Live 🌐", hits = 67)
-)
-
 @Composable
 fun KopRangeSelectorBox(
     title: String = "TARGET RANGE / PRESET COUNTRY",
+    engineName: String = "Kop Engine",
     currentRange: String,
     onRangeSelected: (String) -> Unit,
     activeRanges: List<ActiveRangeItem> = emptyList(),
+    broadcastFeed: List<BroadcastFeedItem> = emptyList(),
+    onRefreshLivePool: (() -> Unit)? = null,
     accentColor: Color = Color(0xFF00B0FF),
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
-    val unixState by UnixSmsManager.state.collectAsState()
     var showRangeDropdownModal by remember { mutableStateOf(false) }
     var searchFilter by remember { mutableStateOf("") }
     var selectedTagFilter by remember { mutableStateOf("ALL") }
@@ -155,6 +101,92 @@ fun KopRangeSelectorBox(
     val countryName = detectedCountry?.name ?: "Global"
     val isoShort = (detectedCountry?.code ?: "UN").uppercase()
     val dialCode = detectedCountry?.dialCode ?: ""
+
+    // Strictly separate live pool ranges derived solely from this specific engine's activeRanges and broadcastFeed
+    val livePoolEntries: List<PresetRangeEntry> = remember(activeRanges, broadcastFeed) {
+        val list = mutableListOf<PresetRangeEntry>()
+        val seenRanges = mutableSetOf<String>()
+
+        // 1. Process activeRanges from this engine's live pool
+        activeRanges.forEach { act ->
+            val cleanR = act.range.trim()
+            if (cleanR.isNotBlank() && !seenRanges.contains(cleanR.uppercase())) {
+                seenRanges.add(cleanR.uppercase())
+                val c = AllCountriesProvider.detectCountry(cleanR)
+                val cFlag = c?.flag ?: "⚡"
+                val cName = c?.name ?: "Signal"
+                val cCode = (c?.code ?: "UN").uppercase()
+                val cDial = c?.dialCode ?: ""
+
+                val tagLabel = when {
+                    act.service.contains("FB", ignoreCase = true) || act.service.contains("Face", ignoreCase = true) -> "FB Clone ⚡"
+                    act.tag.contains("Fresh", ignoreCase = true) || act.tag.contains("New", ignoreCase = true) -> "New Fresh 🟢"
+                    act.tag.contains("PC", ignoreCase = true) || act.tag.contains("Clone", ignoreCase = true) -> "PC Clone 🖥️"
+                    act.service.contains("WhatsApp", ignoreCase = true) -> "WhatsApp 💬"
+                    act.service.contains("OTP", ignoreCase = true) -> "OTP Work 🔥"
+                    act.tag.isNotBlank() -> act.tag
+                    act.service.isNotBlank() -> act.service
+                    else -> "Live Pool ⚡"
+                }
+
+                list.add(
+                    PresetRangeEntry(
+                        countryName = cName,
+                        countryCode = cCode,
+                        flag = cFlag,
+                        dialCode = cDial,
+                        range = cleanR,
+                        tag = tagLabel,
+                        hits = act.hits,
+                        isLive = true
+                    )
+                )
+            }
+        }
+
+        // 2. Process active ranges from this engine's live broadcast / radar console feed
+        broadcastFeed.forEach { feedItem ->
+            val rawRange = feedItem.range.trim()
+            val rangeStr = if (rawRange.isNotBlank()) {
+                rawRange
+            } else {
+                val num = feedItem.number.replace("[^0-9]".toRegex(), "")
+                if (num.length >= 7) num.take(6) + "XXXX" else ""
+            }
+
+            if (rangeStr.isNotBlank() && !seenRanges.contains(rangeStr.uppercase())) {
+                seenRanges.add(rangeStr.uppercase())
+                val c = AllCountriesProvider.detectCountry(rangeStr) ?: AllCountriesProvider.detectCountry(feedItem.country)
+                val cFlag = c?.flag ?: "⚡"
+                val cName = c?.name ?: feedItem.country.ifBlank { "Signal" }
+                val cCode = (c?.code ?: "UN").uppercase()
+                val cDial = c?.dialCode ?: ""
+
+                val feedTag = when {
+                    feedItem.service.contains("FB", ignoreCase = true) || feedItem.service.contains("Face", ignoreCase = true) -> "FB Clone ⚡"
+                    feedItem.service.contains("WhatsApp", ignoreCase = true) -> "WhatsApp 💬"
+                    feedItem.operator.contains("Clone", ignoreCase = true) -> "PC Clone 🖥️"
+                    feedItem.operator.isNotBlank() && !feedItem.operator.equals("Mobile", ignoreCase = true) -> "${feedItem.operator} ⚡"
+                    else -> "Live Radar ⚡"
+                }
+
+                list.add(
+                    PresetRangeEntry(
+                        countryName = cName,
+                        countryCode = cCode,
+                        flag = cFlag,
+                        dialCode = cDial,
+                        range = rangeStr,
+                        tag = feedTag,
+                        hits = 1,
+                        isLive = true
+                    )
+                )
+            }
+        }
+
+        list.sortedByDescending { it.hits }
+    }
 
     Column(modifier = modifier.fillMaxWidth()) {
         // 1. Header with Title & Auto-Detected Country Pill
@@ -202,7 +234,10 @@ fun KopRangeSelectorBox(
             border = BorderStroke(1.2.dp, accentColor.copy(alpha = 0.7f)),
             modifier = Modifier
                 .fillMaxWidth()
-                .clickable { showRangeDropdownModal = true }
+                .clickable {
+                    showRangeDropdownModal = true
+                    onRefreshLivePool?.invoke()
+                }
         ) {
             Row(
                 modifier = Modifier
@@ -259,8 +294,15 @@ fun KopRangeSelectorBox(
                         modifier = Modifier.padding(horizontal = 9.dp, vertical = 5.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
+                        Box(
+                            modifier = Modifier
+                                .size(6.dp)
+                                .clip(CircleShape)
+                                .background(if (livePoolEntries.isNotEmpty()) Color(0xFF00E676) else Color(0xFFFFB74D))
+                        )
+                        Spacer(modifier = Modifier.width(5.dp))
                         Text(
-                            text = "রেঞ্জ লিস্ট ▾",
+                            text = if (livePoolEntries.isNotEmpty()) "রেঞ্জ লিস্ট (${livePoolEntries.size}) ▾" else "রেঞ্জ লিস্ট ▾",
                             color = Color.White,
                             fontSize = 11.sp,
                             fontWeight = FontWeight.Bold
@@ -272,13 +314,13 @@ fun KopRangeSelectorBox(
 
         Spacer(modifier = Modifier.height(8.dp))
 
-        // 3. Direct Editable TextField for manual custom range entry with real-time auto detection
+        // 3. Direct Editable TextField for manual custom range entry with real-time all-country auto detection
         OutlinedTextField(
             value = currentRange,
             onValueChange = { input ->
                 onRangeSelected(input)
             },
-            placeholder = { Text("অথবা যেকোনো দেশের রেঞ্জ/নাম্বার পেস্ট করুন (e.g. 224651XXXX)...", color = Color(0xFF546E7A), fontSize = 11.sp) },
+            placeholder = { Text("অথবা যেকোনো দেশের রেঞ্জ/নম্বর পেস্ট করুন (e.g. 224651XXXX, 249, 237)...", color = Color(0xFF546E7A), fontSize = 11.sp) },
             leadingIcon = {
                 Icon(Icons.Default.Public, contentDescription = null, tint = accentColor, modifier = Modifier.size(18.dp))
             },
@@ -306,98 +348,10 @@ fun KopRangeSelectorBox(
         )
     }
 
-    // 4. Crash-Proof Full-Featured Range Selection Modal Dialog
+    // 4. Pure Live Pool Range Selection Modal Dialog (Zero Fake/Preset Ranges)
     if (showRangeDropdownModal) {
-        val allEntries = remember(activeRanges, unixState.uploadedNumbers) {
-            val list = mutableListOf<PresetRangeEntry>()
-            val seenRanges = mutableSetOf<String>()
-
-            // 1. Add active live pool ranges from server (Zenex / Kop Engine live pool)
-            activeRanges.forEach { act ->
-                val cleanR = act.range.trim()
-                if (cleanR.isNotBlank() && !seenRanges.contains(cleanR.uppercase())) {
-                    seenRanges.add(cleanR.uppercase())
-                    val c = AllCountriesProvider.detectCountry(cleanR)
-                    val cFlag = c?.flag ?: "⚡"
-                    val cName = c?.name ?: "Signal"
-                    val cCode = (c?.code ?: "UN").uppercase()
-                    val cDial = c?.dialCode ?: ""
-
-                    val tagLabel = when {
-                        act.service.contains("FB", ignoreCase = true) || act.service.contains("Face", ignoreCase = true) -> "FB Clone ⚡"
-                        act.tag.contains("Fresh", ignoreCase = true) || act.tag.contains("New", ignoreCase = true) -> "New Fresh 🟢"
-                        act.tag.contains("PC", ignoreCase = true) || act.tag.contains("Clone", ignoreCase = true) -> "PC Clone 🖥️"
-                        act.service.contains("WhatsApp", ignoreCase = true) -> "WhatsApp 💬"
-                        act.service.contains("OTP", ignoreCase = true) -> "OTP Work 🔥"
-                        else -> if (act.tag.isNotBlank()) "${act.service} • ${act.tag}" else act.service
-                    }
-
-                    list.add(
-                        PresetRangeEntry(
-                            countryName = cName,
-                            countryCode = cCode,
-                            flag = cFlag,
-                            dialCode = cDial,
-                            range = cleanR,
-                            tag = tagLabel,
-                            hits = if (act.hits > 0) act.hits else 48
-                        )
-                    )
-                }
-            }
-
-            // 2. Add ranges from Admin Uploaded Numbers pool (Unix SMS)
-            unixState.uploadedNumbers.forEach { item ->
-                val digits = item.number.replace("[^0-9]".toRegex(), "")
-                if (digits.length >= 6) {
-                    val prefix = digits.take(6) + "XXXX"
-                    if (!seenRanges.contains(prefix.uppercase())) {
-                        seenRanges.add(prefix.uppercase())
-                        val c = AllCountriesProvider.detectCountry(digits)
-                        val cFlag = c?.flag ?: item.flag
-                        val cName = c?.name ?: item.countryName
-                        val cCode = c?.code ?: item.countryCode
-                        val cDial = c?.dialCode ?: "+${digits.take(3)}"
-
-                        val isPc = item.numberType.equals("PC Clone", ignoreCase = true)
-                        val tagLabel = when {
-                            item.service.contains("Facebook", ignoreCase = true) && isPc -> "FB PC Clone 🖥️"
-                            item.service.contains("Facebook", ignoreCase = true) -> "FB Clone ⚡"
-                            item.service.contains("OTP", ignoreCase = true) -> "OTP Work 🔥"
-                            item.service.contains("WhatsApp", ignoreCase = true) -> "WhatsApp 💬"
-                            isPc -> "PC Clone 🖥️"
-                            else -> "New Fresh 🟢"
-                        }
-
-                        list.add(
-                            PresetRangeEntry(
-                                countryName = cName,
-                                countryCode = cCode,
-                                flag = cFlag,
-                                dialCode = cDial,
-                                range = prefix,
-                                tag = tagLabel,
-                                hits = 75
-                            )
-                        )
-                    }
-                }
-            }
-
-            // 3. Add Curated Live Preset Ranges (with FB Clone, New Fresh, PC Clone, etc.)
-            KOP_PRESET_RANGES.forEach { p ->
-                val cleanR = p.range.trim().uppercase()
-                if (!seenRanges.contains(cleanR)) {
-                    seenRanges.add(cleanR)
-                    list.add(p)
-                }
-            }
-
-            list
-        }
-
-        val filteredEntries = remember(allEntries, searchFilter, selectedTagFilter) {
-            var result: List<PresetRangeEntry> = allEntries
+        val filteredEntries: List<PresetRangeEntry> = remember(livePoolEntries, searchFilter, selectedTagFilter) {
+            var result: List<PresetRangeEntry> = livePoolEntries
             if (selectedTagFilter != "ALL") {
                 result = when (selectedTagFilter) {
                     "FB_CLONE" -> result.filter { it.tag.contains("FB", ignoreCase = true) || it.tag.contains("Clone", ignoreCase = true) }
@@ -452,256 +406,326 @@ fun KopRangeSelectorBox(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Default.ElectricBolt, contentDescription = null, tint = accentColor, modifier = Modifier.size(20.dp))
+                            Icon(Icons.Default.Sensors, contentDescription = null, tint = accentColor, modifier = Modifier.size(20.dp))
                             Spacer(modifier = Modifier.width(6.dp))
                             Column {
                                 Text(
-                                    text = "লাইভ রেঞ্জ ও কান্ট্রি পুল (LIVE POOL)",
+                                    text = "$engineName — লাইভ পুল রেঞ্জ",
                                     color = Color.White,
                                     fontSize = 13.5.sp,
                                     fontWeight = FontWeight.ExtraBold
                                 )
                                 Text(
-                                    text = "যেকোনো রেঞ্জে ১-ট্যাপে সিলেক্ট বা অটো কপি করুন",
+                                    text = "শুধুমাত্র রিয়েল-টাইম সক্রিয় লাইভ রেঞ্জ তালিকা",
                                     color = Color(0xFF90A4AE),
                                     fontSize = 10.sp
                                 )
                             }
                         }
 
-                        IconButton(
-                            onClick = { showRangeDropdownModal = false },
-                            modifier = Modifier.size(28.dp)
-                        ) {
-                            Icon(Icons.Default.Close, contentDescription = "Close", tint = Color(0xFF90A4AE), modifier = Modifier.size(18.dp))
-                        }
-                    }
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            if (onRefreshLivePool != null) {
+                                IconButton(
+                                    onClick = {
+                                        onRefreshLivePool.invoke()
+                                        Toast.makeText(context, "$engineName লাইভ পুল রিফ্রেশ হচ্ছে...", Toast.LENGTH_SHORT).show()
+                                    },
+                                    modifier = Modifier.size(28.dp)
+                                ) {
+                                    Icon(Icons.Default.Refresh, contentDescription = "Refresh", tint = accentColor, modifier = Modifier.size(18.dp))
+                                }
+                                Spacer(modifier = Modifier.width(4.dp))
+                            }
 
-                    Spacer(modifier = Modifier.height(10.dp))
-
-                    // Quick Filter Chips (All, FB Clone, New Fresh, PC Clone, WhatsApp, OTP Work)
-                    val filterChips = listOf(
-                        "ALL" to "🌐 All (${allEntries.size})",
-                        "FB_CLONE" to "⚡ FB Clone",
-                        "NEW_FRESH" to "🟢 New Fresh",
-                        "PC_CLONE" to "🖥️ PC Clone",
-                        "WHATSAPP" to "💬 WhatsApp",
-                        "OTP_WORK" to "🔥 OTP Work"
-                    )
-
-                    LazyRow(
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        items(filterChips.size) { idx ->
-                            val chip = filterChips[idx]
-                            val isChipSelected = selectedTagFilter == chip.first
-                            Surface(
-                                color = if (isChipSelected) accentColor.copy(alpha = 0.25f) else Color(0xFF131F2E),
-                                shape = RoundedCornerShape(8.dp),
-                                border = BorderStroke(1.dp, if (isChipSelected) accentColor else Color(0xFF1F354D)),
-                                modifier = Modifier.clickable { selectedTagFilter = chip.first }
+                            IconButton(
+                                onClick = { showRangeDropdownModal = false },
+                                modifier = Modifier.size(28.dp)
                             ) {
-                                Text(
-                                    text = chip.second,
-                                    color = if (isChipSelected) Color.White else Color(0xFF94A3B8),
-                                    fontSize = 10.5.sp,
-                                    fontWeight = if (isChipSelected) FontWeight.Bold else FontWeight.Medium,
-                                    modifier = Modifier.padding(horizontal = 9.dp, vertical = 5.dp)
-                                )
+                                Icon(Icons.Default.Close, contentDescription = "Close", tint = Color(0xFF90A4AE), modifier = Modifier.size(18.dp))
                             }
                         }
                     }
 
                     Spacer(modifier = Modifier.height(10.dp))
 
-                    // Search Field
-                    OutlinedTextField(
-                        value = searchFilter,
-                        onValueChange = { searchFilter = it },
-                        placeholder = { Text("দেশ বা রেঞ্জ খুঁজুন (e.g. Guinea, 224, Sudan, Cameroon)...", fontSize = 11.sp, color = Color(0xFF64748B)) },
-                        leadingIcon = {
-                            Icon(Icons.Default.Search, contentDescription = null, tint = accentColor, modifier = Modifier.size(16.dp))
-                        },
-                        trailingIcon = {
-                            if (searchFilter.isNotBlank()) {
-                                IconButton(onClick = { searchFilter = "" }, modifier = Modifier.size(20.dp)) {
-                                    Icon(Icons.Default.Close, contentDescription = "Clear", tint = Color(0xFF78909C), modifier = Modifier.size(14.dp))
+                    if (livePoolEntries.isEmpty()) {
+                        // Empty / Scanning Live Pool State
+                        Surface(
+                            color = Color(0xFF0D1826),
+                            shape = RoundedCornerShape(12.dp),
+                            border = BorderStroke(1.dp, Color(0xFF1E3246)),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 12.dp)
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(18.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally
+                            ) {
+                                Icon(
+                                    Icons.Default.Sensors,
+                                    contentDescription = null,
+                                    tint = accentColor,
+                                    modifier = Modifier.size(36.dp)
+                                )
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Text(
+                                    text = "$engineName লাইভ পুলে এই মুহূর্তে কোনো রেঞ্জ সরাসরি অ্যাক্টিভ নেই",
+                                    color = Color.White,
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                                )
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    text = "লাইভ সার্ভার ট্রাফিক এলে রেঞ্জ স্বয়ংক্রিয়ভাবে এখানে চলে আসবে। অথবা নিচে সরাসরি যেকোনো দেশের রেঞ্জ পেস্ট করুন।",
+                                    color = Color(0xFF94A3B8),
+                                    fontSize = 10.sp,
+                                    textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                                )
+                                Spacer(modifier = Modifier.height(12.dp))
+                                if (onRefreshLivePool != null) {
+                                    Button(
+                                        onClick = {
+                                            onRefreshLivePool.invoke()
+                                            Toast.makeText(context, "লাইভ পুল স্ক্যান করা হচ্ছে...", Toast.LENGTH_SHORT).show()
+                                        },
+                                        colors = ButtonDefaults.buttonColors(containerColor = accentColor),
+                                        shape = RoundedCornerShape(8.dp),
+                                        modifier = Modifier.height(36.dp)
+                                    ) {
+                                        Icon(Icons.Default.Refresh, contentDescription = null, tint = Color.Black, modifier = Modifier.size(14.dp))
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text("রিফ্রেশ করুন (Refresh Pool)", color = Color.Black, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                    }
                                 }
                             }
-                        },
-                        singleLine = true,
-                        shape = RoundedCornerShape(10.dp),
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedTextColor = Color.White,
-                            unfocusedTextColor = Color.White,
-                            focusedBorderColor = accentColor,
-                            unfocusedBorderColor = Color(0xFF1E3A56),
-                            focusedContainerColor = Color(0xFF070E18),
-                            unfocusedContainerColor = Color(0xFF070E18)
-                        ),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(48.dp)
-                    )
+                        }
+                    } else {
+                        // Quick Filter Chips (All, FB Clone, New Fresh, PC Clone, WhatsApp, OTP Work)
+                        val filterChips = listOf(
+                            "ALL" to "🌐 All (${livePoolEntries.size})",
+                            "FB_CLONE" to "⚡ FB Clone",
+                            "NEW_FRESH" to "🟢 New Fresh",
+                            "PC_CLONE" to "🖥️ PC Clone",
+                            "WHATSAPP" to "💬 WhatsApp",
+                            "OTP_WORK" to "🔥 OTP Work"
+                        )
 
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    Text(
-                        text = "রেজাল্ট: ${filteredEntries.size} টি লাইভ পুল রেঞ্জ পাওয়া গেছে",
-                        color = Color(0xFF64748B),
-                        fontSize = 9.5.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-
-                    Spacer(modifier = Modifier.height(6.dp))
-
-                    // Safe LazyColumn with 100% collision-free indexed keys
-                    LazyColumn(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .weight(1f),
-                        verticalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        itemsIndexed(
-                            items = filteredEntries,
-                            key = { index, item -> "${item.range}_${item.tag}_$index" }
-                        ) { _, entry ->
-                            val isSelected = entry.range.equals(currentRange.trim(), ignoreCase = true)
-
-                            // Tag Color Logic
-                            val tagBg = when {
-                                entry.tag.contains("FB", ignoreCase = true) -> Color(0xFF1877F2).copy(alpha = 0.2f)
-                                entry.tag.contains("Fresh", ignoreCase = true) || entry.tag.contains("New", ignoreCase = true) -> Color(0xFF00E676).copy(alpha = 0.2f)
-                                entry.tag.contains("PC", ignoreCase = true) -> Color(0xFFFF9100).copy(alpha = 0.2f)
-                                entry.tag.contains("WhatsApp", ignoreCase = true) -> Color(0xFF25D366).copy(alpha = 0.2f)
-                                entry.tag.contains("OTP", ignoreCase = true) -> Color(0xFFFF3D00).copy(alpha = 0.2f)
-                                else -> Color(0xFF00E5FF).copy(alpha = 0.15f)
+                        LazyRow(
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            items(filterChips.size) { idx ->
+                                val chip = filterChips[idx]
+                                val isChipSelected = selectedTagFilter == chip.first
+                                Surface(
+                                    color = if (isChipSelected) accentColor.copy(alpha = 0.25f) else Color(0xFF131F2E),
+                                    shape = RoundedCornerShape(8.dp),
+                                    border = BorderStroke(1.dp, if (isChipSelected) accentColor else Color(0xFF1F354D)),
+                                    modifier = Modifier.clickable { selectedTagFilter = chip.first }
+                                ) {
+                                    Text(
+                                        text = chip.second,
+                                        color = if (isChipSelected) Color.White else Color(0xFF94A3B8),
+                                        fontSize = 10.5.sp,
+                                        fontWeight = if (isChipSelected) FontWeight.Bold else FontWeight.Medium,
+                                        modifier = Modifier.padding(horizontal = 9.dp, vertical = 5.dp)
+                                    )
+                                }
                             }
+                        }
 
-                            val tagFg = when {
-                                entry.tag.contains("FB", ignoreCase = true) -> Color(0xFF60A5FA)
-                                entry.tag.contains("Fresh", ignoreCase = true) || entry.tag.contains("New", ignoreCase = true) -> Color(0xFF00E676)
-                                entry.tag.contains("PC", ignoreCase = true) -> Color(0xFFFFB74D)
-                                entry.tag.contains("WhatsApp", ignoreCase = true) -> Color(0xFF4ADE80)
-                                entry.tag.contains("OTP", ignoreCase = true) -> Color(0xFFFF6E40)
-                                else -> Color(0xFF38BDF8)
-                            }
+                        Spacer(modifier = Modifier.height(10.dp))
 
-                            Surface(
-                                color = if (isSelected) accentColor.copy(alpha = 0.22f) else Color(0xFF0E1A29),
-                                shape = RoundedCornerShape(10.dp),
-                                border = BorderStroke(
-                                    1.dp,
-                                    if (isSelected) accentColor else Color(0xFF1E3A56)
-                                ),
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clickable {
-                                        onRangeSelected(entry.range)
-                                        ClipboardHelper.copyToClipboard(context, entry.range, "Range")
-                                        Toast.makeText(context, "✓ সিলেক্ট হয়েছে: ${entry.countryName} (${entry.range})", Toast.LENGTH_SHORT).show()
-                                        showRangeDropdownModal = false
+                        // Search Field
+                        OutlinedTextField(
+                            value = searchFilter,
+                            onValueChange = { searchFilter = it },
+                            placeholder = { Text("দেশ বা রেঞ্জ খুঁজুন (e.g. Guinea, Sudan, 224)...", fontSize = 11.sp, color = Color(0xFF64748B)) },
+                            leadingIcon = {
+                                Icon(Icons.Default.Search, contentDescription = null, tint = accentColor, modifier = Modifier.size(16.dp))
+                            },
+                            trailingIcon = {
+                                if (searchFilter.isNotBlank()) {
+                                    IconButton(onClick = { searchFilter = "" }, modifier = Modifier.size(20.dp)) {
+                                        Icon(Icons.Default.Close, contentDescription = "Clear", tint = Color(0xFF78909C), modifier = Modifier.size(14.dp))
                                     }
-                            ) {
-                                Row(
+                                }
+                            },
+                            singleLine = true,
+                            shape = RoundedCornerShape(10.dp),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedTextColor = Color.White,
+                                unfocusedTextColor = Color.White,
+                                focusedBorderColor = accentColor,
+                                unfocusedBorderColor = Color(0xFF1E3A56),
+                                focusedContainerColor = Color(0xFF070E18),
+                                unfocusedContainerColor = Color(0xFF070E18)
+                            ),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(48.dp)
+                        )
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        Text(
+                            text = "লাইভ রেজাল্ট: ${filteredEntries.size} টি রেঞ্জ সক্রিয় রয়েছে",
+                            color = Color(0xFF64748B),
+                            fontSize = 9.5.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+
+                        Spacer(modifier = Modifier.height(6.dp))
+
+                        // Safe LazyColumn with 100% collision-free indexed keys
+                        LazyColumn(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .weight(1f),
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            itemsIndexed(
+                                items = filteredEntries,
+                                key = { index, item -> "${item.range}_${item.tag}_$index" }
+                            ) { _, entry ->
+                                val isSelected = entry.range.equals(currentRange.trim(), ignoreCase = true)
+
+                                // Tag Color Logic
+                                val tagBg = when {
+                                    entry.tag.contains("FB", ignoreCase = true) -> Color(0xFF1877F2).copy(alpha = 0.2f)
+                                    entry.tag.contains("Fresh", ignoreCase = true) || entry.tag.contains("New", ignoreCase = true) -> Color(0xFF00E676).copy(alpha = 0.2f)
+                                    entry.tag.contains("PC", ignoreCase = true) -> Color(0xFFFF9100).copy(alpha = 0.2f)
+                                    entry.tag.contains("WhatsApp", ignoreCase = true) -> Color(0xFF25D366).copy(alpha = 0.2f)
+                                    entry.tag.contains("OTP", ignoreCase = true) -> Color(0xFFFF3D00).copy(alpha = 0.2f)
+                                    else -> Color(0xFF00E5FF).copy(alpha = 0.15f)
+                                }
+
+                                val tagFg = when {
+                                    entry.tag.contains("FB", ignoreCase = true) -> Color(0xFF60A5FA)
+                                    entry.tag.contains("Fresh", ignoreCase = true) || entry.tag.contains("New", ignoreCase = true) -> Color(0xFF00E676)
+                                    entry.tag.contains("PC", ignoreCase = true) -> Color(0xFFFFB74D)
+                                    entry.tag.contains("WhatsApp", ignoreCase = true) -> Color(0xFF4ADE80)
+                                    entry.tag.contains("OTP", ignoreCase = true) -> Color(0xFFFF6E40)
+                                    else -> Color(0xFF38BDF8)
+                                }
+
+                                Surface(
+                                    color = if (isSelected) accentColor.copy(alpha = 0.22f) else Color(0xFF0E1A29),
+                                    shape = RoundedCornerShape(10.dp),
+                                    border = BorderStroke(
+                                        1.dp,
+                                        if (isSelected) accentColor else Color(0xFF1E3A56)
+                                    ),
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .padding(horizontal = 12.dp, vertical = 9.dp),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically
+                                        .clickable {
+                                            onRangeSelected(entry.range)
+                                            ClipboardHelper.copyToClipboard(context, entry.range, "Range")
+                                            Toast.makeText(context, "✓ সিলেক্ট হয়েছে: ${entry.countryName} (${entry.range})", Toast.LENGTH_SHORT).show()
+                                            showRangeDropdownModal = false
+                                        }
                                 ) {
-                                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
-                                        Text(text = entry.flag, fontSize = 20.sp)
-                                        Spacer(modifier = Modifier.width(10.dp))
-                                        Column {
-                                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                                Text(
-                                                    text = "${entry.countryName} [${entry.countryCode}]",
-                                                    color = Color.White,
-                                                    fontSize = 12.5.sp,
-                                                    fontWeight = FontWeight.Bold
-                                                )
-                                                Spacer(modifier = Modifier.width(4.dp))
-                                                Text(
-                                                    text = entry.dialCode,
-                                                    color = accentColor,
-                                                    fontSize = 10.sp,
-                                                    fontWeight = FontWeight.SemiBold
-                                                )
-                                            }
-                                            Row(
-                                                verticalAlignment = Alignment.CenterVertically,
-                                                modifier = Modifier.padding(top = 2.dp)
-                                            ) {
-                                                Text(
-                                                    text = entry.range,
-                                                    color = if (isSelected) accentColor else Color(0xFF81D4FA),
-                                                    fontSize = 12.5.sp,
-                                                    fontWeight = FontWeight.Bold,
-                                                    fontFamily = FontFamily.Monospace
-                                                )
-
-                                                Spacer(modifier = Modifier.width(6.dp))
-
-                                                // Distinctive Tag Badge
-                                                Surface(
-                                                    color = tagBg,
-                                                    shape = RoundedCornerShape(4.dp)
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(horizontal = 12.dp, vertical = 9.dp),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                                            Text(text = entry.flag, fontSize = 20.sp)
+                                            Spacer(modifier = Modifier.width(10.dp))
+                                            Column {
+                                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                                    Text(
+                                                        text = "${entry.countryName} [${entry.countryCode}]",
+                                                        color = Color.White,
+                                                        fontSize = 12.5.sp,
+                                                        fontWeight = FontWeight.Bold
+                                                    )
+                                                    Spacer(modifier = Modifier.width(4.dp))
+                                                    Text(
+                                                        text = entry.dialCode,
+                                                        color = accentColor,
+                                                        fontSize = 10.sp,
+                                                        fontWeight = FontWeight.SemiBold
+                                                    )
+                                                }
+                                                Row(
+                                                    verticalAlignment = Alignment.CenterVertically,
+                                                    modifier = Modifier.padding(top = 2.dp)
                                                 ) {
                                                     Text(
-                                                        text = entry.tag,
-                                                        color = tagFg,
-                                                        fontSize = 8.5.sp,
-                                                        fontWeight = FontWeight.ExtraBold,
-                                                        modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.5.dp)
+                                                        text = entry.range,
+                                                        color = if (isSelected) accentColor else Color(0xFF81D4FA),
+                                                        fontSize = 12.5.sp,
+                                                        fontWeight = FontWeight.Bold,
+                                                        fontFamily = FontFamily.Monospace
                                                     )
+
+                                                    Spacer(modifier = Modifier.width(6.dp))
+
+                                                    // Distinctive Tag Badge
+                                                    Surface(
+                                                        color = tagBg,
+                                                        shape = RoundedCornerShape(4.dp)
+                                                    ) {
+                                                        Text(
+                                                            text = entry.tag,
+                                                            color = tagFg,
+                                                            fontSize = 8.5.sp,
+                                                            fontWeight = FontWeight.ExtraBold,
+                                                            modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.5.dp)
+                                                        )
+                                                    }
                                                 }
                                             }
                                         }
-                                    }
 
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        if (entry.hits > 0) {
-                                            Surface(
-                                                color = Color(0xFF0284C7).copy(alpha = 0.2f),
-                                                shape = RoundedCornerShape(4.dp)
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            if (entry.hits > 0) {
+                                                Surface(
+                                                    color = Color(0xFF0284C7).copy(alpha = 0.2f),
+                                                    shape = RoundedCornerShape(4.dp)
+                                                ) {
+                                                    Text(
+                                                        text = "${entry.hits} Hits",
+                                                        color = Color(0xFF38BDF8),
+                                                        fontSize = 9.sp,
+                                                        fontWeight = FontWeight.Bold,
+                                                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
+                                                    )
+                                                }
+                                                Spacer(modifier = Modifier.width(6.dp))
+                                            }
+
+                                            IconButton(
+                                                onClick = {
+                                                    ClipboardHelper.copyToClipboard(context, entry.range, "Range")
+                                                    Toast.makeText(context, "কপি হয়েছে: ${entry.range}", Toast.LENGTH_SHORT).show()
+                                                },
+                                                modifier = Modifier.size(24.dp)
                                             ) {
-                                                Text(
-                                                    text = "${entry.hits} Hits",
-                                                    color = Color(0xFF38BDF8),
-                                                    fontSize = 9.sp,
-                                                    fontWeight = FontWeight.Bold,
-                                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
+                                                Icon(
+                                                    Icons.Default.ContentCopy,
+                                                    contentDescription = "Copy",
+                                                    tint = Color(0xFF90A4AE),
+                                                    modifier = Modifier.size(14.dp)
                                                 )
                                             }
-                                            Spacer(modifier = Modifier.width(6.dp))
-                                        }
 
-                                        IconButton(
-                                            onClick = {
-                                                ClipboardHelper.copyToClipboard(context, entry.range, "Range")
-                                                Toast.makeText(context, "কপি হয়েছে: ${entry.range}", Toast.LENGTH_SHORT).show()
-                                            },
-                                            modifier = Modifier.size(24.dp)
-                                        ) {
-                                            Icon(
-                                                Icons.Default.ContentCopy,
-                                                contentDescription = "Copy",
-                                                tint = Color(0xFF90A4AE),
-                                                modifier = Modifier.size(14.dp)
-                                            )
-                                        }
-
-                                        if (isSelected) {
-                                            Spacer(modifier = Modifier.width(4.dp))
-                                            Surface(
-                                                color = accentColor,
-                                                shape = CircleShape,
-                                                modifier = Modifier.size(18.dp)
-                                            ) {
-                                                Box(contentAlignment = Alignment.Center) {
-                                                    Icon(Icons.Default.Check, contentDescription = null, tint = Color.Black, modifier = Modifier.size(12.dp))
+                                            if (isSelected) {
+                                                Spacer(modifier = Modifier.width(4.dp))
+                                                Surface(
+                                                    color = accentColor,
+                                                    shape = CircleShape,
+                                                    modifier = Modifier.size(18.dp)
+                                                ) {
+                                                    Box(contentAlignment = Alignment.Center) {
+                                                        Icon(Icons.Default.Check, contentDescription = null, tint = Color.Black, modifier = Modifier.size(12.dp))
+                                                    }
                                                 }
                                             }
                                         }

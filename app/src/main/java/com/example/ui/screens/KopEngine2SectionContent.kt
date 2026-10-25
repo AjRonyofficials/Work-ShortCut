@@ -514,10 +514,15 @@ fun KopEngine2SectionContent(
             ) {
                 Column(modifier = Modifier.padding(14.dp)) {
                     KopRangeSelectorBox(
-                        title = "TARGET RANGE / PRESET COUNTRY (KOP 2)",
+                        title = "TARGET RANGE / LIVE RADAR (KOP 2)",
+                        engineName = "Kop Engine 2",
                         currentRange = state.targetRange,
                         onRangeSelected = { KopEngine2Manager.setTargetRange(it) },
                         activeRanges = state.activeRanges,
+                        broadcastFeed = state.broadcastFeed,
+                        onRefreshLivePool = {
+                            KopEngine2Manager.fetchRadarData()
+                        },
                         accentColor = ThemeSkyBright
                     )
 

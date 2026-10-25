@@ -149,9 +149,18 @@ fun VirtualNumbersSection(
     LaunchedEffect(Unit) {
         VirtualNumberManager.init(context)
         VirtualNumberManager.startAutoPolling(context, autoCopy = false)
+        VirtualNumberManager.fetchActiveRanges()
+        VirtualNumberManager.fetchGlobalBroadcast()
+        var pollCounter = 0
         while (true) {
             delay(1000L)
             nowTick = System.currentTimeMillis()
+            pollCounter++
+            if (pollCounter >= 10) {
+                pollCounter = 0
+                VirtualNumberManager.fetchActiveRanges()
+                VirtualNumberManager.fetchGlobalBroadcast()
+            }
         }
     }
 
@@ -866,10 +875,16 @@ fun VirtualNumbersSection(
                 ) {
                     Column(modifier = Modifier.padding(14.dp)) {
                         KopRangeSelectorBox(
-                            title = "TARGET RANGE / PRESET COUNTRY",
+                            title = "TARGET RANGE / LIVE POOL (KOP 1)",
+                            engineName = "Kop Engine",
                             currentRange = state.targetRange,
                             onRangeSelected = { VirtualNumberManager.setTargetRange(it) },
                             activeRanges = state.activeRanges,
+                            broadcastFeed = state.broadcastFeed,
+                            onRefreshLivePool = {
+                                VirtualNumberManager.fetchActiveRanges()
+                                VirtualNumberManager.fetchGlobalBroadcast()
+                            },
                             accentColor = Color(0xFF00B0FF)
                         )
 
