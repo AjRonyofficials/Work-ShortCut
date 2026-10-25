@@ -35,6 +35,12 @@ import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Key
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.runtime.rememberCoroutineScope
+import com.example.service.PhoneItem
+import com.example.service.VirtualNumberChecker
+import kotlinx.coroutines.launch
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.example.service.OverlayStateManager
@@ -122,6 +128,7 @@ fun VirtualNumbersSection(
     val zenexOtpRate by VirtualNumberManager.zenexOtpRate.collectAsState()
     var panelDropdownExpanded by remember { mutableStateOf(false) }
     var showProfileHistoryDialog by remember { mutableStateOf(false) }
+    var showFreshCheckerDialog by remember { mutableStateOf(false) }
 
     var hasNotificationPermission by remember {
         mutableStateOf(
@@ -175,6 +182,7 @@ fun VirtualNumbersSection(
     val successRate = if (total > 0) (successCount.toFloat() / total.toFloat()) * 100f else 0f
 
     val filteredList = when (filterTab) {
+        "FRESH" -> state.provisionedNumbers.filter { it.fbTagType == PhoneItem.TagType.FRESH }
         "SUCCESS" -> state.provisionedNumbers.filter { it.status == "success" || !it.otpCode.isNullOrEmpty() }
         "PENDING" -> state.provisionedNumbers.filter { it.otpCode.isNullOrEmpty() && (it.status == "pending" || it.status == "wait") && nowTick < it.expiresAt }
         "FAILED" -> state.provisionedNumbers.filter { it.status == "failed" || it.status == "expired" || (it.otpCode.isNullOrEmpty() && nowTick >= it.expiresAt) }
@@ -184,6 +192,11 @@ fun VirtualNumbersSection(
     UserProfileOtpHistoryDialog(
         isOpen = showProfileHistoryDialog,
         onDismiss = { showProfileHistoryDialog = false }
+    )
+
+    VirtualNumberFreshCheckerDialog(
+        isOpen = showFreshCheckerDialog,
+        onDismiss = { showFreshCheckerDialog = false }
     )
 
     LazyColumn(
@@ -1025,6 +1038,59 @@ fun VirtualNumbersSection(
                                 )
                             }
                         }
+
+                        // FB FRESH CHECKER & BATCH CHECK ACTION ROW
+                        Spacer(modifier = Modifier.height(10.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Surface(
+                                color = Color(0xFF0F2B1D),
+                                shape = RoundedCornerShape(8.dp),
+                                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF00E676).copy(alpha = 0.5f)),
+                                modifier = Modifier
+                                    .weight(1.2f)
+                                    .clickable { showFreshCheckerDialog = true }
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.Center
+                                ) {
+                                    Icon(Icons.Default.Bolt, contentDescription = null, tint = Color(0xFF00E676), modifier = Modifier.size(14.dp))
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text("🔍 FRESH CHECKER (1-10)", color = Color(0xFF00E676), fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                }
+                            }
+
+                            Surface(
+                                color = Color(0xFF13202E),
+                                shape = RoundedCornerShape(8.dp),
+                                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF1E3A56)),
+                                modifier = Modifier
+                                    .weight(0.9f)
+                                    .clickable {
+                                        val pendingNums = state.provisionedNumbers.filter { it.fbStatus != "Fresh (Free)" && it.fbStatus != "Taken (Used)" }
+                                        if (pendingNums.isEmpty()) {
+                                            Toast.makeText(context, "সব নম্বর ইতিমধ্যেই চেক করা হয়েছে", Toast.LENGTH_SHORT).show()
+                                        } else {
+                                            VirtualNumberManager.checkFbStatusForNumbers(pendingNums.map { it.id to it.number })
+                                            Toast.makeText(context, "${pendingNums.size} টি নম্বর চেক শুরু হয়েছে...", Toast.LENGTH_SHORT).show()
+                                        }
+                                    }
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.Center
+                                ) {
+                                    Icon(Icons.Default.Refresh, contentDescription = null, tint = Color(0xFF00B0FF), modifier = Modifier.size(13.dp))
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text("CHECK ALL FB", color = Color(0xFF00B0FF), fontSize = 10.5.sp, fontWeight = FontWeight.Bold)
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -1113,18 +1179,19 @@ fun VirtualNumbersSection(
                         }
                     }
 
-                    // Feed Filters: ALL, SUCCESS, PENDING, FAILED
+                    // Feed Filters: ALL, FRESH, SUCCESS, PENDING, FAILED
                     Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                        listOf("ALL", "SUCCESS", "PENDING", "FAILED").forEach { filter ->
+                        listOf("ALL", "FRESH", "SUCCESS", "PENDING", "FAILED").forEach { filter ->
                             val isSelected = filterTab == filter
+                            val filterColor = if (filter == "FRESH") Color(0xFF00E676) else Color(0xFF0091EA)
                             Surface(
-                                color = if (isSelected) Color(0xFF0091EA) else Color(0xFF142434),
+                                color = if (isSelected) filterColor else Color(0xFF142434),
                                 shape = RoundedCornerShape(6.dp),
                                 modifier = Modifier.clickable { filterTab = filter }
                             ) {
                                 Text(
                                     text = filter,
-                                    color = if (isSelected) Color.White else Color(0xFF90A4AE),
+                                    color = if (isSelected) (if (filter == "FRESH") Color.Black else Color.White) else (if (filter == "FRESH") Color(0xFF00E676) else Color(0xFF90A4AE)),
                                     fontSize = 10.sp,
                                     fontWeight = FontWeight.Bold,
                                     modifier = Modifier.padding(horizontal = 7.dp, vertical = 4.dp)
@@ -1579,6 +1646,82 @@ private fun ProvisionedNumberCard(
                                 tint = Color(0xFF00B0FF),
                                 modifier = Modifier.size(13.dp)
                             )
+                        }
+                    }
+
+                    // Facebook Fresh / Taken Badge
+                    val fbTag = item.fbTagType
+                    val isChecking = item.fbStatus == "Checking..."
+                    val (chipBg, chipFg, chipBorder, chipText) = when (fbTag) {
+                        PhoneItem.TagType.FRESH -> listOf(
+                            Color(0xFF0F3B20),
+                            Color(0xFF00E676),
+                            Color(0xFF00E676).copy(alpha = 0.6f),
+                            "🟢 FRESH (FREE)"
+                        )
+                        PhoneItem.TagType.TAKEN -> listOf(
+                            Color(0xFF381515),
+                            Color(0xFFFF5252),
+                            Color(0xFFFF5252).copy(alpha = 0.6f),
+                            "🔴 TAKEN (USED)"
+                        )
+                        PhoneItem.TagType.ERROR -> listOf(
+                            Color(0xFF2E1C0A),
+                            Color(0xFFFF9800),
+                            Color(0xFFFF9800).copy(alpha = 0.5f),
+                            "⚠️ CHECK ERROR"
+                        )
+                        else -> if (isChecking) {
+                            listOf(
+                                Color(0xFF1E2835),
+                                Color(0xFF81D4FA),
+                                Color(0xFF26415E),
+                                "CHECKING FB..."
+                            )
+                        } else {
+                            listOf(
+                                Color(0xFF13202E),
+                                Color(0xFF90CAF9),
+                                Color(0xFF1E3A56),
+                                "🔍 CHECK FB FRESH"
+                            )
+                        }
+                    }
+
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.padding(top = 3.dp)
+                    ) {
+                        Surface(
+                            color = chipBg as Color,
+                            shape = RoundedCornerShape(4.dp),
+                            border = androidx.compose.foundation.BorderStroke(0.8.dp, chipBorder as Color),
+                            modifier = Modifier.clickable {
+                                if (!isChecking) {
+                                    VirtualNumberManager.checkFbStatusForNumber(item.id, item.number)
+                                    com.example.service.UnixSmsManager.checkFbStatusForNumber(item.id, item.number)
+                                }
+                            }
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                if (isChecking) {
+                                    CircularProgressIndicator(
+                                        color = chipFg as Color,
+                                        modifier = Modifier.size(9.dp),
+                                        strokeWidth = 1.5.dp
+                                    )
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                }
+                                Text(
+                                    text = chipText as String,
+                                    color = chipFg as Color,
+                                    fontSize = 9.sp,
+                                    fontWeight = FontWeight.ExtraBold
+                                )
+                            }
                         }
                     }
 
@@ -2049,5 +2192,355 @@ private fun PendingCardCountdown(expiresAt: Long) {
         }
     }
 }
+
+@Composable
+fun VirtualNumberFreshCheckerDialog(
+    isOpen: Boolean,
+    onDismiss: () -> Unit
+) {
+    if (!isOpen) return
+    val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
+    var rawInput by remember { mutableStateOf("") }
+    var isChecking by remember { mutableStateOf(false) }
+    var currentProgress by remember { mutableStateOf(0 to 0) }
+    var results by remember { mutableStateOf<List<PhoneItem>>(emptyList()) }
+
+    Dialog(
+        onDismissRequest = { if (!isChecking) onDismiss() },
+        properties = DialogProperties(usePlatformDefaultWidth = false)
+    ) {
+        Card(
+            colors = CardDefaults.cardColors(containerColor = Color(0xFF0F1A26)),
+            shape = RoundedCornerShape(16.dp),
+            border = androidx.compose.foundation.BorderStroke(1.2.dp, Color(0xFF00B0FF).copy(alpha = 0.5f)),
+            modifier = Modifier
+                .fillMaxWidth(0.94f)
+                .padding(vertical = 24.dp)
+        ) {
+            Column(
+                modifier = Modifier
+                    .padding(16.dp)
+                    .verticalScroll(rememberScrollState())
+            ) {
+                // Header
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Surface(
+                            shape = CircleShape,
+                            color = Color(0xFF00E676).copy(alpha = 0.15f),
+                            modifier = Modifier.size(32.dp)
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Text("FB", color = Color(0xFF00E676), fontWeight = FontWeight.Black, fontSize = 11.sp)
+                            }
+                        }
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Column {
+                            Text(
+                                text = "Facebook Fresh Checker",
+                                color = Color.White,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 15.sp
+                            )
+                            Text(
+                                text = "১-১০টি নম্বর চেক করুন (Fresh vs Taken)",
+                                color = Color(0xFF81D4FA),
+                                fontSize = 10.5.sp
+                            )
+                        }
+                    }
+                    IconButton(
+                        onClick = onDismiss,
+                        enabled = !isChecking,
+                        modifier = Modifier.size(28.dp)
+                    ) {
+                        Icon(Icons.Default.Close, contentDescription = "Close", tint = Color(0xFF90A4AE))
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // Input box
+                OutlinedTextField(
+                    value = rawInput,
+                    onValueChange = { rawInput = it },
+                    label = { Text("নম্বর লিখুন বা পেস্ট করুন (১-১০টি)", fontSize = 11.sp) },
+                    placeholder = { Text("e.g. 237627112233\n+237627445566, 447123456789", fontSize = 11.sp, color = Color(0xFF546E7A)) },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(100.dp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = Color.White,
+                        unfocusedTextColor = Color(0xFFECEFF1),
+                        focusedContainerColor = Color(0xFF0A121C),
+                        unfocusedContainerColor = Color(0xFF0A121C),
+                        focusedBorderColor = Color(0xFF00B0FF),
+                        unfocusedBorderColor = Color(0xFF1E3A56)
+                    ),
+                    textStyle = androidx.compose.ui.text.TextStyle(
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 12.sp
+                    ),
+                    shape = RoundedCornerShape(8.dp)
+                )
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                // Helper Buttons (Paste & Load Current)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Surface(
+                        color = Color(0xFF142434),
+                        shape = RoundedCornerShape(6.dp),
+                        border = androidx.compose.foundation.BorderStroke(0.8.dp, Color(0xFF1E3A56)),
+                        modifier = Modifier
+                            .weight(1f)
+                            .clickable {
+                                val clip = ClipboardHelper.getFromClipboard(context).orEmpty()
+                                if (clip.isNotBlank()) {
+                                    rawInput = if (rawInput.isBlank()) clip else "$rawInput\n$clip"
+                                    Toast.makeText(context, "ক্লিপবোর্ড থেকে পেস্ট হয়েছে", Toast.LENGTH_SHORT).show()
+                                } else {
+                                    Toast.makeText(context, "ক্লিপবোর্ডে কোনো টেক্সট নেই", Toast.LENGTH_SHORT).show()
+                                }
+                            }
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(vertical = 6.dp),
+                            horizontalArrangement = Arrangement.Center,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(Icons.Default.ContentCopy, contentDescription = null, tint = Color(0xFF81D4FA), modifier = Modifier.size(12.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("পেস্ট করুন", color = Color(0xFF81D4FA), fontSize = 10.5.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+
+                    Surface(
+                        color = Color(0xFF142434),
+                        shape = RoundedCornerShape(6.dp),
+                        border = androidx.compose.foundation.BorderStroke(0.8.dp, Color(0xFF1E3A56)),
+                        modifier = Modifier
+                            .weight(1f)
+                            .clickable {
+                                val currentNums = VirtualNumberManager.state.value.provisionedNumbers.map { it.number }
+                                if (currentNums.isNotEmpty()) {
+                                    rawInput = currentNums.take(10).joinToString("\n")
+                                    Toast.makeText(context, "${minOf(10, currentNums.size)} টি বর্তমান নম্বর লোড হয়েছে", Toast.LENGTH_SHORT).show()
+                                } else {
+                                    Toast.makeText(context, "বর্তমানে কোনো নম্বর নেই", Toast.LENGTH_SHORT).show()
+                                }
+                            }
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(vertical = 6.dp),
+                            horizontalArrangement = Arrangement.Center,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(Icons.Default.Phone, contentDescription = null, tint = Color(0xFF00E676), modifier = Modifier.size(12.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("বর্তমান নম্বর লোড", color = Color(0xFF00E676), fontSize = 10.5.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                // Check Button
+                Button(
+                    onClick = {
+                        val parsed = VirtualNumberChecker.parseNumbers(rawInput)
+                        if (parsed.isEmpty()) {
+                            Toast.makeText(context, "অনুগ্রহ করে কমপক্ষে একটি বৈধ ফোন নম্বর লিখুন", Toast.LENGTH_SHORT).show()
+                            return@Button
+                        }
+                        isChecking = true
+                        results = emptyList()
+                        coroutineScope.launch {
+                            val tempResults = mutableListOf<PhoneItem>()
+                            VirtualNumberChecker.processVirtualNumbers(
+                                rawNumbersInput = rawInput,
+                                onProgress = { cur, tot, item ->
+                                    currentProgress = cur to tot
+                                    tempResults.removeAll { it.number == item.number }
+                                    tempResults.add(item)
+                                    results = tempResults.toList()
+                                },
+                                onFinished = { finalItems ->
+                                    results = finalItems
+                                    isChecking = false
+                                    VibrationHelper.vibrateSuccess(context)
+                                    val freshCount = finalItems.count { it.tagType == PhoneItem.TagType.FRESH }
+                                    Toast.makeText(context, "চেক সম্পন্ন! Fresh: $freshCount / ${finalItems.size}", Toast.LENGTH_SHORT).show()
+                                }
+                            )
+                        }
+                    },
+                    enabled = !isChecking,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Color(0xFF00E676),
+                        disabledContainerColor = Color(0xFF00E676).copy(alpha = 0.3f)
+                    ),
+                    shape = RoundedCornerShape(8.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(42.dp)
+                ) {
+                    if (isChecking) {
+                        CircularProgressIndicator(
+                            color = Color.Black,
+                            modifier = Modifier.size(16.dp),
+                            strokeWidth = 2.dp
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = "চেক হচ্ছে (${currentProgress.first}/${currentProgress.second})...",
+                            color = Color.Black,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 12.sp
+                        )
+                    } else {
+                        Icon(Icons.Default.Bolt, contentDescription = null, tint = Color.Black, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = "CHECK FRESH / TAKEN NOW",
+                            color = Color.Black,
+                            fontWeight = FontWeight.ExtraBold,
+                            fontSize = 12.sp
+                        )
+                    }
+                }
+
+                // Results section
+                if (results.isNotEmpty() || isChecking) {
+                    Spacer(modifier = Modifier.height(14.dp))
+                    Text(
+                        text = "ফলাফল (${results.size} টি নম্বর)",
+                        color = Color.White,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 12.sp
+                    )
+                    Spacer(modifier = Modifier.height(6.dp))
+
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        results.forEach { item ->
+                            val (badgeBg, badgeFg, badgeBorder, badgeText) = when (item.tagType) {
+                                PhoneItem.TagType.FRESH -> listOf(
+                                    Color(0xFF0A2E1F),
+                                    Color(0xFF00E676),
+                                    Color(0xFF00E676).copy(alpha = 0.5f),
+                                    "🟢 Fresh (Free)"
+                                )
+                                PhoneItem.TagType.TAKEN -> listOf(
+                                    Color(0xFF381515),
+                                    Color(0xFFFF5252),
+                                    Color(0xFFFF5252).copy(alpha = 0.5f),
+                                    "🔴 Taken (Used)"
+                                )
+                                PhoneItem.TagType.ERROR -> listOf(
+                                    Color(0xFF2E1C0A),
+                                    Color(0xFFFF9800),
+                                    Color(0xFFFF9800).copy(alpha = 0.5f),
+                                    "⚠️ Error"
+                                )
+                                else -> listOf(
+                                    Color(0xFF1E2835),
+                                    Color(0xFFFFD600),
+                                    Color(0xFF26415E),
+                                    "Checking..."
+                                )
+                            }
+
+                            Surface(
+                                color = Color(0xFF111D2A),
+                                shape = RoundedCornerShape(8.dp),
+                                border = androidx.compose.foundation.BorderStroke(1.dp, badgeBorder as Color),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        ClipboardHelper.copyToClipboard(context, item.number, "Phone Number")
+                                        Toast.makeText(context, "${item.number} কপি হয়েছে", Toast.LENGTH_SHORT).show()
+                                    }
+                            ) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 10.dp, vertical = 7.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Text(
+                                            text = item.number,
+                                            color = Color.White,
+                                            fontFamily = FontFamily.Monospace,
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 12.sp
+                                        )
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Icon(
+                                            Icons.Default.ContentCopy,
+                                            contentDescription = null,
+                                            tint = Color(0xFF81D4FA),
+                                            modifier = Modifier.size(12.dp)
+                                        )
+                                    }
+
+                                    Surface(
+                                        color = badgeBg as Color,
+                                        shape = RoundedCornerShape(4.dp),
+                                        border = androidx.compose.foundation.BorderStroke(0.6.dp, badgeFg as Color)
+                                    ) {
+                                        Text(
+                                            text = badgeText as String,
+                                            color = badgeFg as Color,
+                                            fontWeight = FontWeight.ExtraBold,
+                                            fontSize = 9.5.sp,
+                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // Copy all Fresh numbers button
+                    val freshNumbers = results.filter { it.tagType == PhoneItem.TagType.FRESH }
+                    if (freshNumbers.isNotEmpty()) {
+                        Spacer(modifier = Modifier.height(10.dp))
+                        Button(
+                            onClick = {
+                                val text = freshNumbers.joinToString("\n") { it.number.replace("+", "").trim() }
+                                ClipboardHelper.copyToClipboard(context, text, "Fresh Numbers")
+                                Toast.makeText(context, "${freshNumbers.size} টি Fresh নম্বর কপি হয়েছে!", Toast.LENGTH_SHORT).show()
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0091EA)),
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(38.dp)
+                        ) {
+                            Icon(Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.size(14.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "কপি করুন সব FRESH নম্বর (${freshNumbers.size}টি)",
+                                fontSize = 11.5.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 
 

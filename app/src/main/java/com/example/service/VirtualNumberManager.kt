@@ -258,6 +258,8 @@ object VirtualNumberManager {
                 obj.put("timestamp", p.timestamp)
                 obj.put("expiresAt", p.expiresAt)
                 obj.put("range", p.range)
+                obj.put("fbStatus", p.fbStatus ?: "")
+                obj.put("fbTagType", p.fbTagType.name)
                 arr.put(obj)
             }
             prefs?.edit()?.putString("user_saved_numbers_json", arr.toString())?.apply()
@@ -271,6 +273,11 @@ object VirtualNumberManager {
             val list = mutableListOf<ProvisionedNumber>()
             for (i in 0 until arr.length()) {
                 val obj = arr.getJSONObject(i)
+                val fbTag = try {
+                    PhoneItem.TagType.valueOf(obj.optString("fbTagType", "PENDING"))
+                } catch (_: Exception) {
+                    PhoneItem.TagType.PENDING
+                }
                 list.add(
                     ProvisionedNumber(
                         id = obj.optString("id", java.util.UUID.randomUUID().toString()),
@@ -284,7 +291,9 @@ object VirtualNumberManager {
                         failReason = obj.optString("failReason").ifEmpty { null },
                         timestamp = obj.optLong("timestamp", System.currentTimeMillis()),
                         expiresAt = obj.optLong("expiresAt", System.currentTimeMillis() + 1_200_000L),
-                        range = obj.optString("range")
+                        range = obj.optString("range"),
+                        fbStatus = obj.optString("fbStatus").ifEmpty { null },
+                        fbTagType = fbTag
                     )
                 )
             }
@@ -439,6 +448,8 @@ object VirtualNumberManager {
                     if (newNumbers.isNotEmpty()) {
                         val allNumbersText = newNumbers.joinToString("\n") { it.number.replace("+", "").trim() }
                         ClipboardHelper.copyToClipboard(context, allNumbersText, "Phone Numbers")
+                        // Trigger background Facebook Fresh / Taken status check
+                        checkFbStatusForNumbers(newNumbers.map { it.id to it.number })
                     }
                     // Start live OTP polling immediately!
                     startAutoPolling(context, autoCopy = true)
@@ -450,6 +461,55 @@ object VirtualNumberManager {
             }
         }
     }
+
+    /**
+     * Checks Facebook Fresh/Taken status for a single provisioned number.
+     */
+    fun checkFbStatusForNumber(id: String, number: String) {
+        scope.launch {
+            _state.update { current ->
+                val updated = current.provisionedNumbers.map {
+                    if (it.id == id) it.copy(fbStatus = "Checking...", fbTagType = PhoneItem.TagType.PENDING) else it
+                }
+                current.copy(provisionedNumbers = updated)
+            }
+            val formatted = if (number.startsWith("+")) number else "+$number"
+            val (statusStr, tagType) = VirtualNumberChecker.checkNumberTag(formatted)
+            _state.update { current ->
+                val updated = current.provisionedNumbers.map {
+                    if (it.id == id) it.copy(fbStatus = statusStr, fbTagType = tagType) else it
+                }
+                saveUserProvisionedNumbers(updated)
+                current.copy(provisionedNumbers = updated)
+            }
+        }
+    }
+
+    /**
+     * Checks Facebook Fresh/Taken status for a list of (id, number) pairs.
+     */
+    fun checkFbStatusForNumbers(pairs: List<Pair<String, String>>) {
+        scope.launch {
+            pairs.forEach { (id, number) ->
+                _state.update { current ->
+                    val updated = current.provisionedNumbers.map {
+                        if (it.id == id) it.copy(fbStatus = "Checking...", fbTagType = PhoneItem.TagType.PENDING) else it
+                    }
+                    current.copy(provisionedNumbers = updated)
+                }
+                val formatted = if (number.startsWith("+")) number else "+$number"
+                val (statusStr, tagType) = VirtualNumberChecker.checkNumberTag(formatted)
+                _state.update { current ->
+                    val updated = current.provisionedNumbers.map {
+                        if (it.id == id) it.copy(fbStatus = statusStr, fbTagType = tagType) else it
+                    }
+                    saveUserProvisionedNumbers(updated)
+                    current.copy(provisionedNumbers = updated)
+                }
+            }
+        }
+    }
+
 
     /**
      * Polls Zenex OTP engine (numsuccess/info) for live SMS payloads.

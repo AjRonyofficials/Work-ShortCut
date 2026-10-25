@@ -1854,6 +1854,36 @@ fun VirtualNumbersOverlaySection(
                                             }
                                         )
                                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+                                            val fbTag = item.fbTagType
+                                            if (fbTag == com.example.service.PhoneItem.TagType.FRESH) {
+                                                Surface(
+                                                    color = Color(0xFF0F3B20),
+                                                    shape = RoundedCornerShape(3.dp),
+                                                    border = androidx.compose.foundation.BorderStroke(0.5.dp, Color(0xFF00E676))
+                                                ) {
+                                                    Text(
+                                                        text = "FRESH",
+                                                        color = Color(0xFF00E676),
+                                                        fontSize = 7.sp,
+                                                        fontWeight = FontWeight.Bold,
+                                                        modifier = Modifier.padding(horizontal = 3.dp, vertical = 0.5.dp)
+                                                    )
+                                                }
+                                            } else if (fbTag == com.example.service.PhoneItem.TagType.TAKEN) {
+                                                Surface(
+                                                    color = Color(0xFF381515),
+                                                    shape = RoundedCornerShape(3.dp),
+                                                    border = androidx.compose.foundation.BorderStroke(0.5.dp, Color(0xFFFF5252))
+                                                ) {
+                                                    Text(
+                                                        text = "TAKEN",
+                                                        color = Color(0xFFFF5252),
+                                                        fontSize = 7.sp,
+                                                        fontWeight = FontWeight.Bold,
+                                                        modifier = Modifier.padding(horizontal = 3.dp, vertical = 0.5.dp)
+                                                    )
+                                                }
+                                            }
                                             if (selectedPanel == 3 && item.status != "success") {
                                                 Surface(
                                                     color = Color(0xFFEF4444).copy(alpha = 0.2f),

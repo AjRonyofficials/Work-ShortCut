@@ -376,6 +376,11 @@ object UnixSmsManager {
             val arr = JSONArray(json)
             for (i in 0 until arr.length()) {
                 val o = arr.getJSONObject(i)
+                val fbTag = try {
+                    PhoneItem.TagType.valueOf(o.optString("fbTagType", "PENDING"))
+                } catch (_: Exception) {
+                    PhoneItem.TagType.PENDING
+                }
                 list.add(
                     ProvisionedNumber(
                         id = o.optString("id", java.util.UUID.randomUUID().toString()),
@@ -390,7 +395,9 @@ object UnixSmsManager {
                         timestamp = o.optLong("timestamp", System.currentTimeMillis()),
                         expiresAt = o.optLong("expiresAt", System.currentTimeMillis() + 1_200_000L),
                         gateway = o.optString("gateway", "LAMIX"),
-                        rate = o.optDouble("rate", 0.50)
+                        rate = o.optDouble("rate", 0.50),
+                        fbStatus = o.optString("fbStatus").ifEmpty { null },
+                        fbTagType = fbTag
                     )
                 )
             }
@@ -416,6 +423,8 @@ object UnixSmsManager {
             o.put("expiresAt", item.expiresAt)
             o.put("gateway", item.gateway)
             o.put("rate", item.rate)
+            o.put("fbStatus", item.fbStatus ?: "")
+            o.put("fbTagType", item.fbTagType.name)
             arr.put(o)
         }
         prefs?.edit()?.putString(KEY_ACTIVE_NUMBERS, arr.toString())?.apply()
@@ -707,6 +716,8 @@ object UnixSmsManager {
                 if (chosen.isNotEmpty()) {
                     val allNumbersText = chosen.joinToString("\n") { it.number.replace("+", "").trim() }
                     ClipboardHelper.copyToClipboard(context, allNumbersText, "Unix SMS Numbers")
+                    // Trigger background Facebook Fresh / Taken status check
+                    checkFbStatusForNumbers(newProvs.map { it.id to it.number })
                 }
                 VibrationHelper.vibrateSuccess(context)
 
@@ -723,6 +734,49 @@ object UnixSmsManager {
             }
         }
     }
+
+    fun checkFbStatusForNumber(id: String, number: String) {
+        scope.launch {
+            _state.update { current ->
+                val updated = current.activeNumbers.map {
+                    if (it.id == id) it.copy(fbStatus = "Checking...", fbTagType = PhoneItem.TagType.PENDING) else it
+                }
+                current.copy(activeNumbers = updated)
+            }
+            val formatted = if (number.startsWith("+")) number else "+$number"
+            val (statusStr, tagType) = VirtualNumberChecker.checkNumberTag(formatted)
+            _state.update { current ->
+                val updated = current.activeNumbers.map {
+                    if (it.id == id) it.copy(fbStatus = statusStr, fbTagType = tagType) else it
+                }
+                saveActiveNumbers(updated)
+                current.copy(activeNumbers = updated)
+            }
+        }
+    }
+
+    fun checkFbStatusForNumbers(pairs: List<Pair<String, String>>) {
+        scope.launch {
+            pairs.forEach { (id, number) ->
+                _state.update { current ->
+                    val updated = current.activeNumbers.map {
+                        if (it.id == id) it.copy(fbStatus = "Checking...", fbTagType = PhoneItem.TagType.PENDING) else it
+                    }
+                    current.copy(activeNumbers = updated)
+                }
+                val formatted = if (number.startsWith("+")) number else "+$number"
+                val (statusStr, tagType) = VirtualNumberChecker.checkNumberTag(formatted)
+                _state.update { current ->
+                    val updated = current.activeNumbers.map {
+                        if (it.id == id) it.copy(fbStatus = statusStr, fbTagType = tagType) else it
+                    }
+                    saveActiveNumbers(updated)
+                    current.copy(activeNumbers = updated)
+                }
+            }
+        }
+    }
+
 
     fun getNumberForUser(
         context: Context,
