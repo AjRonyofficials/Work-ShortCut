@@ -1704,6 +1704,11 @@ private fun ProvisionedNumberCard(
                             border = androidx.compose.foundation.BorderStroke(0.8.dp, chipBorder as Color),
                             modifier = Modifier.clickable {
                                 if (!isChecking) {
+                                    val cleanNum = item.number.replace("[^0-9]".toRegex(), "")
+                                    val cached = VirtualNumberChecker.cachedResults[cleanNum]
+                                    if (cached?.description?.isNotBlank() == true) {
+                                        Toast.makeText(context, "${item.number}: ${cached.description}", Toast.LENGTH_SHORT).show()
+                                    }
                                     VirtualNumberManager.checkFbStatusForNumber(item.id, item.number)
                                     com.example.service.UnixSmsManager.checkFbStatusForNumber(item.id, item.number)
                                 }
@@ -2478,7 +2483,8 @@ fun VirtualNumberFreshCheckerDialog(
                                     .fillMaxWidth()
                                     .clickable {
                                         ClipboardHelper.copyToClipboard(context, item.number, "Phone Number")
-                                        Toast.makeText(context, "${item.number} কপি হয়েছে", Toast.LENGTH_SHORT).show()
+                                        val detail = if (item.description.isNotBlank()) " • ${item.description}" else ""
+                                        Toast.makeText(context, "${item.number} কপি হয়েছে$detail", Toast.LENGTH_SHORT).show()
                                     }
                             ) {
                                 Row(

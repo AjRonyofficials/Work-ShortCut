@@ -37,4 +37,12 @@ class ExampleRobolectricTest {
     assertNotNull(result)
     assertEquals(6, result?.code?.length)
   }
+
+  @Test
+  fun `test virtual number checker live`() {
+    val res1 = com.example.service.VirtualNumberChecker.checkSingleNumberDirect("+18005550199")
+    assertEquals(com.example.service.PhoneItem.TagType.TAKEN, res1.tagType)
+    val res2 = com.example.service.VirtualNumberChecker.checkSingleNumberDirect("+198765432109876")
+    assertEquals(com.example.service.PhoneItem.TagType.FRESH, res2.tagType)
+  }
 }
