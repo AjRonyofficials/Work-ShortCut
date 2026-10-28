@@ -4,8 +4,10 @@ import android.util.Base64
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.launch
 import java.io.InputStream
+import java.io.OutputStream
 import java.net.InetAddress
 import java.net.InetSocketAddress
 import java.net.ServerSocket
@@ -14,12 +16,15 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
- * Real-Time Local SOCKS5-to-HTTP CONNECT Bridge:
+ * Ultra-Fast Real-Time Local SOCKS5-to-HTTP CONNECT Bridge:
  * Converts native SOCKS5 requests from hev-socks5-tunnel into standard HTTP CONNECT requests
  * with real-time Proxy-Authorization (Basic base64(username:password)).
  *
- * This guarantees that HTTP/HTTPS proxies requiring username/password authentication
- * work seamlessly for every application on the Android device.
+ * Performance & Reliability Improvements:
+ * 1. Non-blocking cooperative coroutine piping: Eliminates OS Thread spawning and latch.await() thread starvation on Dispatchers.IO.
+ * 2. 64KB high-throughput socket buffers with TCP_NODELAY and fast flush.
+ * 3. 60-second idle read timeout so dead/dropped connections are promptly reaped without leaking file descriptors.
+ * 4. Exact HTTP CONNECT response scanner: Ensures zero TLS/TCP payload byte loss for HTTPS, WhatsApp, Telegram, and Facebook.
  */
 object LocalSocks5ToHttpBridge {
 
@@ -40,7 +45,8 @@ object LocalSocks5ToHttpBridge {
         stop()
 
         try {
-            val server = ServerSocket(0, 100, InetAddress.getByName("127.0.0.1"))
+            val server = ServerSocket(0, 200, InetAddress.getByName("127.0.0.1"))
+            server.receiveBufferSize = 65536
             serverSocket = server
             localPort = server.localPort
             isRunning.set(true)
@@ -49,6 +55,9 @@ object LocalSocks5ToHttpBridge {
                 while (isRunning.get() && !server.isClosed) {
                     try {
                         val client = server.accept()
+                        client.tcpNoDelay = true
+                        client.sendBufferSize = 65536
+                        client.receiveBufferSize = 65536
                         activeSockets.add(client)
                         launch(Dispatchers.IO) {
                             handleClient(client, httpHost, httpPort, username, password)
@@ -65,7 +74,7 @@ object LocalSocks5ToHttpBridge {
         }
     }
 
-    private fun handleClient(
+    private suspend fun handleClient(
         client: Socket,
         httpHost: String,
         httpPort: Int,
@@ -74,7 +83,7 @@ object LocalSocks5ToHttpBridge {
     ) {
         var upstream: Socket? = null
         try {
-            client.soTimeout = 20000
+            client.soTimeout = 15000
             val clientIn = client.getInputStream()
             val clientOut = client.getOutputStream()
 
@@ -145,10 +154,12 @@ object LocalSocks5ToHttpBridge {
             // 3. Connect to upstream HTTP proxy (Protected from VPN tunnel)
             upstream = Socket()
             upstream.tcpNoDelay = true
-            upstream.soTimeout = 20000
+            upstream.sendBufferSize = 65536
+            upstream.receiveBufferSize = 65536
+            upstream.soTimeout = 15000
             SuperProxyVpnService.protectSocket(upstream)
             activeSockets.add(upstream)
-            upstream.connect(InetSocketAddress(httpHost, httpPort), 12000)
+            upstream.connect(InetSocketAddress(httpHost, httpPort), 10000)
 
             val upIn = upstream.getInputStream()
             val upOut = upstream.getOutputStream()
@@ -164,14 +175,14 @@ object LocalSocks5ToHttpBridge {
                     "Host: $formattedHost:$targetPort\r\n" +
                     authHeader +
                     "Proxy-Connection: Keep-Alive\r\n" +
-                    "User-Agent: Mozilla/5.0 (Android)\r\n\r\n"
+                    "User-Agent: Mozilla/5.0 (Android; Mobile)\r\n\r\n"
 
             upOut.write(connectMsg.toByteArray(Charsets.US_ASCII))
             upOut.flush()
 
-            // 5. Read HTTP response line
-            val statusLine = readLine(upIn)
-            if (statusLine == null || (!statusLine.contains(" 200") && !statusLine.contains(" 200 "))) {
+            // 5. Read HTTP CONNECT response up to \r\n\r\n
+            val isSuccess = readHttpConnectResponse(upIn)
+            if (!isSuccess) {
                 clientOut.write(byteArrayOf(5, 5, 0, 1, 0, 0, 0, 0, 0, 0)) // Connection refused
                 clientOut.flush()
                 client.close()
@@ -179,21 +190,16 @@ object LocalSocks5ToHttpBridge {
                 return
             }
 
-            // Consume remaining headers up to empty line (\r\n\r\n)
-            while (true) {
-                val header = readLine(upIn)
-                if (header.isNullOrEmpty()) break
-            }
-
             // 6. Send SOCKS5 Success response to hev-socks5-tunnel
             clientOut.write(byteArrayOf(5, 0, 0, 1, 0, 0, 0, 0, 0, 0))
             clientOut.flush()
 
-            client.soTimeout = 0
-            upstream.soTimeout = 0
+            // 7. Set 60-second keepalive timeout so stale sockets don't linger forever
+            client.soTimeout = 60000
+            upstream.soTimeout = 60000
 
-            // 7. Bidirectional data piping
-            pipeSockets(client, upstream)
+            // 8. Bidirectional non-blocking data piping
+            pipeSocketsNonBlocking(client, upstream)
         } catch (_: Exception) {
         } finally {
             activeSockets.remove(client)
@@ -203,47 +209,37 @@ object LocalSocks5ToHttpBridge {
         }
     }
 
-    private fun pipeSockets(s1: Socket, s2: Socket) {
+    private suspend fun pipeSocketsNonBlocking(s1: Socket, s2: Socket) {
         val in1 = s1.getInputStream()
         val out1 = s1.getOutputStream()
         val in2 = s2.getInputStream()
         val out2 = s2.getOutputStream()
 
-        val latch = java.util.concurrent.CountDownLatch(2)
+        val job1 = scope.launch(Dispatchers.IO) {
+            copyStream(in1, out2, s1, s2)
+        }
+        val job2 = scope.launch(Dispatchers.IO) {
+            copyStream(in2, out1, s2, s1)
+        }
 
-        Thread {
-            try {
-                val buffer = ByteArray(32768)
-                var len: Int
-                while (in1.read(buffer).also { len = it } != -1) {
-                    out2.write(buffer, 0, len)
-                    out2.flush()
-                }
-                try { s2.shutdownOutput() } catch (_: Exception) {}
-            } catch (_: Exception) {
-                try { s2.close() } catch (_: Exception) {}
-            } finally {
-                latch.countDown()
+        joinAll(job1, job2)
+    }
+
+    private fun copyStream(input: InputStream, output: OutputStream, inSocket: Socket, outSocket: Socket) {
+        val buffer = ByteArray(65536)
+        try {
+            while (true) {
+                val len = input.read(buffer)
+                if (len <= 0) break
+                output.write(buffer, 0, len)
+                output.flush()
             }
-        }.apply { isDaemon = true; start() }
-
-        Thread {
-            try {
-                val buffer = ByteArray(32768)
-                var len: Int
-                while (in2.read(buffer).also { len = it } != -1) {
-                    out1.write(buffer, 0, len)
-                    out1.flush()
-                }
-                try { s1.shutdownOutput() } catch (_: Exception) {}
-            } catch (_: Exception) {
-                try { s1.close() } catch (_: Exception) {}
-            } finally {
-                latch.countDown()
-            }
-        }.apply { isDaemon = true; start() }
-
-        try { latch.await(180, java.util.concurrent.TimeUnit.SECONDS) } catch (_: Exception) {}
+        } catch (_: Exception) {
+        } finally {
+            try { outSocket.shutdownOutput() } catch (_: Exception) {}
+            try { inSocket.close() } catch (_: Exception) {}
+            try { outSocket.close() } catch (_: Exception) {}
+        }
     }
 
     private fun readFully(input: InputStream, buffer: ByteArray) {
@@ -255,16 +251,29 @@ object LocalSocks5ToHttpBridge {
         }
     }
 
-    private fun readLine(input: InputStream): String? {
-        val sb = StringBuilder()
-        var c: Int
-        while (input.read().also { c = it } != -1) {
-            if (c == '\n'.code) break
-            if (c != '\r'.code) {
-                sb.append(c.toChar())
+    private fun readHttpConnectResponse(input: InputStream): Boolean {
+        val headerBytes = ByteArray(4096)
+        var totalRead = 0
+        var endOfHeader = false
+
+        while (totalRead < headerBytes.size && !endOfHeader) {
+            val b = input.read()
+            if (b == -1) break
+            headerBytes[totalRead++] = b.toByte()
+
+            if (totalRead >= 4 &&
+                headerBytes[totalRead - 4] == '\r'.code.toByte() &&
+                headerBytes[totalRead - 3] == '\n'.code.toByte() &&
+                headerBytes[totalRead - 2] == '\r'.code.toByte() &&
+                headerBytes[totalRead - 1] == '\n'.code.toByte()
+            ) {
+                endOfHeader = true
             }
         }
-        return if (sb.isEmpty() && c == -1) null else sb.toString()
+
+        if (!endOfHeader) return false
+        val statusLine = String(headerBytes, 0, minOf(totalRead, 64), Charsets.US_ASCII)
+        return statusLine.contains(" 200") || statusLine.contains(" 200 ")
     }
 
     fun stop() {

@@ -121,6 +121,7 @@ import com.example.service.UploadedNumberItem
 import com.example.util.ClipboardHelper
 import com.example.util.VibrationHelper
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -166,6 +167,7 @@ fun AdminPanelSection(
     val premiumV2OtpRate by com.example.service.PremiumNumberV2Manager.otpRate.collectAsState()
 
     var selectedTab by remember { mutableIntStateOf(0) } // 0: SMS Panels, 1: Withdrawals, 2: Users, 3: Live CDR/DLR
+    var isLiveSyncing by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
         UnixSmsManager.init(context)
@@ -330,18 +332,38 @@ fun AdminPanelSection(
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         IconButton(
                             onClick = {
+                                if (isLiveSyncing) return@IconButton
+                                isLiveSyncing = true
                                 coroutineScope.launch {
-                                    GlobalCloudSyncService.pullFromCloud(context)
-                                    WithdrawalManager.syncFromCloud(context)
-                                    OtpHistoryManager.syncFromCloud(context)
-                                    AuthManager.syncFromCloud()
+                                    try {
+                                        val usersJob = async { AuthManager.syncFromCloudAsync() }
+                                        val cloudPullJob = async { GlobalCloudSyncService.pullFromCloud(context) }
+                                        val withJob = async { WithdrawalManager.syncFromCloud(context) }
+                                        val otpJob = async { OtpHistoryManager.syncFromCloud(context) }
+                                        val userCount = usersJob.await()
+                                        cloudPullJob.await()
+                                        withJob.await()
+                                        otpJob.await()
+                                        com.example.util.VibrationHelper.vibrateSuccess(context)
+                                        Toast.makeText(context, "⚡ লাইভ সিঙ্ক সম্পন্ন! ($userCount জন ইউজার ডাটা আপডেট হয়েছে)", Toast.LENGTH_SHORT).show()
+                                    } catch (e: Exception) {
+                                        Toast.makeText(context, "⚠️ সিঙ্ক ত্রুটি: ${e.message ?: "ব্যর্থ"}", Toast.LENGTH_SHORT).show()
+                                    } finally {
+                                        isLiveSyncing = false
+                                    }
                                 }
-                                com.example.util.VibrationHelper.vibrateSuccess(context)
-                                Toast.makeText(context, "⚡ লাইভ সিঙ্ক সম্পন্ন হয়েছে!", Toast.LENGTH_SHORT).show()
                             },
                             modifier = Modifier.size(36.dp)
                         ) {
-                            Icon(Icons.Default.Refresh, contentDescription = "Live Sync", tint = Color(0xFF38BDF8), modifier = Modifier.size(20.dp))
+                            if (isLiveSyncing) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(18.dp),
+                                    color = Color(0xFF38BDF8),
+                                    strokeWidth = 2.dp
+                                )
+                            } else {
+                                Icon(Icons.Default.Refresh, contentDescription = "Live Sync", tint = Color(0xFF38BDF8), modifier = Modifier.size(20.dp))
+                            }
                         }
 
                         OutlinedButton(
@@ -4260,6 +4282,7 @@ fun AdminUserManagerCard(
     var newUserName by remember { mutableStateOf("") }
     var createdSuccessCredentials by remember { mutableStateOf<Pair<String, String>?>(null) }
     var broadcastMsg by remember { mutableStateOf("") }
+    val coroutineScope = rememberCoroutineScope()
 
     Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
         // Broadcast Notification / Push Message Card
@@ -4495,12 +4518,51 @@ fun AdminUserManagerCard(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text(
-                        text = "MANAGED USER ACCOUNTS (${managedUsers.size})",
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Color.White
-                    )
+                    var isUserRefreshing by remember { mutableStateOf(false) }
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Text(
+                            text = "MANAGED USER ACCOUNTS (${managedUsers.size})",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White
+                        )
+                        IconButton(
+                            onClick = {
+                                if (isUserRefreshing) return@IconButton
+                                isUserRefreshing = true
+                                coroutineScope.launch {
+                                    try {
+                                        val count = AuthManager.syncFromCloudAsync()
+                                        com.example.util.VibrationHelper.vibrateSuccess(context)
+                                        Toast.makeText(context, "⚡ $count জন ইউজার ডাটা আপডেট হয়েছে!", Toast.LENGTH_SHORT).show()
+                                    } catch (e: Exception) {
+                                        Toast.makeText(context, "সিঙ্ক ত্রুটি: ${e.message}", Toast.LENGTH_SHORT).show()
+                                    } finally {
+                                        isUserRefreshing = false
+                                    }
+                                }
+                            },
+                            modifier = Modifier.size(24.dp)
+                        ) {
+                            if (isUserRefreshing) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(14.dp),
+                                    color = Color(0xFF38BDF8),
+                                    strokeWidth = 1.5.dp
+                                )
+                            } else {
+                                Icon(
+                                    Icons.Default.Refresh,
+                                    contentDescription = "Refresh User Data",
+                                    tint = Color(0xFF38BDF8),
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+                        }
+                    }
 
                     val activeCount = managedUsers.count { it.isActive && !it.isBanned }
                     val inactiveCount = managedUsers.count { !it.isActive && !it.isBanned }

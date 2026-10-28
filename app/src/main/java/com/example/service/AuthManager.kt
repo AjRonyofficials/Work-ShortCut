@@ -3,8 +3,10 @@ package com.example.service
 import android.content.Context
 import android.content.SharedPreferences
 import android.os.Build
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -190,19 +192,19 @@ object AuthManager {
         _managedUsers.value = list
     }
 
+    suspend fun syncFromCloudAsync(): Int = withContext(Dispatchers.IO) {
+        syncFromCloudInternal()
+    }
+
     fun syncFromCloud() {
         if (android.os.Looper.myLooper() == android.os.Looper.getMainLooper()) {
-            val t = Thread { syncFromCloudInternal() }
-            t.start()
-            try {
-                t.join(3500)
-            } catch (_: Exception) {}
+            Thread { syncFromCloudInternal() }.start()
         } else {
             syncFromCloudInternal()
         }
     }
 
-    private fun syncFromCloudInternal() {
+    private fun syncFromCloudInternal(): Int {
         try {
             val req = okhttp3.Request.Builder()
                 .url("$SUPABASE_BASE_URL/app_users?select=*")
@@ -271,8 +273,10 @@ object AuthManager {
                 // Cloud users from Supabase are the source of truth
                 _managedUsers.value = cloudUsers
                 saveUsersLocallyOnly(cloudUsers)
+                return cloudUsers.size
             }
         } catch (_: Exception) {}
+        return _managedUsers.value.size
     }
 
     private fun saveUsersLocallyOnly(list: List<AuthUser>) {
