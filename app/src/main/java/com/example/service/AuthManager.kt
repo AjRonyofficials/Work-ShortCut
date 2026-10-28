@@ -505,6 +505,7 @@ object AuthManager {
                     ?.putString(KEY_LOGGED_IN_EMAIL, user.email)
                     ?.putString(KEY_LOGGED_IN_ROLE, user.role)
                     ?.apply()
+                OtpHistoryManager.onUserLoggedIn(user.email, null)
                 if (user.totalOtps > 0 || user.balanceTk > 0.0) {
                     OtpHistoryManager.restoreUserHistoryIfEmpty(
                         totalOtps = user.totalOtps,
@@ -514,6 +515,7 @@ object AuthManager {
                     )
                     WithdrawalManager.restoreUserBalanceIfEmpty(user.balanceTk)
                 }
+                WithdrawalManager.refreshBalances()
 
                 authScope.launch {
                     try {
@@ -559,6 +561,9 @@ object AuthManager {
             ?.putString(KEY_LOGGED_IN_EMAIL, "")
             ?.putString(KEY_LOGGED_IN_ROLE, "USER")
             ?.apply()
+
+        OtpHistoryManager.onUserLoggedOut()
+        WithdrawalManager.onUserLoggedOut()
     }
 
     fun isPrimeAdmin(): Boolean {

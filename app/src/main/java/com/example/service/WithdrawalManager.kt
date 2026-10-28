@@ -231,6 +231,10 @@ object WithdrawalManager {
         recomputeBalances(_state.value.allRequests, baseCredit)
     }
 
+    fun onUserLoggedOut() {
+        _state.value = WithdrawalState()
+    }
+
     private fun recomputeBalances(requests: List<WithdrawalRequest>, baseCredit: Double) {
         val records = OtpHistoryManager.state.value.recentRecords
         val currentUnixRate = UnixSmsManager.state.value.otpRatePerSms

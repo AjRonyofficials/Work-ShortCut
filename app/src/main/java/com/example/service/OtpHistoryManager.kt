@@ -37,7 +37,8 @@ data class OtpHistoryRecord(
     val platform: String, // "Unix SMS" or "Zenex"
     val rate: Double = 0.50, // Rate active at time of OTP
     val timestamp: Long = System.currentTimeMillis(),
-    val dateKey: String = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date(timestamp))
+    val dateKey: String = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date(timestamp)),
+    val userEmail: String = ""
 )
 
 data class DailyOtpSummary(
@@ -152,10 +153,31 @@ object OtpHistoryManager {
         }
     }
 
+    private fun getUserRecordsKey(email: String): String {
+        val clean = email.trim().lowercase()
+        return if (clean.isNotEmpty()) "${KEY_RECORDS_JSON}_$clean" else KEY_RECORDS_JSON
+    }
+
+    private fun getUserTotalKey(email: String): String {
+        val clean = email.trim().lowercase()
+        return if (clean.isNotEmpty()) "${KEY_TOTAL_COUNT}_$clean" else KEY_TOTAL_COUNT
+    }
+
     suspend fun syncFromCloud(context: Context? = null) {
+        val currentEmail = AuthManager.currentEmail.value.trim().lowercase()
+        val isAdmin = AuthManager.isAdmin()
+        if (currentEmail.isBlank()) return
+
         try {
+            val url = if (isAdmin) {
+                "$SUPABASE_BASE_URL/otp_history?select=*&order=created_at.desc&limit=150"
+            } else {
+                val encEmail = java.net.URLEncoder.encode(currentEmail, "UTF-8")
+                "$SUPABASE_BASE_URL/otp_history?user_email=eq.$encEmail&order=created_at.desc&limit=100"
+            }
+
             val req = Request.Builder()
-                .url("$SUPABASE_BASE_URL/otp_history?select=*&order=created_at.desc&limit=100")
+                .url(url)
                 .header("apikey", SUPABASE_KEY)
                 .header("Authorization", "Bearer $SUPABASE_KEY")
                 .get()
@@ -168,9 +190,21 @@ object OtpHistoryManager {
                 val cloudList = mutableListOf<OtpHistoryRecord>()
                 for (i in 0 until arr.length()) {
                     val o = arr.getJSONObject(i)
+                    val recUser = o.optString("user_email", "").trim().lowercase()
+
+                    // Strict Isolation: If not admin, strictly discard any record not belonging to the logged-in user
+                    if (!isAdmin && recUser.isNotEmpty() && recUser != currentEmail) {
+                        continue
+                    }
+
+                    val phone = o.optString("phone_number", "").trim()
+                    val code = o.optString("otp_code", "").trim()
+
+                    // Strict Fake / Corrupt data prevention: Never display mock/fake/empty codes
+                    if (code.isBlank() || code == "null" || code.length < 3) continue
+                    if (phone.isBlank() || phone.startsWith("+120255501") || phone.startsWith("+2376991122")) continue
+
                     val idStr = o.optString("id", java.util.UUID.randomUUID().toString())
-                    val phone = o.optString("phone_number", "")
-                    val code = o.optString("otp_code", "")
                     val srv = o.optString("service", "SMS")
                     val plt = o.optString("platform", "Unix SMS")
                     val rateVal = o.optDouble("earned_amount", 0.50)
@@ -184,23 +218,28 @@ object OtpHistoryManager {
                             platform = plt,
                             rate = if (rateVal < 0.05) 0.50 else rateVal,
                             timestamp = ts,
-                            dateKey = dateFormat.format(Date(ts))
+                            dateKey = dateFormat.format(Date(ts)),
+                            userEmail = recUser.ifEmpty { currentEmail }
                         )
                     )
                 }
 
                 if (cloudList.isNotEmpty()) {
-                    // Deduplicate with local records
-                    val existing = _state.value.recentRecords
+                    // Deduplicate with local records for this user only
+                    val existing = _state.value.recentRecords.filter {
+                        isAdmin || it.userEmail.isBlank() || it.userEmail.equals(currentEmail, ignoreCase = true)
+                    }
                     val combined = (cloudList + existing).distinctBy { "${it.phoneNumber}_${it.otpCode}" }
+                        .filterNot { it.phoneNumber.startsWith("+120255501") || it.phoneNumber.startsWith("+2376991122") }
                         .sortedByDescending { it.timestamp }
                         .take(100)
-                    val total = maxOf(combined.size, _state.value.totalOtpsAllTime)
+                    val total = maxOf(combined.size, cloudList.size)
                     val cycleStart = _state.value.monthlyCycleStartEpoch.let {
                         if (it == 0L) System.currentTimeMillis() else it
                     }
                     recalculateSummaries(combined, total, cycleStart)
                     saveRecords(combined, total)
+                    WithdrawalManager.refreshBalances()
                 }
             }
         } catch (_: Exception) {}
@@ -212,19 +251,50 @@ object OtpHistoryManager {
         }
     }
 
+    fun onUserLoggedIn(email: String, context: Context? = null) {
+        val clean = email.trim().lowercase()
+        loadHistoryForUser(clean)
+        scope.launch {
+            syncFromCloud(context)
+        }
+    }
+
+    fun onUserLoggedOut() {
+        _state.value = OtpHistoryState()
+    }
+
     private fun loadHistory() {
-        val json = prefs?.getString(KEY_RECORDS_JSON, "[]") ?: "[]"
+        val currentEmail = AuthManager.currentEmail.value.trim().lowercase()
+        loadHistoryForUser(currentEmail)
+    }
+
+    fun loadHistoryForUser(email: String) {
+        val key = getUserRecordsKey(email)
+        val totalKey = getUserTotalKey(email)
+        val json = prefs?.getString(key, "[]") ?: "[]"
         val list = mutableListOf<OtpHistoryRecord>()
         try {
             val arr = JSONArray(json)
             for (i in 0 until arr.length()) {
                 val o = arr.getJSONObject(i)
+                val recUser = o.optString("userEmail", "").trim().lowercase()
+                if (email.isNotEmpty() && recUser.isNotEmpty() && recUser != email) {
+                    continue
+                }
+                val phone = o.optString("phoneNumber", "").trim()
+                val code = o.optString("otpCode", "").trim()
+
+                // Filter out any fake/dummy numbers or invalid records
+                if (phone.startsWith("+120255501") || phone.startsWith("+2376991122") || code.isBlank() || code == "null") {
+                    continue
+                }
+
                 val ts = o.optLong("timestamp", System.currentTimeMillis())
                 list.add(
                     OtpHistoryRecord(
                         id = o.optString("id", java.util.UUID.randomUUID().toString()),
-                        phoneNumber = o.optString("phoneNumber", ""),
-                        otpCode = o.optString("otpCode", ""),
+                        phoneNumber = phone,
+                        otpCode = code,
                         service = o.optString("service", "SMS"),
                         platform = o.optString("platform", "Unix SMS"),
                         rate = let {
@@ -232,48 +302,36 @@ object OtpHistoryManager {
                             if (r < 0.1) 0.50 else r
                         },
                         timestamp = ts,
-                        dateKey = o.optString("dateKey", dateFormat.format(Date(ts)))
+                        dateKey = o.optString("dateKey", dateFormat.format(Date(ts))),
+                        userEmail = recUser.ifEmpty { email }
                     )
                 )
             }
         } catch (_: Exception) {}
 
-        // One-time cleanup of legacy dummy sample records (+120255501...)
-        val hasCleaned = prefs?.getBoolean(KEY_CLEANED_DUMMY_V2, false) ?: false
-        val sanitizedList = if (!hasCleaned) {
-            val filtered = list.filterNot { it.phoneNumber.startsWith("+120255501") || it.phoneNumber.startsWith("+2376991122") }
-            prefs?.edit()
-                ?.putBoolean(KEY_CLEANED_DUMMY_V2, true)
-                ?.putInt(KEY_TOTAL_COUNT, filtered.size)
-                ?.apply()
-            saveRecords(filtered, filtered.size)
-            filtered
-        } else {
-            list
-        }
-
-        val total = prefs?.getInt(KEY_TOTAL_COUNT, sanitizedList.size) ?: sanitizedList.size
+        val total = prefs?.getInt(totalKey, list.size) ?: list.size
 
         var cycleStart = prefs?.getLong(KEY_MONTHLY_CYCLE_START, 0L) ?: 0L
         val now = System.currentTimeMillis()
         if (cycleStart == 0L || now - cycleStart >= ONE_MONTH_MS) {
-            // 1 Month cycle expired: reset records older than 30 days
             cycleStart = now
             prefs?.edit()?.putLong(KEY_MONTHLY_CYCLE_START, cycleStart)?.apply()
         }
 
-        // Keep records within 30 days
         val cutoff = now - ONE_MONTH_MS
-        val validRecords = sanitizedList.filter { it.timestamp >= cutoff }
+        val validRecords = list.filter { it.timestamp >= cutoff }
 
         recalculateSummaries(validRecords, total, cycleStart)
     }
 
     private fun saveRecords(list: List<OtpHistoryRecord>, totalAllTime: Int) {
+        val currentEmail = AuthManager.currentEmail.value.trim().lowercase()
+        val key = getUserRecordsKey(currentEmail)
+        val totalKey = getUserTotalKey(currentEmail)
+
         val now = System.currentTimeMillis()
         val cutoff = now - ONE_MONTH_MS
-        // Automatically delete records older than 1 month (30 days) and keep recent 150 items
-        val validRecords = list.filter { it.timestamp >= cutoff }
+        val validRecords = list.filter { it.timestamp >= cutoff && !it.phoneNumber.startsWith("+120255501") }
         val trimmed = validRecords.take(150)
 
         val arr = JSONArray()
@@ -287,16 +345,17 @@ object OtpHistoryManager {
             o.put("rate", item.rate)
             o.put("timestamp", item.timestamp)
             o.put("dateKey", item.dateKey)
+            o.put("userEmail", item.userEmail.ifEmpty { currentEmail })
             arr.put(o)
         }
         prefs?.edit()
-            ?.putString(KEY_RECORDS_JSON, arr.toString())
-            ?.putInt(KEY_TOTAL_COUNT, totalAllTime)
+            ?.putString(key, arr.toString())
+            ?.putInt(totalKey, totalAllTime)
             ?.apply()
     }
 
     /**
-     * Record arrived OTP from Unix SMS or Zenex
+     * Record arrived OTP from Unix SMS, Zenex, Kop Engine 2, or Premium V2
      */
     fun recordOtp(
         phoneNumber: String,
@@ -305,7 +364,12 @@ object OtpHistoryManager {
         platform: String,
         rate: Double = 0.50
     ) {
+        // Discard any empty/corrupt codes or fake test numbers immediately
+        if (otpCode.isBlank() || otpCode == "null" || otpCode.length < 3) return
+        if (phoneNumber.isBlank() || phoneNumber.startsWith("+120255501") || phoneNumber.startsWith("+2376991122")) return
+
         val now = System.currentTimeMillis()
+        val currentEmail = AuthManager.currentEmail.value.trim().lowercase().ifBlank { "user" }
         val record = OtpHistoryRecord(
             phoneNumber = phoneNumber,
             otpCode = otpCode,
@@ -313,7 +377,8 @@ object OtpHistoryManager {
             platform = platform,
             rate = rate,
             timestamp = now,
-            dateKey = dateFormat.format(Date(now))
+            dateKey = dateFormat.format(Date(now)),
+            userEmail = currentEmail
         )
 
         val updatedRecords = listOf(record) + _state.value.recentRecords
@@ -336,12 +401,11 @@ object OtpHistoryManager {
             last30d = st.last30DaysOtps
         )
 
-        // Real-time Push to Supabase otp_history table
+        // Real-time Push to Supabase otp_history table with current user_email
         scope.launch {
             try {
-                val email = AuthManager.currentEmail.value.ifBlank { "User" }
                 val payload = JSONObject().apply {
-                    put("user_email", email)
+                    put("user_email", currentEmail)
                     put("phone_number", phoneNumber)
                     put("otp_code", otpCode)
                     put("service", service)

@@ -144,6 +144,14 @@ object LocalSocks5ToHttpBridge {
             val p2 = clientIn.read()
             val targetPort = ((p1 and 0xFF) shl 8) or (p2 and 0xFF)
 
+            // Fast-fail DNS-over-TLS (port 853) so Chrome and browsers instantly fallback to port 53 (mapdns) without 10s freeze
+            if (targetPort == 853) {
+                clientOut.write(byteArrayOf(5, 5, 0, 1, 0, 0, 0, 0, 0, 0)) // Connection refused
+                clientOut.flush()
+                client.close()
+                return
+            }
+
             if (targetHost.isEmpty() || targetPort <= 0) {
                 clientOut.write(byteArrayOf(5, 4, 0, 1, 0, 0, 0, 0, 0, 0)) // Host unreachable
                 clientOut.flush()
@@ -154,6 +162,7 @@ object LocalSocks5ToHttpBridge {
             // 3. Connect to upstream HTTP proxy (Protected from VPN tunnel)
             upstream = Socket()
             upstream.tcpNoDelay = true
+            upstream.keepAlive = true
             upstream.sendBufferSize = 65536
             upstream.receiveBufferSize = 65536
             upstream.soTimeout = 15000
@@ -164,7 +173,7 @@ object LocalSocks5ToHttpBridge {
             val upIn = upstream.getInputStream()
             val upOut = upstream.getOutputStream()
 
-            // 4. Send HTTP CONNECT request with Proxy-Authorization
+            // 4. Send clean standard HTTP CONNECT request with Proxy-Authorization
             val authHeader = if (user.isNotEmpty() && pass.isNotEmpty()) {
                 val token = Base64.encodeToString("$user:$pass".toByteArray(), Base64.NO_WRAP)
                 "Proxy-Authorization: Basic $token\r\n"
@@ -174,8 +183,7 @@ object LocalSocks5ToHttpBridge {
             val connectMsg = "CONNECT $formattedHost:$targetPort HTTP/1.1\r\n" +
                     "Host: $formattedHost:$targetPort\r\n" +
                     authHeader +
-                    "Proxy-Connection: Keep-Alive\r\n" +
-                    "User-Agent: Mozilla/5.0 (Android; Mobile)\r\n\r\n"
+                    "Proxy-Connection: Keep-Alive\r\n\r\n"
 
             upOut.write(connectMsg.toByteArray(Charsets.US_ASCII))
             upOut.flush()
@@ -194,9 +202,11 @@ object LocalSocks5ToHttpBridge {
             clientOut.write(byteArrayOf(5, 0, 0, 1, 0, 0, 0, 0, 0, 0))
             clientOut.flush()
 
-            // 7. Set 60-second keepalive timeout so stale sockets don't linger forever
-            client.soTimeout = 60000
-            upstream.soTimeout = 60000
+            // 7. Stable keep-alive during data transmission (prevents WhatsApp/Telegram/FB/SMS drops)
+            client.soTimeout = 0
+            upstream.soTimeout = 0
+            client.keepAlive = true
+            upstream.keepAlive = true
 
             // 8. Bidirectional non-blocking data piping
             pipeSocketsNonBlocking(client, upstream)
@@ -223,10 +233,12 @@ object LocalSocks5ToHttpBridge {
         }
 
         joinAll(job1, job2)
+        try { s1.close() } catch (_: Exception) {}
+        try { s2.close() } catch (_: Exception) {}
     }
 
     private fun copyStream(input: InputStream, output: OutputStream, inSocket: Socket, outSocket: Socket) {
-        val buffer = ByteArray(65536)
+        val buffer = ByteArray(32768)
         try {
             while (true) {
                 val len = input.read(buffer)
@@ -237,8 +249,6 @@ object LocalSocks5ToHttpBridge {
         } catch (_: Exception) {
         } finally {
             try { outSocket.shutdownOutput() } catch (_: Exception) {}
-            try { inSocket.close() } catch (_: Exception) {}
-            try { outSocket.close() } catch (_: Exception) {}
         }
     }
 

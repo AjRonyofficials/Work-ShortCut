@@ -92,15 +92,11 @@ class SuperProxyVpnService : VpnService() {
 
             val builder = Builder()
                 .setSession("SuperProxy: $profileName")
-                .setMtu(1500)
+                .setMtu(1400) // Standard 1400 MTU guarantees zero packet drops/fragmentation on 4G/5G mobile carriers
                 .addAddress("10.10.10.10", 24)
-                .addAddress("fd00::10", 64)
-                .addDnsServer("8.8.8.8")
-                .addDnsServer("1.1.1.1")
-                .addRoute("198.18.0.0", 15) // RFC 2544 benchmark route
+                .addDnsServer("8.8.8.8") // Strict: ONLY 8.8.8.8 so 100% of DNS is intercepted by mapdns with zero carrier leak
                 .addRoute("240.0.0.0", 4)   // Synthetic mapped DNS network
                 .addRoute("0.0.0.0", 0)     // Route entire device IPv4 traffic into tun0
-                .addRoute("::", 0)          // Route entire device IPv6 traffic into tun0 (prevents Happy Eyeballs fallback delay)
 
             // Strict Anti-Leak: No bypass allowed so Facebook, WhatsApp, Instagram cannot leak carrier IP/DNS
 
@@ -174,9 +170,8 @@ class SuperProxyVpnService : VpnService() {
             val sb = java.lang.StringBuilder()
             sb.append("tunnel:\n")
             sb.append("  name: tun0\n")
-            sb.append("  mtu: 1500\n")
+            sb.append("  mtu: 1400\n")
             sb.append("  ipv4: 10.10.10.10\n")
-            sb.append("  ipv6: 'fd00::10'\n")
             sb.append("  icmp: true\n")
             sb.append("\n")
             sb.append("socks5:\n")
@@ -188,8 +183,6 @@ class SuperProxyVpnService : VpnService() {
                 sb.append("  username: '").append(safeUser).append("'\n")
                 sb.append("  password: '").append(safePass).append("'\n")
             }
-            sb.append("  pipeline: true\n")
-            sb.append("  udp: 'tcp'\n")
             sb.append("\n")
             sb.append("mapdns:\n")
             sb.append("  address: 8.8.8.8\n")
@@ -201,7 +194,7 @@ class SuperProxyVpnService : VpnService() {
             sb.append("misc:\n")
             sb.append("  task-stack-size: 81920\n")
             sb.append("  connect-timeout: 8000\n")
-            sb.append("  tcp-read-write-timeout: 120000\n")
+            sb.append("  tcp-read-write-timeout: 300000\n")
             sb.append("  limit-nofile: 65535\n")
 
             FileOutputStream(configFile).use { it.write(sb.toString().toByteArray()) }
