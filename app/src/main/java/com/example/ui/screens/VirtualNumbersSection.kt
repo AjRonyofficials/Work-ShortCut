@@ -470,8 +470,8 @@ fun VirtualNumbersSection(
         val isPanelAllowed = when (selectedPanel) {
             0 -> com.example.service.AuthManager.isSectionAllowedForCurrentUser("UNIX_SMS")
             3 -> com.example.service.AuthManager.isSectionAllowedForCurrentUser("PREMIUM_V2")
-            2 -> com.example.service.AuthManager.isSectionAllowedForCurrentUser("KOP_2")
-            else -> com.example.service.AuthManager.isSectionAllowedForCurrentUser("KOP_1")
+            2 -> com.example.service.AuthManager.isSectionAllowedForCurrentUser("KOP_ENGINE_2") && com.example.service.AuthManager.isSectionAllowedForCurrentUser("KOP_2")
+            else -> com.example.service.AuthManager.isSectionAllowedForCurrentUser("KOP_1") && com.example.service.AuthManager.isSectionAllowedForCurrentUser("VIRTUAL_NUMBERS")
         }
 
         if (!isPanelAllowed) {

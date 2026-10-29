@@ -38,6 +38,9 @@ import androidx.compose.material.icons.filled.LockOpen
 import androidx.compose.material.icons.filled.Logout
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PieChart
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Security
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -112,6 +115,16 @@ fun UserProfileOtpHistoryDialog(
     var amountInput by remember { mutableStateOf("") }
     var isSubmittingWithdraw by remember { mutableStateOf(false) }
 
+    // 4-Digit Security PIN States
+    var showPinDialog by remember { mutableStateOf(false) }
+    var showPinSetupDialog by remember { mutableStateOf(false) }
+    var pinInput by remember { mutableStateOf("") }
+    var pinSetupInput by remember { mutableStateOf("") }
+    var pinSetupConfirmInput by remember { mutableStateOf("") }
+    var pendingWithdrawAmount by remember { mutableStateOf(0.0) }
+    var pendingWithdrawAccount by remember { mutableStateOf("") }
+    var pendingWithdrawMethod by remember { mutableStateOf("") }
+
     LaunchedEffect(currentEmail) {
         val accs = WithdrawalManager.getSavedAccounts(currentEmail)
         binanceProfileInput = accs.binanceId
@@ -142,7 +155,8 @@ fun UserProfileOtpHistoryDialog(
     }
 
     val minAmount = WithdrawalManager.getMinimumAmountForMethod(selectedMethod)
-    val isMethodUnlocked = withdrawState.availableBalanceTk >= minAmount
+    val isWithdrawalAllowed = AuthManager.isSectionAllowedForCurrentUser("WITHDRAWAL")
+    val isMethodUnlocked = isWithdrawalAllowed && withdrawState.availableBalanceTk >= minAmount
 
     val userWithdrawals = remember(withdrawState.allRequests, currentEmail) {
         WithdrawalManager.getUserRequests(currentEmail)
@@ -801,6 +815,33 @@ fun UserProfileOtpHistoryDialog(
                                     }
 
                                     Spacer(modifier = Modifier.height(6.dp))
+                                    if (!isWithdrawalAllowed) {
+                                        Surface(
+                                            color = Color(0xFFEF4444).copy(alpha = 0.15f),
+                                            shape = RoundedCornerShape(8.dp),
+                                            border = BorderStroke(1.dp, Color(0xFFEF4444).copy(alpha = 0.4f)),
+                                            modifier = Modifier.fillMaxWidth().padding(bottom = 6.dp)
+                                        ) {
+                                            Row(
+                                                modifier = Modifier.padding(8.dp),
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.Default.Lock,
+                                                    contentDescription = null,
+                                                    tint = Color(0xFFEF4444),
+                                                    modifier = Modifier.size(16.dp)
+                                                )
+                                                Spacer(modifier = Modifier.width(6.dp))
+                                                Text(
+                                                    text = "এডমিন আপনার একাউন্টের জন্য উইথড্র অপশন অফ করে রেখেছেন।",
+                                                    color = Color(0xFFFCA5A5),
+                                                    fontSize = 10.5.sp,
+                                                    fontWeight = FontWeight.Medium
+                                                )
+                                            }
+                                        }
+                                    }
                                     Text(
                                         text = "পেমেন্ট মাধ্যম বেছে নিন: Binance (মিনিমাম ৳${String.format(Locale.US, "%.0f", limits.minBinance)}), bKash (মিনিমাম ৳${String.format(Locale.US, "%.0f", limits.minBkash)}), Nagad (মিনিমাম ৳${String.format(Locale.US, "%.0f", limits.minNagad)}), Rocket (মিনিমাম ৳${String.format(Locale.US, "%.0f", limits.minRocket)})",
                                         fontSize = 10.sp,
@@ -949,6 +990,10 @@ fun UserProfileOtpHistoryDialog(
                                     // Submit / Withdraw Button
                                     Button(
                                         onClick = {
+                                            if (!isWithdrawalAllowed) {
+                                                Toast.makeText(context, "এডমিন আপনার একাউন্টের জন্য উইথড্র অফ করে রেখেছেন", Toast.LENGTH_SHORT).show()
+                                                return@Button
+                                            }
                                             val amt = amountInput.toDoubleOrNull() ?: 0.0
                                             if (accountInput.isBlank()) {
                                                 Toast.makeText(context, "একাউন্ট নাম্বার বা Binance ID দিন", Toast.LENGTH_SHORT).show()
@@ -959,19 +1004,17 @@ fun UserProfileOtpHistoryDialog(
                                                 return@Button
                                             }
 
-                                            isSubmittingWithdraw = true
-                                            val (success, msg) = WithdrawalManager.submitWithdrawal(
-                                                context = context,
-                                                userEmail = currentEmail,
-                                                method = selectedMethod,
-                                                accountNumber = accountInput,
-                                                amount = amt
-                                            )
-                                            isSubmittingWithdraw = false
-                                            Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
-                                            if (success) {
-                                                amountInput = ""
-                                                accountInput = ""
+                                            pendingWithdrawAmount = amt
+                                            pendingWithdrawAccount = accountInput.trim()
+                                            pendingWithdrawMethod = selectedMethod
+
+                                            if (!WithdrawalManager.hasSecurityPin(currentEmail)) {
+                                                pinSetupInput = ""
+                                                pinSetupConfirmInput = ""
+                                                showPinSetupDialog = true
+                                            } else {
+                                                pinInput = ""
+                                                showPinDialog = true
                                             }
                                         },
                                         enabled = isMethodUnlocked && !isSubmittingWithdraw,
@@ -1451,11 +1494,41 @@ fun UserProfileOtpHistoryDialog(
                                             )
                                         }
 
-                                        Text(
-                                            text = "1-Tap Copy",
-                                            color = Color(0xFF00E676),
-                                            fontSize = 10.sp
-                                        )
+                                        Row(
+                                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Surface(
+                                                color = Color(0xFF0284C7).copy(alpha = 0.25f),
+                                                shape = RoundedCornerShape(6.dp),
+                                                border = BorderStroke(1.dp, Color(0xFF0284C7).copy(alpha = 0.6f)),
+                                                modifier = Modifier.clickable { OtpHistoryManager.exportToCsv(context) }
+                                            ) {
+                                                Row(
+                                                    verticalAlignment = Alignment.CenterVertically,
+                                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp)
+                                                ) {
+                                                    Icon(Icons.Default.Download, contentDescription = "CSV", tint = Color(0xFF38BDF8), modifier = Modifier.size(11.dp))
+                                                    Spacer(modifier = Modifier.width(3.dp))
+                                                    Text(text = "CSV", color = Color(0xFF38BDF8), fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                                }
+                                            }
+                                            Surface(
+                                                color = Color(0xFF00E676).copy(alpha = 0.2f),
+                                                shape = RoundedCornerShape(6.dp),
+                                                border = BorderStroke(1.dp, Color(0xFF00E676).copy(alpha = 0.6f)),
+                                                modifier = Modifier.clickable { OtpHistoryManager.copyRecentOtpsToClipboard(context) }
+                                            ) {
+                                                Row(
+                                                    verticalAlignment = Alignment.CenterVertically,
+                                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp)
+                                                ) {
+                                                    Icon(Icons.Default.ContentCopy, contentDescription = "Copy All", tint = Color(0xFF00E676), modifier = Modifier.size(11.dp))
+                                                    Spacer(modifier = Modifier.width(3.dp))
+                                                    Text(text = "Copy All", color = Color(0xFF00E676), fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                                }
+                                            }
+                                        }
                                     }
 
                                     Spacer(modifier = Modifier.height(10.dp))
@@ -1487,6 +1560,224 @@ fun UserProfileOtpHistoryDialog(
                 }
             }
         }
+    }
+
+    // 1. PIN Setup Dialog (১ম বার ৪ ডিজিট পিন সেট)
+    if (showPinSetupDialog) {
+        AlertDialog(
+            onDismissRequest = { showPinSetupDialog = false },
+            title = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.Lock, contentDescription = null, tint = Color(0xFF00E676), modifier = Modifier.size(20.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("উইথড্রয়াল সিকিউরিটি পিন সেট করুন", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                }
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text(
+                        text = "নিরাপত্তার স্বার্থে আপনার একাউন্টে ৪ ডিজিটের একটি গোপন পিন সেট করুন। পরবর্তী প্রতিবার টাকা তোলার সময় এই পিনটি প্রয়োজন হবে।",
+                        fontSize = 11.5.sp,
+                        color = Color(0xFF94A3B8)
+                    )
+                    OutlinedTextField(
+                        value = pinSetupInput,
+                        onValueChange = { if (it.length <= 4 && it.all { c -> c.isDigit() }) pinSetupInput = it },
+                        label = { Text("নতুন ৪ ডিজিট পিন") },
+                        placeholder = { Text("e.g. 1234") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = Color(0xFF00E676),
+                            unfocusedBorderColor = Color(0xFF334155),
+                            focusedTextColor = Color.White,
+                            unfocusedTextColor = Color.White
+                        ),
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    OutlinedTextField(
+                        value = pinSetupConfirmInput,
+                        onValueChange = { if (it.length <= 4 && it.all { c -> c.isDigit() }) pinSetupConfirmInput = it },
+                        label = { Text("পিন পুনরায় দিন (Confirm PIN)") },
+                        placeholder = { Text("e.g. 1234") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = Color(0xFF00E676),
+                            unfocusedBorderColor = Color(0xFF334155),
+                            focusedTextColor = Color.White,
+                            unfocusedTextColor = Color.White
+                        ),
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        if (pinSetupInput.length != 4) {
+                            Toast.makeText(context, "অবশ্যই ৪ ডিজিটের পিন হতে হবে", Toast.LENGTH_SHORT).show()
+                            return@Button
+                        }
+                        if (pinSetupInput != pinSetupConfirmInput) {
+                            Toast.makeText(context, "দুইটি পিন মেলেনি! পুনরায় চেক করুন", Toast.LENGTH_SHORT).show()
+                            return@Button
+                        }
+                        val success = WithdrawalManager.setSecurityPin(pinSetupInput, currentEmail)
+                        if (success) {
+                            Toast.makeText(context, "✓ ৪ ডিজিট সিকিউরিটি পিন সফলভাবে সংরক্ষিত হয়েছে", Toast.LENGTH_SHORT).show()
+                            showPinSetupDialog = false
+                            pinInput = ""
+                            showPinDialog = true
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00E676))
+                ) {
+                    Text("সংরক্ষণ ও নিশ্চিত করুন", color = Color.Black, fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                OutlinedButton(onClick = { showPinSetupDialog = false }) {
+                    Text("বাতিল", color = Color(0xFF94A3B8))
+                }
+            },
+            containerColor = Color(0xFF0F172A),
+            shape = RoundedCornerShape(16.dp)
+        )
+    }
+
+    // 2. PIN Verification & Final Confirmation Dialog (উইথড্রয়াল কনফার্মেশন ও পিন ইনপুট)
+    if (showPinDialog) {
+        val isResetRequested = remember(showPinDialog) { WithdrawalManager.isPinResetRequested(currentEmail) }
+        var resetRequestedState by remember { mutableStateOf(isResetRequested) }
+
+        AlertDialog(
+            onDismissRequest = { if (!isSubmittingWithdraw) showPinDialog = false },
+            title = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.Security, contentDescription = null, tint = Color(0xFF38BDF8), modifier = Modifier.size(20.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("উইথড্রয়াল কনফার্মেশন", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                }
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Surface(
+                        color = Color(0xFF1E293B),
+                        shape = RoundedCornerShape(10.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                Text("পেমেন্ট মেথড:", fontSize = 11.sp, color = Color(0xFF94A3B8))
+                                Text(pendingWithdrawMethod, fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFF38BDF8))
+                            }
+                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                Text("একাউন্ট নম্বর:", fontSize = 11.sp, color = Color(0xFF94A3B8))
+                                Text(pendingWithdrawAccount, fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                            }
+                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                Text("টাকার পরিমাণ:", fontSize = 11.sp, color = Color(0xFF94A3B8))
+                                Text("৳${String.format(Locale.US, "%.2f", pendingWithdrawAmount)}", fontSize = 13.sp, fontWeight = FontWeight.ExtraBold, color = Color(0xFF00E676))
+                            }
+                        }
+                    }
+
+                    Text("উইথড্র নিশ্চিত করতে আপনার ৪ ডিজিটের সিকিউরিটি পিন দিন:", fontSize = 11.sp, color = Color(0xFFCBD5E1))
+
+                    OutlinedTextField(
+                        value = pinInput,
+                        onValueChange = { if (it.length <= 4 && it.all { c -> c.isDigit() }) pinInput = it },
+                        placeholder = { Text("৪ ডিজিট পিন (PIN)") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = Color(0xFF38BDF8),
+                            unfocusedBorderColor = Color(0xFF334155),
+                            focusedTextColor = Color.White,
+                            unfocusedTextColor = Color.White
+                        ),
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    // Pin Reset Request to Admin button
+                    Surface(
+                        color = if (resetRequestedState) Color(0xFFF59E0B).copy(alpha = 0.15f) else Color(0xFF0284C7).copy(alpha = 0.15f),
+                        shape = RoundedCornerShape(8.dp),
+                        border = BorderStroke(1.dp, if (resetRequestedState) Color(0xFFF59E0B).copy(alpha = 0.4f) else Color(0xFF0284C7).copy(alpha = 0.4f)),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable(enabled = !resetRequestedState) {
+                                WithdrawalManager.requestPinReset(currentEmail)
+                                resetRequestedState = true
+                                Toast.makeText(context, "✓ অ্যাডমিনের কাছে পিন রিসেট রিকোয়েস্ট পাঠানো হয়েছে! অ্যাডমিন অনুমোদন করলে নতুন পিন সেট করতে পারবেন।", Toast.LENGTH_LONG).show()
+                            }
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.Center
+                        ) {
+                            Icon(
+                                imageVector = if (resetRequestedState) Icons.Default.Refresh else Icons.Default.Lock,
+                                contentDescription = null,
+                                tint = if (resetRequestedState) Color(0xFFFBBF24) else Color(0xFF38BDF8),
+                                modifier = Modifier.size(13.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = if (resetRequestedState) "⏳ পিন রিসেট রিকোয়েস্ট অ্যাডমিনের কাছে পাঠানো হয়েছে" else "🔐 পিন ভুলে গেছেন? অ্যাডমিনকে রিসেট রিকোয়েস্ট পাঠান",
+                                fontSize = 9.5.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = if (resetRequestedState) Color(0xFFFBBF24) else Color(0xFF38BDF8)
+                            )
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        if (pinInput.length != 4) {
+                            Toast.makeText(context, "৪ ডিজিটের সঠিক পিন দিন", Toast.LENGTH_SHORT).show()
+                            return@Button
+                        }
+                        val isPinValid = WithdrawalManager.verifySecurityPin(pinInput, currentEmail)
+                        if (!isPinValid) {
+                            Toast.makeText(context, "ভুল সিকিউরিটি পিন! সঠিক পিন দিন অথবা নিচে 'রিসেট রিকোয়েস্ট' পাঠান", Toast.LENGTH_LONG).show()
+                            return@Button
+                        }
+
+                        isSubmittingWithdraw = true
+                        val (success, msg) = WithdrawalManager.submitWithdrawal(
+                            context = context,
+                            userEmail = currentEmail,
+                            method = pendingWithdrawMethod,
+                            accountNumber = pendingWithdrawAccount,
+                            amount = pendingWithdrawAmount
+                        )
+                        isSubmittingWithdraw = false
+                        Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
+                        if (success) {
+                            amountInput = ""
+                            accountInput = ""
+                            showPinDialog = false
+                        }
+                    },
+                    enabled = !isSubmittingWithdraw && pinInput.length == 4,
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00E676))
+                ) {
+                    Text(if (isSubmittingWithdraw) "প্রসেস হচ্ছে..." else "উইথড্র সম্পন্ন করুন", color = Color.Black, fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                OutlinedButton(onClick = { showPinDialog = false }) {
+                    Text("বাতিল", color = Color(0xFF94A3B8))
+                }
+            },
+            containerColor = Color(0xFF0F172A),
+            shape = RoundedCornerShape(16.dp)
+        )
     }
 }
 

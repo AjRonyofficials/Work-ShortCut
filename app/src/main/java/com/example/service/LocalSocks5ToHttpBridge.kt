@@ -202,9 +202,9 @@ object LocalSocks5ToHttpBridge {
             clientOut.write(byteArrayOf(5, 0, 0, 1, 0, 0, 0, 0, 0, 0))
             clientOut.flush()
 
-            // 7. Stable keep-alive during data transmission (prevents WhatsApp/Telegram/FB/SMS drops)
-            client.soTimeout = 0
-            upstream.soTimeout = 0
+            // 7. Stable keep-alive with 120s idle timeout (prevents orphaned dead connections while allowing long polling)
+            client.soTimeout = 120000
+            upstream.soTimeout = 120000
             client.keepAlive = true
             upstream.keepAlive = true
 
@@ -226,30 +226,44 @@ object LocalSocks5ToHttpBridge {
         val out2 = s2.getOutputStream()
 
         val job1 = scope.launch(Dispatchers.IO) {
-            copyStream(in1, out2, s1, s2)
+            val buffer = ByteArray(32768)
+            try {
+                while (true) {
+                    val len = in1.read(buffer)
+                    if (len <= 0) break
+                    out2.write(buffer, 0, len)
+                    out2.flush()
+                }
+            } catch (_: Exception) {
+            } finally {
+                // Instantly unblock opposite socket read so coroutines and sockets never hang
+                try { s2.shutdownOutput() } catch (_: Exception) {}
+                try { s1.close() } catch (_: Exception) {}
+                try { s2.close() } catch (_: Exception) {}
+            }
         }
+
         val job2 = scope.launch(Dispatchers.IO) {
-            copyStream(in2, out1, s2, s1)
+            val buffer = ByteArray(32768)
+            try {
+                while (true) {
+                    val len = in2.read(buffer)
+                    if (len <= 0) break
+                    out1.write(buffer, 0, len)
+                    out1.flush()
+                }
+            } catch (_: Exception) {
+            } finally {
+                // Instantly unblock opposite socket read so coroutines and sockets never hang
+                try { s1.shutdownOutput() } catch (_: Exception) {}
+                try { s1.close() } catch (_: Exception) {}
+                try { s2.close() } catch (_: Exception) {}
+            }
         }
 
         joinAll(job1, job2)
         try { s1.close() } catch (_: Exception) {}
         try { s2.close() } catch (_: Exception) {}
-    }
-
-    private fun copyStream(input: InputStream, output: OutputStream, inSocket: Socket, outSocket: Socket) {
-        val buffer = ByteArray(32768)
-        try {
-            while (true) {
-                val len = input.read(buffer)
-                if (len <= 0) break
-                output.write(buffer, 0, len)
-                output.flush()
-            }
-        } catch (_: Exception) {
-        } finally {
-            try { outSocket.shutdownOutput() } catch (_: Exception) {}
-        }
     }
 
     private fun readFully(input: InputStream, buffer: ByteArray) {

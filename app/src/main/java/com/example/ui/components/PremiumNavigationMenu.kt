@@ -392,7 +392,11 @@ fun PremiumNavigationMenu(
                         Spacer(modifier = Modifier.height(10.dp))
 
                         // Category Chips Filter
-                        val categories = listOf("ALL", "COMMUNICATION", "SECURITY", "PRODUCTIVITY", "SYSTEM")
+                        val isAdminUser = com.example.service.AuthManager.isAdmin()
+                        val categories = remember(isAdminUser) {
+                            if (isAdminUser) listOf("ALL", "COMMUNICATION", "SECURITY", "PRODUCTIVITY", "SYSTEM", "ADMIN")
+                            else listOf("ALL", "COMMUNICATION", "SECURITY", "PRODUCTIVITY", "SYSTEM")
+                        }
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -425,8 +429,11 @@ fun PremiumNavigationMenu(
 
                         Spacer(modifier = Modifier.height(10.dp))
 
-                        // Filtered Tabs
+                        // Filtered Tabs: strictly hide ADMIN_PANEL if not admin
                         val filteredTabs = AppNavTab.entries.filter { tab ->
+                            if (tab == AppNavTab.ADMIN_PANEL && !isAdminUser) {
+                                return@filter false
+                            }
                             val matchSearch = searchQuery.isBlank() ||
                                     tab.title.contains(searchQuery, ignoreCase = true) ||
                                     tab.subtitle.contains(searchQuery, ignoreCase = true) ||

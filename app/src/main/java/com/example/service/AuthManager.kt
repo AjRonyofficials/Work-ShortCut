@@ -10,6 +10,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONArray
@@ -54,7 +55,11 @@ data class AuthUser(
     val isOnline: Boolean = false,
     val permissions: SubAdminPermissions = SubAdminPermissions(),
     val deviceSessions: List<UserDeviceSession> = emptyList(),
-    val disabledSections: List<String> = emptyList()
+    val disabledSections: List<String> = emptyList(),
+    val boundDeviceId: String? = null,
+    val boundDeviceModel: String? = null,
+    val boundAt: Long = 0L,
+    val isPinResetRequested: Boolean = false
 )
 
 object AuthManager {
@@ -99,6 +104,14 @@ object AuthManager {
             _currentEmail.value = prefs?.getString(KEY_LOGGED_IN_EMAIL, "") ?: ""
             _currentUserRole.value = prefs?.getString(KEY_LOGGED_IN_ROLE, "USER") ?: "USER"
             loadUsers()
+            val savedEmail = _currentEmail.value.trim().lowercase()
+            if (_isLoggedIn.value && savedEmail.isNotEmpty()) {
+                VirtualNumberManager.onUserLoggedIn(savedEmail)
+                UnixSmsManager.onUserLoggedIn(savedEmail)
+                KopEngine2Manager.onUserLoggedIn(savedEmail)
+                PremiumNumberV2Manager.onUserLoggedIn(savedEmail)
+                OtpHistoryManager.onUserLoggedIn(savedEmail, context)
+            }
             // Background sync with cloud & live heartbeat
             authScope.launch {
                 syncFromCloud()
@@ -183,7 +196,11 @@ object AuthManager {
                         last30DaysOtps = obj.optInt("last30DaysOtps", 0),
                         permissions = perms,
                         deviceSessions = devList,
-                        disabledSections = secList
+                        disabledSections = secList,
+                        boundDeviceId = if (obj.has("boundDeviceId")) obj.optString("boundDeviceId").ifEmpty { null } else null,
+                        boundDeviceModel = if (obj.has("boundDeviceModel")) obj.optString("boundDeviceModel").ifEmpty { null } else null,
+                        boundAt = obj.optLong("boundAt", 0L),
+                        isPinResetRequested = obj.optBoolean("isPinResetRequested", false)
                     )
                 )
             }
@@ -236,12 +253,35 @@ object AuthManager {
                     val lastActive = obj.optLong("last_active", 0L)
                     val devModel = obj.optString("device_model", "").ifEmpty { obj.optString("lastDeviceName", "") }
                     val now = System.currentTimeMillis()
-                    val isOnline = (now - lastActive) < 180_000L && lastActive > 0L
+                    val isOnline = (now - lastActive) < 180_000L && lastActive > 0L && statusStr != "OFFLINE"
 
                     // Find any existing local device sessions to preserve
                     val existingUser = _managedUsers.value.firstOrNull { it.email.equals(obj.getString("email"), ignoreCase = true) }
                     val devSessions = existingUser?.deviceSessions ?: emptyList()
-                    val disabledSecs = existingUser?.disabledSections ?: emptyList()
+                    val disabledSecs = try {
+                        val secStr = obj.optString("disabled_sections_json", "")
+                        if (secStr.isNotBlank() && secStr != "null" && secStr != "[]") {
+                            val sArr = JSONArray(secStr)
+                            val sList = mutableListOf<String>()
+                            for (si in 0 until sArr.length()) {
+                                val s = sArr.optString(si)
+                                if (s.isNotBlank()) sList.add(s)
+                            }
+                            sList
+                        } else {
+                            existingUser?.disabledSections ?: emptyList()
+                        }
+                    } catch (_: Exception) {
+                        existingUser?.disabledSections ?: emptyList()
+                    }
+
+                    val boundDevId = obj.optString("bound_device_id", "").ifEmpty {
+                        obj.optString("device_id", "").ifEmpty { null }
+                    }
+                    val boundDevModel = obj.optString("bound_device_model", "").ifEmpty {
+                        obj.optString("device_model", "").ifEmpty { null }
+                    }
+                    val boundAt = obj.optLong("bound_at", 0L)
 
                     cloudUsers.add(
                         AuthUser(
@@ -265,7 +305,11 @@ object AuthManager {
                             isOnline = isOnline,
                             permissions = perms,
                             deviceSessions = devSessions,
-                            disabledSections = disabledSecs
+                            disabledSections = disabledSecs,
+                            boundDeviceId = boundDevId,
+                            boundDeviceModel = boundDevModel,
+                            boundAt = boundAt,
+                            isPinResetRequested = obj.optBoolean("pin_reset_requested", false)
                         )
                     )
                 }
@@ -335,54 +379,104 @@ object AuthManager {
             }
             obj.put("disabledSections", secArr)
 
+            u.boundDeviceId?.let { obj.put("boundDeviceId", it) }
+            u.boundDeviceModel?.let { obj.put("boundDeviceModel", it) }
+            obj.put("boundAt", u.boundAt)
+            obj.put("isPinResetRequested", u.isPinResetRequested)
+
             arr.put(obj)
         }
         return arr
     }
 
-    private fun syncToCloud(list: List<AuthUser>) {
+    fun markUserPinResetRequested(userEmail: String) {
+        val clean = userEmail.trim().lowercase()
+        if (clean.isBlank()) return
+        _managedUsers.update { list ->
+            list.map { if (it.email.equals(clean, ignoreCase = true)) it.copy(isPinResetRequested = true) else it }
+        }
+        saveUsersLocallyOnly(_managedUsers.value)
         authScope.launch {
             try {
-                val arr = JSONArray()
-                for (u in list) {
-                    val obj = JSONObject()
-                    obj.put("email", u.email)
-                    obj.put("username", u.name)
-                    obj.put("password", u.passwordHash)
-                    obj.put("role", u.role)
-                    obj.put("status", if (u.isBanned) "BANNED" else if (u.isActive) "ACTIVE" else "INACTIVE")
-                    obj.put("balance", u.balanceTk)
-                    obj.put("total_otps", u.totalOtps)
-
-                    val permObj = JSONObject().apply {
-                        put("canUploadNumbers", u.permissions.canUploadNumbers)
-                        put("canDeleteNumbers", u.permissions.canDeleteNumbers)
-                        put("canUpdateOtpRate", u.permissions.canUpdateOtpRate)
-                        put("canManageWithdrawals", u.permissions.canManageWithdrawals)
-                        put("canViewLiveCdr", u.permissions.canViewLiveCdr)
-                        put("canBroadcastNotify", u.permissions.canBroadcastNotify)
-                    }
-                    obj.put("permissions_json", permObj.toString())
-                    arr.put(obj)
+                val encEmail = java.net.URLEncoder.encode(clean, "UTF-8")
+                val payload = JSONObject().apply {
+                    put("pin_reset_requested", true)
                 }
-
-                val body = arr.toString().toRequestBody("application/json; charset=utf-8".toMediaTypeOrNull())
+                val body = payload.toString().toRequestBody("application/json; charset=utf-8".toMediaTypeOrNull())
                 val req = okhttp3.Request.Builder()
-                    .url("$SUPABASE_BASE_URL/app_users?on_conflict=email")
+                    .url("$SUPABASE_BASE_URL/app_users?email=eq.$encEmail")
                     .header("apikey", SUPABASE_KEY)
-                    .header("Content-Type", "application/json")
-                    .header("Prefer", "resolution=merge-duplicates,return=minimal")
-                    .post(body)
+                    .header("Authorization", "Bearer $SUPABASE_KEY")
+                    .header("Prefer", "return=minimal")
+                    .patch(body)
                     .build()
                 httpClient.newCall(req).execute()
             } catch (_: Exception) {}
         }
     }
 
+    fun resetUserPin(userEmail: String, onComplete: ((Boolean) -> Unit)? = null) {
+        val clean = userEmail.trim().lowercase()
+        if (clean.isBlank()) return
+        WithdrawalManager.clearSecurityPin(clean)
+        _managedUsers.update { list ->
+            list.map { if (it.email.equals(clean, ignoreCase = true)) it.copy(isPinResetRequested = false) else it }
+        }
+        saveUsersLocallyOnly(_managedUsers.value)
+        authScope.launch {
+            try {
+                val encEmail = java.net.URLEncoder.encode(clean, "UTF-8")
+                val payload = JSONObject().apply {
+                    put("pin_reset_requested", false)
+                }
+                val body = payload.toString().toRequestBody("application/json; charset=utf-8".toMediaTypeOrNull())
+                val req = okhttp3.Request.Builder()
+                    .url("$SUPABASE_BASE_URL/app_users?email=eq.$encEmail")
+                    .header("apikey", SUPABASE_KEY)
+                    .header("Authorization", "Bearer $SUPABASE_KEY")
+                    .header("Prefer", "return=minimal")
+                    .patch(body)
+                    .build()
+                val resp = httpClient.newCall(req).execute()
+                withContext(Dispatchers.Main) {
+                    onComplete?.invoke(resp.isSuccessful)
+                }
+            } catch (_: Exception) {
+                withContext(Dispatchers.Main) {
+                    onComplete?.invoke(false)
+                }
+            }
+        }
+    }
+
+    fun patchUserField(email: String, fields: JSONObject) {
+        val target = email.trim().lowercase()
+        if (target.isBlank() || target == ADMIN_EMAIL.lowercase()) return
+        authScope.launch {
+            try {
+                val body = fields.toString().toRequestBody("application/json; charset=utf-8".toMediaTypeOrNull())
+                val req = okhttp3.Request.Builder()
+                    .url("$SUPABASE_BASE_URL/app_users?email=eq.$target")
+                    .header("apikey", SUPABASE_KEY)
+                    .header("Content-Type", "application/json")
+                    .patch(body)
+                    .build()
+                httpClient.newCall(req).execute()
+            } catch (_: Exception) {}
+        }
+    }
+
+    fun patchUserDisabledSections(email: String, sections: List<String>) {
+        val sArr = JSONArray()
+        sections.forEach { sArr.put(it) }
+        patchUserField(email, JSONObject().apply {
+            put("disabled_sections_json", sArr.toString())
+        })
+    }
+
     private fun saveUsers(list: List<AuthUser>) {
         _managedUsers.value = list
         saveUsersLocallyOnly(list)
-        syncToCloud(list)
     }
 
     private var currentDeviceId: String = ""
@@ -466,8 +560,40 @@ object AuthManager {
             }
 
             if (user.passwordHash == pass) {
-                // Track device session
+                // 1. Device Binding Check (1 Account = 1 Physical Phone)
+                val boundId = user.boundDeviceId
+                if (!boundId.isNullOrBlank() && boundId != myDeviceId) {
+                    val boundModel = user.boundDeviceModel?.ifBlank { null } ?: "পূর্ববর্তী ডিভাইস"
+                    return Pair(
+                        false,
+                        "🚫 ডিভাইস লক ত্রুটি: আপনার অ্যাকাউন্টটি অন্য একটি ডিভাইসে ($boundModel) লক করা আছে! নতুন ডিভাইসে লগইন করতে মেইন এডমিনের সাথে যোগাযোগ করে ডিভাইস রিসেট করান।"
+                    )
+                }
+
+                // 2. Hardware Limitation Check (1 Physical Phone = 1 Account Only)
+                val localBoundEmail = prefs?.getString("bound_device_email", "") ?: ""
+                val otherBoundUser = _managedUsers.value.firstOrNull {
+                    it.email.lowercase() != user.email.lowercase() &&
+                    (!it.boundDeviceId.isNullOrBlank() && it.boundDeviceId == myDeviceId)
+                }
+                if (otherBoundUser != null || (localBoundEmail.isNotEmpty() && localBoundEmail.lowercase() != user.email.lowercase())) {
+                    val conflictEmail = otherBoundUser?.email ?: localBoundEmail
+                    return Pair(
+                        false,
+                        "🚫 ডিভাইস সীমাবদ্ধতা: এই ডিভাইসে ইতিমধ্যে অন্য একটি অ্যাকাউন্ট ($conflictEmail) লিঙ্ক করা রয়েছে! একটি ডিভাইসে কেবল একটি অ্যাকাউন্ট ব্যবহার করা যাবে। এডমিনের সাথে যোগাযোগ করুন।"
+                    )
+                }
+
                 val nowTime = System.currentTimeMillis()
+                val isFirstBinding = user.boundDeviceId.isNullOrBlank()
+                val effectiveBoundId = if (isFirstBinding) myDeviceId else user.boundDeviceId
+                val effectiveBoundModel = if (user.boundDeviceModel.isNullOrBlank()) deviceName else user.boundDeviceModel
+                val effectiveBoundAt = if (user.boundAt <= 0L) nowTime else user.boundAt
+
+                // Save locally on physical phone
+                prefs?.edit()?.putString("bound_device_email", user.email.lowercase())?.apply()
+
+                // Track device session
                 val currentSessions = user.deviceSessions.filterNot { it.deviceId == myDeviceId }
                 val newSession = UserDeviceSession(
                     deviceId = myDeviceId,
@@ -482,6 +608,9 @@ object AuthManager {
                 val newLoginCount = user.loginCount + 1
                 val activeDevCount = updatedSessions.count { it.isOnline && !it.isRevoked }
                 val updatedUser = user.copy(
+                    boundDeviceId = effectiveBoundId,
+                    boundDeviceModel = effectiveBoundModel,
+                    boundAt = effectiveBoundAt,
                     loginCount = newLoginCount,
                     activeDevicesCount = maxOf(1, activeDevCount),
                     lastLoginAt = nowTime,
@@ -496,6 +625,20 @@ object AuthManager {
                 }
                 saveUsers(updatedList)
 
+                // If this device was just bound, patch bound_device_id to Supabase
+                if (isFirstBinding) {
+                    authScope.launch {
+                        val bindPayload = JSONObject().apply {
+                            put("bound_device_id", myDeviceId)
+                            put("bound_device_model", deviceName)
+                            put("bound_at", nowTime)
+                            put("device_id", myDeviceId)
+                            put("device_model", deviceName)
+                        }
+                        patchUserField(user.email, bindPayload)
+                    }
+                }
+
                 _isLoggedIn.value = true
                 _currentEmail.value = user.email
                 _currentUserRole.value = user.role
@@ -505,7 +648,11 @@ object AuthManager {
                     ?.putString(KEY_LOGGED_IN_EMAIL, user.email)
                     ?.putString(KEY_LOGGED_IN_ROLE, user.role)
                     ?.apply()
-                OtpHistoryManager.onUserLoggedIn(user.email, null)
+                OtpHistoryManager.onUserLoggedIn(user.email, context)
+                VirtualNumberManager.onUserLoggedIn(user.email)
+                UnixSmsManager.onUserLoggedIn(user.email)
+                KopEngine2Manager.onUserLoggedIn(user.email)
+                PremiumNumberV2Manager.onUserLoggedIn(user.email)
                 if (user.totalOtps > 0 || user.balanceTk > 0.0) {
                     OtpHistoryManager.restoreUserHistoryIfEmpty(
                         totalOtps = user.totalOtps,
@@ -562,8 +709,20 @@ object AuthManager {
             ?.putString(KEY_LOGGED_IN_ROLE, "USER")
             ?.apply()
 
+        if (current.isNotEmpty()) {
+            _managedUsers.value = _managedUsers.value.map { u ->
+                if (u.email.lowercase() == current) {
+                    u.copy(isOnline = false, lastActive = System.currentTimeMillis())
+                } else u
+            }
+        }
+
         OtpHistoryManager.onUserLoggedOut()
         WithdrawalManager.onUserLoggedOut()
+        VirtualNumberManager.onUserLoggedOut()
+        UnixSmsManager.onUserLoggedOut()
+        KopEngine2Manager.onUserLoggedOut()
+        PremiumNumberV2Manager.onUserLoggedOut()
     }
 
     fun isPrimeAdmin(): Boolean {
@@ -599,22 +758,37 @@ object AuthManager {
 
     fun setSubAdminRole(email: String, isSubAdmin: Boolean) {
         if (!isPrimeAdmin()) return
+        val target = email.trim().lowercase()
+        val roleStr = if (isSubAdmin) "SUB_ADMIN" else "USER"
         val updated = _managedUsers.value.map {
-            if (it.email.lowercase() == email.lowercase()) {
-                it.copy(role = if (isSubAdmin) "SUB_ADMIN" else "USER")
+            if (it.email.lowercase() == target) {
+                it.copy(role = roleStr)
             } else it
         }
-        saveUsers(updated)
+        _managedUsers.value = updated
+        saveUsersLocallyOnly(updated)
+        patchUserField(target, JSONObject().put("role", roleStr))
     }
 
     fun updateSubAdminPermissions(email: String, permissions: SubAdminPermissions) {
         if (!isPrimeAdmin()) return
+        val target = email.trim().lowercase()
         val updated = _managedUsers.value.map {
-            if (it.email.lowercase() == email.lowercase()) {
+            if (it.email.lowercase() == target) {
                 it.copy(permissions = permissions)
             } else it
         }
-        saveUsers(updated)
+        _managedUsers.value = updated
+        saveUsersLocallyOnly(updated)
+        val permObj = JSONObject().apply {
+            put("canUploadNumbers", permissions.canUploadNumbers)
+            put("canDeleteNumbers", permissions.canDeleteNumbers)
+            put("canUpdateOtpRate", permissions.canUpdateOtpRate)
+            put("canManageWithdrawals", permissions.canManageWithdrawals)
+            put("canViewLiveCdr", permissions.canViewLiveCdr)
+            put("canBroadcastNotify", permissions.canBroadcastNotify)
+        }
+        patchUserField(target, JSONObject().put("permissions_json", permObj.toString()))
     }
 
     // Admin operations
@@ -632,7 +806,7 @@ object AuthManager {
             return Pair(false, "এই ইমেইলটি ইতিমধ্যে ব্যবহৃত হচ্ছে")
         }
 
-        val newList = _managedUsers.value + AuthUser(
+        val newUser = AuthUser(
             email = email,
             passwordHash = pass,
             name = nameInput.trim().ifEmpty { "User" },
@@ -640,7 +814,37 @@ object AuthManager {
             loginCount = 0,
             activeDevicesCount = 0
         )
-        saveUsers(newList)
+        val newList = _managedUsers.value + newUser
+        _managedUsers.value = newList
+        saveUsersLocallyOnly(newList)
+
+        authScope.launch {
+            try {
+                val obj = JSONObject().apply {
+                    put("email", email)
+                    put("username", newUser.name)
+                    put("password", pass)
+                    put("role", "USER")
+                    put("status", "ACTIVE")
+                    put("balance", 0.0)
+                    put("total_otps", 0)
+                    put("otp_today", 0)
+                    put("otp_7days", 0)
+                    put("otp_30days", 0)
+                    put("disabled_sections_json", "[]")
+                    put("permissions_json", "{}")
+                }
+                val body = JSONArray().put(obj).toString().toRequestBody("application/json; charset=utf-8".toMediaTypeOrNull())
+                val req = okhttp3.Request.Builder()
+                    .url("$SUPABASE_BASE_URL/app_users?on_conflict=email")
+                    .header("apikey", SUPABASE_KEY)
+                    .header("Content-Type", "application/json")
+                    .header("Prefer", "resolution=merge-duplicates,return=minimal")
+                    .post(body)
+                    .build()
+                httpClient.newCall(req).execute()
+            } catch (_: Exception) {}
+        }
         return Pair(true, "নতুন ইউজার সফলভাবে তৈরি হয়েছে!")
     }
 
@@ -664,36 +868,58 @@ object AuthManager {
 
     fun toggleUserBan(email: String) {
         if (!isAdmin()) return
+        val target = email.trim().lowercase()
+        var newStatus = "ACTIVE"
         val newList = _managedUsers.value.map {
-            if (it.email.lowercase() == email.lowercase()) it.copy(isBanned = !it.isBanned) else it
+            if (it.email.lowercase() == target) {
+                val updatedBanned = !it.isBanned
+                newStatus = if (updatedBanned) "BANNED" else if (it.isActive) "ACTIVE" else "INACTIVE"
+                it.copy(isBanned = updatedBanned)
+            } else it
         }
-        saveUsers(newList)
+        _managedUsers.value = newList
+        saveUsersLocallyOnly(newList)
+        patchUserField(target, JSONObject().put("status", newStatus))
     }
 
     fun toggleUserStatus(email: String) {
         if (!isAdmin()) return
+        val target = email.trim().lowercase()
+        var newStatus = "ACTIVE"
         val newList = _managedUsers.value.map {
-            if (it.email.lowercase() == email.lowercase()) it.copy(isActive = !it.isActive) else it
+            if (it.email.lowercase() == target) {
+                val updatedActive = !it.isActive
+                newStatus = if (updatedActive) "ACTIVE" else "INACTIVE"
+                it.copy(isActive = updatedActive)
+            } else it
         }
-        saveUsers(newList)
+        _managedUsers.value = newList
+        saveUsersLocallyOnly(newList)
+        patchUserField(target, JSONObject().put("status", newStatus))
     }
 
     fun resetUserLogins(email: String) {
         if (!isAdmin()) return
+        val target = email.trim().lowercase()
         val newList = _managedUsers.value.map {
-            if (it.email.lowercase() == email.lowercase()) it.copy(loginCount = 0, activeDevicesCount = 0) else it
+            if (it.email.lowercase() == target) it.copy(loginCount = 0, activeDevicesCount = 0) else it
         }
-        saveUsers(newList)
+        _managedUsers.value = newList
+        saveUsersLocallyOnly(newList)
+        patchUserField(target, JSONObject().put("loginCount", 0))
     }
 
     fun changeUserPassword(email: String, newPass: String): Boolean {
         if (!isAdmin()) return false
         val cleanPass = newPass.trim()
         if (cleanPass.isEmpty()) return false
+        val target = email.trim().lowercase()
         val newList = _managedUsers.value.map {
-            if (it.email.lowercase() == email.lowercase()) it.copy(passwordHash = cleanPass) else it
+            if (it.email.lowercase() == target) it.copy(passwordHash = cleanPass) else it
         }
-        saveUsers(newList)
+        _managedUsers.value = newList
+        saveUsersLocallyOnly(newList)
+        patchUserField(target, JSONObject().put("password", cleanPass))
         return true
     }
 
@@ -706,8 +932,9 @@ object AuthManager {
         last30d: Int
     ) {
         if (!isAdmin()) return
+        val target = email.trim().lowercase()
         val newList = _managedUsers.value.map {
-            if (it.email.lowercase() == email.lowercase()) {
+            if (it.email.lowercase() == target) {
                 it.copy(
                     totalOtps = totalOtps,
                     balanceTk = balanceTk,
@@ -717,7 +944,15 @@ object AuthManager {
                 )
             } else it
         }
-        saveUsers(newList)
+        _managedUsers.value = newList
+        saveUsersLocallyOnly(newList)
+        patchUserField(target, JSONObject().apply {
+            put("total_otps", totalOtps)
+            put("balance", balanceTk)
+            put("otp_today", today)
+            put("otp_7days", last7d)
+            put("otp_30days", last30d)
+        })
     }
 
     private const val KEY_BROADCAST_MESSAGE = "admin_broadcast_message"
@@ -797,7 +1032,8 @@ object AuthManager {
     }
 
     fun toggleUserSectionPermission(email: String, sectionKey: String) {
-        val target = email.lowercase()
+        val target = email.trim().lowercase()
+        var updatedSections: List<String> = emptyList()
         val list = _managedUsers.value.map { user ->
             if (user.email.lowercase() == target) {
                 val current = user.disabledSections
@@ -806,10 +1042,13 @@ object AuthManager {
                 } else {
                     current + sectionKey
                 }
+                updatedSections = updated
                 user.copy(disabledSections = updated)
             } else user
         }
-        saveUsers(list)
+        _managedUsers.value = list
+        saveUsersLocallyOnly(list)
+        patchUserDisabledSections(target, updatedSections)
     }
 
     fun isSectionAllowedForCurrentUser(sectionKey: String): Boolean {
@@ -856,7 +1095,75 @@ object AuthManager {
                     .patch(body)
                     .build()
                 httpClient.newCall(req).execute()
+
+                // Update local representation in memory as well
+                _managedUsers.value = _managedUsers.value.map { u ->
+                    if (u.email.lowercase() == email) {
+                        u.copy(
+                            totalOtps = st.totalOtpsAllTime,
+                            balanceTk = bal,
+                            todayOtps = st.todayOtps,
+                            last7DaysOtps = st.last7DaysOtps,
+                            last30DaysOtps = st.last30DaysOtps,
+                            isOnline = true,
+                            lastActive = System.currentTimeMillis()
+                        )
+                    } else u
+                }
             } catch (_: Exception) {}
+        }
+    }
+
+    fun resetUserDeviceBinding(targetEmail: String, onComplete: ((Boolean) -> Unit)? = null) {
+        val target = targetEmail.trim().lowercase()
+        if (target.isBlank() || target == ADMIN_EMAIL.lowercase()) {
+            onComplete?.invoke(false)
+            return
+        }
+        authScope.launch {
+            var success = false
+            try {
+                val payload = JSONObject().apply {
+                    put("bound_device_id", "")
+                    put("bound_device_model", "")
+                    put("bound_at", 0L)
+                    put("device_id", "")
+                    put("status", "ACTIVE")
+                }
+                val body = payload.toString().toRequestBody("application/json; charset=utf-8".toMediaTypeOrNull())
+                val req = okhttp3.Request.Builder()
+                    .url("$SUPABASE_BASE_URL/app_users?email=eq.$target")
+                    .header("apikey", SUPABASE_KEY)
+                    .header("Content-Type", "application/json")
+                    .patch(body)
+                    .build()
+                val resp = httpClient.newCall(req).execute()
+                success = resp.isSuccessful
+            } catch (_: Exception) {}
+
+            // Update in-memory user list
+            val updatedList = _managedUsers.value.map { u ->
+                if (u.email.lowercase() == target) {
+                    u.copy(
+                        boundDeviceId = null,
+                        boundDeviceModel = null,
+                        boundAt = 0L,
+                        deviceSessions = emptyList()
+                    )
+                } else u
+            }
+            _managedUsers.value = updatedList
+            saveUsersLocallyOnly(updatedList)
+
+            // If locally this device was bound to that email, clear it
+            val localBound = prefs?.getString("bound_device_email", "") ?: ""
+            if (localBound.equals(target, ignoreCase = true)) {
+                prefs?.edit()?.remove("bound_device_email")?.apply()
+            }
+
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                onComplete?.invoke(success)
+            }
         }
     }
 }

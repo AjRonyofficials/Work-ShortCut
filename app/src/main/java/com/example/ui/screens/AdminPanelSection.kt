@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -131,6 +132,7 @@ import com.example.service.VirtualNumberManager
 import com.example.service.WithdrawalManager
 import com.example.service.WithdrawalRequest
 import com.example.service.OtpHistoryManager
+import com.example.service.OtpHistoryRecord
 import com.example.service.GlobalCloudSyncService
 import kotlinx.coroutines.isActive
 import com.example.util.AllCountriesProvider
@@ -4664,6 +4666,16 @@ fun AdminUserManagerCard(
                                     val text = "Email: ${user.email}\nPassword: ${user.passwordHash}"
                                     ClipboardHelper.copyToClipboard(context, text, "User Credentials")
                                     Toast.makeText(context, "কপি করা হয়েছে: ${user.email}", Toast.LENGTH_SHORT).show()
+                                },
+                                onResetDeviceLock = {
+                                    AuthManager.resetUserDeviceBinding(user.email) { ok ->
+                                        if (ok) {
+                                            Toast.makeText(context, "✓ ${user.name}-এর ডিভাইস লক সফলভাবে রিসেট হয়েছে", Toast.LENGTH_SHORT).show()
+                                            com.example.util.VibrationHelper.vibrateSuccess(context)
+                                        } else {
+                                            Toast.makeText(context, "⚠️ ডিভাইস রিসেট ব্যর্থ হয়েছে", Toast.LENGTH_SHORT).show()
+                                        }
+                                    }
                                 }
                             )
                         }
@@ -4684,11 +4696,16 @@ fun AdminUserItemRow(
     onToggleSubAdmin: (Boolean) -> Unit,
     onUpdatePermissions: (com.example.service.SubAdminPermissions) -> Unit,
     onUpdateStats: (total: Int, balance: Double, today: Int, l7: Int, l30: Int) -> Unit,
-    onCopy: () -> Unit
+    onCopy: () -> Unit,
+    onResetDeviceLock: (() -> Unit)? = null
 ) {
+    val context = androidx.compose.ui.platform.LocalContext.current
     var passwordVisible by remember { mutableStateOf(false) }
     var showPermissionsDialog by remember { mutableStateOf(false) }
     var showEditStatsDialog by remember { mutableStateOf(false) }
+    var showOtpHistoryDialog by remember { mutableStateOf(false) }
+    var showUserWithdrawalsDialog by remember { mutableStateOf(false) }
+    var showResetDeviceConfirmDialog by remember { mutableStateOf(false) }
 
     val isSubAdmin = user.role == "SUB_ADMIN"
 
@@ -4959,19 +4976,53 @@ fun AdminUserItemRow(
                             color = Color(0xFF38BDF8)
                         )
 
-                        Surface(
-                            color = Color(0xFF0284C7).copy(alpha = 0.2f),
-                            shape = RoundedCornerShape(4.dp),
-                            border = BorderStroke(1.dp, Color(0xFF0284C7)),
-                            modifier = Modifier.clickable { showEditStatsDialog = true }
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
-                                verticalAlignment = Alignment.CenterVertically
+                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Surface(
+                                color = Color(0xFF0284C7).copy(alpha = 0.2f),
+                                shape = RoundedCornerShape(4.dp),
+                                border = BorderStroke(1.dp, Color(0xFF0284C7)),
+                                modifier = Modifier.clickable { showOtpHistoryDialog = true }
                             ) {
-                                Icon(Icons.Default.Edit, contentDescription = null, tint = Color(0xFF38BDF8), modifier = Modifier.size(10.dp))
-                                Spacer(modifier = Modifier.width(3.dp))
-                                Text("Edit OTP/Bal", fontSize = 8.5.sp, fontWeight = FontWeight.Bold, color = Color(0xFF38BDF8))
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(Icons.Default.Bolt, contentDescription = null, tint = Color(0xFF38BDF8), modifier = Modifier.size(9.dp))
+                                    Spacer(modifier = Modifier.width(2.dp))
+                                    Text("OTP হিস্ট্রি", fontSize = 8.sp, fontWeight = FontWeight.Bold, color = Color(0xFF38BDF8))
+                                }
+                            }
+
+                            Surface(
+                                color = Color(0xFFFFD600).copy(alpha = 0.15f),
+                                shape = RoundedCornerShape(4.dp),
+                                border = BorderStroke(1.dp, Color(0xFFFFD600).copy(alpha = 0.6f)),
+                                modifier = Modifier.clickable { showUserWithdrawalsDialog = true }
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(Icons.Default.AccountBalanceWallet, contentDescription = null, tint = Color(0xFFFFD600), modifier = Modifier.size(9.dp))
+                                    Spacer(modifier = Modifier.width(2.dp))
+                                    Text("উইথড্র", fontSize = 8.sp, fontWeight = FontWeight.Bold, color = Color(0xFFFFD600))
+                                }
+                            }
+
+                            Surface(
+                                color = Color(0xFF818CF8).copy(alpha = 0.2f),
+                                shape = RoundedCornerShape(4.dp),
+                                border = BorderStroke(1.dp, Color(0xFF818CF8)),
+                                modifier = Modifier.clickable { showEditStatsDialog = true }
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(Icons.Default.Edit, contentDescription = null, tint = Color(0xFFA5B4FC), modifier = Modifier.size(9.dp))
+                                    Spacer(modifier = Modifier.width(2.dp))
+                                    Text("এডিট", fontSize = 8.sp, fontWeight = FontWeight.Bold, color = Color(0xFFA5B4FC))
+                                }
                             }
                         }
                     }
@@ -5124,10 +5175,11 @@ fun AdminUserItemRow(
             }
 
             Spacer(modifier = Modifier.height(4.dp))
+            val isUserLiveOnline = user.isOnline && (System.currentTimeMillis() - user.lastActive) < 120_000L && user.lastActive > 0L
             Surface(
-                color = if (user.isOnline) Color(0xFF064E3B).copy(alpha = 0.35f) else Color(0xFF1E293B).copy(alpha = 0.5f),
+                color = if (isUserLiveOnline) Color(0xFF064E3B).copy(alpha = 0.35f) else Color(0xFF1E293B).copy(alpha = 0.5f),
                 shape = RoundedCornerShape(6.dp),
-                border = BorderStroke(1.dp, if (user.isOnline) Color(0xFF10B981) else Color(0xFF334155)),
+                border = BorderStroke(1.dp, if (isUserLiveOnline) Color(0xFF10B981) else Color(0xFF334155)),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Row(
@@ -5142,12 +5194,12 @@ fun AdminUserItemRow(
                             modifier = Modifier
                                 .size(7.dp)
                                 .clip(CircleShape)
-                                .background(if (user.isOnline) Color(0xFF00E676) else Color(0xFF94A3B8))
+                                .background(if (isUserLiveOnline) Color(0xFF00E676) else Color(0xFF94A3B8))
                         )
                         Spacer(modifier = Modifier.width(5.dp))
                         Text(
-                            text = if (user.isOnline) "🟢 লাইভ অনলাইন (সক্রিয়)" else "⚪ অফলাইন",
-                            color = if (user.isOnline) Color(0xFF34D399) else Color(0xFF94A3B8),
+                            text = if (isUserLiveOnline) "🟢 লাইভ অনলাইন (সক্রিয়)" else "⚪ অফলাইন",
+                            color = if (isUserLiveOnline) Color(0xFF34D399) else Color(0xFF94A3B8),
                             fontSize = 9.sp,
                             fontWeight = FontWeight.ExtraBold
                         )
@@ -5167,6 +5219,142 @@ fun AdminUserItemRow(
                         fontSize = 8.5.sp,
                         fontWeight = FontWeight.Medium
                     )
+                }
+            }
+
+            // 1-Phone 1-Account Bound Device Status Card
+            Surface(
+                color = if (!user.boundDeviceId.isNullOrBlank()) Color(0xFF1E1B0F) else Color(0xFF0F172A),
+                shape = RoundedCornerShape(6.dp),
+                border = BorderStroke(1.dp, if (!user.boundDeviceId.isNullOrBlank()) Color(0xFFF59E0B).copy(alpha = 0.5f) else Color(0xFF334155)),
+                modifier = Modifier.fillMaxWidth().padding(top = 4.dp)
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 8.dp, vertical = 5.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                        Icon(
+                            imageVector = if (!user.boundDeviceId.isNullOrBlank()) Icons.Default.Lock else Icons.Default.Security,
+                            contentDescription = null,
+                            tint = if (!user.boundDeviceId.isNullOrBlank()) Color(0xFFF59E0B) else Color(0xFF94A3B8),
+                            modifier = Modifier.size(13.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Column {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    text = if (!user.boundDeviceId.isNullOrBlank()) "🔒 ১-ফোন ১-মেইল লক সক্রিয়" else "🔓 ডিভাইস আনলকড (লক মুক্ত)",
+                                    fontSize = 9.5.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (!user.boundDeviceId.isNullOrBlank()) Color(0xFFFBBF24) else Color(0xFF94A3B8)
+                                )
+                            }
+                            val bModel = user.boundDeviceModel?.ifBlank { null } ?: user.lastDeviceName.ifEmpty { "Android Device" }
+                            val bIdText = if (!user.boundDeviceId.isNullOrBlank()) "ID: ${user.boundDeviceId?.take(12)}..." else "নতুন ডিভাইসে প্রথম লগইনে লক হবে"
+                            Text(
+                                text = "📱 $bModel • $bIdText",
+                                fontSize = 8.5.sp,
+                                color = Color(0xFFCBD5E1)
+                            )
+                        }
+                    }
+
+                    if (AuthManager.isPrimeAdmin() && onResetDeviceLock != null && !user.boundDeviceId.isNullOrBlank()) {
+                        Surface(
+                            color = Color(0xFFDC2626).copy(alpha = 0.2f),
+                            shape = RoundedCornerShape(4.dp),
+                            border = BorderStroke(1.dp, Color(0xFFEF4444)),
+                            modifier = Modifier.clickable { showResetDeviceConfirmDialog = true }
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(Icons.Default.Refresh, contentDescription = null, tint = Color(0xFFF87171), modifier = Modifier.size(11.dp))
+                                Spacer(modifier = Modifier.width(3.dp))
+                                Text(
+                                    text = "ডিভাইস রিসেট",
+                                    color = Color(0xFFF87171),
+                                    fontSize = 8.5.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Withdrawal Security PIN & Reset Request Card
+            Surface(
+                color = if (user.isPinResetRequested) Color(0xFF2D1515) else Color(0xFF0F172A),
+                shape = RoundedCornerShape(6.dp),
+                border = BorderStroke(1.dp, if (user.isPinResetRequested) Color(0xFFEF4444) else Color(0xFF334155)),
+                modifier = Modifier.fillMaxWidth().padding(top = 4.dp)
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 8.dp, vertical = 5.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                        Icon(
+                            imageVector = Icons.Default.Lock,
+                            contentDescription = null,
+                            tint = if (user.isPinResetRequested) Color(0xFFEF4444) else Color(0xFF38BDF8),
+                            modifier = Modifier.size(13.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Column {
+                            Text(
+                                text = if (user.isPinResetRequested) "⚠️ পিন রিসেট রিকোয়েস্ট পেন্ডিং" else "🔐 উইথড্রয়াল সিকিউরিটি পিন",
+                                fontSize = 9.5.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = if (user.isPinResetRequested) Color(0xFFFCA5A5) else Color(0xFFE2E8F0)
+                            )
+                            Text(
+                                text = if (user.isPinResetRequested) "ইউজার পিন ভুলে গেছেন এবং রিসেট চেয়েছেন" else "উইথড্রয়ালের ৪ ডিজিট সিকিউরিটি পিন",
+                                fontSize = 8.5.sp,
+                                color = if (user.isPinResetRequested) Color(0xFFF87171) else Color(0xFF94A3B8)
+                            )
+                        }
+                    }
+
+                    if (AuthManager.isAdmin()) {
+                        Surface(
+                            color = if (user.isPinResetRequested) Color(0xFFDC2626) else Color(0xFF334155),
+                            shape = RoundedCornerShape(4.dp),
+                            modifier = Modifier.clickable {
+                                AuthManager.resetUserPin(user.email) { success ->
+                                    Toast.makeText(
+                                        context,
+                                        if (success) "✓ ${user.email} এর পিন রিসেট হয়েছে! ইউজার এখন নতুন পিন সেট করতে পারবেন"
+                                        else "✓ পিন রিসেট সম্পন্ন হয়েছে",
+                                        Toast.LENGTH_LONG
+                                    ).show()
+                                }
+                            }
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(Icons.Default.Refresh, contentDescription = null, tint = Color.White, modifier = Modifier.size(11.dp))
+                                Spacer(modifier = Modifier.width(3.dp))
+                                Text(
+                                    text = if (user.isPinResetRequested) "পিন রিসেট করুন" else "রিসেট পিন",
+                                    color = Color.White,
+                                    fontSize = 9.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
+                    }
                 }
             }
 
@@ -5525,6 +5713,59 @@ fun AdminUserItemRow(
             }
         )
     }
+
+    if (showOtpHistoryDialog) {
+        AdminUserOtpHistoryDialog(
+            user = user,
+            onDismiss = { showOtpHistoryDialog = false }
+        )
+    }
+
+    if (showUserWithdrawalsDialog) {
+        AdminUserWithdrawalsDialog(
+            user = user,
+            onDismiss = { showUserWithdrawalsDialog = false }
+        )
+    }
+
+    if (showResetDeviceConfirmDialog) {
+        AlertDialog(
+            onDismissRequest = { showResetDeviceConfirmDialog = false },
+            containerColor = Color(0xFF0F172A),
+            shape = RoundedCornerShape(14.dp),
+            title = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.Refresh, contentDescription = null, tint = Color(0xFFEF4444), modifier = Modifier.size(20.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("⚠️ ডিভাইস আনলক / রিসেট", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                }
+            },
+            text = {
+                Text(
+                    text = "আপনি কি নিশ্চিত যে '${user.name}' (${user.email})-এর ডিভাইস লক রিসেট করতে চান?\n\nরিসেট করার পর ইউজার যেকোনো নতুন ডিভাইসে লগইন করতে পারবেন এবং তখন অ্যাকাউন্টটি ওই নতুন ডিভাইসে ১-টু-১ লক হয়ে যাবে।",
+                    fontSize = 11.5.sp,
+                    color = Color(0xFFCBD5E1),
+                    lineHeight = 16.sp
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showResetDeviceConfirmDialog = false
+                        onResetDeviceLock?.invoke()
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFDC2626))
+                ) {
+                    Text("হ্যাঁ, ডিভাইস রিসেট করুন", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                OutlinedButton(onClick = { showResetDeviceConfirmDialog = false }) {
+                    Text("বাতিল", color = Color.White, fontSize = 11.sp)
+                }
+            }
+        )
+    }
 }
 
 @Composable
@@ -5558,6 +5799,396 @@ fun PermissionToggleRow(
             )
         }
     }
+}
+
+@Composable
+fun AdminUserOtpHistoryDialog(
+    user: AuthUser,
+    onDismiss: () -> Unit
+) {
+    val context = LocalContext.current
+    var records by remember { mutableStateOf<List<OtpHistoryRecord>>(emptyList()) }
+    var isLoading by remember { mutableStateOf(true) }
+    var searchQuery by remember { mutableStateOf("") }
+    var refreshTrigger by remember { mutableIntStateOf(0) }
+
+    LaunchedEffect(user.email, refreshTrigger) {
+        isLoading = true
+        records = OtpHistoryManager.fetchUserOtpRecords(user.email)
+        isLoading = false
+    }
+
+    val filteredRecords = remember(records, searchQuery) {
+        if (searchQuery.isBlank()) records else {
+            records.filter {
+                it.phoneNumber.contains(searchQuery, ignoreCase = true) ||
+                it.service.contains(searchQuery, ignoreCase = true) ||
+                it.otpCode.contains(searchQuery, ignoreCase = true) ||
+                it.platform.contains(searchQuery, ignoreCase = true)
+            }
+        }
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = Color(0xFF0C1420),
+        shape = RoundedCornerShape(18.dp),
+        title = {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.Bolt, contentDescription = null, tint = Color(0xFF38BDF8), modifier = Modifier.size(20.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Column {
+                        Text("📜 ওটিপি হিস্ট্রি (Live OTPs)", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                        Text(user.name + " (${user.email})", fontSize = 10.5.sp, color = Color(0xFF94A3B8))
+                    }
+                }
+                IconButton(
+                    onClick = { refreshTrigger++ },
+                    modifier = Modifier.size(28.dp)
+                ) {
+                    Icon(Icons.Default.Refresh, contentDescription = "Refresh", tint = Color(0xFF38BDF8), modifier = Modifier.size(16.dp))
+                }
+            }
+        },
+        text = {
+            Column(modifier = Modifier.fillMaxWidth().heightIn(max = 480.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                // Search field
+                OutlinedTextField(
+                    value = searchQuery,
+                    onValueChange = { searchQuery = it },
+                    placeholder = { Text("নাম্বার, ওটিপি বা সার্ভিস দিয়ে খুঁজুন...", fontSize = 11.sp, color = Color(0xFF64748B)) },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(8.dp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = Color.White,
+                        unfocusedTextColor = Color.White,
+                        focusedBorderColor = Color(0xFF38BDF8),
+                        unfocusedBorderColor = Color(0xFF1E2D40),
+                        focusedContainerColor = Color(0xFF070B12),
+                        unfocusedContainerColor = Color(0xFF070B12)
+                    ),
+                    singleLine = true,
+                    leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = Color(0xFF64748B), modifier = Modifier.size(14.dp)) }
+                )
+
+                // Summary Row
+                Surface(
+                    color = Color(0xFF111C2B),
+                    shape = RoundedCornerShape(8.dp),
+                    border = BorderStroke(1.dp, Color(0xFF1E324A)),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 6.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("মোট রিসিভড: ${records.size} টি", fontSize = 10.sp, color = Color(0xFF38BDF8), fontWeight = FontWeight.Bold)
+                        val totalEarned = records.sumOf { it.rate }
+                        Text("মোট অর্জিত: ৳${String.format(Locale.US, "%.2f", totalEarned)}", fontSize = 10.sp, color = Color(0xFF34D399), fontWeight = FontWeight.Bold)
+                    }
+                }
+
+                if (isLoading) {
+                    Box(modifier = Modifier.fillMaxWidth().padding(28.dp), contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator(color = Color(0xFF38BDF8), modifier = Modifier.size(26.dp))
+                    }
+                } else if (filteredRecords.isEmpty()) {
+                    Box(modifier = Modifier.fillMaxWidth().padding(28.dp), contentAlignment = Alignment.Center) {
+                        Text(
+                            text = if (records.isEmpty()) "এই ইউজারের কোনো ওটিপি রেকর্ড পাওয়া যায়নি।" else "খুঁজে পাওয়া যায়নি।",
+                            color = Color(0xFF64748B),
+                            fontSize = 11.sp
+                        )
+                    }
+                } else {
+                    LazyColumn(
+                        modifier = Modifier.fillMaxWidth().weight(1f, fill = false),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        items(filteredRecords) { rec ->
+                            Surface(
+                                color = Color(0xFF090E17),
+                                shape = RoundedCornerShape(8.dp),
+                                border = BorderStroke(1.dp, Color(0xFF1B2A3D)),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth().padding(8.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Text(
+                                                text = rec.service,
+                                                color = Color(0xFF38BDF8),
+                                                fontSize = 10.sp,
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                            Spacer(modifier = Modifier.width(4.dp))
+                                            Surface(
+                                                color = Color(0xFF1E293B),
+                                                shape = RoundedCornerShape(3.dp)
+                                            ) {
+                                                Text(
+                                                    text = rec.platform,
+                                                    color = Color(0xFF94A3B8),
+                                                    fontSize = 7.5.sp,
+                                                    modifier = Modifier.padding(horizontal = 3.dp, vertical = 1.dp)
+                                                )
+                                            }
+                                        }
+                                        Spacer(modifier = Modifier.height(2.dp))
+                                        Text(
+                                            text = rec.phoneNumber,
+                                            color = Color.White,
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Medium,
+                                            fontFamily = FontFamily.Monospace
+                                        )
+                                        val timeStr = try {
+                                            SimpleDateFormat("dd MMM, hh:mm a", Locale.US).format(Date(rec.timestamp))
+                                        } catch (_: Exception) { "" }
+                                        Text(
+                                            text = "$timeStr • ৳${String.format(Locale.US, "%.2f", rec.rate)}",
+                                            color = Color(0xFF64748B),
+                                            fontSize = 8.5.sp
+                                        )
+                                    }
+
+                                    // OTP Code Box
+                                    Surface(
+                                        color = Color(0xFF10B981).copy(alpha = 0.2f),
+                                        shape = RoundedCornerShape(6.dp),
+                                        border = BorderStroke(1.dp, Color(0xFF10B981)),
+                                        modifier = Modifier.clickable {
+                                            ClipboardHelper.copyToClipboard(context, rec.otpCode, "OTP Code")
+                                            Toast.makeText(context, "OTP কোড কপি করা হয়েছে: ${rec.otpCode}", Toast.LENGTH_SHORT).show()
+                                        }
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Text(
+                                                text = rec.otpCode,
+                                                color = Color(0xFF34D399),
+                                                fontSize = 12.sp,
+                                                fontWeight = FontWeight.ExtraBold,
+                                                fontFamily = FontFamily.Monospace
+                                            )
+                                            Spacer(modifier = Modifier.width(4.dp))
+                                            Icon(
+                                                Icons.Default.ContentCopy,
+                                                contentDescription = "Copy",
+                                                tint = Color(0xFF34D399),
+                                                modifier = Modifier.size(11.dp)
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = onDismiss,
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0284C7)),
+                shape = RoundedCornerShape(8.dp)
+            ) {
+                Text("বন্ধ করুন", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+            }
+        }
+    )
+}
+
+@Composable
+fun AdminUserWithdrawalsDialog(
+    user: AuthUser,
+    onDismiss: () -> Unit
+) {
+    val context = LocalContext.current
+    val withdrawState by WithdrawalManager.state.collectAsState()
+    val userRequests = remember(withdrawState.allRequests, user.email) {
+        WithdrawalManager.getUserRequests(user.email)
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = Color(0xFF0C1420),
+        shape = RoundedCornerShape(18.dp),
+        title = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Default.AccountBalanceWallet, contentDescription = null, tint = Color(0xFFFFD600), modifier = Modifier.size(20.dp))
+                Spacer(modifier = Modifier.width(6.dp))
+                Column {
+                    Text("💳 উইথড্র রিকোয়েস্ট হিস্ট্রি", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                    Text(user.name + " (${user.email})", fontSize = 10.5.sp, color = Color(0xFF94A3B8))
+                }
+            }
+        },
+        text = {
+            Column(modifier = Modifier.fillMaxWidth().heightIn(max = 450.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                // Summary bar
+                val pendingTotal = userRequests.filter { it.status == "PENDING" }.sumOf { it.amount }
+                val approvedTotal = userRequests.filter { it.status == "APPROVED" }.sumOf { it.amount }
+                Surface(
+                    color = Color(0xFF111C2B),
+                    shape = RoundedCornerShape(8.dp),
+                    border = BorderStroke(1.dp, Color(0xFF1E324A)),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("পেন্ডিং: ৳${String.format(Locale.US, "%.0f", pendingTotal)}", fontSize = 10.sp, color = Color(0xFFFFD600), fontWeight = FontWeight.Bold)
+                        Text("অনুমোদিত: ৳${String.format(Locale.US, "%.0f", approvedTotal)}", fontSize = 10.sp, color = Color(0xFF00E676), fontWeight = FontWeight.Bold)
+                        Text("ব্যালেন্স: ৳${String.format(Locale.US, "%.1f", user.balanceTk)}", fontSize = 10.sp, color = Color(0xFF38BDF8), fontWeight = FontWeight.Bold)
+                    }
+                }
+
+                if (userRequests.isEmpty()) {
+                    Box(modifier = Modifier.fillMaxWidth().padding(28.dp), contentAlignment = Alignment.Center) {
+                        Text("এই ইউজারের কোনো উইথড্র রিকোয়েস্ট নেই।", color = Color(0xFF64748B), fontSize = 11.sp)
+                    }
+                } else {
+                    LazyColumn(
+                        modifier = Modifier.fillMaxWidth().weight(1f, fill = false),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        items(userRequests) { req ->
+                            Surface(
+                                color = Color(0xFF090E17),
+                                shape = RoundedCornerShape(8.dp),
+                                border = BorderStroke(1.dp, if (req.status == "PENDING") Color(0xFFFFD600).copy(alpha = 0.5f) else Color(0xFF1B2A3D)),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Column(modifier = Modifier.padding(8.dp)) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Text(req.method, fontWeight = FontWeight.Bold, color = Color.White, fontSize = 11.sp)
+                                            Spacer(modifier = Modifier.width(6.dp))
+                                            Surface(
+                                                color = when (req.status) {
+                                                    "PENDING" -> Color(0xFFFFD600).copy(alpha = 0.2f)
+                                                    "APPROVED" -> Color(0xFF00E676).copy(alpha = 0.2f)
+                                                    else -> Color(0xFFEF4444).copy(alpha = 0.2f)
+                                                },
+                                                shape = RoundedCornerShape(4.dp)
+                                            ) {
+                                                Text(
+                                                    text = when (req.status) {
+                                                        "PENDING" -> "🟡 PENDING"
+                                                        "APPROVED" -> "🟢 APPROVED"
+                                                        else -> "🔴 REJECTED"
+                                                    },
+                                                    color = when (req.status) {
+                                                        "PENDING" -> Color(0xFFFFD600)
+                                                        "APPROVED" -> Color(0xFF00E676)
+                                                        else -> Color(0xFFEF4444)
+                                                    },
+                                                    fontSize = 8.sp,
+                                                    fontWeight = FontWeight.Bold,
+                                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                                                )
+                                            }
+                                        }
+
+                                        Text(
+                                            text = "৳${String.format(Locale.US, "%.0f", req.amount)}",
+                                            fontWeight = FontWeight.ExtraBold,
+                                            color = Color(0xFF00E676),
+                                            fontSize = 12.sp
+                                        )
+                                    }
+
+                                    Spacer(modifier = Modifier.height(3.dp))
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(
+                                            text = "Acc: ${req.accountNumber}",
+                                            color = Color(0xFFCBD5E1),
+                                            fontSize = 10.sp,
+                                            fontFamily = FontFamily.Monospace
+                                        )
+                                        val dateStr = try {
+                                            SimpleDateFormat("dd MMM, hh:mm a", Locale.US).format(Date(req.requestTimestamp))
+                                        } catch (_: Exception) { "" }
+                                        Text(dateStr, color = Color(0xFF64748B), fontSize = 8.5.sp)
+                                    }
+
+                                    if (req.status == "PENDING") {
+                                        Spacer(modifier = Modifier.height(6.dp))
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                        ) {
+                                            Button(
+                                                onClick = {
+                                                    val success = WithdrawalManager.approveRequest(context, req.id)
+                                                    if (success) {
+                                                        Toast.makeText(context, "✓ রিকোয়েস্ট অনুমোদন সম্পন্ন!", Toast.LENGTH_SHORT).show()
+                                                    }
+                                                },
+                                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00E676)),
+                                                shape = RoundedCornerShape(6.dp),
+                                                modifier = Modifier.weight(1f).height(28.dp),
+                                                contentPadding = PaddingValues(0.dp)
+                                            ) {
+                                                Text("অনুমোদন করুন ✓", color = Color.Black, fontSize = 9.5.sp, fontWeight = FontWeight.Bold)
+                                            }
+
+                                            OutlinedButton(
+                                                onClick = {
+                                                    val success = WithdrawalManager.rejectRequest(context, req.id, "Admin rejected")
+                                                    if (success) {
+                                                        Toast.makeText(context, "বাতিল করা হয়েছে।", Toast.LENGTH_SHORT).show()
+                                                    }
+                                                },
+                                                shape = RoundedCornerShape(6.dp),
+                                                border = BorderStroke(1.dp, Color(0xFFEF4444)),
+                                                modifier = Modifier.weight(1f).height(28.dp),
+                                                contentPadding = PaddingValues(0.dp)
+                                            ) {
+                                                Text("বাতিল ✕", color = Color(0xFFEF4444), fontSize = 9.5.sp, fontWeight = FontWeight.Bold)
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = onDismiss,
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0284C7)),
+                shape = RoundedCornerShape(8.dp)
+            ) {
+                Text("বন্ধ করুন", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+            }
+        }
+    )
 }
 
 /**

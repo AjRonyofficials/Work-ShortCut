@@ -690,11 +690,49 @@ fun ClearDataSection(
         // Search Bar for installed apps
         item {
             Column {
-                Text(
-                    text = "Select from Installed Apps",
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.Bold
-                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Select from Installed Apps",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold
+                    )
+
+                    Surface(
+                        color = BrandSky.copy(alpha = 0.15f),
+                        shape = RoundedCornerShape(6.dp),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, BrandSky.copy(alpha = 0.5f)),
+                        modifier = Modifier.clickable {
+                            val workKeywords = listOf("whatsapp", "telegram", "chrome", "facebook", "katana", "orca", "instagram", "imo")
+                            val matchedApps = allInstalledApps.filter { app ->
+                                val pkg = app.packageName.lowercase()
+                                val name = app.appName.lowercase()
+                                workKeywords.any { kw -> pkg.contains(kw) || name.contains(kw) }
+                            }
+                            if (matchedApps.isEmpty()) {
+                                Toast.makeText(context, "কোনো কমন ওয়ার্ক অ্যাপস পাওয়া যায়নি", Toast.LENGTH_SHORT).show()
+                            } else {
+                                matchedApps.forEach { app ->
+                                    val isLite = app.isLiteStorageApp || AppManagerHelper.isLiteOrModdedApp(app.packageName, app.appName)
+                                    OverlayStateManager.toggleClearDataApp(app.copy(isLiteStorageApp = isLite), true, isLite)
+                                }
+                                Toast.makeText(context, "✓ ${matchedApps.size}টি ওয়ার্ক অ্যাপ সিলেক্ট করা হয়েছে!", Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                        ) {
+                            Icon(Icons.Default.CleaningServices, contentDescription = null, tint = BrandSky, modifier = Modifier.size(12.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("⚡ 1-Tap Select Work Apps", color = BrandSky, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
                 Spacer(modifier = Modifier.height(8.dp))
 
                 OutlinedTextField(

@@ -974,9 +974,10 @@ object PremiumNumberV2Manager {
         _state.update { it.copy(activeNumbers = updated) }
     }
 
-    private fun saveNumbers(list: List<ProvisionedNumber>) {
+    private fun saveNumbers(list: List<ProvisionedNumber>, email: String = AuthManager.currentEmail.value) {
         try {
             val arr = JSONArray()
+            val effectiveEmail = email.trim().lowercase()
             for (item in list) {
                 val obj = JSONObject().apply {
                     put("id", item.id)
@@ -994,16 +995,24 @@ object PremiumNumberV2Manager {
                     put("rate", item.rate)
                     put("rentalId", item.rentalId ?: "")
                     put("flag", item.flag ?: "")
+                    put("userEmail", item.userEmail.ifEmpty { effectiveEmail })
                 }
                 arr.put(obj)
             }
-            prefs?.edit()?.putString("active_numbers_json", arr.toString())?.apply()
+            prefs?.edit()?.putString(getUserNumbersKey(effectiveEmail), arr.toString())?.apply()
         } catch (_: Exception) {}
     }
 
-    private fun loadNumbers(): List<ProvisionedNumber> {
-        val json = prefs?.getString("active_numbers_json", "[]") ?: "[]"
+    private fun getUserNumbersKey(email: String = AuthManager.currentEmail.value): String {
+        val clean = email.trim().lowercase()
+        return if (clean.isNotEmpty()) "v2_active_numbers_json_$clean" else "active_numbers_json"
+    }
+
+    private fun loadNumbers(email: String = AuthManager.currentEmail.value): List<ProvisionedNumber> {
+        val key = getUserNumbersKey(email)
+        val json = prefs?.getString(key, "[]") ?: "[]"
         val list = mutableListOf<ProvisionedNumber>()
+        val effectiveEmail = email.trim().lowercase()
         try {
             val arr = JSONArray(json)
             for (i in 0 until arr.length()) {
@@ -1024,13 +1033,39 @@ object PremiumNumberV2Manager {
                         gateway = obj.optString("gateway", "PREMIUM_V2"),
                         rate = obj.optDouble("rate", 0.50),
                         rentalId = obj.optString("rentalId", "").ifEmpty { null },
-                        flag = obj.optString("flag", "").ifEmpty { null }
+                        flag = obj.optString("flag", "").ifEmpty { null },
+                        userEmail = obj.optString("userEmail", effectiveEmail)
                     )
                 )
             }
         } catch (_: Exception) {}
         val cutoff = System.currentTimeMillis() - 24 * 60 * 60 * 1000L
         return list.filter { it.timestamp >= cutoff }.sortedByDescending { it.timestamp }
+    }
+
+    fun onUserLoggedIn(email: String) {
+        val loaded = loadNumbers(email)
+        _state.update { it.copy(activeNumbers = loaded) }
+    }
+
+    fun stopPolling() {
+        pollingJob?.cancel()
+        pollingJob = null
+        tickerJob?.cancel()
+        tickerJob = null
+    }
+
+    fun onUserLoggedOut() {
+        stopPolling()
+        _state.update {
+            it.copy(
+                activeNumbers = emptyList(),
+                liveConsoleFeed = emptyList(),
+                todayOtpCount = 0,
+                isPolling = false,
+                isLoading = false
+            )
+        }
     }
 
     private fun saveCountryRates(rates: Map<String, Double>) {

@@ -369,9 +369,16 @@ object UnixSmsManager {
         prefs?.edit()?.putString(KEY_UPLOADED_NUMBERS, arr.toString())?.apply()
     }
 
-    private fun loadActiveNumbers(): List<ProvisionedNumber> {
-        val json = prefs?.getString(KEY_ACTIVE_NUMBERS, "[]") ?: "[]"
+    private fun getUserActiveNumbersKey(email: String = AuthManager.currentEmail.value): String {
+        val clean = email.trim().lowercase()
+        return if (clean.isNotEmpty()) "${KEY_ACTIVE_NUMBERS}_$clean" else KEY_ACTIVE_NUMBERS
+    }
+
+    private fun loadActiveNumbers(email: String = AuthManager.currentEmail.value): List<ProvisionedNumber> {
+        val key = getUserActiveNumbersKey(email)
+        val json = prefs?.getString(key, "[]") ?: "[]"
         val list = mutableListOf<ProvisionedNumber>()
+        val effectiveEmail = email.trim().lowercase()
         try {
             val arr = JSONArray(json)
             for (i in 0 until arr.length()) {
@@ -397,7 +404,8 @@ object UnixSmsManager {
                         gateway = o.optString("gateway", "LAMIX"),
                         rate = o.optDouble("rate", 0.50),
                         fbStatus = o.optString("fbStatus").ifEmpty { null },
-                        fbTagType = fbTag
+                        fbTagType = fbTag,
+                        userEmail = o.optString("userEmail", effectiveEmail)
                     )
                 )
             }
@@ -406,8 +414,9 @@ object UnixSmsManager {
         return list.filter { it.timestamp >= cutoff }
     }
 
-    private fun saveActiveNumbers(list: List<ProvisionedNumber>) {
+    private fun saveActiveNumbers(list: List<ProvisionedNumber>, email: String = AuthManager.currentEmail.value) {
         val arr = JSONArray()
+        val effectiveEmail = email.trim().lowercase()
         for (item in list) {
             val o = JSONObject()
             o.put("id", item.id)
@@ -425,9 +434,15 @@ object UnixSmsManager {
             o.put("rate", item.rate)
             o.put("fbStatus", item.fbStatus ?: "")
             o.put("fbTagType", item.fbTagType.name)
+            o.put("userEmail", item.userEmail.ifEmpty { effectiveEmail })
             arr.put(o)
         }
-        prefs?.edit()?.putString(KEY_ACTIVE_NUMBERS, arr.toString())?.apply()
+        prefs?.edit()?.putString(getUserActiveNumbersKey(effectiveEmail), arr.toString())?.apply()
+    }
+
+    fun onUserLoggedIn(email: String) {
+        val loaded = loadActiveNumbers(email)
+        _state.update { it.copy(activeNumbers = loaded) }
     }
 
     fun setApiToken(token: String) {
@@ -1530,5 +1545,17 @@ object UnixSmsManager {
     fun clearActiveNumbers() {
         _state.update { it.copy(activeNumbers = emptyList()) }
         saveActiveNumbers(emptyList())
+    }
+
+    fun onUserLoggedOut() {
+        stopPolling()
+        _state.update {
+            it.copy(
+                activeNumbers = emptyList(),
+                liveCdrRecords = emptyList(),
+                isPolling = false,
+                todayOtpCount = 0
+            )
+        }
     }
 }

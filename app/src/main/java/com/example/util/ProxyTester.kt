@@ -28,6 +28,7 @@ object ProxyTester {
         val city: String? = null,
         val isp: String? = null,
         val timezone: String? = null,
+        val workingProtocol: String? = null,
         val errorMessage: String? = null
     )
 
@@ -102,20 +103,31 @@ object ProxyTester {
         var resolvedIp: String? = null
         val isHttp = protocol.equals("HTTP", ignoreCase = true) || protocol.equals("HTTPS", ignoreCase = true)
 
+        var detectedProtocol: String? = null
         // Step 2: High-Performance Direct Socket Handshake (Supports SOCKS5 RFC 1928/1929 Auth & HTTP CONNECT)
         if (!isHttp) {
             // Try direct SOCKS5 first
             resolvedIp = testDirectSocks5(cleanHost, port, username, password, minOf(effectiveTimeout, 3500))
-            if (resolvedIp.isNullOrBlank()) {
+            if (!resolvedIp.isNullOrBlank()) {
+                detectedProtocol = "SOCKS5"
+            } else {
                 // In case user specified SOCKS5 but proxy is actually HTTP
                 resolvedIp = testDirectHttp(cleanHost, port, username, password, minOf(effectiveTimeout, 3000))
+                if (!resolvedIp.isNullOrBlank()) {
+                    detectedProtocol = "HTTP"
+                }
             }
         } else {
             // Try direct HTTP first
             resolvedIp = testDirectHttp(cleanHost, port, username, password, minOf(effectiveTimeout, 3500))
-            if (resolvedIp.isNullOrBlank()) {
+            if (!resolvedIp.isNullOrBlank()) {
+                detectedProtocol = "HTTP"
+            } else {
                 // In case user specified HTTP but proxy is actually SOCKS5
                 resolvedIp = testDirectSocks5(cleanHost, port, username, password, minOf(effectiveTimeout, 3000))
+                if (!resolvedIp.isNullOrBlank()) {
+                    detectedProtocol = "SOCKS5"
+                }
             }
         }
 
@@ -253,7 +265,8 @@ object ProxyTester {
             countryName = countryName,
             city = city,
             isp = isp,
-            timezone = timezone
+            timezone = timezone,
+            workingProtocol = detectedProtocol
         )
     }
 

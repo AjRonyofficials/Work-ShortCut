@@ -344,7 +344,8 @@ object KopEngine2Manager {
                                     range = range,
                                     timestamp = now,
                                     expiresAt = now + (secondsRemaining * 1000L).coerceAtLeast(15 * 60 * 1000L),
-                                    requestId = if (reqId > 0L) reqId else null
+                                    requestId = if (reqId > 0L) reqId else null,
+                                    userEmail = AuthManager.currentEmail.value.trim().lowercase()
                                 )
                                 newNumbers.add(item)
                                 successCount++
@@ -769,9 +770,16 @@ object KopEngine2Manager {
         prefs?.edit()?.putInt(getTodayKey(), count)?.apply()
     }
 
-    private fun loadUserProvisionedNumbers(): List<ProvisionedNumber> {
-        val json = prefs?.getString("kop2_user_provisioned_numbers_v2", null) ?: return emptyList()
+    private fun getUserNumbersKey(email: String = AuthManager.currentEmail.value): String {
+        val clean = email.trim().lowercase()
+        return if (clean.isNotEmpty()) "kop2_user_provisioned_numbers_v2_$clean" else "kop2_user_provisioned_numbers_v2"
+    }
+
+    private fun loadUserProvisionedNumbers(email: String = AuthManager.currentEmail.value): List<ProvisionedNumber> {
+        val key = getUserNumbersKey(email)
+        val json = prefs?.getString(key, null) ?: return emptyList()
         val list = mutableListOf<ProvisionedNumber>()
+        val effectiveEmail = email.trim().lowercase()
         try {
             val arr = JSONArray(json)
             for (i in 0 until arr.length()) {
@@ -789,7 +797,8 @@ object KopEngine2Manager {
                         otpMessage = if (o.has("otpMessage") && !o.isNull("otpMessage")) o.optString("otpMessage") else null,
                         timestamp = o.optLong("timestamp", System.currentTimeMillis()),
                         expiresAt = o.optLong("expiresAt", System.currentTimeMillis() + 15 * 60 * 1000L),
-                        requestId = if (o.has("requestId") && !o.isNull("requestId")) o.optLong("requestId") else null
+                        requestId = if (o.has("requestId") && !o.isNull("requestId")) o.optLong("requestId") else null,
+                        userEmail = o.optString("userEmail", effectiveEmail)
                     )
                 )
             }
@@ -798,9 +807,10 @@ object KopEngine2Manager {
         return list.filter { it.timestamp >= cutoff }
     }
 
-    private fun saveUserProvisionedNumbers(list: List<ProvisionedNumber>) {
+    private fun saveUserProvisionedNumbers(list: List<ProvisionedNumber>, email: String = AuthManager.currentEmail.value) {
         try {
             val arr = JSONArray()
+            val effectiveEmail = email.trim().lowercase()
             for (item in list) {
                 val o = JSONObject()
                 o.put("id", item.id)
@@ -815,13 +825,17 @@ object KopEngine2Manager {
                 o.put("timestamp", item.timestamp)
                 o.put("expiresAt", item.expiresAt)
                 item.requestId?.let { o.put("requestId", it) }
+                o.put("userEmail", item.userEmail.ifEmpty { effectiveEmail })
                 arr.put(o)
             }
-            prefs?.edit()?.putString("kop2_user_provisioned_numbers_v2", arr.toString())?.apply()
+            prefs?.edit()?.putString(getUserNumbersKey(effectiveEmail), arr.toString())?.apply()
         } catch (_: Exception) {}
     }
 
-
+    fun onUserLoggedIn(email: String) {
+        val loaded = loadUserProvisionedNumbers(email)
+        _state.update { it.copy(provisionedNumbers = loaded) }
+    }
 
     fun isPhoneNumberMatch(num1: String, num2: String): Boolean {
         val d1 = num1.replace("[^0-9]".toRegex(), "")
@@ -830,5 +844,18 @@ object KopEngine2Manager {
         val len = minOf(d1.length, d2.length, 9)
         if (len < 7) return false
         return d1.takeLast(len) == d2.takeLast(len)
+    }
+
+    fun onUserLoggedOut() {
+        stopAutoPolling()
+        _state.update {
+            it.copy(
+                provisionedNumbers = emptyList(),
+                broadcastFeed = emptyList(),
+                todayOtpCount = 0,
+                isLoading = false,
+                isPolling = false
+            )
+        }
     }
 }

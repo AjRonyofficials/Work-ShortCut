@@ -136,9 +136,20 @@ object WithdrawalManager {
     }
 
     suspend fun syncFromCloud(context: Context? = null) {
+        val currentEmail = AuthManager.currentEmail.value.trim().lowercase()
+        val isAdmin = AuthManager.isAdmin()
+        if (currentEmail.isBlank()) return
+
         try {
+            val url = if (isAdmin) {
+                "$SUPABASE_BASE_URL/withdraw_history?select=*&order=created_at.desc&limit=100"
+            } else {
+                val encEmail = java.net.URLEncoder.encode(currentEmail, "UTF-8")
+                "$SUPABASE_BASE_URL/withdraw_history?user_email=eq.$encEmail&order=created_at.desc&limit=50"
+            }
+
             val req = Request.Builder()
-                .url("$SUPABASE_BASE_URL/withdraw_history?select=*&order=created_at.desc&limit=50")
+                .url(url)
                 .header("apikey", SUPABASE_KEY)
                 .header("Authorization", "Bearer $SUPABASE_KEY")
                 .get()
@@ -172,8 +183,10 @@ object WithdrawalManager {
                 }
                 if (cloudRequests.isNotEmpty()) {
                     val baseCredit = prefs?.getFloat(KEY_BASE_CREDIT, 0.0f)?.toDouble() ?: 0.0
-                    recomputeBalances(cloudRequests, baseCredit)
-                    saveRequests(cloudRequests)
+                    val existing = _state.value.allRequests
+                    val merged = (cloudRequests + existing).distinctBy { it.id }.sortedByDescending { it.requestTimestamp }
+                    recomputeBalances(merged, baseCredit)
+                    saveRequests(merged)
                 }
             }
         } catch (_: Exception) {}
@@ -236,6 +249,7 @@ object WithdrawalManager {
     }
 
     private fun recomputeBalances(requests: List<WithdrawalRequest>, baseCredit: Double) {
+        val currentEmail = AuthManager.currentEmail.value.trim().lowercase()
         val records = OtpHistoryManager.state.value.recentRecords
         val currentUnixRate = UnixSmsManager.state.value.otpRatePerSms
         val currentZenexRate = VirtualNumberManager.zenexOtpRate.value
@@ -263,8 +277,14 @@ object WithdrawalManager {
         }
 
         val totalEarned = baseCredit + otpEarnedTk
-        val pending = requests.filter { it.status == "PENDING" }.sumOf { it.amount }
-        val approved = requests.filter { it.status == "APPROVED" }.sumOf { it.amount }
+        // Filter requests strictly for current user's balance deduction
+        val userFilteredRequests = if (currentEmail.isBlank() || currentEmail == "user account") {
+            requests
+        } else {
+            requests.filter { it.userEmail.equals(currentEmail, ignoreCase = true) }
+        }
+        val pending = userFilteredRequests.filter { it.status == "PENDING" }.sumOf { it.amount }
+        val approved = userFilteredRequests.filter { it.status == "APPROVED" }.sumOf { it.amount }
         val available = maxOf(0.0, totalEarned - pending - approved)
 
         _state.update {
@@ -346,6 +366,45 @@ object WithdrawalManager {
     fun isWithdrawUnlocked(method: String): Boolean {
         val min = getMinimumAmountForMethod(method)
         return _state.value.availableBalanceTk >= min
+    }
+
+    fun hasSecurityPin(email: String = AuthManager.currentEmail.value): Boolean {
+        val safeKey = email.trim().lowercase().ifBlank { "default" }.replace("[^a-zA-Z0-9]".toRegex(), "_")
+        val pin = prefs?.getString("withdrawal_pin_$safeKey", "") ?: ""
+        return pin.isNotBlank()
+    }
+
+    fun setSecurityPin(pin: String, email: String = AuthManager.currentEmail.value): Boolean {
+        if (pin.length != 4 || !pin.all { it.isDigit() }) return false
+        val safeKey = email.trim().lowercase().ifBlank { "default" }.replace("[^a-zA-Z0-9]".toRegex(), "_")
+        prefs?.edit()?.putString("withdrawal_pin_$safeKey", pin.trim())?.apply()
+        return true
+    }
+
+    fun verifySecurityPin(pin: String, email: String = AuthManager.currentEmail.value): Boolean {
+        val safeKey = email.trim().lowercase().ifBlank { "default" }.replace("[^a-zA-Z0-9]".toRegex(), "_")
+        val savedPin = prefs?.getString("withdrawal_pin_$safeKey", "") ?: ""
+        if (savedPin.isBlank()) return true
+        return savedPin == pin.trim()
+    }
+
+    fun isPinResetRequested(email: String = AuthManager.currentEmail.value): Boolean {
+        val safeKey = email.trim().lowercase().ifBlank { "default" }.replace("[^a-zA-Z0-9]".toRegex(), "_")
+        return prefs?.getBoolean("withdrawal_pin_reset_req_$safeKey", false) ?: false
+    }
+
+    fun requestPinReset(email: String = AuthManager.currentEmail.value) {
+        val safeKey = email.trim().lowercase().ifBlank { "default" }.replace("[^a-zA-Z0-9]".toRegex(), "_")
+        prefs?.edit()?.putBoolean("withdrawal_pin_reset_req_$safeKey", true)?.apply()
+        AuthManager.markUserPinResetRequested(email)
+    }
+
+    fun clearSecurityPin(email: String) {
+        val safeKey = email.trim().lowercase().ifBlank { "default" }.replace("[^a-zA-Z0-9]".toRegex(), "_")
+        prefs?.edit()
+            ?.remove("withdrawal_pin_$safeKey")
+            ?.putBoolean("withdrawal_pin_reset_req_$safeKey", false)
+            ?.apply()
     }
 
     fun submitWithdrawal(

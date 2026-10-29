@@ -258,7 +258,7 @@ fun MainScreen(
                     .imePadding()
             ) {
                 val isCurrentTabAllowed = when (selectedTab) {
-                    AppNavTab.VIRTUAL_NUMBERS -> true
+                    AppNavTab.VIRTUAL_NUMBERS -> com.example.service.AuthManager.isSectionAllowedForCurrentUser("VIRTUAL_NUMBERS")
                     AppNavTab.SHORTCUTS -> com.example.service.AuthManager.isSectionAllowedForCurrentUser("APP_SHORTCUTS")
                     AppNavTab.NAMES -> com.example.service.AuthManager.isSectionAllowedForCurrentUser("NAME_GENERATOR")
                     AppNavTab.EXCEL -> com.example.service.AuthManager.isSectionAllowedForCurrentUser("EXCEL_COLLECTOR")
@@ -267,7 +267,7 @@ fun MainScreen(
                     AppNavTab.PROXY -> com.example.service.AuthManager.isSectionAllowedForCurrentUser("PROXY")
                     AppNavTab.CLEAR_DATA -> com.example.service.AuthManager.isSectionAllowedForCurrentUser("CLEAR_DATA")
                     AppNavTab.SETTINGS -> true
-                    AppNavTab.ADMIN_PANEL -> true
+                    AppNavTab.ADMIN_PANEL -> com.example.service.AuthManager.isAdmin()
                 }
 
                 if (!isCurrentTabAllowed) {

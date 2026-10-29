@@ -94,9 +94,13 @@ class SuperProxyVpnService : VpnService() {
                 .setSession("SuperProxy: $profileName")
                 .setMtu(1400) // Standard 1400 MTU guarantees zero packet drops/fragmentation on 4G/5G mobile carriers
                 .addAddress("10.10.10.10", 24)
-                .addDnsServer("8.8.8.8") // Strict: ONLY 8.8.8.8 so 100% of DNS is intercepted by mapdns with zero carrier leak
+                .addDnsServer("10.10.10.1") // Local tunnel synthetic mapdns
+                .addDnsServer("1.1.1.1")    // Cloudflare fallback DNS routed inside tunnel
+                .addDnsServer("8.8.8.8")    // Google fallback DNS routed inside tunnel
                 .addRoute("240.0.0.0", 4)   // Synthetic mapped DNS network
                 .addRoute("0.0.0.0", 0)     // Route entire device IPv4 traffic into tun0
+                .addAddress("fd00:1::1", 64) // Route IPv6 to prevent carrier IP leaks & Chrome Happy Eyeballs browser delays
+                .addRoute("::", 0)
 
             // Strict Anti-Leak: No bypass allowed so Facebook, WhatsApp, Instagram cannot leak carrier IP/DNS
 
@@ -172,6 +176,7 @@ class SuperProxyVpnService : VpnService() {
             sb.append("  name: tun0\n")
             sb.append("  mtu: 1400\n")
             sb.append("  ipv4: 10.10.10.10\n")
+            sb.append("  ipv6: 'fd00:1::1'\n")
             sb.append("  icmp: true\n")
             sb.append("\n")
             sb.append("socks5:\n")
@@ -185,7 +190,7 @@ class SuperProxyVpnService : VpnService() {
             }
             sb.append("\n")
             sb.append("mapdns:\n")
-            sb.append("  address: 8.8.8.8\n")
+            sb.append("  address: 10.10.10.1\n")
             sb.append("  port: 53\n")
             sb.append("  network: 240.0.0.0\n")
             sb.append("  netmask: 240.0.0.0\n")
@@ -193,8 +198,9 @@ class SuperProxyVpnService : VpnService() {
             sb.append("\n")
             sb.append("misc:\n")
             sb.append("  task-stack-size: 81920\n")
-            sb.append("  connect-timeout: 8000\n")
-            sb.append("  tcp-read-write-timeout: 300000\n")
+            sb.append("  tcp-buffer-size: 65536\n")
+            sb.append("  connect-timeout: 15000\n")
+            sb.append("  read-write-timeout: 300000\n")
             sb.append("  limit-nofile: 65535\n")
 
             FileOutputStream(configFile).use { it.write(sb.toString().toByteArray()) }

@@ -19,7 +19,8 @@ data class ProvisionedNumber(
     val rentalId: String? = null,
     val flag: String? = null,
     val fbStatus: String? = null,
-    val fbTagType: com.example.service.PhoneItem.TagType = com.example.service.PhoneItem.TagType.PENDING
+    val fbTagType: com.example.service.PhoneItem.TagType = com.example.service.PhoneItem.TagType.PENDING,
+    val userEmail: String = ""
 )
 
 data class ActiveRangeItem(

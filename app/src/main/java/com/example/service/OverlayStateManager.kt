@@ -1315,6 +1315,23 @@ object OverlayStateManager {
             val isp = if (result.isSuccess) (result.isp ?: "") else ""
             val latency = if (result.latencyMs > 0) result.latencyMs else 32L
             val locLabel = if (city.isNotEmpty()) "$city, $country" else country
+            val activeProtocol = result.workingProtocol ?: proxy.protocol
+
+            // If the verified handshake protocol differs from user selection, seamlessly re-launch with working protocol
+            if (result.workingProtocol != null && !result.workingProtocol.equals(proxy.protocol, ignoreCase = true)) {
+                context?.let { ctx ->
+                    SuperProxyVpnService.start(
+                        context = ctx,
+                        profileName = proxy.profileName,
+                        server = proxy.host,
+                        port = proxy.port,
+                        protocol = result.workingProtocol,
+                        user = proxy.username,
+                        pass = proxy.password,
+                        allowedApps = proxy.allowedApps
+                    )
+                }
+            }
 
             kotlinx.coroutines.withContext(Dispatchers.Main) {
                 _uiState.update {
@@ -1323,6 +1340,7 @@ object OverlayStateManager {
                             isConnected = true,
                             isTesting = false,
                             connectedDurationSeconds = 0,
+                            protocol = activeProtocol,
                             ipAddress = effectiveIp,
                             ipVersion = result.ipVersion,
                             countryCode = country,

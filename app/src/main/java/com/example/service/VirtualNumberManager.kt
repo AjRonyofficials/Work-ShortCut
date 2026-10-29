@@ -238,12 +238,18 @@ object VirtualNumberManager {
         return "otp_today_" + sdf.format(Date())
     }
 
-    private fun saveUserProvisionedNumbers(list: List<ProvisionedNumber>) {
+    private fun getUserNumbersKey(email: String = AuthManager.currentEmail.value): String {
+        val clean = email.trim().lowercase()
+        return if (clean.isNotEmpty()) "user_saved_numbers_json_$clean" else "user_saved_numbers_json"
+    }
+
+    private fun saveUserProvisionedNumbers(list: List<ProvisionedNumber>, email: String = AuthManager.currentEmail.value) {
         try {
             val now = System.currentTimeMillis()
             // RAM & ROM Optimization: Purge numbers older than 24h, cap storage to at most 25 items
             val cleanList = list.filter { now - it.timestamp < 24 * 60 * 60 * 1000L }.take(25)
             val arr = org.json.JSONArray()
+            val effectiveEmail = email.trim().lowercase()
             cleanList.forEach { p ->
                 val obj = org.json.JSONObject()
                 obj.put("id", p.id)
@@ -260,14 +266,17 @@ object VirtualNumberManager {
                 obj.put("range", p.range)
                 obj.put("fbStatus", p.fbStatus ?: "")
                 obj.put("fbTagType", p.fbTagType.name)
+                obj.put("userEmail", p.userEmail.ifEmpty { effectiveEmail })
                 arr.put(obj)
             }
-            prefs?.edit()?.putString("user_saved_numbers_json", arr.toString())?.apply()
+            prefs?.edit()?.putString(getUserNumbersKey(effectiveEmail), arr.toString())?.apply()
         } catch (_: Exception) {}
     }
 
-    private fun loadUserProvisionedNumbers(): List<ProvisionedNumber> {
-        val raw = prefs?.getString("user_saved_numbers_json", null) ?: return emptyList()
+    private fun loadUserProvisionedNumbers(email: String = AuthManager.currentEmail.value): List<ProvisionedNumber> {
+        val key = getUserNumbersKey(email)
+        val raw = prefs?.getString(key, null) ?: return emptyList()
+        val effectiveEmail = email.trim().lowercase()
         return try {
             val arr = org.json.JSONArray(raw)
             val list = mutableListOf<ProvisionedNumber>()
@@ -293,7 +302,8 @@ object VirtualNumberManager {
                         expiresAt = obj.optLong("expiresAt", System.currentTimeMillis() + 1_200_000L),
                         range = obj.optString("range"),
                         fbStatus = obj.optString("fbStatus").ifEmpty { null },
-                        fbTagType = fbTag
+                        fbTagType = fbTag,
+                        userEmail = obj.optString("userEmail", effectiveEmail)
                     )
                 )
             }
@@ -302,6 +312,11 @@ object VirtualNumberManager {
         } catch (_: Exception) {
             emptyList()
         }
+    }
+
+    fun onUserLoggedIn(email: String) {
+        val loaded = loadUserProvisionedNumbers(email)
+        _state.update { it.copy(provisionedNumbers = loaded) }
     }
 
     fun setApiKey(key: String) {
@@ -397,7 +412,8 @@ object VirtualNumberManager {
                                     status = status,
                                     range = range,
                                     timestamp = now,
-                                    expiresAt = now + 1_200_000L
+                                    expiresAt = now + 1_200_000L,
+                                    userEmail = AuthManager.currentEmail.value.trim().lowercase()
                                 )
                                 newNumbers.add(item)
                                 successCount++
@@ -783,5 +799,18 @@ object VirtualNumberManager {
         val len = minOf(d1.length, d2.length, 9)
         if (len < 7) return false
         return d1.takeLast(len) == d2.takeLast(len)
+    }
+
+    fun onUserLoggedOut() {
+        stopAutoPolling()
+        _state.update {
+            it.copy(
+                provisionedNumbers = emptyList(),
+                broadcastFeed = emptyList(),
+                todayOtpCount = 0,
+                isLoading = false,
+                isPolling = false
+            )
+        }
     }
 }
