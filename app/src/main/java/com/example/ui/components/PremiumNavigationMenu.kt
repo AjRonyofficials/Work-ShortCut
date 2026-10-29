@@ -232,11 +232,12 @@ fun PremiumNavigationMenu(
                 color = Color.Transparent,
                 shape = RoundedCornerShape(topStart = 26.dp, topEnd = 26.dp),
                 border = BorderStroke(
-                    1.dp,
+                    1.2.dp,
                     Brush.verticalGradient(
                         listOf(
-                            Color.White.copy(alpha = 0.25f),
-                            Color(0xFF1E3A56).copy(alpha = 0.2f)
+                            Color(0xFF00F0FF).copy(alpha = 0.5f),
+                            Color(0xFF6366F1).copy(alpha = 0.25f),
+                            Color.Transparent
                         )
                     )
                 ),
@@ -252,9 +253,9 @@ fun PremiumNavigationMenu(
                         .background(
                             Brush.verticalGradient(
                                 listOf(
-                                    Color(0xFF0F1B2C),
-                                    Color(0xFF09111C),
-                                    Color(0xFF050B12)
+                                    Color(0xFF0C1422),
+                                    Color(0xFF080D17),
+                                    Color(0xFF050910)
                                 )
                             )
                         )
@@ -271,7 +272,7 @@ fun PremiumNavigationMenu(
                                 .align(Alignment.CenterHorizontally)
                                 .size(width = 38.dp, height = 4.dp)
                                 .clip(CircleShape)
-                                .background(Color(0xFF334A66))
+                                .background(Color(0xFF263854))
                         )
 
                         Spacer(modifier = Modifier.height(10.dp))
@@ -289,7 +290,7 @@ fun PremiumNavigationMenu(
                                         .clip(RoundedCornerShape(10.dp))
                                         .background(
                                             Brush.linearGradient(
-                                                listOf(Color(0xFF00C6FF), Color(0xFF0072FF))
+                                                listOf(Color(0xFF00F0FF), Color(0xFF6366F1))
                                             )
                                         ),
                                     contentAlignment = Alignment.Center

@@ -178,12 +178,12 @@ fun UserProfileOtpHistoryDialog(
                     .fillMaxWidth(0.96f)
                     .fillMaxHeight(0.92f)
                     .clickable(enabled = false) {},
-                shape = RoundedCornerShape(24.dp),
-                color = Color(0xFF0C141F),
+                shape = RoundedCornerShape(26.dp),
+                color = Color(0xF7080E1A),
                 border = BorderStroke(
-                    1.dp,
+                    1.2.dp,
                     Brush.verticalGradient(
-                        listOf(Color(0xFF00B0FF).copy(alpha = 0.6f), Color(0xFF1E3A56))
+                        listOf(Color(0xFF00F0FF).copy(alpha = 0.55f), Color(0xFF6366F1).copy(alpha = 0.35f), Color(0xFF131F33))
                     )
                 )
             ) {
@@ -204,7 +204,7 @@ fun UserProfileOtpHistoryDialog(
                                     .size(38.dp)
                                     .clip(CircleShape)
                                     .background(
-                                        Brush.linearGradient(listOf(Color(0xFF00B0FF), Color(0xFF0066FF)))
+                                        Brush.linearGradient(listOf(Color(0xFF00F0FF), Color(0xFF6366F1)))
                                     ),
                                 contentAlignment = Alignment.Center
                             ) {

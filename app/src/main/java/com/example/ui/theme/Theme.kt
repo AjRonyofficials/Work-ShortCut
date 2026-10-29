@@ -8,13 +8,15 @@ import androidx.compose.ui.graphics.Color
 import com.example.service.AppThemeMode
 
 private val DarkColorScheme = darkColorScheme(
-    primary = BrandSky,
-    onPrimary = Color.Black,
-    primaryContainer = BrandBlue,
-    onPrimaryContainer = Color.White,
-    secondary = BrandTeal,
-    onSecondary = Color.Black,
-    tertiary = BrandAmber,
+    primary = CyberCyan,
+    onPrimary = Color(0xFF03101E),
+    primaryContainer = Color(0xFF0C2740),
+    onPrimaryContainer = CyberCyan,
+    secondary = NeonEmerald,
+    onSecondary = Color(0xFF012110),
+    secondaryContainer = Color(0xFF07371C),
+    onSecondaryContainer = NeonEmerald,
+    tertiary = CyberIndigo,
     background = DarkBackground,
     onBackground = DarkTextPrimary,
     surface = DarkSurface,

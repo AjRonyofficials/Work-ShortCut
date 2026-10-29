@@ -106,6 +106,13 @@ import com.example.ui.overlay.FloatingOverlayWindowContent
 import com.example.ui.theme.AlertRed
 import com.example.ui.theme.BrandGreen
 import com.example.ui.theme.BrandSky
+import com.example.ui.theme.CyberCyan
+import com.example.ui.theme.NeonEmerald
+import com.example.ui.theme.CyberIndigo
+import com.example.ui.theme.GlassBorder
+import com.example.ui.components.UserProfileOtpHistoryDialog
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.ui.graphics.Brush
 import kotlin.math.roundToInt
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -122,6 +129,8 @@ fun MainScreen(
     var sectionsMenuExpanded by remember { mutableStateOf(false) }
     val context = LocalContext.current
     val liveOtpPopup by OverlayStateManager.liveOtpPopup.collectAsStateWithLifecycle()
+    val withdrawalState by com.example.service.WithdrawalManager.state.collectAsStateWithLifecycle()
+    var showProfileHistoryDialog by remember { mutableStateOf(false) }
     var showBottomDeveloperCredit by remember { mutableStateOf(false) }
     var hasRunStartupFlow by rememberSaveable { mutableStateOf(false) }
 
@@ -159,94 +168,177 @@ fun MainScreen(
                 TopAppBar(
                     title = {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(
-                                text = "Work ShortCut",
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 18.sp
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Surface(
-                                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f),
-                                shape = RoundedCornerShape(6.dp)
+                            Box(
+                                modifier = Modifier
+                                    .size(34.dp)
+                                    .clip(RoundedCornerShape(9.dp))
+                                    .background(
+                                        Brush.linearGradient(
+                                            listOf(Color(0xFF00F0FF), Color(0xFF6366F1))
+                                        )
+                                    ),
+                                contentAlignment = Alignment.Center
                             ) {
-                                Text(
-                                    text = selectedTab.title,
-                                    color = MaterialTheme.colorScheme.primary,
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 11.sp,
-                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                Icon(
+                                    imageVector = Icons.Default.Bolt,
+                                    contentDescription = null,
+                                    tint = Color(0xFF080C14),
+                                    modifier = Modifier.size(20.dp)
                                 )
+                            }
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Column {
+                                Text(
+                                    text = "Work ShortCut",
+                                    fontWeight = FontWeight.ExtraBold,
+                                    fontSize = 16.sp,
+                                    color = Color.White,
+                                    letterSpacing = 0.3.sp
+                                )
+                                Surface(
+                                    color = CyberCyan.copy(alpha = 0.12f),
+                                    shape = RoundedCornerShape(4.dp),
+                                    border = BorderStroke(0.6.dp, CyberCyan.copy(alpha = 0.35f))
+                                ) {
+                                    Text(
+                                        text = selectedTab.title.uppercase(),
+                                        color = CyberCyan,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 9.sp,
+                                        letterSpacing = 0.5.sp,
+                                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                                    )
+                                }
                             }
                         }
                     },
                     actions = {
+                        // Live Balance & Profile Chip
+                        Surface(
+                            onClick = { showProfileHistoryDialog = true },
+                            shape = RoundedCornerShape(18.dp),
+                            color = Color(0xFF131F33),
+                            border = BorderStroke(
+                                1.dp,
+                                Brush.linearGradient(listOf(Color(0x6600F0FF), Color(0x336366F1)))
+                            ),
+                            modifier = Modifier
+                                .height(32.dp)
+                                .testTag("appbar_profile_chip")
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(20.dp)
+                                        .clip(CircleShape)
+                                        .background(NeonEmerald.copy(alpha = 0.22f)),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Person,
+                                        contentDescription = "Profile",
+                                        tint = NeonEmerald,
+                                        modifier = Modifier.size(13.dp)
+                                    )
+                                }
+                                Spacer(modifier = Modifier.width(5.dp))
+                                Text(
+                                    text = "৳ ${String.format(java.util.Locale.US, "%.1f", withdrawalState.availableBalanceTk)}",
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Black,
+                                    color = NeonEmerald,
+                                    fontFamily = FontFamily.Monospace
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.width(4.dp))
+
                         // Quick Toggle for Floating Bubble Overlay
                         IconButton(
                             onClick = {
                                 OverlayStateManager.toggleOverlayExpanded()
                             },
-                            modifier = Modifier.testTag("appbar_bubble_toggle")
+                            modifier = Modifier
+                                .size(36.dp)
+                                .testTag("appbar_bubble_toggle")
                         ) {
                             BadgedBox(
                                 badge = {
                                     if (state.proxyState.isConnected) {
-                                        Badge(containerColor = BrandGreen)
+                                        Badge(containerColor = NeonEmerald)
                                     } else if (state.draftRow.duplicateColumn != null) {
                                         Badge(containerColor = AlertRed)
                                     }
                                 }
                             ) {
-                                Icon(
-                                    imageVector = Icons.Default.Bolt,
-                                    contentDescription = "Floating Bubble",
-                                    tint = BrandSky
-                                )
+                                Box(
+                                    modifier = Modifier
+                                        .size(32.dp)
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .background(Color(0xFF131F33))
+                                        .border(BorderStroke(1.dp, Color(0x3300F0FF)), RoundedCornerShape(8.dp)),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Bolt,
+                                        contentDescription = "Floating Bubble",
+                                        tint = if (state.isOverlayActive) CyberCyan else Color(0xFF94A3B8),
+                                        modifier = Modifier.size(17.dp)
+                                    )
+                                }
                             }
                         }
 
+                        Spacer(modifier = Modifier.width(4.dp))
+
                         // Modern Premium Menu Trigger Button
                         Surface(
-                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                            shape = RoundedCornerShape(10.dp),
-                            border = androidx.compose.foundation.BorderStroke(
+                            color = Color(0xFF131F33),
+                            shape = RoundedCornerShape(8.dp),
+                            border = BorderStroke(
                                 1.dp,
-                                MaterialTheme.colorScheme.outline.copy(alpha = 0.25f)
+                                Brush.linearGradient(listOf(Color(0x666366F1), Color(0x3300F0FF)))
                             ),
                             modifier = Modifier
-                                .clip(RoundedCornerShape(10.dp))
+                                .height(32.dp)
+                                .clip(RoundedCornerShape(8.dp))
                                 .clickable { sectionsMenuExpanded = true }
                                 .testTag("appbar_3dot_menu")
                         ) {
                             Row(
-                                modifier = Modifier.padding(horizontal = 9.dp, vertical = 6.dp),
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Icon(
                                     imageVector = Icons.Default.Apps,
                                     contentDescription = "Menu",
-                                    tint = BrandSky,
-                                    modifier = Modifier.size(17.dp)
+                                    tint = CyberCyan,
+                                    modifier = Modifier.size(15.dp)
                                 )
                                 Spacer(modifier = Modifier.width(4.dp))
                                 Text(
                                     text = "Menu",
-                                    fontSize = 12.sp,
+                                    fontSize = 11.5.sp,
                                     fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.onSurface
+                                    color = Color.White
                                 )
                                 Spacer(modifier = Modifier.width(2.dp))
                                 Icon(
                                     imageVector = Icons.Default.MoreVert,
                                     contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.size(15.dp)
+                                    tint = Color(0xFF94A3B8),
+                                    modifier = Modifier.size(13.dp)
                                 )
                             }
                         }
                     },
                     colors = TopAppBarDefaults.topAppBarColors(
-                        containerColor = MaterialTheme.colorScheme.surface,
-                        titleContentColor = MaterialTheme.colorScheme.onSurface
+                        containerColor = Color(0xF7080C14),
+                        titleContentColor = Color.White
                     )
                 )
             }
@@ -340,10 +432,13 @@ fun MainScreen(
         ) {
             liveOtpPopup?.let { otpEvt ->
                 Surface(
-                    shape = RoundedCornerShape(16.dp),
-                    color = Color(0xF207121E),
-                    border = androidx.compose.foundation.BorderStroke(1.5.dp, Color(0xFF00E676)),
-                    shadowElevation = 14.dp,
+                    shape = RoundedCornerShape(18.dp),
+                    color = Color(0xF5080E1A),
+                    border = BorderStroke(
+                        1.5.dp,
+                        Brush.horizontalGradient(listOf(NeonEmerald, CyberCyan))
+                    ),
+                    shadowElevation = 18.dp,
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Row(
@@ -473,6 +568,12 @@ fun MainScreen(
                 }
             }
         }
+
+        // User Profile & OTP History Dialog
+        UserProfileOtpHistoryDialog(
+            isOpen = showProfileHistoryDialog,
+            onDismiss = { showProfileHistoryDialog = false }
+        )
 
         // Modern Premium Mega Navigation Menu Overlay (Website / App style)
         PremiumNavigationMenu(
