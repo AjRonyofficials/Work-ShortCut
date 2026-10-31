@@ -88,36 +88,16 @@ import com.example.util.ClipboardHelper
 import com.example.util.VibrationHelper
 
 val UNIX_SUPPORTED_SERVICES = listOf(
+    "✨ FB Fresh",
     "👥 FB Clone",
-    "✨ FB New",
-    "💬 WhatsApp",
-    "📸 Instagram",
     "🖥️ PC Clone",
+    "📸 Instagram (IG)",
+    "💬 WhatsApp",
     "🔥 OTP Work"
 )
 
 fun isNumberMatchingUnixService(item: UploadedNumberItem, serviceLabel: String): Boolean {
-    if (item.isUsed) return false
-    val s = item.service.trim()
-    val t = item.numberType.trim()
-    return when {
-        serviceLabel.contains("FB Clone", ignoreCase = true) ->
-            (s.contains("FB", true) || s.contains("Face", true) || s.isBlank() || s.equals("ALL", true)) &&
-            (t.contains("Clone", true) || t.contains("PC", true) || t.equals("Taken", true) || t.isBlank())
-        serviceLabel.contains("FB New", ignoreCase = true) ->
-            (s.contains("FB", true) || s.contains("Face", true) || s.isBlank() || s.equals("ALL", true)) &&
-            (t.contains("Fresh", true) || t.contains("New", true))
-        serviceLabel.contains("WhatsApp", ignoreCase = true) ->
-            s.contains("WhatsApp", true) || s.contains("WA", true) || s.contains("WP", true)
-        serviceLabel.contains("Instagram", ignoreCase = true) ->
-            s.contains("Instagram", true) || s.contains("Insta", true) || s.contains("IG", true)
-        serviceLabel.contains("PC Clone", ignoreCase = true) ->
-            t.contains("PC", true) || s.contains("PC", true)
-        serviceLabel.contains("OTP Work", ignoreCase = true) ->
-            s.contains("OTP", true) || s.isBlank() || s.equals("ALL", true)
-        else ->
-            s.isBlank() || s.equals("ALL", true) || s.contains(serviceLabel, true)
-    }
+    return UnixSmsManager.isNumberMatchingService(item, serviceLabel)
 }
 
 @Composable
@@ -336,11 +316,13 @@ fun UnixSmsSectionContent(
                     val first = items.first()
                     val pTag = when {
                         selectedService.isNotBlank() && selectedService != "ALL" -> selectedService
-                        nType.contains("Clone", true) -> "👥 FB Clone"
+                        nType.contains("Fresh", true) || nType.contains("New", true) -> "✨ FB Fresh"
                         nType.contains("PC", true) -> "🖥️ PC Clone"
+                        nType.contains("Clone", true) -> "👥 FB Clone"
                         first.service.contains("WhatsApp", true) -> "💬 WhatsApp"
-                        first.service.contains("Insta", true) -> "📸 Instagram"
-                        else -> "✨ FB New"
+                        first.service.contains("Insta", true) || first.service.contains("IG", true) -> "📸 Instagram (IG)"
+                        first.service.contains("OTP", true) -> "🔥 OTP Work"
+                        else -> "✨ FB Fresh"
                     }
                     CountryBadge(
                         code = code,
@@ -442,9 +424,9 @@ fun UnixSmsSectionContent(
                                 val cRate = UnixSmsManager.getRateForCountry(c.code)
                                 val tagColor = when {
                                     c.platformTag.contains("FB Clone") -> Color(0xFF1877F2)
-                                    c.platformTag.contains("FB New") -> Color(0xFF00E5FF)
+                                    c.platformTag.contains("FB Fresh") || c.platformTag.contains("Fresh") || c.platformTag.contains("FB New") -> Color(0xFF00E676)
                                     c.platformTag.contains("WhatsApp") -> Color(0xFF25D366)
-                                    c.platformTag.contains("Instagram") -> Color(0xFFE1306C)
+                                    c.platformTag.contains("Instagram") || c.platformTag.contains("IG") -> Color(0xFFE1306C)
                                     c.platformTag.contains("PC") -> Color(0xFFFF9100)
                                     else -> Color(0xFFFF3D00)
                                 }

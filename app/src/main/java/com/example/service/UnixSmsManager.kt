@@ -274,12 +274,9 @@ object UnixSmsManager {
         savePermanentlyUsedDigits()
 
         val merged = allNumbersMap.values.toList()
-        val keptActive = _state.value.activeNumbers.filter { prov ->
-            !prov.otpCode.isNullOrEmpty() || (System.currentTimeMillis() - prov.timestamp < 20 * 60 * 1000L)
-        }
-        _state.update { it.copy(uploadedNumbers = merged, activeNumbers = keptActive) }
+        // Never wipe or touch activeNumbers during cloud pool sync
+        _state.update { it.copy(uploadedNumbers = merged) }
         saveUploadedNumbers(merged)
-        saveActiveNumbers(keptActive)
     }
 
     fun applyCloudRate(newRate: Double) {
@@ -528,7 +525,11 @@ object UnixSmsManager {
 
         if (lines.isEmpty()) return 0
 
-        val targetType = if (numberType.contains("clone", ignoreCase = true)) "PC Clone" else "Fresh"
+        val targetType = when {
+            numberType.contains("pc", ignoreCase = true) -> "PC Clone"
+            numberType.contains("clone", ignoreCase = true) -> "FB Clone"
+            else -> "Fresh"
+        }
         val existingKeys = _state.value.uploadedNumbers.map {
             "${it.number.replace("[^0-9]".toRegex(), "")}_${it.numberType}_${it.service.lowercase()}"
         }.toSet()
@@ -658,6 +659,41 @@ object UnixSmsManager {
 
 
     /**
+     * Determines if an uploaded number matches the user requested service and type
+     */
+    fun isNumberMatchingService(item: UploadedNumberItem, serviceLabel: String, targetNumberType: String = "ALL"): Boolean {
+        if (item.isUsed) return false
+        val s = item.service.trim()
+        val t = item.numberType.trim()
+
+        if (targetNumberType != "ALL") {
+            if (targetNumberType.contains("pc", true) && !t.contains("pc", true)) return false
+            if ((targetNumberType.contains("fresh", true) || targetNumberType.contains("new", true)) && !t.contains("fresh", true) && !t.contains("new", true)) return false
+            if (targetNumberType.contains("clone", true) && !t.contains("clone", true) && !t.contains("pc", true)) return false
+        }
+
+        return when {
+            serviceLabel.equals("ALL", ignoreCase = true) -> true
+            serviceLabel.contains("Fresh", ignoreCase = true) || serviceLabel.contains("FB New", ignoreCase = true) ->
+                (s.contains("FB", true) || s.contains("Face", true) || s.isBlank() || s.equals("ALL", true)) &&
+                (t.contains("Fresh", true) || t.contains("New", true))
+            serviceLabel.contains("FB Clone", ignoreCase = true) ->
+                (s.contains("FB", true) || s.contains("Face", true) || s.isBlank() || s.equals("ALL", true)) &&
+                (t.contains("Clone", true) || t.contains("PC", true) || t.equals("Taken", true) || t.isBlank())
+            serviceLabel.contains("PC", ignoreCase = true) ->
+                t.contains("PC", true) || s.contains("PC", true)
+            serviceLabel.contains("WhatsApp", ignoreCase = true) || serviceLabel.contains("WA", ignoreCase = true) ->
+                s.contains("WhatsApp", true) || s.contains("WA", true) || s.contains("WP", true)
+            serviceLabel.contains("Instagram", ignoreCase = true) || serviceLabel.contains("IG", ignoreCase = true) ->
+                s.contains("Instagram", true) || s.contains("Insta", true) || s.contains("IG", true)
+            serviceLabel.contains("OTP Work", ignoreCase = true) || serviceLabel.contains("OTP", ignoreCase = true) ->
+                s.contains("OTP", true) || s.isBlank() || s.equals("ALL", true)
+            else ->
+                s.isBlank() || s.equals("ALL", true) || s.contains(serviceLabel, true) || serviceLabel.contains(s, true)
+        }
+    }
+
+    /**
      * User: Get Numbers from Premium pool (Multi-Gateway: Lamix SMS or Unix SMS)
      * Atomically assigns exclusive numbers that never revert to available pool.
      */
@@ -680,8 +716,7 @@ object UnixSmsManager {
             !permanentlyUsedDigits.contains(cleanDigits) &&
             !activeNumbers.any { isPhoneNumberMatch(it.number, cleanDigits) } &&
             (countryCode == "ALL" || item.countryCode.equals(countryCode, ignoreCase = true)) &&
-            (numberType == "ALL" || item.numberType.equals(numberType, ignoreCase = true)) &&
-            (item.service.isBlank() || item.service.equals("ALL", ignoreCase = true) || item.service.equals(service, ignoreCase = true))
+            isNumberMatchingService(item, service, numberType)
         }
 
         if (available.isEmpty()) {
@@ -714,6 +749,7 @@ object UnixSmsManager {
             )
 
             val now = System.currentTimeMillis()
+            val effectiveEmail = AuthManager.currentEmail.value.trim().lowercase()
             val newProvs = chosen.map { item ->
                 val gw = item.gateway.uppercase().ifEmpty { "LAMIX" }
                 val opName = when (gw) {
@@ -730,14 +766,15 @@ object UnixSmsManager {
                     status = "pending",
                     range = item.service,
                     timestamp = now,
-                    expiresAt = now + 1_200_000L,
+                    expiresAt = now + 24 * 60 * 60 * 1000L, // 24-hour persistence, never back prematurely
                     gateway = gw,
-                    rate = r
+                    rate = r,
+                    userEmail = effectiveEmail
                 )
             }
 
             val updatedActive = newProvs + _state.value.activeNumbers
-            saveActiveNumbers(updatedActive)
+            saveActiveNumbers(updatedActive, effectiveEmail)
 
             _state.update {
                 it.copy(
@@ -1002,9 +1039,7 @@ object UnixSmsManager {
         val nowTime = System.currentTimeMillis()
         val newlyArrivedOtps = mutableListOf<Pair<ProvisionedNumber, String>>()
 
-        val currentActive = _state.value.activeNumbers.filter { prov ->
-            prov.otpCode != null || (nowTime - prov.timestamp < 20 * 60 * 1000L)
-        }
+        val currentActive = _state.value.activeNumbers
 
         val updatedActive = currentActive.map { prov ->
             if (!prov.otpCode.isNullOrEmpty() && prov.status == "success") {
@@ -1158,9 +1193,7 @@ object UnixSmsManager {
 
         val nowTime = System.currentTimeMillis()
         val newlyArrivedOtps = mutableListOf<Pair<ProvisionedNumber, String>>()
-        val currentActive = _state.value.activeNumbers.filter { prov ->
-            prov.otpCode != null || (nowTime - prov.timestamp < 20 * 60 * 1000L)
-        }
+        val currentActive = _state.value.activeNumbers
 
             val updatedActive = currentActive.map { prov ->
                 if (!prov.otpCode.isNullOrEmpty() && prov.status == "success") {
@@ -1364,10 +1397,7 @@ object UnixSmsManager {
                 }
 
                 val newlyArrivedOtps = mutableListOf<Pair<ProvisionedNumber, String>>()
-                // Keep active numbers that have OTP or were requested within last 20 mins
-                val currentActive = _state.value.activeNumbers.filter { prov ->
-                    prov.otpCode != null || (nowTime - prov.timestamp < 20 * 60 * 1000L)
-                }
+                val currentActive = _state.value.activeNumbers
 
                 val updatedActive = currentActive.map { prov ->
                     if (!prov.otpCode.isNullOrEmpty() && prov.status == "success") {

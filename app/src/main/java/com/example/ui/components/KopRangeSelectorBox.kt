@@ -86,6 +86,7 @@ fun KopRangeSelectorBox(
     broadcastFeed: List<BroadcastFeedItem> = emptyList(),
     onRefreshLivePool: (() -> Unit)? = null,
     accentColor: Color = Color(0xFF00B0FF),
+    showServiceTags: Boolean = (engineName == "Kop Engine"),
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -102,12 +103,12 @@ fun KopRangeSelectorBox(
     val isoShort = (detectedCountry?.code ?: "UN").uppercase()
     val dialCode = detectedCountry?.dialCode ?: ""
 
-    // Strictly separate live pool ranges derived solely from this specific engine's activeRanges and broadcastFeed
-    val livePoolEntries: List<PresetRangeEntry> = remember(activeRanges, broadcastFeed) {
+    // Strictly separate live pool ranges derived solely from this specific engine's activeRanges and broadcastFeed (No Fake Data)
+    val livePoolEntries: List<PresetRangeEntry> = remember(activeRanges, broadcastFeed, showServiceTags) {
         val list = mutableListOf<PresetRangeEntry>()
         val seenRanges = mutableSetOf<String>()
 
-        // 1. Process activeRanges from this engine's live pool
+        // 1. Process activeRanges from this engine's live pool (Real API Data)
         activeRanges.forEach { act ->
             val cleanR = act.range.trim()
             if (cleanR.isNotBlank() && !seenRanges.contains(cleanR.uppercase())) {
@@ -118,16 +119,37 @@ fun KopRangeSelectorBox(
                 val cCode = (c?.code ?: "UN").uppercase()
                 val cDial = c?.dialCode ?: ""
 
-                val tagLabel = when {
-                    act.service.contains("Insta", ignoreCase = true) || act.tag.contains("Insta", ignoreCase = true) || act.service.contains("IG", ignoreCase = true) -> "📸 Instagram"
-                    act.service.contains("WhatsApp", ignoreCase = true) || act.tag.contains("WhatsApp", ignoreCase = true) || act.service.contains("WA", ignoreCase = true) || act.service.contains("WP", ignoreCase = true) -> "💬 WhatsApp"
-                    act.tag.contains("PC", ignoreCase = true) || act.service.contains("PC", ignoreCase = true) -> "🖥️ PC Clone"
-                    act.tag.contains("Fresh", ignoreCase = true) || act.tag.contains("New", ignoreCase = true) || act.service.contains("New", ignoreCase = true) -> "✨ FB New"
-                    act.service.contains("FB", ignoreCase = true) || act.service.contains("Face", ignoreCase = true) || act.tag.contains("Clone", ignoreCase = true) -> "👥 FB Clone"
-                    act.service.contains("OTP", ignoreCase = true) -> "🔥 OTP Work"
-                    act.tag.isNotBlank() -> act.tag
-                    act.service.isNotBlank() -> act.service
-                    else -> "👥 FB Clone"
+                val tagLabel = if (showServiceTags) {
+                    val rawTag = act.tag.trim()
+                    val rawService = act.service.trim()
+                    when {
+                        // If API has tag (FB New, FB Clone, PC Clone, etc.), use that
+                        rawTag.contains("Fresh", true) || rawTag.contains("New", true) -> "✨ FB New"
+                        rawTag.contains("PC", true) -> "🖥️ PC Clone"
+                        rawTag.contains("Clone", true) -> "👥 FB Clone"
+                        rawTag.contains("Insta", true) || rawTag.contains("IG", true) -> "📸 IG"
+                        rawTag.contains("WhatsApp", true) || rawTag.contains("WA", true) || rawTag.contains("WP", true) -> "💬 WhatsApp"
+                        rawTag.contains("OTP", true) -> "🔥 OTP"
+                        rawTag.isNotBlank() && !rawTag.equals("General", true) && !rawTag.equals("Premium", true) -> rawTag
+                        // If API does not have tag, derive from service (e.g. Facebook -> FB, Instagram -> IG)
+                        rawService.contains("Insta", true) || rawService.contains("IG", true) -> "📸 IG"
+                        rawService.contains("WhatsApp", true) || rawService.contains("WA", true) || rawService.contains("WP", true) -> "💬 WhatsApp"
+                        rawService.contains("PC", true) -> "🖥️ PC Clone"
+                        rawService.contains("New", true) || rawService.contains("Fresh", true) -> "✨ FB New"
+                        rawService.contains("FB", true) || rawService.contains("Face", true) -> "👥 FB Clone"
+                        rawService.contains("OTP", true) -> "🔥 OTP"
+                        rawService.isNotBlank() && !rawService.equals("General", true) -> rawService
+                        else -> "👥 FB"
+                    }
+                } else {
+                    // Kop Engine 2 & other engines: No fake FB tags
+                    val rawTag = act.tag.trim()
+                    val rawService = act.service.trim()
+                    when {
+                        rawTag.isNotBlank() && !rawTag.equals("General", true) && !rawTag.equals("Premium", true) -> rawTag
+                        rawService.isNotBlank() && !rawService.equals("General", true) -> rawService
+                        else -> "⚡ Radar Live"
+                    }
                 }
 
                 list.add(
@@ -163,13 +185,17 @@ fun KopRangeSelectorBox(
                 val cCode = (c?.code ?: "UN").uppercase()
                 val cDial = c?.dialCode ?: ""
 
-                val feedTag = when {
-                    feedItem.service.contains("Insta", ignoreCase = true) || feedItem.operator.contains("Insta", ignoreCase = true) || feedItem.service.contains("IG", ignoreCase = true) -> "📸 Instagram"
-                    feedItem.service.contains("WhatsApp", ignoreCase = true) || feedItem.service.contains("WA", ignoreCase = true) || feedItem.service.contains("WP", ignoreCase = true) -> "💬 WhatsApp"
-                    feedItem.operator.contains("PC", ignoreCase = true) -> "🖥️ PC Clone"
-                    feedItem.service.contains("New", ignoreCase = true) -> "✨ FB New"
-                    feedItem.service.contains("FB", ignoreCase = true) || feedItem.service.contains("Face", ignoreCase = true) || feedItem.operator.contains("Clone", ignoreCase = true) -> "👥 FB Clone"
-                    else -> "👥 FB Clone"
+                val feedTag = if (showServiceTags) {
+                    when {
+                        feedItem.service.contains("Insta", true) || feedItem.operator.contains("Insta", true) || feedItem.service.contains("IG", true) -> "📸 IG"
+                        feedItem.service.contains("WhatsApp", true) || feedItem.service.contains("WA", true) -> "💬 WhatsApp"
+                        feedItem.operator.contains("PC", true) -> "🖥️ PC Clone"
+                        feedItem.service.contains("New", true) || feedItem.service.contains("Fresh", true) -> "✨ FB New"
+                        feedItem.service.contains("FB", true) || feedItem.service.contains("Face", true) || feedItem.operator.contains("Clone", true) -> "👥 FB Clone"
+                        else -> "👥 FB"
+                    }
+                } else {
+                    feedItem.operator.ifBlank { feedItem.service.ifBlank { "⚡ Radar Live" } }
                 }
 
                 list.add(
@@ -187,29 +213,7 @@ fun KopRangeSelectorBox(
             }
         }
 
-        // 3. Guarantee baseline high-volume work ranges across all platforms
-        val defaults = listOf(
-            PresetRangeEntry(countryName = "United States", countryCode = "US", flag = "🇺🇸", dialCode = "+1", range = "+1 (646) 389-XXXX", tag = "👥 FB Clone", hits = 98, isLive = true),
-            PresetRangeEntry(countryName = "United States", countryCode = "US", flag = "🇺🇸", dialCode = "+1", range = "+1 (720) 414-XXXX", tag = "✨ FB New", hits = 94, isLive = true),
-            PresetRangeEntry(countryName = "United Kingdom", countryCode = "GB", flag = "🇬🇧", dialCode = "+44", range = "+44 7488 8XXXXX", tag = "💬 WhatsApp", hits = 90, isLive = true),
-            PresetRangeEntry(countryName = "United States", countryCode = "US", flag = "🇺🇸", dialCode = "+1", range = "+1 (469) 215-XXXX", tag = "📸 Instagram", hits = 88, isLive = true),
-            PresetRangeEntry(countryName = "Vietnam", countryCode = "VN", flag = "🇻🇳", dialCode = "+84", range = "+84 38 9XXXXXX", tag = "🖥️ PC Clone", hits = 86, isLive = true),
-            PresetRangeEntry(countryName = "Indonesia", countryCode = "ID", flag = "🇮🇩", dialCode = "+62", range = "+62 838 9XXXXXXX", tag = "👥 FB Clone", hits = 84, isLive = true),
-            PresetRangeEntry(countryName = "Indonesia", countryCode = "ID", flag = "🇮🇩", dialCode = "+62", range = "+62 859 2XXXXXXX", tag = "✨ FB New", hits = 82, isLive = true),
-            PresetRangeEntry(countryName = "Philippines", countryCode = "PH", flag = "🇵🇭", dialCode = "+63", range = "+63 917 8XXXXXX", tag = "✨ FB New", hits = 80, isLive = true),
-            PresetRangeEntry(countryName = "Brazil", countryCode = "BR", flag = "🇧🇷", dialCode = "+55", range = "+55 11 9XXXX-XXXX", tag = "💬 WhatsApp", hits = 79, isLive = true),
-            PresetRangeEntry(countryName = "India", countryCode = "IN", flag = "🇮🇳", dialCode = "+91", range = "+91 98230 XXXXX", tag = "📸 Instagram", hits = 76, isLive = true),
-            PresetRangeEntry(countryName = "Bangladesh", countryCode = "BD", flag = "🇧🇩", dialCode = "+880", range = "+880 1712 XXXXXX", tag = "👥 FB Clone", hits = 74, isLive = true),
-            PresetRangeEntry(countryName = "Bangladesh", countryCode = "BD", flag = "🇧🇩", dialCode = "+880", range = "+880 1819 XXXXXX", tag = "✨ FB New", hits = 72, isLive = true),
-            PresetRangeEntry(countryName = "Cameroon", countryCode = "CM", flag = "🇨🇲", dialCode = "+237", range = "237620XXX", tag = "🔥 OTP Work", hits = 70, isLive = true)
-        )
-        defaults.forEach { d ->
-            if (!seenRanges.contains(d.range.uppercase())) {
-                seenRanges.add(d.range.uppercase())
-                list.add(d)
-            }
-        }
-
+        // Zero fake ranges: only authentic API ranges are displayed
         list.sortedByDescending { it.hits }
     }
 
@@ -425,12 +429,14 @@ fun KopRangeSelectorBox(
             var result: List<PresetRangeEntry> = livePoolEntries
             if (selectedTagFilter != "ALL") {
                 result = when (selectedTagFilter) {
-                    "FB_CLONE" -> result.filter { it.tag.contains("FB Clone", ignoreCase = true) }
-                    "FB_NEW" -> result.filter { it.tag.contains("FB New", ignoreCase = true) }
-                    "INSTAGRAM" -> result.filter { it.tag.contains("Instagram", ignoreCase = true) }
-                    "WHATSAPP" -> result.filter { it.tag.contains("WhatsApp", ignoreCase = true) }
+                    "FB" -> result.filter { it.tag.contains("FB", ignoreCase = true) }
+                    "FB_CLONE" -> result.filter { it.tag.contains("Clone", ignoreCase = true) && !it.tag.contains("PC", ignoreCase = true) }
+                    "FB_NEW" -> result.filter { it.tag.contains("New", ignoreCase = true) || it.tag.contains("Fresh", ignoreCase = true) }
+                    "INSTAGRAM" -> result.filter { it.tag.contains("Instagram", ignoreCase = true) || it.tag.contains("IG", ignoreCase = true) }
+                    "WHATSAPP" -> result.filter { it.tag.contains("WhatsApp", ignoreCase = true) || it.tag.contains("WA", ignoreCase = true) }
                     "PC_CLONE" -> result.filter { it.tag.contains("PC", ignoreCase = true) }
                     "OTP_WORK" -> result.filter { it.tag.contains("OTP", ignoreCase = true) }
+                    "LIVE" -> result.filter { it.isLive }
                     else -> result
                 }
             }
@@ -574,16 +580,23 @@ fun KopRangeSelectorBox(
                             }
                         }
                     } else {
-                        // Quick Filter Chips (All, FB Clone, New Fresh, PC Clone, WhatsApp, OTP Work)
-                        val filterChips = listOf(
-                            "ALL" to "🌐 All (${livePoolEntries.size})",
-                            "FB_CLONE" to "👥 FB Clone (${livePoolEntries.count { it.tag.contains("FB Clone") }})",
-                            "FB_NEW" to "✨ FB New (${livePoolEntries.count { it.tag.contains("FB New") }})",
-                            "WHATSAPP" to "💬 WhatsApp (${livePoolEntries.count { it.tag.contains("WhatsApp") }})",
-                            "INSTAGRAM" to "📸 Instagram (${livePoolEntries.count { it.tag.contains("Instagram") }})",
-                            "PC_CLONE" to "🖥️ PC Clone (${livePoolEntries.count { it.tag.contains("PC") }})",
-                            "OTP_WORK" to "🔥 OTP Work (${livePoolEntries.count { it.tag.contains("OTP") }})"
-                        )
+                        // Quick Filter Chips (All, FB, FB Clone, New Fresh, PC Clone, IG, WA)
+                        val filterChips = if (showServiceTags) {
+                            listOf(
+                                "ALL" to "🌐 All (${livePoolEntries.size})",
+                                "FB" to "👥 FB (${livePoolEntries.count { it.tag.contains("FB") }})",
+                                "FB_NEW" to "✨ FB New (${livePoolEntries.count { it.tag.contains("New") || it.tag.contains("Fresh") }})",
+                                "PC_CLONE" to "🖥️ PC Clone (${livePoolEntries.count { it.tag.contains("PC") }})",
+                                "INSTAGRAM" to "📸 IG (${livePoolEntries.count { it.tag.contains("IG") || it.tag.contains("Insta") }})",
+                                "WHATSAPP" to "💬 WA (${livePoolEntries.count { it.tag.contains("WhatsApp") || it.tag.contains("WA") }})",
+                                "OTP_WORK" to "🔥 OTP (${livePoolEntries.count { it.tag.contains("OTP") }})"
+                            )
+                        } else {
+                            listOf(
+                                "ALL" to "🌐 All (${livePoolEntries.size})",
+                                "LIVE" to "⚡ Radar Live (${livePoolEntries.size})"
+                            )
+                        }
 
                         LazyRow(
                             horizontalArrangement = Arrangement.spacedBy(6.dp),
