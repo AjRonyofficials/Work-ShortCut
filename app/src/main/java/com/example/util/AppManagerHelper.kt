@@ -23,11 +23,10 @@ object AppManagerHelper {
     fun isFacebookLite(packageName: String, appName: String): Boolean {
         val p = packageName.lowercase()
         val a = appName.lowercase()
-        val isExplicitLite = p.contains("lite") || p.contains("fblite") || a.contains("lite")
-        val isFacebook = p.contains("facebook") || a.contains("facebook")
-        // Exclude official full Facebook app
-        val isOfficial = p == "com.facebook.katana" || p == "com.facebook.wakizashi" || (a == "facebook" && !a.contains("lite"))
-        return (isExplicitLite && isFacebook) || (p.contains("com.facebook.lite") || p.contains("lite96") || p.contains("lite_f")) && !isOfficial
+        val isOfficialKatana = p == "com.facebook.katana" || p == "com.facebook.wakizashi" || (a == "facebook" && !a.contains("lite"))
+        val isExplicitLite = p.contains("lite") || a.contains("lite") || p.contains("fblite") || a.contains("fblite") ||
+                p.contains("com.facebook.lite") || p.contains("lite96") || p.contains("lite_f") || p.contains("aerofacebook")
+        return isExplicitLite && !isOfficialKatana
     }
 
     /**

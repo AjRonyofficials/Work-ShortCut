@@ -55,8 +55,17 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.filled.CloudSync
+import androidx.compose.runtime.collectAsState
 import com.example.service.OverlayStateManager
 import com.example.service.OverlayUiState
+import com.example.service.UnixSmsManager
+import com.example.service.OtpHistoryManager
+import com.example.service.WithdrawalManager
 import com.example.ui.theme.AlertRed
 import com.example.ui.theme.BrandAmber
 import com.example.ui.theme.BrandRose
@@ -71,6 +80,7 @@ fun ClearDataSection(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
+    val unixState by UnixSmsManager.state.collectAsState()
     var searchQuery by remember { mutableStateOf("") }
     val allInstalledApps = remember { mutableStateListOf<AppInfoItem>() }
 
@@ -205,9 +215,9 @@ fun ClearDataSection(
                     Spacer(modifier = Modifier.height(6.dp))
                     Text(
                         text = if (isAccRunning)
-                            "Zero Cleaner automation is ON. When you tap any app in the floating bubble, it will automatically open Storage, clear data & cache, confirm OK, and close automatically!"
+                            "Zero Cleaner অটোমেশন সক্রিয় রয়েছে। ওভারলে বাবল থেকে ট্যাপ করলেই Clear Cache ও Clear Data স্বয়ংক্রিয়ভাবে সম্পন্ন হবে এবং সাথে সাথে অ্যাপ বন্ধ হয়ে যাবে!"
                         else
-                            "Tap 'Enable' and turn ON 'Work Shortcut' in Accessibility so the app can automatically clear data and cache without you having to press any buttons!",
+                            "এক্সেসিবিলিটি সেটিংসে গিয়ে Work ShortCut চালু করুন। যদি স্ক্রিনে 'Not working' লেখা থাকে, তবে টগলটি একবার Off করে আবার On করলেই সাথে সাথে Active হয়ে যাবে!",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurface
                     )
@@ -239,6 +249,314 @@ fun ClearDataSection(
                     fontWeight = FontWeight.Bold,
                     fontSize = 13.sp
                 )
+            }
+        }
+
+        // Premium Numbers Database Clear (By Country with Cloud Live Auto Sync)
+        item {
+            var selectedCountryToClear by remember { mutableStateOf("ALL") }
+            var countryDropdownOpen by remember { mutableStateOf(false) }
+            var showConfirmDialog by remember { mutableStateOf(false) }
+
+            val uploadedNumbers = unixState.uploadedNumbers
+            val distinctCountries = remember(uploadedNumbers) {
+                uploadedNumbers.map { it.countryCode to it.countryName }.distinct()
+            }
+            val targetCount = remember(uploadedNumbers, selectedCountryToClear) {
+                if (selectedCountryToClear == "ALL") uploadedNumbers.size
+                else uploadedNumbers.count { it.countryCode.equals(selectedCountryToClear, ignoreCase = true) }
+            }
+
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                ),
+                border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.3f))
+            ) {
+                Column(modifier = Modifier.padding(14.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Default.CloudSync,
+                                contentDescription = null,
+                                tint = BrandSky,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "Premium Numbers Database Clear",
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+
+                        Surface(
+                            color = BrandSky.copy(alpha = 0.15f),
+                            shape = RoundedCornerShape(6.dp)
+                        ) {
+                            Text(
+                                text = "Live Auto Sync",
+                                color = BrandSky,
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(6.dp))
+
+                    Text(
+                        text = "দেশ নির্বাচন করে ডাটাবেস থেকে নাম্বার ক্লিয়ার করুন। সাথে সাথে ক্লাউড ডাটাবেস ও সকল ইউজারের অ্যাপ থেকেও অটো সিঙ্ক হয়ে মুছে যাবে।",
+                        fontSize = 11.5.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    // Country Selector Box
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Box(modifier = Modifier.weight(1f)) {
+                            Surface(
+                                shape = RoundedCornerShape(10.dp),
+                                color = MaterialTheme.colorScheme.surface,
+                                border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.4f)),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { countryDropdownOpen = true }
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = if (selectedCountryToClear == "ALL") "🌐 ALL COUNTRIES (${uploadedNumbers.size})"
+                                        else "🏳️ $selectedCountryToClear ($targetCount nos)",
+                                        fontSize = 12.5.sp,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                    Icon(
+                                        imageVector = Icons.Default.ArrowDropDown,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                }
+                            }
+
+                            DropdownMenu(
+                                expanded = countryDropdownOpen,
+                                onDismissRequest = { countryDropdownOpen = false }
+                            ) {
+                                DropdownMenuItem(
+                                    text = {
+                                        Text(
+                                            "🌐 সব দেশের নাম্বার (ALL) - ${uploadedNumbers.size} টি",
+                                            fontWeight = FontWeight.Bold,
+                                            color = AlertRed
+                                        )
+                                    },
+                                    onClick = {
+                                        selectedCountryToClear = "ALL"
+                                        countryDropdownOpen = false
+                                    }
+                                )
+                                distinctCountries.forEach { (code, name) ->
+                                    val count = uploadedNumbers.count { it.countryCode.equals(code, ignoreCase = true) }
+                                    DropdownMenuItem(
+                                        text = {
+                                            Text("$name ($code) - $count টি")
+                                        },
+                                        onClick = {
+                                            selectedCountryToClear = code
+                                            countryDropdownOpen = false
+                                        }
+                                    )
+                                }
+                            }
+                        }
+
+                        // Clear Action Button
+                        Button(
+                            onClick = {
+                                if (targetCount > 0) {
+                                    showConfirmDialog = true
+                                } else {
+                                    Toast.makeText(context, "সিলেক্টেড দেশে কোনো নাম্বার নেই", Toast.LENGTH_SHORT).show()
+                                }
+                            },
+                            enabled = targetCount > 0,
+                            colors = ButtonDefaults.buttonColors(containerColor = AlertRed),
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier.height(44.dp)
+                        ) {
+                            Icon(Icons.Default.Delete, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Clear", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                        }
+                    }
+
+                    // Delete Confirmation Dialog
+                    if (showConfirmDialog) {
+                        AlertDialog(
+                            onDismissRequest = { showConfirmDialog = false },
+                            title = {
+                                Text(
+                                    text = "⚠️ নাম্বার ডিলিট ও লাইভ সিঙ্ক",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 15.sp
+                                )
+                            },
+                            text = {
+                                Text(
+                                    text = if (selectedCountryToClear == "ALL") {
+                                        "আপনি কি নিশ্চিত যে সমস্ত ($targetCount টি) আপলোড করা নাম্বার ডাটাবেস ও সকল ইউজারদের অ্যাপ থেকে সম্পূর্ণ ডিলিট ও লাইভ সিঙ্ক করতে চান?"
+                                    } else {
+                                        "আপনি কি নিশ্চিত যে $selectedCountryToClear দেশের সকল ($targetCount টি) নাম্বার ডাটাবেস ও সকল ইউজারদের অ্যাপ থেকে মুছে দিতে চান?"
+                                    },
+                                    fontSize = 12.sp
+                                )
+                            },
+                            confirmButton = {
+                                Button(
+                                    onClick = {
+                                        val targetCountry = selectedCountryToClear
+                                        showConfirmDialog = false
+                                        UnixSmsManager.deleteNumbersByCountry(targetCountry) { success ->
+                                            Toast.makeText(
+                                                context,
+                                                if (success) "✓ $targetCountry এর নাম্বার ডাটাবেস ও সকল ইউজারদের অ্যাপ থেকে মুছে লাইভ সিঙ্ক সম্পন্ন হয়েছে!"
+                                                else "✓ লোকাল ও ক্লাউড ডাটাবেস আপডেট হয়েছে",
+                                                Toast.LENGTH_LONG
+                                            ).show()
+                                        }
+                                    },
+                                    colors = ButtonDefaults.buttonColors(containerColor = AlertRed)
+                                ) {
+                                    Text("হ্যাঁ, ডিলিট করুন")
+                                }
+                            },
+                            dismissButton = {
+                                OutlinedButton(onClick = { showConfirmDialog = false }) {
+                                    Text("বাতিল")
+                                }
+                            }
+                        )
+                    }
+                }
+            }
+        }
+
+        // Database Maintenance & 60+ Days History Auto-Cleanup
+        item {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                ),
+                border = androidx.compose.foundation.BorderStroke(1.dp, BrandAmber.copy(alpha = 0.35f))
+            ) {
+                Column(modifier = Modifier.padding(14.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Default.CleaningServices,
+                                contentDescription = null,
+                                tint = BrandAmber,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "Auto Clean 60+ Days Data & Garbage",
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+
+                        Surface(
+                            color = BrandAmber.copy(alpha = 0.15f),
+                            shape = RoundedCornerShape(6.dp)
+                        ) {
+                            Text(
+                                text = "Maintenance",
+                                color = BrandAmber,
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text(
+                        text = "২ মাসের (৬০ দিন) পুরোনো OTP হিস্ট্রি, উইথড্র রেকর্ড ও ভুল/উল্টাপাল্টা ডাটা এক ক্লিকে মুছে ফেলুন।",
+                        fontSize = 11.5.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        // Purge Corrupted Data
+                        Button(
+                            onClick = {
+                                val pOtp = OtpHistoryManager.purgeCorruptedOtpRecords()
+                                val pWith = WithdrawalManager.purgeCorruptedWithdrawals()
+                                val pNum = UnixSmsManager.purgeInvalidUploadedNumbers()
+                                Toast.makeText(
+                                    context,
+                                    "⚡ $pOtp টি OTP, $pWith টি উইথড্র ও $pNum টি নাম্বার ক্লিন করা হয়েছে!",
+                                    Toast.LENGTH_SHORT
+                                ).show()
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = BrandAmber),
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier.weight(1f).height(42.dp)
+                        ) {
+                            Icon(Icons.Default.CleaningServices, contentDescription = null, modifier = Modifier.size(15.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("উল্টাপাল্টা ডাটা ক্লিন", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        }
+
+                        // Purge 60+ Days Old Data
+                        Button(
+                            onClick = {
+                                val oOtp = OtpHistoryManager.purgeOldOtpRecords(60)
+                                val oWith = WithdrawalManager.purgeOldWithdrawalRequests(60)
+                                Toast.makeText(
+                                    context,
+                                    "✓ ২ মাসের পুরোনো $oOtp টি OTP ও $oWith টি উইথড্র ডিলিট হয়েছে!",
+                                    Toast.LENGTH_LONG
+                                ).show()
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = AlertRed),
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier.weight(1f).height(42.dp)
+                        ) {
+                            Icon(Icons.Default.Delete, contentDescription = null, modifier = Modifier.size(15.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("২+ মাসের ডাটা মুছুন", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
             }
         }
 
@@ -275,6 +593,13 @@ fun ClearDataSection(
                                     verticalAlignment = Alignment.CenterVertically,
                                     horizontalArrangement = Arrangement.SpaceBetween
                                 ) {
+                                    com.example.ui.components.AppIconImage(
+                                        packageName = itemApp.packageName,
+                                        fallbackText = itemApp.appName,
+                                        size = 38.dp,
+                                        shape = RoundedCornerShape(8.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(10.dp))
                                     Column(modifier = Modifier.weight(1f)) {
                                         Row(verticalAlignment = Alignment.CenterVertically) {
                                             Text(
@@ -372,11 +697,49 @@ fun ClearDataSection(
         // Search Bar for installed apps
         item {
             Column {
-                Text(
-                    text = "Select from Installed Apps",
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.Bold
-                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Select from Installed Apps",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold
+                    )
+
+                    Surface(
+                        color = BrandSky.copy(alpha = 0.15f),
+                        shape = RoundedCornerShape(6.dp),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, BrandSky.copy(alpha = 0.5f)),
+                        modifier = Modifier.clickable {
+                            val workKeywords = listOf("whatsapp", "telegram", "chrome", "facebook", "katana", "orca", "instagram", "imo")
+                            val matchedApps = allInstalledApps.filter { app ->
+                                val pkg = app.packageName.lowercase()
+                                val name = app.appName.lowercase()
+                                workKeywords.any { kw -> pkg.contains(kw) || name.contains(kw) }
+                            }
+                            if (matchedApps.isEmpty()) {
+                                Toast.makeText(context, "কোনো কমন ওয়ার্ক অ্যাপস পাওয়া যায়নি", Toast.LENGTH_SHORT).show()
+                            } else {
+                                matchedApps.forEach { app ->
+                                    val isLite = app.isLiteStorageApp || AppManagerHelper.isLiteOrModdedApp(app.packageName, app.appName)
+                                    OverlayStateManager.toggleClearDataApp(app.copy(isLiteStorageApp = isLite), true, isLite)
+                                }
+                                Toast.makeText(context, "✓ ${matchedApps.size}টি ওয়ার্ক অ্যাপ সিলেক্ট করা হয়েছে!", Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                        ) {
+                            Icon(Icons.Default.CleaningServices, contentDescription = null, tint = BrandSky, modifier = Modifier.size(12.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("⚡ 1-Tap Select Work Apps", color = BrandSky, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
                 Spacer(modifier = Modifier.height(8.dp))
 
                 OutlinedTextField(
@@ -429,6 +792,13 @@ fun ClearDataSection(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
+                    com.example.ui.components.AppIconImage(
+                        packageName = app.packageName,
+                        fallbackText = app.appName,
+                        size = 32.dp,
+                        shape = RoundedCornerShape(8.dp)
+                    )
+                    Spacer(modifier = Modifier.width(10.dp))
                     Column(modifier = Modifier.weight(1f)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(

@@ -1,1 +1,7 @@
 /build
+/app/build
+/.gradle
+/.kotlin
+/.build-outputs
+local.properties
+debug.keystore.base64

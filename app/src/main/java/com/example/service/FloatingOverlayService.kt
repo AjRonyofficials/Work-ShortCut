@@ -96,7 +96,13 @@ class FloatingOverlayService : Service(), LifecycleOwner, ViewModelStoreOwner, S
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .build()
 
-        startForeground(101, notification)
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                startForeground(101, notification, android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
+            } else {
+                startForeground(101, notification)
+            }
+        } catch (_: Exception) {}
     }
 
     private fun setupOverlayWindow() {
@@ -119,7 +125,8 @@ class FloatingOverlayService : Service(), LifecycleOwner, ViewModelStoreOwner, S
             WindowManager.LayoutParams.WRAP_CONTENT,
             layoutType,
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-                    WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
+                    WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or
+                    WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED,
             PixelFormat.TRANSLUCENT
         ).apply {
             gravity = Gravity.TOP or Gravity.START
@@ -127,6 +134,10 @@ class FloatingOverlayService : Service(), LifecycleOwner, ViewModelStoreOwner, S
             y = 200
         }
         windowLayoutParams = params
+
+        var dragAccumulatorX = 0f
+        var dragAccumulatorY = 0f
+        var lastLayoutUpdateTime = 0L
 
         overlayComposeView = ComposeView(this).apply {
             setViewTreeLifecycleOwner(this@FloatingOverlayService)
@@ -136,16 +147,36 @@ class FloatingOverlayService : Service(), LifecycleOwner, ViewModelStoreOwner, S
             setContent {
                 val state by OverlayStateManager.uiState.collectAsState()
 
+                androidx.compose.runtime.LaunchedEffect(state.isEdgeBarMinimized) {
+                    updateOverlayLayoutParams(state.isEdgeBarMinimized)
+                }
+
                 WorkShortcutTheme(themeMode = state.appTheme) {
                     FloatingOverlayWindowContent(
                         state = state,
-                        onDragStart = { _, _ -> },
+                        onDragStart = { _, _ ->
+                            dragAccumulatorX = 0f
+                            dragAccumulatorY = 0f
+                            lastLayoutUpdateTime = 0L
+                        },
                         onDragDelta = { dx, dy ->
                             this@FloatingOverlayService.windowLayoutParams?.let { p ->
-                                p.gravity = Gravity.TOP or Gravity.START
-                                p.x = (p.x + dx.toInt()).coerceAtLeast(0)
-                                p.y = (p.y + dy.toInt()).coerceAtLeast(40)
-                                windowManager?.updateViewLayout(this@apply, p)
+                                dragAccumulatorX += dx
+                                dragAccumulatorY += dy
+                                val now = android.os.SystemClock.uptimeMillis()
+                                if (now - lastLayoutUpdateTime >= 16L || lastLayoutUpdateTime == 0L) {
+                                    val stepX = dragAccumulatorX.toInt()
+                                    val stepY = dragAccumulatorY.toInt()
+                                    if (stepX != 0 || stepY != 0) {
+                                        p.gravity = Gravity.TOP or Gravity.START
+                                        p.x = (p.x + stepX).coerceAtLeast(0)
+                                        p.y = (p.y + stepY).coerceAtLeast(40)
+                                        dragAccumulatorX -= stepX
+                                        dragAccumulatorY -= stepY
+                                        windowManager?.updateViewLayout(this@apply, p)
+                                        lastLayoutUpdateTime = now
+                                    }
+                                }
                             }
                         },
                         onToggleExpand = {
@@ -164,6 +195,20 @@ class FloatingOverlayService : Service(), LifecycleOwner, ViewModelStoreOwner, S
             OverlayStateManager.setOverlayActive(true)
         } catch (_: Exception) {
             stopSelf()
+        }
+    }
+
+    private fun updateOverlayLayoutParams(isEdgeBarMinimized: Boolean) {
+        windowLayoutParams?.let { p ->
+            p.width = WindowManager.LayoutParams.WRAP_CONTENT
+            p.height = WindowManager.LayoutParams.WRAP_CONTENT
+            p.flags = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                    WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or
+                    WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED
+            try {
+                windowManager?.updateViewLayout(overlayComposeView, p)
+            } catch (_: Exception) {
+            }
         }
     }
 

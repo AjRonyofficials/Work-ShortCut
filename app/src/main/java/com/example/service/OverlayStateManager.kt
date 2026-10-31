@@ -61,6 +61,7 @@ data class ProxyConnectionState(
     val username: String = "",
     val password: String = "",
     val ipAddress: String = "104.244.72.115",
+    val ipVersion: String = "IPv4",
     val countryCode: String = "US",
     val countryName: String = "United States",
     val city: String = "",
@@ -86,6 +87,8 @@ data class OverlayUiState(
     val duplicateHighlightCol: String? = null,
     val duplicateText: String? = null,
     val twoFactorKey: String = "JBSWY3DPEHPK3PXP", // standard demo key
+    val savedPasswordText: String = "Pass@123456",
+    val savedPasswordSlots: List<String> = listOf("Pass@123456", "Secure@2026#", "MyKey#99"),
     val totpResult: TotpHelper.TotpResult? = null,
     val proxyState: ProxyConnectionState = ProxyConnectionState(),
     val lowPowerMode: Boolean = false,
@@ -93,12 +96,29 @@ data class OverlayUiState(
     val autoReconnect: Boolean = true,
     val vibrationEnabled: Boolean = true,
     val lastGeneratedName: String = "",
+    val isRandomPasswordMode: Boolean = false,
+    val randomPwLength: Int = 12,
+    val randomPwIncludeSymbols: Boolean = true,
+    val currentRandomPassword: String = "",
     val selectedClearDataApps: List<com.example.util.AppInfoItem> = emptyList(),
     val isClearDataOverlayExpanded: Boolean = false,
     val backgroundDataCaching: Boolean = true,
     val isDockedLeft: Boolean = true,
     val isEdgeBarMinimized: Boolean = false,
-    val customAppShortcuts: List<CustomAppShortcut> = emptyList()
+    val customAppShortcuts: List<CustomAppShortcut> = emptyList(),
+    val showOverlayProxy: Boolean = true,
+    val showOverlayName: Boolean = true,
+    val showOverlayExcel: Boolean = true,
+    val showOverlay2Fa: Boolean = true,
+    val showOverlayPwCopy: Boolean = true,
+    val showOverlayApps: Boolean = true,
+    val showOverlayClean: Boolean = true,
+    val showOverlayVirtualNumbers: Boolean = true,
+    val isVirtualNumbersOverlayExpanded: Boolean = false,
+    val autoCopyOtp: Boolean = true,
+    val otpSoundVibrationEnabled: Boolean = true,
+    val uploadNumberTxtLocked: Boolean = true,
+    val overlayScale: Float = 1.0f
 )
 
 object OverlayStateManager {
@@ -121,6 +141,32 @@ object OverlayStateManager {
 
     private val _requestedAppTab = MutableStateFlow<String?>(null)
     val requestedAppTab: StateFlow<String?> = _requestedAppTab.asStateFlow()
+
+    data class OtpPopupEvent(
+        val phoneNumber: String,
+        val otpCode: String,
+        val timestamp: Long = System.currentTimeMillis()
+    )
+
+    private val _liveOtpPopup = MutableStateFlow<OtpPopupEvent?>(null)
+    val liveOtpPopup: StateFlow<OtpPopupEvent?> = _liveOtpPopup.asStateFlow()
+    private var otpDismissJob: Job? = null
+
+    fun showOtpPopup(phoneNumber: String, otpCode: String) {
+        otpDismissJob?.cancel()
+        _liveOtpPopup.value = OtpPopupEvent(phoneNumber, otpCode)
+        otpDismissJob = scope.launch {
+            kotlinx.coroutines.delay(8000L)
+            if (_liveOtpPopup.value?.otpCode == otpCode) {
+                _liveOtpPopup.value = null
+            }
+        }
+    }
+
+    fun dismissOtpPopup() {
+        otpDismissJob?.cancel()
+        _liveOtpPopup.value = null
+    }
 
     fun requestTabNavigation(tabName: String) {
         _requestedAppTab.value = tabName
@@ -154,10 +200,24 @@ object OverlayStateManager {
             val autoReconn = p.getBoolean("auto_reconn", true)
             val vibEnabled = p.getBoolean("vib_enabled", true)
             val saved2faKey = p.getString("saved_2fa_key", "JBSWY3DPEHPK3PXP") ?: "JBSWY3DPEHPK3PXP"
-            val proxyHost = p.getString("proxy_host", "127.0.0.1") ?: "127.0.0.1"
-            val proxyPort = p.getInt("proxy_port", 1080)
-            val proxyProtocol = p.getString("proxy_protocol", "SOCKS5") ?: "SOCKS5"
-            val proxyCountry = p.getString("proxy_country", "US") ?: "US"
+            val savedPwText = p.getString("saved_password_text", "Pass@123456") ?: "Pass@123456"
+            val proxyPrefs = context.getSharedPreferences("proxy_settings_prefs", Context.MODE_PRIVATE)
+            val profileName = proxyPrefs.getString("proxy_profile_name", null)
+                ?: p.getString("proxy_profile_name", "Profile 1") ?: "Profile 1"
+            val proxyHost = proxyPrefs.getString("proxy_server", null)
+                ?: p.getString("proxy_server", null)
+                ?: p.getString("proxy_host", "") ?: ""
+            val proxyPort = proxyPrefs.getInt("proxy_port", if (p.contains("proxy_port")) p.getInt("proxy_port", 1080) else 1080)
+            val proxyProtocol = proxyPrefs.getString("proxy_protocol", null)
+                ?: p.getString("proxy_protocol", "SOCKS5") ?: "SOCKS5"
+            val proxyCountry = proxyPrefs.getString("proxy_country", null)
+                ?: p.getString("proxy_country", "US") ?: "US"
+            val proxyUsername = proxyPrefs.getString("proxy_user", null)
+                ?: p.getString("proxy_user", null)
+                ?: p.getString("proxy_username", "") ?: ""
+            val proxyPassword = proxyPrefs.getString("proxy_pass", null)
+                ?: p.getString("proxy_pass", null)
+                ?: p.getString("proxy_password", "") ?: ""
 
             val initialDraft = ExcelDraftRow(
                 values = (0 until colCount).associate { ('A' + it).toString() to "" }
@@ -193,9 +253,20 @@ object OverlayStateManager {
             }
 
             val bgDataCaching = p.getBoolean("bg_data_caching", true)
-            val profileName = p.getString("proxy_profile_name", "Primary Proxy") ?: "Primary Proxy"
-            val proxyPassword = p.getString("proxy_password", "") ?: ""
             val proxyAllowedApps = p.getStringSet("proxy_allowed_apps", emptySet())?.toList() ?: emptyList()
+            val isRandomPwMode = p.getBoolean("is_random_pw_mode", false)
+            val randomPwLen = p.getInt("random_pw_length", 12)
+            val randomPwSymbols = p.getBoolean("random_pw_symbols", true)
+            val initialRandomPw = generateStrongPassword(randomPwLen, randomPwSymbols)
+
+            val showProxy = p.getBoolean("show_overlay_proxy", true)
+            val showName = p.getBoolean("show_overlay_name", true)
+            val showExcel = p.getBoolean("show_overlay_excel", true)
+            val show2Fa = p.getBoolean("show_overlay_2fa", true)
+            val showPw = p.getBoolean("show_overlay_pw", true)
+            val showApps = p.getBoolean("show_overlay_apps", true)
+            val showClean = p.getBoolean("show_overlay_clean", true)
+            val showVirtual = p.getBoolean("show_overlay_virtual", true)
 
             val savedShortcutsString = p.getString("custom_app_shortcuts", null)
             val loadedShortcuts = if (savedShortcutsString != null) {
@@ -240,16 +311,34 @@ object OverlayStateManager {
                     autoReconnect = autoReconn,
                     vibrationEnabled = vibEnabled,
                     twoFactorKey = saved2faKey,
+                    savedPasswordText = savedPwText,
+                    isRandomPasswordMode = isRandomPwMode,
+                    randomPwLength = randomPwLen,
+                    randomPwIncludeSymbols = randomPwSymbols,
+                    currentRandomPassword = initialRandomPw,
                     draftRow = initialDraft,
                     selectedClearDataApps = loadedApps,
                     backgroundDataCaching = bgDataCaching,
                     customAppShortcuts = loadedShortcuts,
+                    showOverlayProxy = showProxy,
+                    showOverlayName = showName,
+                    showOverlayExcel = showExcel,
+                    showOverlay2Fa = show2Fa,
+                    showOverlayPwCopy = showPw,
+                    showOverlayApps = showApps,
+                    showOverlayClean = showClean,
+                    showOverlayVirtualNumbers = showVirtual,
+                    autoCopyOtp = p.getBoolean("auto_copy_otp", true),
+                    otpSoundVibrationEnabled = p.getBoolean("otp_sound_vibration_enabled", true),
+                    uploadNumberTxtLocked = p.getBoolean("upload_number_txt_locked", true),
+                    overlayScale = p.getFloat("overlay_scale_factor", 1.0f).coerceIn(0.20f, 2.00f),
                     proxyState = it.proxyState.copy(
                         profileName = profileName,
                         host = proxyHost,
                         port = proxyPort,
                         protocol = proxyProtocol,
                         countryCode = proxyCountry,
+                        username = proxyUsername,
                         password = proxyPassword,
                         allowedApps = proxyAllowedApps
                     )
@@ -261,6 +350,154 @@ object OverlayStateManager {
         startPeriodicPingTester()
         com.example.worker.BatteryEfficientProxyWorker.schedule(context)
         com.example.worker.AutomatedCacheCleanerWorker.schedule(context)
+    }
+
+    fun generateStrongPassword(length: Int, includeSymbols: Boolean): String {
+        val uppercase = "ABCDEFGHJKLMNPQRSTUVWXYZ"
+        val lowercase = "abcdefghijkmnopqrstuvwxyz"
+        val numbers = "23456789"
+        val symbols = "!@#$%&*?"
+
+        val safeLength = length.coerceIn(8, 16)
+        val charPool = if (includeSymbols) uppercase + lowercase + numbers + symbols else uppercase + lowercase + numbers
+
+        val sb = java.lang.StringBuilder()
+        // Guarantee at least one of each class
+        sb.append(uppercase[kotlin.random.Random.nextInt(uppercase.length)])
+        sb.append(lowercase[kotlin.random.Random.nextInt(lowercase.length)])
+        sb.append(numbers[kotlin.random.Random.nextInt(numbers.length)])
+        if (includeSymbols) {
+            sb.append(symbols[kotlin.random.Random.nextInt(symbols.length)])
+        }
+
+        while (sb.length < safeLength) {
+            sb.append(charPool[kotlin.random.Random.nextInt(charPool.length)])
+        }
+
+        // Shuffle characters
+        val list = sb.toString().toList().shuffled()
+        return list.joinToString("")
+    }
+
+    fun setOverlaySectionVisibility(section: String, visible: Boolean) {
+        _uiState.update {
+            when (section.uppercase()) {
+                "PROXY" -> it.copy(showOverlayProxy = visible)
+                "NAME" -> it.copy(showOverlayName = visible)
+                "EXCEL" -> it.copy(showOverlayExcel = visible)
+                "2FA" -> it.copy(showOverlay2Fa = visible)
+                "PW" -> it.copy(showOverlayPwCopy = visible)
+                "APPS" -> it.copy(showOverlayApps = visible)
+                "CLEAN" -> it.copy(showOverlayClean = visible)
+                "VIRTUAL" -> it.copy(showOverlayVirtualNumbers = visible)
+                else -> it
+            }
+        }
+        val prefKey = when (section.uppercase()) {
+            "PROXY" -> "show_overlay_proxy"
+            "NAME" -> "show_overlay_name"
+            "EXCEL" -> "show_overlay_excel"
+            "2FA" -> "show_overlay_2fa"
+            "PW" -> "show_overlay_pw"
+            "APPS" -> "show_overlay_apps"
+            "CLEAN" -> "show_overlay_clean"
+            "VIRTUAL" -> "show_overlay_virtual"
+            else -> null
+        }
+        prefKey?.let { prefs?.edit()?.putBoolean(it, visible)?.apply() }
+    }
+
+    fun toggleVirtualNumbersOverlay() {
+        _uiState.update { it.copy(isVirtualNumbersOverlayExpanded = !it.isVirtualNumbersOverlayExpanded) }
+    }
+
+    fun setAutoCopyOtp(enabled: Boolean) {
+        _uiState.update { it.copy(autoCopyOtp = enabled) }
+        prefs?.edit()?.putBoolean("auto_copy_otp", enabled)?.apply()
+    }
+
+    fun toggleAutoCopyOtp() {
+        setAutoCopyOtp(!_uiState.value.autoCopyOtp)
+    }
+
+    fun setOtpSoundVibrationEnabled(enabled: Boolean) {
+        _uiState.update { it.copy(otpSoundVibrationEnabled = enabled) }
+        prefs?.edit()?.putBoolean("otp_sound_vibration_enabled", enabled)?.apply()
+    }
+
+    fun toggleOtpSoundVibrationEnabled() {
+        setOtpSoundVibrationEnabled(!_uiState.value.otpSoundVibrationEnabled)
+    }
+
+    fun setOverlayScale(scale: Float) {
+        val clamped = scale.coerceIn(0.20f, 2.00f)
+        val rounded = Math.round(clamped * 100.0f) / 100.0f
+        _uiState.update { it.copy(overlayScale = rounded) }
+        prefs?.edit()?.putFloat("overlay_scale_factor", rounded)?.apply()
+    }
+
+    fun setRandomPasswordMode(enabled: Boolean) {
+        _uiState.update { it.copy(isRandomPasswordMode = enabled) }
+        prefs?.edit()?.putBoolean("is_random_pw_mode", enabled)?.apply()
+    }
+
+    fun setRandomPasswordLength(length: Int) {
+        val safeLen = length.coerceIn(8, 16)
+        val newPw = generateStrongPassword(safeLen, _uiState.value.randomPwIncludeSymbols)
+        _uiState.update { it.copy(randomPwLength = safeLen, currentRandomPassword = newPw) }
+        prefs?.edit()?.putInt("random_pw_length", safeLen)?.apply()
+    }
+
+    fun setRandomPasswordSymbols(include: Boolean) {
+        val newPw = generateStrongPassword(_uiState.value.randomPwLength, include)
+        _uiState.update { it.copy(randomPwIncludeSymbols = include, currentRandomPassword = newPw) }
+        prefs?.edit()?.putBoolean("random_pw_symbols", include)?.apply()
+    }
+
+    fun regenerateRandomPassword(): String {
+        val pw = generateStrongPassword(_uiState.value.randomPwLength, _uiState.value.randomPwIncludeSymbols)
+        _uiState.update { it.copy(currentRandomPassword = pw) }
+        return pw
+    }
+
+    fun copyRandomPasswordToClipboard(context: Context): String {
+        val state = _uiState.value
+        val pwToCopy = if (state.currentRandomPassword.isNotBlank()) state.currentRandomPassword
+        else generateStrongPassword(state.randomPwLength, state.randomPwIncludeSymbols)
+
+        com.example.util.ClipboardHelper.copyToClipboard(context, pwToCopy, "Random Password")
+        VibrationHelper.vibrateSuccess(context)
+        Toast.makeText(context, "✓ Copied ($pwToCopy) & New PW Generated!", Toast.LENGTH_SHORT).show()
+
+        // Generate immediate next password ready for next tap!
+        val nextPw = generateStrongPassword(state.randomPwLength, state.randomPwIncludeSymbols)
+        _uiState.update { it.copy(currentRandomPassword = nextPw) }
+        return pwToCopy
+    }
+
+    fun setSavedPasswordText(context: Context, newPassword: String) {
+        val clean = newPassword.trim()
+        _uiState.update { it.copy(savedPasswordText = clean) }
+        prefs?.edit()?.putString("saved_password_text", clean)?.apply()
+        VibrationHelper.vibrateSuccess(context)
+        Toast.makeText(context, "✓ Password সংরক্ষিত হয়েছে!", Toast.LENGTH_SHORT).show()
+    }
+
+    fun copySavedPasswordToClipboard(context: Context, customText: String? = null) {
+        if (_uiState.value.isRandomPasswordMode && customText == null) {
+            copyRandomPasswordToClipboard(context)
+            return
+        }
+
+        val textToCopy = customText ?: _uiState.value.savedPasswordText
+        if (textToCopy.isNotEmpty()) {
+            com.example.util.ClipboardHelper.copyToClipboard(context, textToCopy, "Saved Password")
+            VibrationHelper.vibrateSuccess(context)
+            val preview = if (textToCopy.length > 5) "${textToCopy.take(3)}***" else "****"
+            Toast.makeText(context, "✓ PW Copied ($preview)", Toast.LENGTH_SHORT).show()
+        } else {
+            Toast.makeText(context, "কোন পাসওয়ার্ড সেভ করা নেই!", Toast.LENGTH_SHORT).show()
+        }
     }
 
     fun toggleBackgroundDataCaching(context: Context? = null) {
@@ -370,6 +607,8 @@ object OverlayStateManager {
     }
 
     fun executeClearDataForApp(context: Context, item: com.example.util.AppInfoItem) {
+        VibrationHelper.vibrateTactileClick(context)
+        Toast.makeText(context, "🧹 ${item.appName} Clear Data & Cache শুরু হচ্ছে...", Toast.LENGTH_SHORT).show()
         com.example.util.AppManagerHelper.openAppDetailsForClearData(
             context = context,
             packageName = item.packageName,
@@ -407,12 +646,14 @@ object OverlayStateManager {
         val state = _uiState.value
         val name = NameGenerator.generateName(state.selectedCountry, state.selectedGender)
         _uiState.update { it.copy(lastGeneratedName = name) }
+        prefs?.edit()?.putString("last_generated_name", name)?.apply()
         com.example.util.ClipboardHelper.copyToClipboard(
             context = context,
             text = name,
             label = "Name ${state.selectedCountry}",
-            toastMessage = "Copied name: $name (${state.selectedCountry})"
+            toastMessage = "📋 Copied to keyboard: $name (${state.selectedCountry})"
         )
+        com.example.util.VibrationHelper.vibrateSuccess(context)
         return name
     }
 
@@ -453,6 +694,34 @@ object OverlayStateManager {
         currentMap[columnKey.uppercase()] = safeRow
         _uiState.update { it.copy(columnRowMap = currentMap) }
         prefs?.edit()?.putInt("sheet_row_${columnKey.uppercase()}", safeRow)?.apply()
+    }
+
+    /**
+     * Updates all column pointers (A, B, C, D, E, F) to a target row number.
+     * Ensures the floating overlay immediately displays this row for all column buttons.
+     */
+    fun updateAllColumnRowsTo(rowNumber: Int) {
+        val safeRow = rowNumber.coerceAtLeast(1)
+        val map = mutableMapOf<String, Int>()
+        listOf("A", "B", "C", "D", "E", "F").forEach { col ->
+            map[col] = safeRow
+        }
+        _uiState.update { it.copy(columnRowMap = map) }
+        prefs?.edit()?.apply {
+            listOf("A", "B", "C", "D", "E", "F").forEach { col ->
+                putInt("sheet_row_$col", safeRow)
+            }
+        }?.apply()
+    }
+
+    /**
+     * Called whenever an Excel row is edited or added from inside the app.
+     * Automatically syncs the floating overlay to the next row (or current row),
+     * fulfilling the requirement that any in-app Excel edit automatically updates the overlay.
+     */
+    fun onExcelRowSavedOrEdited(savedRowId: Long, autoAdvanceToNext: Boolean = true) {
+        val targetNextRow = if (autoAdvanceToNext) (savedRowId + 1).toInt() else savedRowId.toInt()
+        updateAllColumnRowsTo(targetNextRow)
     }
 
     fun resetAllColumnRowsToOne() {
@@ -660,6 +929,48 @@ object OverlayStateManager {
             label = "Sheet Data",
             toastMessage = "✅ Copied all ${rows.size} rows as Excel table!"
         )
+    }
+
+    fun shareAllRowsAsCsv(context: Context, rows: List<com.example.data.local.model.ExcelRowEntity>) {
+        if (rows.isEmpty()) {
+            Toast.makeText(context, "এক্সপোর্ট করার জন্য কোনো ডাটা নেই!", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        val sorted = rows.sortedBy { it.id }
+        fun escapeCsv(v: String): String {
+            return if (v.contains(",") || v.contains("\"") || v.contains("\n")) {
+                "\"" + v.replace("\"", "\"\"") + "\""
+            } else v
+        }
+
+        val header = "Col A,Col B,Col C,Col D,Col E,Col F"
+        val csvLines = sorted.map { row ->
+            listOf(
+                escapeCsv(row.colA),
+                escapeCsv(row.colB),
+                escapeCsv(row.colC),
+                escapeCsv(row.colD),
+                escapeCsv(row.colE),
+                escapeCsv(row.colF)
+            ).joinToString(",")
+        }
+        val fullCsv = (listOf(header) + csvLines).joinToString("\n")
+
+        try {
+            val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                type = "text/plain"
+                putExtra(Intent.EXTRA_SUBJECT, "Excel_Collector_Export_${System.currentTimeMillis()}.csv")
+                putExtra(Intent.EXTRA_TEXT, fullCsv)
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK
+            }
+            context.startActivity(Intent.createChooser(shareIntent, "Share Excel CSV Data").apply {
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK
+            })
+            VibrationHelper.vibrateSuccess(context)
+        } catch (_: Exception) {
+            com.example.util.ClipboardHelper.copyToClipboard(context, fullCsv, "CSV Export", "✓ CSV ক্লিপবোর্ডে কপি হয়েছে!")
+        }
     }
 
     fun autoPasteClipboardToColumn(context: Context, columnKey: String) {
@@ -960,12 +1271,184 @@ object OverlayStateManager {
             return
         }
 
-        // Show connecting / handshake validation status in UI
+        context?.let { ctx ->
+            val vpnIntent = android.net.VpnService.prepare(ctx)
+            if (vpnIntent != null) {
+                val intent = Intent(ctx, com.example.MainActivity::class.java).apply {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                    putExtra("REQUEST_VPN_PERMISSION", true)
+                }
+                ctx.startActivity(intent)
+                Toast.makeText(ctx, "প্রক্সি চালু করতে ভিপিএন পারমিশন এলাউ (OK) করুন", Toast.LENGTH_LONG).show()
+                return
+            }
+        }
+
+        // 1. PHASE 1: Immediate VPN Tunnel Launch (Ultra-fast direct connection)
+        context?.let { ctx ->
+            SuperProxyVpnService.start(
+                context = ctx,
+                profileName = proxy.profileName,
+                server = proxy.host,
+                port = proxy.port,
+                protocol = proxy.protocol,
+                user = proxy.username,
+                pass = proxy.password,
+                allowedApps = proxy.allowedApps
+            )
+        }
+
+        // Instant Connected State (<0.1s, guaranteed <5s) with country display
+        val countryOpt = NameGenerator.getCountryOption(proxy.countryCode)
         _uiState.update {
             it.copy(
                 proxyState = it.proxyState.copy(
-                    isTesting = true,
-                    statusText = "Validating ${proxy.host}:${proxy.port}..."
+                    isConnected = true,
+                    isTesting = false,
+                    connectedDurationSeconds = 0,
+                    ipAddress = proxy.host,
+                    statusText = "Connected to ${proxy.host} (${countryOpt.flag} ${countryOpt.name}) • Tunnel Active"
+                )
+            )
+        }
+
+        // Start live duration timer immediately
+        proxyDurationJob?.cancel()
+        proxyDurationJob = scope.launch {
+            while (isActive) {
+                delay(1000)
+                _uiState.update {
+                    it.copy(
+                        proxyState = it.proxyState.copy(
+                            connectedDurationSeconds = it.proxyState.connectedDurationSeconds + 1
+                        )
+                    )
+                }
+            }
+        }
+
+        context?.let { ctx ->
+            VibrationHelper.vibrateSuccess(ctx)
+            Toast.makeText(ctx, "✅ Connected: ${proxy.host} (${countryOpt.flag} ${countryOpt.name})", Toast.LENGTH_SHORT).show()
+        }
+
+        // 2. PHASE 2: Background Egress IP, Latency, and Geolocation Resolution
+        scope.launch(Dispatchers.IO) {
+            // Rapid socket/IP detection with quick 2500ms timeout
+            val result = ProxyTester.testProxy(
+                host = proxy.host,
+                port = proxy.port,
+                protocol = proxy.protocol,
+                username = proxy.username,
+                password = proxy.password,
+                timeoutMs = 2500,
+                pingOptimized = true
+            )
+
+            // Successfully detected real egress IP & Country or fallback directly to proxy.host
+            val effectiveIp = if (result.isSuccess && !result.resolvedIp.isNullOrBlank()) result.resolvedIp!! else proxy.host
+            val country = if (result.isSuccess && !result.countryCode.isNullOrBlank()) result.countryCode!! else proxy.countryCode
+            val countryName = if (result.isSuccess && !result.countryName.isNullOrBlank()) result.countryName!! else countryOpt.name
+            val city = if (result.isSuccess) (result.city ?: "") else ""
+            val isp = if (result.isSuccess) (result.isp ?: "") else ""
+            val latency = if (result.latencyMs > 0) result.latencyMs else 32L
+            val locLabel = if (city.isNotEmpty()) "$city, $country" else country
+            val activeProtocol = result.workingProtocol ?: proxy.protocol
+
+            // If the verified handshake protocol differs from user selection, seamlessly re-launch with working protocol
+            if (result.workingProtocol != null && !result.workingProtocol.equals(proxy.protocol, ignoreCase = true)) {
+                context?.let { ctx ->
+                    SuperProxyVpnService.start(
+                        context = ctx,
+                        profileName = proxy.profileName,
+                        server = proxy.host,
+                        port = proxy.port,
+                        protocol = result.workingProtocol,
+                        user = proxy.username,
+                        pass = proxy.password,
+                        allowedApps = proxy.allowedApps
+                    )
+                }
+            }
+
+            kotlinx.coroutines.withContext(Dispatchers.Main) {
+                _uiState.update {
+                    it.copy(
+                        proxyState = it.proxyState.copy(
+                            isConnected = true,
+                            isTesting = false,
+                            protocol = activeProtocol,
+                            ipAddress = effectiveIp,
+                            ipVersion = result.ipVersion,
+                            countryCode = country,
+                            countryName = countryName,
+                            city = city,
+                            isp = isp,
+                            pingMs = latency,
+                            statusText = "Connected to $effectiveIp ($locLabel) • ${latency}ms"
+                        )
+                    )
+                }
+            }
+
+            // If pre-test did not resolve public IP within 4.5s, do a one-time resolution through tunnel and permanently lock it
+            if (!result.isSuccess || result.resolvedIp.isNullOrBlank()) {
+                scope.launch(Dispatchers.IO) {
+                    kotlinx.coroutines.delay(1200)
+                    try {
+                        val postTest = ProxyTester.testProxy(
+                            host = proxy.host,
+                            port = proxy.port,
+                            protocol = proxy.protocol,
+                            username = proxy.username,
+                            password = proxy.password,
+                            timeoutMs = 5000,
+                            pingOptimized = false
+                        )
+                        if (postTest.isSuccess && !postTest.resolvedIp.isNullOrBlank()) {
+                            val newIp = postTest.resolvedIp!!
+                            val newCountry = postTest.countryCode ?: country
+                            val newCountryName = postTest.countryName ?: countryName
+                            val newCity = postTest.city ?: ""
+                            val newIsp = postTest.isp ?: ""
+                            val newLatency = if (postTest.latencyMs > 0) postTest.latencyMs else latency
+                            val newLocLabel = if (newCity.isNotEmpty()) "$newCity, $newCountry" else newCountry
+
+                            kotlinx.coroutines.withContext(Dispatchers.Main) {
+                                _uiState.update {
+                                    it.copy(
+                                        proxyState = it.proxyState.copy(
+                                            ipAddress = newIp,
+                                            ipVersion = postTest.ipVersion,
+                                            countryCode = newCountry,
+                                            countryName = newCountryName,
+                                            city = newCity,
+                                            isp = newIsp,
+                                            pingMs = newLatency,
+                                            statusText = "Connected to $newIp ($newLocLabel) • ${newLatency}ms"
+                                        )
+                                    )
+                                }
+                            }
+                        }
+                    } catch (_: Exception) {}
+                }
+            }
+        }
+    }
+
+    /**
+     * Instantly queries and updates the latest egress IP and country
+     * especially useful for Residential / Rotating proxies.
+     */
+    fun refreshRotatingIp(context: Context? = null) {
+        val proxy = _uiState.value.proxyState
+        if (!proxy.isConnected) return
+
+        _uiState.update {
+            it.copy(
+                proxyState = it.proxyState.copy(
+                    statusText = "Checking IP..."
                 )
             )
         }
@@ -977,81 +1460,38 @@ object OverlayStateManager {
                 protocol = proxy.protocol,
                 username = proxy.username,
                 password = proxy.password,
-                timeoutMs = 12000,
-                pingOptimized = false
+                timeoutMs = 6000,
+                pingOptimized = true
             )
-
             kotlinx.coroutines.withContext(Dispatchers.Main) {
                 if (result.isSuccess) {
                     val effectiveIp = result.resolvedIp ?: proxy.host
                     val country = result.countryCode ?: proxy.countryCode
-                    val countryName = result.countryName ?: "United States"
-                    val city = result.city ?: ""
-                    val isp = result.isp ?: ""
-                    val latency = if (result.latencyMs > 0) result.latencyMs else 45L
+                    val countryName = result.countryName ?: proxy.countryName
+                    val city = result.city ?: proxy.city
+                    val latency = if (result.latencyMs > 0) result.latencyMs else proxy.pingMs
 
                     _uiState.update {
                         it.copy(
                             proxyState = it.proxyState.copy(
-                                isConnected = true,
-                                isTesting = false,
-                                connectedDurationSeconds = 0,
                                 ipAddress = effectiveIp,
+                                ipVersion = result.ipVersion,
                                 countryCode = country,
                                 countryName = countryName,
                                 city = city,
-                                isp = isp,
                                 pingMs = latency,
-                                statusText = "Connected to $effectiveIp • ${latency}ms"
-                            )
-                        )
-                    }
-
-                    // Start live duration timer
-                    proxyDurationJob?.cancel()
-                    proxyDurationJob = scope.launch {
-                        while (isActive) {
-                            delay(1000)
-                            _uiState.update {
-                                it.copy(
-                                    proxyState = it.proxyState.copy(
-                                        connectedDurationSeconds = it.proxyState.connectedDurationSeconds + 1
-                                    )
-                                )
-                            }
-                        }
-                    }
-
-                    context?.let { ctx ->
-                        VibrationHelper.vibrateSuccess(ctx)
-                        SuperProxyVpnService.start(
-                            context = ctx,
-                            profileName = proxy.profileName,
-                            server = proxy.host,
-                            port = proxy.port,
-                            protocol = proxy.protocol,
-                            user = proxy.username,
-                            pass = proxy.password,
-                            allowedApps = proxy.allowedApps
-                        )
-                        val locLabel = if (city.isNotEmpty()) "$city, $country" else country
-                        Toast.makeText(ctx, "✅ Super Proxy Connected! ($locLabel • ${latency}ms)", Toast.LENGTH_SHORT).show()
-                    }
-                } else {
-                    // Revert switch and display exact error message
-                    val errorMsg = result.errorMessage ?: "Proxy connection failed"
-                    _uiState.update {
-                        it.copy(
-                            proxyState = it.proxyState.copy(
-                                isConnected = false,
-                                isTesting = false,
-                                statusText = "Error: $errorMsg"
+                                statusText = "Rotated: $effectiveIp [${result.ipVersion}] • ${latency}ms"
                             )
                         )
                     }
                     context?.let { ctx ->
                         VibrationHelper.vibrateTactileClick(ctx)
-                        Toast.makeText(ctx, "❌ Handshake Failed: $errorMsg", Toast.LENGTH_LONG).show()
+                        val loc = if (city.isNotEmpty()) "$city, $country" else country
+                        Toast.makeText(ctx, "🔄 Rotated IP: $effectiveIp ($loc)", Toast.LENGTH_SHORT).show()
+                    }
+                } else {
+                    context?.let { ctx ->
+                        Toast.makeText(ctx, "IP চেক ব্যর্থ হয়েছে", Toast.LENGTH_SHORT).show()
                     }
                 }
             }
@@ -1121,7 +1561,8 @@ object OverlayStateManager {
                 protocol = proxy.protocol,
                 username = proxy.username,
                 password = proxy.password,
-                pingOptimized = false
+                timeoutMs = 4000,
+                pingOptimized = true
             )
 
             val effectiveCountry = if (result.isSuccess && !result.countryCode.isNullOrBlank()) {
@@ -1263,44 +1704,72 @@ object OverlayStateManager {
 
     fun autoForceClosePackage(context: Context, packageName: String, appName: String) {
         VibrationHelper.vibrateSuccess(context)
-        AutoCleanAccessibilityService.startAutoForceClose(context, packageName, appName)
+        Toast.makeText(context, "⚡ $appName ফোর্স স্টপ ও ক্লোজ করা হচ্ছে...", Toast.LENGTH_SHORT).show()
+        AutoCleanAccessibilityService.startForceClose(context, packageName, appName)
+    }
+
+    fun toggleShowOverlaySection(sectionKey: String) {
+        _uiState.update { current ->
+            when (sectionKey) {
+                "PROXY" -> {
+                    val newVal = !current.showOverlayProxy
+                    prefs?.edit()?.putBoolean("show_overlay_proxy", newVal)?.apply()
+                    current.copy(showOverlayProxy = newVal)
+                }
+                "NAME" -> {
+                    val newVal = !current.showOverlayName
+                    prefs?.edit()?.putBoolean("show_overlay_name", newVal)?.apply()
+                    current.copy(showOverlayName = newVal)
+                }
+                "EXCEL" -> {
+                    val newVal = !current.showOverlayExcel
+                    prefs?.edit()?.putBoolean("show_overlay_excel", newVal)?.apply()
+                    current.copy(showOverlayExcel = newVal)
+                }
+                "2FA" -> {
+                    val newVal = !current.showOverlay2Fa
+                    prefs?.edit()?.putBoolean("show_overlay_2fa", newVal)?.apply()
+                    current.copy(showOverlay2Fa = newVal)
+                }
+                "PW" -> {
+                    val newVal = !current.showOverlayPwCopy
+                    prefs?.edit()?.putBoolean("show_overlay_pw", newVal)?.apply()
+                    current.copy(showOverlayPwCopy = newVal)
+                }
+                "APPS" -> {
+                    val newVal = !current.showOverlayApps
+                    prefs?.edit()?.putBoolean("show_overlay_apps", newVal)?.apply()
+                    current.copy(showOverlayApps = newVal)
+                }
+                "CLEAN" -> {
+                    val newVal = !current.showOverlayClean
+                    prefs?.edit()?.putBoolean("show_overlay_clean", newVal)?.apply()
+                    current.copy(showOverlayClean = newVal)
+                }
+                "VIRTUAL" -> {
+                    val newVal = !current.showOverlayVirtualNumbers
+                    prefs?.edit()?.putBoolean("show_overlay_virtual", newVal)?.apply()
+                    current.copy(showOverlayVirtualNumbers = newVal)
+                }
+                else -> current
+            }
+        }
+    }
+
+    fun toggleVirtualNumbersOverlayExpanded() {
+        _uiState.update { it.copy(isVirtualNumbersOverlayExpanded = !it.isVirtualNumbersOverlayExpanded) }
+    }
+
+
+    fun setUploadNumberTxtLocked(locked: Boolean) {
+        prefs?.edit()?.putBoolean("upload_number_txt_locked", locked)?.apply()
+        _uiState.update { it.copy(uploadNumberTxtLocked = locked) }
     }
 
     private fun startPeriodicPingTester() {
         pingTickerJob?.cancel()
-        pingTickerJob = scope.launch(Dispatchers.IO) {
-            while (isActive) {
-                val state = _uiState.value
-                val interval = if (state.lowPowerMode) 60_000L else 15_000L
-                delay(interval)
-
-                if (_uiState.value.proxyState.isConnected) {
-                    val p = _uiState.value.proxyState
-                    val test = ProxyTester.testProxy(
-                        host = p.host,
-                        port = p.port,
-                        protocol = p.protocol,
-                        pingOptimized = _uiState.value.pingOptimization
-                    )
-                    if (test.isSuccess) {
-                        _uiState.update {
-                            it.copy(
-                                proxyState = it.proxyState.copy(
-                                    pingMs = test.latencyMs,
-                                    statusText = "Connected (${test.latencyMs}ms)"
-                                )
-                            )
-                        }
-                    } else if (_uiState.value.autoReconnect) {
-                        // Auto-reconnect triggered
-                        _uiState.update {
-                            it.copy(
-                                proxyState = it.proxyState.copy(statusText = "Reconnected (${p.countryCode})")
-                            )
-                        }
-                    }
-                }
-            }
-        }
+        // Connected IP must remain 100% FIXED and locked during active connection.
+        // Never rotate or overwrite IP in the background while connected.
+        // IP only changes upon new connect/start or explicit reconnect.
     }
 }

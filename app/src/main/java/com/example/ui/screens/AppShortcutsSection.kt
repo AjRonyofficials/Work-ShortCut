@@ -227,7 +227,11 @@ fun AppShortcutsSection(
                         .fillMaxWidth()
                         .combinedClickable(
                             onClick = { OverlayStateManager.launchAppShortcut(context, shortcut) },
-                            onLongClick = { OverlayStateManager.closeAppShortcut(context, shortcut) }
+                            onLongClick = {
+                                com.example.util.VibrationHelper.vibrateSuccess(context)
+                                Toast.makeText(context, "⚡ ${shortcut.appName} ফোর্স স্টপ ও ক্লোজ করা হচ্ছে...", Toast.LENGTH_SHORT).show()
+                                OverlayStateManager.closeAppShortcut(context, shortcut)
+                            }
                         ),
                     shape = RoundedCornerShape(14.dp),
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
@@ -241,20 +245,12 @@ fun AppShortcutsSection(
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
                         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
-                            Surface(
-                                shape = RoundedCornerShape(8.dp),
-                                color = cardColor,
-                                modifier = Modifier.size(38.dp)
-                            ) {
-                                Box(contentAlignment = Alignment.Center) {
-                                    Text(
-                                        text = shortcut.appName.take(3).uppercase(),
-                                        color = Color.White,
-                                        fontWeight = FontWeight.Bold,
-                                        fontSize = 12.sp
-                                    )
-                                }
-                            }
+                            com.example.ui.components.AppIconImage(
+                                packageName = shortcut.packageName,
+                                fallbackText = shortcut.appName,
+                                size = 38.dp,
+                                shape = RoundedCornerShape(8.dp)
+                            )
 
                             Spacer(modifier = Modifier.width(10.dp))
 
@@ -397,21 +393,29 @@ fun AppShortcutsSection(
             val isInOverlay = activePackages.contains(app.packageName)
 
             Surface(
-                onClick = {
-                    OverlayStateManager.toggleAppShortcut(app.appName, app.packageName, !isInOverlay)
-                    if (!isInOverlay) {
-                        Toast.makeText(context, "${app.appName} added to floating overlay! ✓", Toast.LENGTH_SHORT).show()
-                    } else {
-                        Toast.makeText(context, "${app.appName} removed from overlay", Toast.LENGTH_SHORT).show()
-                    }
-                },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .combinedClickable(
+                        onClick = {
+                            OverlayStateManager.toggleAppShortcut(app.appName, app.packageName, !isInOverlay)
+                            if (!isInOverlay) {
+                                Toast.makeText(context, "${app.appName} added to floating overlay! ✓", Toast.LENGTH_SHORT).show()
+                            } else {
+                                Toast.makeText(context, "${app.appName} removed from overlay", Toast.LENGTH_SHORT).show()
+                            }
+                        },
+                        onLongClick = {
+                            com.example.util.VibrationHelper.vibrateSuccess(context)
+                            Toast.makeText(context, "⚡ ${app.appName} ফোর্স স্টপ ও ক্লোজ করা হচ্ছে...", Toast.LENGTH_SHORT).show()
+                            OverlayStateManager.autoForceClosePackage(context, app.packageName, app.appName)
+                        }
+                    ),
                 shape = RoundedCornerShape(12.dp),
                 color = if (isInOverlay) BrandGreen.copy(alpha = 0.1f) else MaterialTheme.colorScheme.surface,
                 border = androidx.compose.foundation.BorderStroke(
                     1.dp,
                     if (isInOverlay) BrandGreen.copy(alpha = 0.5f) else MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)
-                ),
-                modifier = Modifier.fillMaxWidth()
+                )
             ) {
                 Row(
                     modifier = Modifier
@@ -424,20 +428,12 @@ fun AppShortcutsSection(
                         verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier.weight(1f)
                     ) {
-                        Surface(
-                            shape = CircleShape,
-                            color = if (isInOverlay) BrandGreen.copy(alpha = 0.2f) else MaterialTheme.colorScheme.surfaceVariant,
-                            modifier = Modifier.size(36.dp)
-                        ) {
-                            Box(contentAlignment = Alignment.Center) {
-                                Text(
-                                    text = app.appName.take(1).uppercase(),
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 14.sp,
-                                    color = if (isInOverlay) BrandGreen else MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                        }
+                        com.example.ui.components.AppIconImage(
+                            packageName = app.packageName,
+                            fallbackText = app.appName,
+                            size = 36.dp,
+                            shape = RoundedCornerShape(8.dp)
+                        )
 
                         Spacer(modifier = Modifier.width(10.dp))
 

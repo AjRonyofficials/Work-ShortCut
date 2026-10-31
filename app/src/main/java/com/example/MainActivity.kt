@@ -19,20 +19,67 @@ import com.example.ui.theme.WorkShortcutTheme
 
 class MainActivity : ComponentActivity() {
 
+    private val notificationPermissionLauncher = registerForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        if (isGranted) {
+            android.widget.Toast.makeText(this, "✓ নোটিফিকেশন পারমিশন চালু হয়েছে! ওটিপি আসলে নোটিফিকেশনে পাবেন।", android.widget.Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun checkNotificationPermission() {
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+            if (androidx.core.content.ContextCompat.checkSelfPermission(
+                    this,
+                    android.Manifest.permission.POST_NOTIFICATIONS
+                ) != android.content.pm.PackageManager.PERMISSION_GRANTED
+            ) {
+                notificationPermissionLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+            }
+        }
+    }
+
+    private val vpnPermissionLauncher = registerForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode == RESULT_OK) {
+            OverlayStateManager.startProxyConnection(this)
+        } else {
+            android.widget.Toast.makeText(this, "ভিপিএন পারমিশন ছাড়া প্রক্সি ট্র্যাফিক রুট করা সম্ভব নয়!", android.widget.Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun checkVpnPermissionRequest(intent: android.content.Intent?) {
+        if (intent?.getBooleanExtra("REQUEST_VPN_PERMISSION", false) == true) {
+            val vpnIntent = android.net.VpnService.prepare(this)
+            if (vpnIntent != null) {
+                vpnPermissionLauncher.launch(vpnIntent)
+            } else {
+                OverlayStateManager.startProxyConnection(this)
+            }
+        }
+    }
+
     override fun onNewIntent(intent: android.content.Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
         if (intent.getBooleanExtra("NAVIGATE_TO_SHEET", false)) {
             OverlayStateManager.requestTab("EXCEL")
         }
+        checkVpnPermissionRequest(intent)
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
-        OverlayStateManager.init(this)
-
+        try { OverlayStateManager.init(this) } catch (e: Throwable) { e.printStackTrace() }
+        try { com.example.service.UnixSmsManager.init(this) } catch (e: Throwable) { e.printStackTrace() }
+        try { com.example.service.VirtualNumberManager.init(this) } catch (e: Throwable) { e.printStackTrace() }
+        try { com.example.service.KopEngine2Manager.init(this) } catch (e: Throwable) { e.printStackTrace() }
+        try { com.example.service.AuthManager.init(this) } catch (e: Throwable) { e.printStackTrace() }
+        try { com.example.service.WithdrawalManager.init(this) } catch (e: Throwable) { e.printStackTrace() }
+        try { com.example.service.OtpHistoryManager.init(this) } catch (e: Throwable) { e.printStackTrace() }
         val database = AppDatabase.getDatabase(this)
         val repository = WorkShortcutRepository(
             excelRowDao = database.excelRowDao(),
@@ -40,27 +87,62 @@ class MainActivity : ComponentActivity() {
             twoFactorDao = database.twoFactorDao()
         )
 
-        if (intent?.getBooleanExtra("NAVIGATE_TO_SHEET", false) == true) {
-            OverlayStateManager.requestTab("EXCEL")
+        try {
+            if (intent?.getBooleanExtra("NAVIGATE_TO_SHEET", false) == true) {
+                OverlayStateManager.requestTab("EXCEL")
+            }
+            checkVpnPermissionRequest(intent)
+            checkNotificationPermission()
+        } catch (e: Throwable) {
+            e.printStackTrace()
         }
+        try { com.example.util.AppMemoryOptimizer.autoOptimize(this) } catch (e: Throwable) { e.printStackTrace() }
+        try { com.example.service.GlobalCloudSyncService.init(this) } catch (e: Throwable) { e.printStackTrace() }
+        try { com.example.service.AppUpdateManager.init(this) } catch (e: Throwable) { e.printStackTrace() }
 
         setContent {
             val state by OverlayStateManager.uiState.collectAsStateWithLifecycle()
+            val isLoggedIn by com.example.service.AuthManager.isLoggedIn.collectAsStateWithLifecycle()
             val savedExcelRows by repository.allExcelRows.collectAsStateWithLifecycle(initialValue = emptyList())
             val savedProxies by repository.allProxies.collectAsStateWithLifecycle(initialValue = emptyList())
             val savedTwoFactorKeys by repository.allTwoFactorKeys.collectAsStateWithLifecycle(initialValue = emptyList())
+            val updateState by com.example.service.AppUpdateManager.state.collectAsStateWithLifecycle()
+            val isUpdateDismissed by com.example.service.AppUpdateManager.isDismissedForSession.collectAsStateWithLifecycle()
 
             WorkShortcutTheme(themeMode = state.appTheme) {
                 Surface(modifier = Modifier.fillMaxSize()) {
-                    MainScreen(
-                        state = state,
-                        savedExcelRows = savedExcelRows,
-                        savedProxies = savedProxies,
-                        savedTwoFactorKeys = savedTwoFactorKeys,
-                        repository = repository
+                    if (!isLoggedIn) {
+                        com.example.ui.screens.LoginScreen(
+                            onLoginSuccess = { /* Automatically refreshes state */ }
+                        )
+                    } else {
+                        MainScreen(
+                            state = state,
+                            savedExcelRows = savedExcelRows,
+                            savedProxies = savedProxies,
+                            savedTwoFactorKeys = savedTwoFactorKeys,
+                            repository = repository
+                        )
+                    }
+
+                    // Global 1-Click In-App Remote Update Dialog
+                    com.example.ui.components.InAppUpdateDialog(
+                        state = updateState,
+                        isDismissed = isUpdateDismissed,
+                        onDismiss = { com.example.service.AppUpdateManager.dismissDialog() }
                     )
                 }
             }
         }
+    }
+
+    override fun onStart() {
+        super.onStart()
+        com.example.util.AppLifecycleTracker.onActivityStarted()
+    }
+
+    override fun onStop() {
+        super.onStop()
+        com.example.util.AppLifecycleTracker.onActivityStopped()
     }
 }

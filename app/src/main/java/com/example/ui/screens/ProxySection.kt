@@ -25,6 +25,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
@@ -100,6 +101,7 @@ import com.example.util.ClipboardHelper
 import com.example.util.NameGenerator
 import com.example.util.ProxyFormatHelper
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 @Composable
 fun ProxySection(
@@ -112,6 +114,7 @@ fun ProxySection(
     val scope = rememberCoroutineScope()
     val proxy = state.proxyState
 
+    var isFastestSearching by remember { mutableStateOf(false) }
     var profileName by remember(proxy.profileName) { mutableStateOf(proxy.profileName) }
     var serverHost by remember(proxy.host) { mutableStateOf(proxy.host) }
     var serverPort by remember(proxy.port) { mutableStateOf(proxy.port.toString()) }
@@ -130,6 +133,39 @@ fun ProxySection(
 
     var appSearchQuery by remember { mutableStateOf("") }
     var isAppSelectionExpanded by remember { mutableStateOf(false) }
+
+    val proxyPrefs = remember { context.getSharedPreferences("proxy_settings_prefs", Context.MODE_PRIVATE) }
+
+    // Persistent Auto-load: Keep selected proxy profile active without needing to re-select
+    androidx.compose.runtime.LaunchedEffect(savedProxies) {
+        if (savedProxies.isNotEmpty()) {
+            val lastId = proxyPrefs.getLong("last_selected_proxy_id", -1L)
+            val target = savedProxies.firstOrNull { it.id == lastId }
+                ?: savedProxies.firstOrNull { it.isActive }
+                ?: savedProxies.firstOrNull()
+
+            if (target != null) {
+                profileName = target.name
+                serverHost = target.host
+                serverPort = target.port.toString()
+                protocol = target.protocol
+                username = target.username
+                password = target.password
+                countryCode = target.countryCode
+                requiresAuth = target.username.isNotBlank() || target.password.isNotBlank()
+
+                OverlayStateManager.updateSuperProxyProfile(
+                    profileName = target.name,
+                    server = target.host,
+                    port = target.port,
+                    protocol = target.protocol,
+                    countryCode = target.countryCode,
+                    username = target.username,
+                    password = target.password
+                )
+            }
+        }
+    }
 
     val installedApps = remember {
         try {
@@ -198,6 +234,105 @@ fun ProxySection(
             .testTag("proxy_section"),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
+        // 0. Quick Profile 1, 2, 3 Selector Carousel (Auto-loaded & persistent)
+        if (savedProxies.isNotEmpty()) {
+            item {
+                Column {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 2.dp, vertical = 2.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("⚡", fontSize = 13.sp)
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                text = "SELECT PROFILE (AUTO-LOAD ACTIVE)",
+                                fontSize = 10.5.sp,
+                                fontWeight = FontWeight.ExtraBold,
+                                color = Color(0xFF00E5FF),
+                                letterSpacing = 0.5.sp
+                            )
+                        }
+                        Text(
+                            text = "${savedProxies.size} Profiles",
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(4.dp))
+
+                    LazyRow(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        itemsIndexed(savedProxies) { index, prof ->
+                            val isSelected = profileName.trim().equals(prof.name.trim(), ignoreCase = true)
+                            Surface(
+                                onClick = {
+                                    profileName = prof.name
+                                    serverHost = prof.host
+                                    serverPort = prof.port.toString()
+                                    protocol = prof.protocol
+                                    username = prof.username
+                                    password = prof.password
+                                    countryCode = prof.countryCode
+                                    requiresAuth = prof.username.isNotBlank() || prof.password.isNotBlank()
+                                    testStatusText = null
+
+                                    proxyPrefs.edit().putLong("last_selected_proxy_id", prof.id).apply()
+                                    scope.launch { repository?.setActiveProxy(prof.id) }
+
+                                    OverlayStateManager.updateSuperProxyProfile(
+                                        profileName = prof.name,
+                                        server = prof.host,
+                                        port = prof.port,
+                                        protocol = prof.protocol,
+                                        countryCode = prof.countryCode,
+                                        username = prof.username,
+                                        password = prof.password
+                                    )
+                                    Toast.makeText(context, "Loaded: ${prof.name} ✓", Toast.LENGTH_SHORT).show()
+                                },
+                                shape = RoundedCornerShape(10.dp),
+                                color = if (isSelected) Color(0xFF00E5FF).copy(alpha = 0.18f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                                border = androidx.compose.foundation.BorderStroke(
+                                    1.2.dp,
+                                    if (isSelected) Color(0xFF00E5FF) else MaterialTheme.colorScheme.outline.copy(alpha = 0.25f)
+                                )
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    val cOpt = NameGenerator.getCountryOption(prof.countryCode)
+                                    Text(cOpt.flag, fontSize = 14.sp)
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text(
+                                        text = "${index + 1}. ${prof.name.take(14)}",
+                                        fontWeight = if (isSelected) FontWeight.ExtraBold else FontWeight.Medium,
+                                        fontSize = 11.5.sp,
+                                        color = if (isSelected) Color(0xFF00E5FF) else MaterialTheme.colorScheme.onSurface
+                                    )
+                                    if (isSelected) {
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Icon(
+                                            Icons.Default.Check,
+                                            contentDescription = null,
+                                            tint = Color(0xFF00E5FF),
+                                            modifier = Modifier.size(13.dp)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         // 1. Super Proxy Live Status & Power Card
         item {
             Card(
@@ -237,13 +372,19 @@ fun ProxySection(
                             Spacer(modifier = Modifier.width(12.dp))
                             Column {
                                 Text(
-                                    text = if (proxy.isConnected) "Super Proxy Connected ✓" else "Super Proxy Disconnected",
+                                    text = if (proxy.isTesting) "Detecting IP & Connecting..."
+                                           else if (proxy.isConnected) "Super Proxy Connected ✓"
+                                           else "Super Proxy Disconnected",
                                     style = MaterialTheme.typography.titleMedium,
                                     fontWeight = FontWeight.Bold,
-                                    color = if (proxy.isConnected) BrandGreen else MaterialTheme.colorScheme.onSurface
+                                    color = if (proxy.isTesting) Color(0xFF00B0FF)
+                                            else if (proxy.isConnected) BrandGreen
+                                            else MaterialTheme.colorScheme.onSurface
                                 )
                                 Text(
-                                    text = if (proxy.isConnected) "${proxy.profileName} • Real-time VPN active" else "Ready to connect (1-click fast routing)",
+                                    text = if (proxy.isTesting) proxy.statusText
+                                           else if (proxy.isConnected) "${proxy.profileName} • IP Locked: ${proxy.ipAddress}"
+                                           else "Ready to connect (⚡ 5s fast IP detect • 10s establish)",
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
@@ -256,16 +397,32 @@ fun ProxySection(
                     // Big Super Proxy START / STOP Button (1-Click Fast Connect)
                     Button(
                         onClick = triggerStartOrStop,
+                        enabled = !proxy.isTesting,
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(52.dp)
                             .testTag("super_proxy_start_stop_button"),
                         shape = RoundedCornerShape(12.dp),
                         colors = ButtonDefaults.buttonColors(
-                            containerColor = if (proxy.isConnected) AlertRed else Color(0xFF00C853)
+                            containerColor = if (proxy.isTesting) Color(0xFF0288D1)
+                                            else if (proxy.isConnected) AlertRed
+                                            else Color(0xFF00C853)
                         )
                     ) {
-                        if (proxy.isConnected) {
+                        if (proxy.isTesting) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(20.dp),
+                                color = Color.White,
+                                strokeWidth = 2.5.dp
+                            )
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Text(
+                                text = "CONNECTING (⚡ DETECTING IP)...",
+                                fontWeight = FontWeight.ExtraBold,
+                                fontSize = 14.sp,
+                                color = Color.White
+                            )
+                        } else if (proxy.isConnected) {
                             Icon(Icons.Default.Stop, contentDescription = null, modifier = Modifier.size(22.dp))
                             Spacer(modifier = Modifier.width(8.dp))
                             Text(
@@ -792,10 +949,12 @@ fun ProxySection(
                                     )
                                     if (existing != null) {
                                         repository?.updateProxy(entity)
+                                        proxyPrefs.edit().putLong("last_selected_proxy_id", existing.id).apply()
                                     } else {
                                         val newId = repository?.insertProxy(entity)
                                         if (newId != null && newId > 0) {
                                             repository.setActiveProxy(newId)
+                                            proxyPrefs.edit().putLong("last_selected_proxy_id", newId).apply()
                                         }
                                     }
                                     OverlayStateManager.updateSuperProxyProfile(
@@ -830,26 +989,35 @@ fun ProxySection(
                         if (isProfileSavedInList) {
                             Button(
                                 onClick = triggerStartOrStop,
+                                enabled = !proxy.isTesting,
                                 modifier = Modifier
                                     .weight(1f)
                                     .height(46.dp)
                                     .testTag("btn_start_proxy_from_form"),
                                 shape = RoundedCornerShape(10.dp),
                                 colors = ButtonDefaults.buttonColors(
-                                    containerColor = if (proxy.isConnected) AlertRed else Color(0xFF00C853)
+                                    containerColor = if (proxy.isTesting) Color(0xFF0288D1)
+                                                    else if (proxy.isConnected) AlertRed
+                                                    else Color(0xFF00C853)
                                 )
                             ) {
-                                Icon(
-                                    imageVector = if (proxy.isConnected) Icons.Default.Stop else Icons.Default.PlayArrow,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(16.dp)
-                                )
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text(
-                                    text = if (proxy.isConnected) "Stop" else "Start",
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 13.sp
-                                )
+                                if (proxy.isTesting) {
+                                    CircularProgressIndicator(modifier = Modifier.size(16.dp), color = Color.White, strokeWidth = 2.dp)
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text("Detecting...", fontSize = 12.sp, color = Color.White)
+                                } else {
+                                    Icon(
+                                        imageVector = if (proxy.isConnected) Icons.Default.Stop else Icons.Default.PlayArrow,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text(
+                                        text = if (proxy.isConnected) "Stop" else "Start",
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 13.sp
+                                    )
+                                }
                             }
                         }
 
@@ -935,17 +1103,79 @@ fun ProxySection(
                             Icon(Icons.Default.Dns, contentDescription = null, tint = BrandBlue, modifier = Modifier.size(20.dp))
                             Spacer(modifier = Modifier.width(6.dp))
                             Text(
-                                text = "Saved Proxy Profiles (${savedProxies.size})",
+                                text = "Saved Proxies (${savedProxies.size})",
                                 style = MaterialTheme.typography.titleSmall,
                                 fontWeight = FontWeight.Bold
                             )
                         }
 
-                        Text(
-                            text = "Tap to load",
-                            fontSize = 11.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                        if (savedProxies.isNotEmpty()) {
+                            Button(
+                                onClick = {
+                                    isFastestSearching = true
+                                    scope.launch(kotlinx.coroutines.Dispatchers.IO) {
+                                        var bestProxy: com.example.data.local.model.ProxyProfileEntity? = null
+                                        var lowestPing = Long.MAX_VALUE
+
+                                        for (item in savedProxies) {
+                                            val ping = com.example.util.ProxyTester.measureSocketPing(item.host, item.port, 2000)
+                                            if (ping in 1 until lowestPing) {
+                                                lowestPing = ping
+                                                bestProxy = item
+                                            }
+                                        }
+
+                                        withContext(kotlinx.coroutines.Dispatchers.Main) {
+                                            isFastestSearching = false
+                                            if (bestProxy != null) {
+                                                profileName = bestProxy.name
+                                                serverHost = bestProxy.host
+                                                serverPort = bestProxy.port.toString()
+                                                protocol = bestProxy.protocol
+                                                username = bestProxy.username
+                                                password = bestProxy.password
+                                                countryCode = bestProxy.countryCode
+
+                                                OverlayStateManager.updateSuperProxyProfile(
+                                                    profileName = bestProxy.name,
+                                                    server = bestProxy.host,
+                                                    port = bestProxy.port,
+                                                    protocol = bestProxy.protocol,
+                                                    countryCode = bestProxy.countryCode,
+                                                    username = bestProxy.username,
+                                                    password = bestProxy.password
+                                                )
+                                                repository?.setActiveProxy(bestProxy.id)
+                                                com.example.util.VibrationHelper.vibrateSuccess(context)
+                                                Toast.makeText(context, "⚡ ফাস্টেস্ট প্রক্সি সিলেক্টেড: ${bestProxy.name} (${lowestPing}ms)", Toast.LENGTH_LONG).show()
+                                            } else {
+                                                Toast.makeText(context, "প্রক্সি পিং পাওয়া যায়নি", Toast.LENGTH_SHORT).show()
+                                            }
+                                        }
+                                    }
+                                },
+                                shape = RoundedCornerShape(8.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00E676)),
+                                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                                modifier = Modifier.height(30.dp)
+                            ) {
+                                if (isFastestSearching) {
+                                    CircularProgressIndicator(color = Color.Black, modifier = Modifier.size(12.dp), strokeWidth = 2.dp)
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text("টেস্ট...", fontSize = 10.sp, color = Color.Black, fontWeight = FontWeight.Bold)
+                                } else {
+                                    Icon(Icons.Default.Bolt, contentDescription = null, tint = Color.Black, modifier = Modifier.size(13.dp))
+                                    Spacer(modifier = Modifier.width(3.dp))
+                                    Text("⚡ ফাস্টেস্ট সিলেক্ট", fontSize = 10.sp, color = Color.Black, fontWeight = FontWeight.Bold)
+                                }
+                            }
+                        } else {
+                            Text(
+                                text = "Tap to load",
+                                fontSize = 11.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
                     }
 
                     Spacer(modifier = Modifier.height(10.dp))
@@ -984,6 +1214,7 @@ fun ProxySection(
                                         )
                                         scope.launch {
                                             repository?.setActiveProxy(profileItem.id)
+                                            proxyPrefs.edit().putLong("last_selected_proxy_id", profileItem.id).apply()
                                         }
                                         Toast.makeText(context, "Loaded: ${profileItem.name}", Toast.LENGTH_SHORT).show()
                                     },

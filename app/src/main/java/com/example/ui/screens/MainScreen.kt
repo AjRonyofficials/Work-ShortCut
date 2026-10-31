@@ -1,9 +1,19 @@
 package com.example.ui.screens
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import com.example.ui.components.AppNavTab
+import com.example.ui.components.PremiumNavigationMenu
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -23,9 +33,15 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Apps
 import androidx.compose.material.icons.filled.Bolt
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CleaningServices
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Key
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Phone
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.Settings
@@ -34,24 +50,26 @@ import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.outlined.Apps
 import androidx.compose.material.icons.outlined.CleaningServices
 import androidx.compose.material.icons.outlined.Key
+import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.Person
+import androidx.compose.material.icons.outlined.Phone
 import androidx.compose.material.icons.outlined.Security
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.TableChart
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
-import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
@@ -61,6 +79,7 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -87,21 +106,14 @@ import com.example.ui.overlay.FloatingOverlayWindowContent
 import com.example.ui.theme.AlertRed
 import com.example.ui.theme.BrandGreen
 import com.example.ui.theme.BrandSky
+import com.example.ui.theme.CyberCyan
+import com.example.ui.theme.NeonEmerald
+import com.example.ui.theme.CyberIndigo
+import com.example.ui.theme.GlassBorder
+import com.example.ui.components.UserProfileOtpHistoryDialog
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.ui.graphics.Brush
 import kotlin.math.roundToInt
-
-enum class AppNavTab(
-    val title: String,
-    val selectedIcon: ImageVector,
-    val unselectedIcon: ImageVector
-) {
-    SHORTCUTS("Apps", Icons.Filled.Apps, Icons.Outlined.Apps),
-    PROXY("Proxy", Icons.Filled.Security, Icons.Outlined.Security),
-    TWO_FACTOR("2FA", Icons.Filled.Key, Icons.Outlined.Key),
-    EXCEL("Excel", Icons.Filled.TableChart, Icons.Outlined.TableChart),
-    NAMES("Names", Icons.Filled.Person, Icons.Outlined.Person),
-    CLEAR_DATA("Clean", Icons.Filled.CleaningServices, Icons.Outlined.CleaningServices),
-    SETTINGS("Settings", Icons.Filled.Settings, Icons.Outlined.Settings)
-}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -113,104 +125,40 @@ fun MainScreen(
     repository: WorkShortcutRepository?,
     modifier: Modifier = Modifier
 ) {
-    var selectedTab by remember { mutableStateOf(AppNavTab.NAMES) }
+    var selectedTab by remember { mutableStateOf(AppNavTab.VIRTUAL_NUMBERS) }
+    var sectionsMenuExpanded by remember { mutableStateOf(false) }
     val context = LocalContext.current
-    var showDeveloperNoticeDialog by remember { mutableStateOf(true) }
+    val liveOtpPopup by OverlayStateManager.liveOtpPopup.collectAsStateWithLifecycle()
+    val withdrawalState by com.example.service.WithdrawalManager.state.collectAsStateWithLifecycle()
+    val managedUsers by com.example.service.AuthManager.managedUsers.collectAsStateWithLifecycle()
+    var showProfileHistoryDialog by remember { mutableStateOf(false) }
+    var showBottomDeveloperCredit by remember { mutableStateOf(false) }
+    var hasRunStartupFlow by rememberSaveable { mutableStateOf(false) }
 
-    if (showDeveloperNoticeDialog) {
-        AlertDialog(
-            onDismissRequest = { showDeveloperNoticeDialog = false },
-            icon = {
-                Box(
-                    modifier = Modifier
-                        .size(48.dp)
-                        .clip(CircleShape)
-                        .background(AlertRed.copy(alpha = 0.15f)),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Warning,
-                        contentDescription = null,
-                        tint = AlertRed,
-                        modifier = Modifier.size(28.dp)
-                    )
-                }
-            },
-            title = {
-                Text(
-                    text = "⚠️ গুরুত্বপূর্ণ নোটিশ",
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 18.sp,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-            },
-            text = {
-                Column(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    Text(
-                        text = "আপনার পিতৃ পরিচয় ঠিক থাকলে অ্যাপ এর নাম টা নিজের নামে চেইঞ্জ করে চালিয়ে দিয়েন না, আগে পারমিশন নিয়েন।",
-                        fontSize = 14.sp,
-                        lineHeight = 20.sp,
-                        fontWeight = FontWeight.Medium,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                    Text(
-                        text = "আর কোনো আপডেট চাইলে বা সমস্যা হলে 'Contact Developer' এ চাপ দিলে সরাসরি টেলিগ্রামে যোগাযোগ করতে পারবেন।",
-                        fontSize = 13.sp,
-                        lineHeight = 19.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            },
-            confirmButton = {
-                Button(
-                    onClick = { showDeveloperNoticeDialog = false },
-                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
-                    shape = RoundedCornerShape(10.dp)
-                ) {
-                    Text("OK / ঠিক আছে", fontWeight = FontWeight.Bold)
-                }
-            },
-            dismissButton = {
-                OutlinedButton(
-                    onClick = {
-                        try {
-                            val telegramIntent = Intent(Intent.ACTION_VIEW, Uri.parse("https://t.me/ismailislamrony1")).apply {
-                                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                            }
-                            context.startActivity(telegramIntent)
-                        } catch (_: Exception) {
-                            Toast.makeText(context, "Telegram: @ismailislamrony1", Toast.LENGTH_LONG).show()
-                        }
-                    },
-                    shape = RoundedCornerShape(10.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Send,
-                        contentDescription = null,
-                        modifier = Modifier.size(16.dp),
-                        tint = BrandSky
-                    )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text("Contact Developer", color = BrandSky, fontWeight = FontWeight.Bold)
-                }
-            },
-            containerColor = MaterialTheme.colorScheme.surface,
-            shape = RoundedCornerShape(20.dp)
-        )
+    // Sequential startup flow:
+    // Only shows subtle bottom developer credit for 3 seconds on fresh app launch
+    androidx.compose.runtime.LaunchedEffect(Unit) {
+        if (!hasRunStartupFlow) {
+            hasRunStartupFlow = true
+            if (!state.isOverlayActive) {
+                showBottomDeveloperCredit = true
+                kotlinx.coroutines.delay(3000L)
+                showBottomDeveloperCredit = false
+            }
+        }
     }
 
     androidx.compose.runtime.LaunchedEffect(Unit) {
         OverlayStateManager.requestedAppTab.collect { tabName ->
             when (tabName) {
+                "VIRTUAL_NUMBERS" -> selectedTab = AppNavTab.VIRTUAL_NUMBERS
                 "PROXY" -> selectedTab = AppNavTab.PROXY
                 "NAMES" -> selectedTab = AppNavTab.NAMES
                 "EXCEL" -> selectedTab = AppNavTab.EXCEL
                 "TWO_FACTOR" -> selectedTab = AppNavTab.TWO_FACTOR
                 "APPS" -> selectedTab = AppNavTab.SHORTCUTS
                 "CLEAR_DATA" -> selectedTab = AppNavTab.CLEAR_DATA
+                "SETTINGS" -> selectedTab = AppNavTab.SETTINGS
             }
         }
     }
@@ -220,93 +168,180 @@ fun MainScreen(
             topBar = {
                 TopAppBar(
                     title = {
-                        Text(
-                            text = "Work ShortCut",
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 20.sp
-                        )
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Box(
+                                modifier = Modifier
+                                    .size(34.dp)
+                                    .clip(RoundedCornerShape(9.dp))
+                                    .background(
+                                        Brush.linearGradient(
+                                            listOf(Color(0xFF00F0FF), Color(0xFF6366F1))
+                                        )
+                                    ),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Bolt,
+                                    contentDescription = null,
+                                    tint = Color(0xFF080C14),
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Column {
+                                Text(
+                                    text = "Work ShortCut",
+                                    fontWeight = FontWeight.ExtraBold,
+                                    fontSize = 16.sp,
+                                    color = Color.White,
+                                    letterSpacing = 0.3.sp
+                                )
+                                Surface(
+                                    color = CyberCyan.copy(alpha = 0.12f),
+                                    shape = RoundedCornerShape(4.dp),
+                                    border = BorderStroke(0.6.dp, CyberCyan.copy(alpha = 0.35f))
+                                ) {
+                                    Text(
+                                        text = selectedTab.title.uppercase(),
+                                        color = CyberCyan,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 9.sp,
+                                        letterSpacing = 0.5.sp,
+                                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                                    )
+                                }
+                            }
+                        }
                     },
                     actions = {
+                        // Live Balance & Profile Chip
+                        Surface(
+                            onClick = { showProfileHistoryDialog = true },
+                            shape = RoundedCornerShape(18.dp),
+                            color = Color(0xFF131F33),
+                            border = BorderStroke(
+                                1.dp,
+                                Brush.linearGradient(listOf(Color(0x6600F0FF), Color(0x336366F1)))
+                            ),
+                            modifier = Modifier
+                                .height(32.dp)
+                                .testTag("appbar_profile_chip")
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(20.dp)
+                                        .clip(CircleShape)
+                                        .background(NeonEmerald.copy(alpha = 0.22f)),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Person,
+                                        contentDescription = "Profile",
+                                        tint = NeonEmerald,
+                                        modifier = Modifier.size(13.dp)
+                                    )
+                                }
+                                Spacer(modifier = Modifier.width(5.dp))
+                                Text(
+                                    text = "৳ ${String.format(java.util.Locale.US, "%.1f", withdrawalState.availableBalanceTk)}",
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Black,
+                                    color = NeonEmerald,
+                                    fontFamily = FontFamily.Monospace
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.width(4.dp))
+
                         // Quick Toggle for Floating Bubble Overlay
                         IconButton(
                             onClick = {
                                 OverlayStateManager.toggleOverlayExpanded()
                             },
-                            modifier = Modifier.testTag("appbar_bubble_toggle")
+                            modifier = Modifier
+                                .size(36.dp)
+                                .testTag("appbar_bubble_toggle")
                         ) {
                             BadgedBox(
                                 badge = {
                                     if (state.proxyState.isConnected) {
-                                        Badge(containerColor = BrandGreen)
+                                        Badge(containerColor = NeonEmerald)
                                     } else if (state.draftRow.duplicateColumn != null) {
                                         Badge(containerColor = AlertRed)
                                     }
                                 }
                             ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(32.dp)
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .background(Color(0xFF131F33))
+                                        .border(BorderStroke(1.dp, Color(0x3300F0FF)), RoundedCornerShape(8.dp)),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Bolt,
+                                        contentDescription = "Floating Bubble",
+                                        tint = if (state.isOverlayActive) CyberCyan else Color(0xFF94A3B8),
+                                        modifier = Modifier.size(17.dp)
+                                    )
+                                }
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.width(4.dp))
+
+                        // Modern Premium Menu Trigger Button
+                        Surface(
+                            color = Color(0xFF131F33),
+                            shape = RoundedCornerShape(8.dp),
+                            border = BorderStroke(
+                                1.dp,
+                                Brush.linearGradient(listOf(Color(0x666366F1), Color(0x3300F0FF)))
+                            ),
+                            modifier = Modifier
+                                .height(32.dp)
+                                .clip(RoundedCornerShape(8.dp))
+                                .clickable { sectionsMenuExpanded = true }
+                                .testTag("appbar_3dot_menu")
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
                                 Icon(
-                                    imageVector = Icons.Default.Bolt,
-                                    contentDescription = "Floating Bubble",
-                                    tint = BrandSky
+                                    imageVector = Icons.Default.Apps,
+                                    contentDescription = "Menu",
+                                    tint = CyberCyan,
+                                    modifier = Modifier.size(15.dp)
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(
+                                    text = "Menu",
+                                    fontSize = 11.5.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color.White
+                                )
+                                Spacer(modifier = Modifier.width(2.dp))
+                                Icon(
+                                    imageVector = Icons.Default.MoreVert,
+                                    contentDescription = null,
+                                    tint = Color(0xFF94A3B8),
+                                    modifier = Modifier.size(13.dp)
                                 )
                             }
                         }
                     },
                     colors = TopAppBarDefaults.topAppBarColors(
-                        containerColor = MaterialTheme.colorScheme.surface,
-                        titleContentColor = MaterialTheme.colorScheme.onSurface
+                        containerColor = Color(0xF7080C14),
+                        titleContentColor = Color.White
                     )
                 )
-            },
-            bottomBar = {
-                NavigationBar(
-                    containerColor = MaterialTheme.colorScheme.surface,
-                    tonalElevation = 8.dp,
-                    windowInsets = WindowInsets(0.dp, 0.dp, 0.dp, 0.dp)
-                ) {
-                    AppNavTab.entries.forEach { tab ->
-                        val isSelected = selectedTab == tab
-                        val badgeCount = when (tab) {
-                            AppNavTab.EXCEL -> if (state.draftRow.duplicateColumn != null) "!" else null
-                            AppNavTab.PROXY -> if (state.proxyState.isConnected) "ON" else null
-                            else -> null
-                        }
-
-                        NavigationBarItem(
-                            selected = isSelected,
-                            onClick = { selectedTab = tab },
-                            icon = {
-                                if (badgeCount != null) {
-                                    BadgedBox(
-                                        badge = {
-                                            Badge(
-                                                containerColor = if (badgeCount == "!") AlertRed else BrandGreen
-                                            ) {
-                                                Text(badgeCount, fontSize = 9.sp, fontWeight = FontWeight.Bold)
-                                            }
-                                        }
-                                    ) {
-                                        Icon(
-                                            imageVector = if (isSelected) tab.selectedIcon else tab.unselectedIcon,
-                                            contentDescription = tab.title
-                                        )
-                                    }
-                                } else {
-                                    Icon(
-                                        imageVector = if (isSelected) tab.selectedIcon else tab.unselectedIcon,
-                                        contentDescription = tab.title
-                                    )
-                                }
-                            },
-                            label = { Text(tab.title, fontSize = 11.sp, fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal) },
-                            colors = NavigationBarItemDefaults.colors(
-                                indicatorColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.2f),
-                                selectedIconColor = MaterialTheme.colorScheme.primary,
-                                selectedTextColor = MaterialTheme.colorScheme.primary
-                            ),
-                            modifier = Modifier.testTag("nav_tab_${tab.name}")
-                        )
-                    }
-                }
             }
         ) { paddingValues ->
             Box(
@@ -315,28 +350,242 @@ fun MainScreen(
                     .padding(paddingValues)
                     .imePadding()
             ) {
-                when (selectedTab) {
-                    AppNavTab.SHORTCUTS -> AppShortcutsSection(state = state)
-                    AppNavTab.NAMES -> NameGeneratorSection(state = state)
-                    AppNavTab.EXCEL -> ExcelCollectorSection(
-                        state = state,
-                        savedRows = savedExcelRows,
-                        repository = repository
-                    )
-                    AppNavTab.TWO_FACTOR -> TwoFactorSection(
-                        state = state,
-                        savedKeys = savedTwoFactorKeys,
-                        repository = repository
-                    )
-                    AppNavTab.PROXY -> ProxySection(
-                        state = state,
-                        savedProxies = savedProxies,
-                        repository = repository
-                    )
-                    AppNavTab.CLEAR_DATA -> ClearDataSection(state = state)
-                    AppNavTab.SETTINGS -> SettingsSection(state = state)
+                val isCurrentTabAllowed = remember(selectedTab, managedUsers) {
+                    when (selectedTab) {
+                        AppNavTab.VIRTUAL_NUMBERS -> com.example.service.AuthManager.isSectionAllowedForCurrentUser("VIRTUAL_NUMBERS")
+                        AppNavTab.SHORTCUTS -> com.example.service.AuthManager.isSectionAllowedForCurrentUser("APP_SHORTCUTS")
+                        AppNavTab.NAMES -> com.example.service.AuthManager.isSectionAllowedForCurrentUser("NAME_GENERATOR")
+                        AppNavTab.EXCEL -> com.example.service.AuthManager.isSectionAllowedForCurrentUser("EXCEL_COLLECTOR")
+                        AppNavTab.TWO_FACTOR -> com.example.service.AuthManager.isSectionAllowedForCurrentUser("TWO_FACTOR")
+                        AppNavTab.PW_COPY -> com.example.service.AuthManager.isSectionAllowedForCurrentUser("PW_COPY")
+                        AppNavTab.PROXY -> com.example.service.AuthManager.isSectionAllowedForCurrentUser("PROXY")
+                        AppNavTab.CLEAR_DATA -> com.example.service.AuthManager.isSectionAllowedForCurrentUser("CLEAR_DATA")
+                        AppNavTab.SETTINGS -> true
+                        AppNavTab.ADMIN_PANEL -> com.example.service.AuthManager.isAdmin()
+                    }
+                }
+
+                if (!isCurrentTabAllowed) {
+                    Box(
+                        modifier = Modifier.fillMaxSize().padding(24.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Surface(
+                            color = Color(0xFF1E151A),
+                            shape = RoundedCornerShape(16.dp),
+                            border = androidx.compose.foundation.BorderStroke(1.2.dp, Color(0xFFEF4444)),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(24.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally
+                            ) {
+                                Icon(Icons.Default.Close, contentDescription = null, tint = Color(0xFFEF4444), modifier = Modifier.size(42.dp))
+                                Spacer(modifier = Modifier.height(12.dp))
+                                Text("🚫 অপশন এক্সেস সীমিত", color = Color.White, fontWeight = FontWeight.ExtraBold, fontSize = 16.sp)
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Text(
+                                    text = "এডমিন কর্তৃক এই অপশনটির এক্সেস আপনার জন্য সাময়িকভাবে বন্ধ রাখা হয়েছে। পুনরায় চালু করতে এডমিনের সাথে যোগাযোগ করুন।",
+                                    color = Color(0xFFCBD5E1),
+                                    fontSize = 12.sp,
+                                    textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                                )
+                            }
+                        }
+                    }
+                } else {
+                    when (selectedTab) {
+                        AppNavTab.VIRTUAL_NUMBERS -> VirtualNumbersSection()
+                        AppNavTab.SHORTCUTS -> AppShortcutsSection(state = state)
+                        AppNavTab.NAMES -> NameGeneratorSection(state = state)
+                        AppNavTab.EXCEL -> ExcelCollectorSection(
+                            state = state,
+                            savedRows = savedExcelRows,
+                            repository = repository
+                        )
+                        AppNavTab.TWO_FACTOR -> TwoFactorSection(
+                            state = state,
+                            savedKeys = savedTwoFactorKeys,
+                            repository = repository
+                        )
+                        AppNavTab.PW_COPY -> PwCopySection(state = state)
+                        AppNavTab.PROXY -> ProxySection(
+                            state = state,
+                            savedProxies = savedProxies,
+                            repository = repository
+                        )
+                        AppNavTab.CLEAR_DATA -> ClearDataSection(state = state)
+                        AppNavTab.SETTINGS -> SettingsSection(state = state)
+                        AppNavTab.ADMIN_PANEL -> AdminPanelSection()
+                    }
                 }
             }
         }
+
+        // Live Heads-Up Top Popup Banner for Incoming OTP (Auto-copies & shows at top)
+        androidx.compose.animation.AnimatedVisibility(
+            visible = liveOtpPopup != null,
+            enter = androidx.compose.animation.fadeIn(animationSpec = androidx.compose.animation.core.tween(250)) +
+                    androidx.compose.animation.slideInVertically(animationSpec = androidx.compose.animation.core.spring(dampingRatio = 0.75f, stiffness = 400f)) { -it },
+            exit = androidx.compose.animation.fadeOut(animationSpec = androidx.compose.animation.core.tween(200)) +
+                    androidx.compose.animation.slideOutVertically(animationSpec = androidx.compose.animation.core.tween(250)) { -it },
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .padding(top = 70.dp, start = 12.dp, end = 12.dp)
+        ) {
+            liveOtpPopup?.let { otpEvt ->
+                Surface(
+                    shape = RoundedCornerShape(18.dp),
+                    color = Color(0xF5080E1A),
+                    border = BorderStroke(
+                        1.5.dp,
+                        Brush.horizontalGradient(listOf(NeonEmerald, CyberCyan))
+                    ),
+                    shadowElevation = 18.dp,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                            Box(
+                                modifier = Modifier
+                                    .size(36.dp)
+                                    .clip(CircleShape)
+                                    .background(Color(0xFF00E676).copy(alpha = 0.2f)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(Icons.Default.Bolt, contentDescription = null, tint = Color(0xFF00E676), modifier = Modifier.size(20.dp))
+                            }
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Column {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text(text = "⚡ OTP RECEIVED", fontSize = 11.sp, color = Color(0xFF00E676), fontWeight = FontWeight.ExtraBold)
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text(text = "• অটো কপি হয়েছে ✓", fontSize = 9.sp, color = Color(0xFF81D4FA))
+                                }
+                                Text(
+                                    text = otpEvt.otpCode,
+                                    fontSize = 18.sp,
+                                    fontWeight = FontWeight.Black,
+                                    color = Color.White,
+                                    letterSpacing = 1.5.sp,
+                                    fontFamily = FontFamily.Monospace
+                                )
+                                Text(
+                                    text = otpEvt.phoneNumber,
+                                    fontSize = 9.5.sp,
+                                    color = Color(0xFF90A4AE)
+                                )
+                            }
+                        }
+
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Button(
+                                onClick = {
+                                    com.example.util.ClipboardHelper.copyToClipboard(context, otpEvt.otpCode, "OTP")
+                                    android.widget.Toast.makeText(context, "✓ কপি হয়েছে: ${otpEvt.otpCode}", android.widget.Toast.LENGTH_SHORT).show()
+                                    OverlayStateManager.dismissOtpPopup()
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00E676)),
+                                shape = RoundedCornerShape(8.dp),
+                                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp, vertical = 6.dp),
+                                modifier = Modifier.height(32.dp)
+                            ) {
+                                Text("COPY", color = Color.Black, fontWeight = FontWeight.ExtraBold, fontSize = 11.sp)
+                            }
+                            Spacer(modifier = Modifier.width(4.dp))
+                            IconButton(
+                                onClick = { OverlayStateManager.dismissOtpPopup() },
+                                modifier = Modifier.size(28.dp)
+                            ) {
+                                Icon(Icons.Default.Close, contentDescription = "Dismiss", tint = Color(0xFF90A4AE), modifier = Modifier.size(16.dp))
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Subtle Tiny Animated Developer Credit at Bottom of App (Matched to App UI)
+        androidx.compose.animation.AnimatedVisibility(
+            visible = showBottomDeveloperCredit,
+            enter = androidx.compose.animation.fadeIn(animationSpec = androidx.compose.animation.core.tween(350)) +
+                    androidx.compose.animation.slideInVertically(
+                        animationSpec = androidx.compose.animation.core.spring(dampingRatio = 0.7f, stiffness = 380f)
+                    ) { it } +
+                    androidx.compose.animation.expandVertically(
+                        animationSpec = androidx.compose.animation.core.spring(dampingRatio = 0.7f)
+                    ),
+            exit = androidx.compose.animation.fadeOut(animationSpec = androidx.compose.animation.core.tween(400)) +
+                    androidx.compose.animation.slideOutVertically(animationSpec = androidx.compose.animation.core.tween(400)) { it } +
+                    androidx.compose.animation.shrinkVertically(animationSpec = androidx.compose.animation.core.tween(400)),
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(bottom = 76.dp)
+        ) {
+            Surface(
+                shape = RoundedCornerShape(16.dp),
+                color = Color(0xFF0B1220).copy(alpha = 0.92f),
+                border = androidx.compose.foundation.BorderStroke(
+                    1.dp,
+                    androidx.compose.ui.graphics.Brush.horizontalGradient(
+                        listOf(Color(0xFF00C6FF), Color(0xFF0072FF), Color(0xFFAB47BC))
+                    )
+                ),
+                shadowElevation = 6.dp
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 9.dp, vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(5.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(12.dp)
+                            .clip(CircleShape)
+                            .background(
+                                androidx.compose.ui.graphics.Brush.linearGradient(
+                                    listOf(Color(0xFF00C6FF), Color(0xFF0072FF))
+                                )
+                            ),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Person,
+                            contentDescription = null,
+                            tint = Color.White,
+                            modifier = Modifier.size(8.dp)
+                        )
+                    }
+
+                    Text(
+                        text = "Developed By Ismail Islam Rony",
+                        fontSize = 7.sp,
+                        color = Color.White,
+                        fontWeight = FontWeight.SemiBold,
+                        letterSpacing = 0.4.sp
+                    )
+                }
+            }
+        }
+
+        // User Profile & OTP History Dialog
+        UserProfileOtpHistoryDialog(
+            isOpen = showProfileHistoryDialog,
+            onDismiss = { showProfileHistoryDialog = false }
+        )
+
+        // Modern Premium Mega Navigation Menu Overlay (Website / App style)
+        PremiumNavigationMenu(
+            isOpen = sectionsMenuExpanded,
+            currentTab = selectedTab,
+            onSelectTab = { selectedTab = it },
+            onDismiss = { sectionsMenuExpanded = false },
+            isOverlayActive = state.isOverlayActive,
+            onToggleOverlay = { OverlayStateManager.toggleOverlayExpanded() }
+        )
     }
 }

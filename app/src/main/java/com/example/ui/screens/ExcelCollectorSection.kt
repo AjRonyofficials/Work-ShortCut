@@ -31,6 +31,7 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.TableChart
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
@@ -503,6 +504,20 @@ fun ExcelCollectorSection(
                             Text("Copy All (Excel Table)", fontWeight = FontWeight.Bold)
                         }
 
+                        // Option 2: 1-Click Export & Share CSV
+                        Button(
+                            onClick = {
+                                OverlayStateManager.shareAllRowsAsCsv(context, sortedRows)
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00C853)),
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier.testTag("share_csv_button")
+                        ) {
+                            Icon(Icons.Default.Share, contentDescription = null, tint = Color.Black, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Export & Share CSV (${sortedRows.size})", fontWeight = FontWeight.Bold, color = Color.Black)
+                        }
+
                         // Purge/Clear All Data
                         OutlinedButton(
                             onClick = { showPurgeConfirmDialog = true },
@@ -538,6 +553,8 @@ fun ExcelCollectorSection(
                         val nextId = (sortedRows.maxOfOrNull { it.id } ?: 0L) + 1L
                         val newRow = ExcelRowEntity(id = nextId)
                         scope.launch { repository?.insertExcelRow(newRow) }
+                        OverlayStateManager.updateAllColumnRowsTo(nextId.toInt())
+                        Toast.makeText(context, "Row #$nextId যোগ করা হয়েছে! Overlay Row #$nextId এ সেট করা হয়েছে।", Toast.LENGTH_SHORT).show()
                         editingRow = newRow
                         editColA = ""
                         editColB = ""
@@ -946,8 +963,10 @@ fun ExcelCollectorSection(
                         if (row.id == state.duplicateHighlightRow) {
                             OverlayStateManager.clearDuplicateHighlight()
                         }
+                        val nextRowId = row.id + 1
+                        OverlayStateManager.onExcelRowSavedOrEdited(row.id, autoAdvanceToNext = true)
                         editingRow = null
-                        Toast.makeText(context, "Row #${row.id} updated successfully!", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(context, "✓ Row #${row.id} সেভ হয়েছে! Overlay অটো Row #$nextRowId তে আপডেট হয়েছে!", Toast.LENGTH_SHORT).show()
                     },
                     modifier = Modifier.testTag("save_edit_row_button")
                 ) {

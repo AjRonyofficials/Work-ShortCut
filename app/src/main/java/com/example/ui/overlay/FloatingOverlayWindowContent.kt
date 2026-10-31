@@ -26,25 +26,48 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Phone
+import androidx.compose.material.icons.filled.SmartToy
+import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.SwapHoriz
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import com.example.util.NameGenerator
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -52,7 +75,14 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.service.OverlayStateManager
 import com.example.service.OverlayUiState
+import com.example.service.KopEngine2Manager
+import com.example.service.PremiumNumberV2Manager
+import com.example.service.UnixSmsManager
+import com.example.service.VirtualNumberManager
 import com.example.util.ClipboardHelper
+import android.widget.Toast
+import kotlinx.coroutines.delay
+import java.util.Locale
 
 /**
  * Ultra-Premium, Glassmorphic Floating Overlay UI:
@@ -73,6 +103,7 @@ fun FloatingOverlayWindowContent(
 ) {
     val context = LocalContext.current
     val isLeft = state.isDockedLeft
+    val liveOtpPopup by OverlayStateManager.liveOtpPopup.collectAsState()
 
     // Dock chassis shape (curved outer corners)
     val dockChassisShape = if (isLeft) {
@@ -116,6 +147,12 @@ fun FloatingOverlayWindowContent(
     Box(
         modifier = Modifier
             .wrapContentSize()
+            .graphicsLayer {
+                val s = state.overlayScale.coerceIn(0.20f, 2.00f)
+                scaleX = s
+                scaleY = s
+                transformOrigin = if (isLeft) TransformOrigin(0f, 0.5f) else TransformOrigin(1f, 0.5f)
+            }
             .pointerInput(Unit) {
                 detectDragGestures(
                     onDragStart = { offset -> onDragStart(offset.x, offset.y) },
@@ -184,13 +221,14 @@ fun FloatingOverlayWindowContent(
                 }
             }
         } else {
-            // Elegant Frosted Dark Glass Dock Chassis / Container
+            // Elegant Frosted Dark Glass Dock Chassis / Container (Fixed Proportions - NEVER Squashed)
+            val chassisWidth = if (state.isVirtualNumbersOverlayExpanded) 195.dp else 94.dp
             Surface(
                 shape = dockChassisShape,
                 color = Color.Transparent,
                 shadowElevation = 14.dp,
                 modifier = Modifier
-                    .wrapContentSize()
+                    .width(chassisWidth)
                     .clip(dockChassisShape)
                     .background(
                         Brush.verticalGradient(
@@ -214,13 +252,11 @@ fun FloatingOverlayWindowContent(
                     )
             ) {
                 Column(
-                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
                     modifier = Modifier
-                        .widthIn(min = 124.dp, max = 138.dp)
-                        .heightIn(max = 560.dp)
-                        .verticalScroll(rememberScrollState())
-                        .padding(horizontal = 6.dp, vertical = 6.dp)
+                        .fillMaxWidth()
+                        .padding(horizontal = 6.dp, vertical = 8.dp)
                         .testTag("floating_edge_tabs_column")
                 ) {
                     // Sleek Drag Grip Header Handle
@@ -233,9 +269,38 @@ fun FloatingOverlayWindowContent(
                             .background(Color.White.copy(alpha = 0.35f))
                     )
 
+                    // Live Heads-Up OTP Alert in Floating Overlay
+                    if (liveOtpPopup != null) {
+                        val otpEvt = liveOtpPopup!!
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = Color(0xF2062E19),
+                            border = androidx.compose.foundation.BorderStroke(1.2.dp, Color(0xFF00E676)),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    com.example.util.ClipboardHelper.copyToClipboard(context, otpEvt.otpCode, "OTP")
+                                    android.widget.Toast.makeText(context, "✓ OTP কপি হয়েছে: ${otpEvt.otpCode}", android.widget.Toast.LENGTH_SHORT).show()
+                                    OverlayStateManager.dismissOtpPopup()
+                                }
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 5.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(Icons.Default.Bolt, contentDescription = null, tint = Color(0xFF00E676), modifier = Modifier.size(13.dp))
+                                    Spacer(modifier = Modifier.width(3.dp))
+                                    Text("⚡ ${otpEvt.otpCode}", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Black)
+                                }
+                                Text("• অটো কপি হয়েছে ✓", color = Color(0xFF81D4FA), fontSize = 8.5.sp)
+                            }
+                        }
+                    }
+
                     Spacer(modifier = Modifier.height(2.dp))
 
-                    // 1. PROXY TAB (Original Rectangular Tactile Button)
+                    // 1. PROXY TAB (Original Always-Visible Tactile Button from #40,#41,#42)
                     GlossyTactileButton(
                         title = if (state.proxyState.isConnected) "Proxy ✓" else "Proxy",
                         icon = Icons.Default.Bolt,
@@ -248,119 +313,153 @@ fun FloatingOverlayWindowContent(
                         testTag = "tab_proxy"
                     )
 
-                    // 2. NAME GENERATOR TAB (Original Rectangular Tactile Button)
-                    GlossyTactileButton(
-                        title = "Name",
-                        icon = Icons.Default.Person,
-                        brush = gradName,
-                        shape = tabShape,
-                        onClick = {
-                            OverlayStateManager.generateAndCopyRealtimeName(context)
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                        testTag = "tab_name"
-                    )
-
-                    // 3. EXCEL COLUMNS IN 3-COLUMN CIRCULAR GRID ("gol boler moto")
-                    // Supports up to 6 columns: Row 1 has A, B, C; Row 2 has D, E, F
-                    val rowA = state.columnRowMap["A"] ?: 1
-                    val rowB = state.columnRowMap["B"] ?: 1
-                    val rowC = state.columnRowMap["C"] ?: 1
-                    val rowD = state.columnRowMap["D"] ?: 1
-                    val rowE = state.columnRowMap["E"] ?: 1
-                    val rowF = state.columnRowMap["F"] ?: 1
-
-                    // Grid Row 1: Columns A, B, C
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceEvenly,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        SheetCircularButton(
-                            title = "A$rowA",
-                            onClick = {
-                                OverlayStateManager.fastPasteToSheetColumn(context, "A")
-                            },
-                            testTag = "tab_col_a"
-                        )
-                        SheetCircularButton(
-                            title = "B$rowB",
-                            onClick = {
-                                OverlayStateManager.fastPasteToSheetColumn(context, "B")
-                            },
-                            testTag = "tab_col_b"
-                        )
-                        if (state.columnCount >= 3) {
-                            SheetCircularButton(
-                                title = "C$rowC",
-                                onClick = {
-                                    OverlayStateManager.fastPasteToSheetColumn(context, "C")
-                                },
-                                testTag = "tab_col_c"
-                            )
+                    // 2. NAME GENERATOR TAB (Tap auto-copies authentic name to keyboard)
+                    if (state.showOverlayName) {
+                        val activeCountryFlag = NameGenerator.countryCodeToEmojiFlag(state.selectedCountry)
+                        val nameBtnTitle = if (state.lastGeneratedName.isNotBlank()) {
+                            "$activeCountryFlag ${state.lastGeneratedName}"
+                        } else {
+                            "$activeCountryFlag Name (${state.selectedCountry})"
                         }
+                        GlossyTactileButton(
+                            title = nameBtnTitle,
+                            icon = Icons.Default.Person,
+                            brush = gradName,
+                            shape = tabShape,
+                            fontSize = if (state.lastGeneratedName.isNotBlank()) 10.sp else 12.sp,
+                            horizontalPadding = 6.dp,
+                            onClick = {
+                                OverlayStateManager.generateAndCopyRealtimeName(context)
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                            testTag = "tab_name"
+                        )
                     }
 
-                    // Grid Row 2: Columns D, E, F (if 4+ columns selected)
-                    if (state.columnCount >= 4) {
+                    // 3. EXCEL COLUMNS IN 3-COLUMN CIRCULAR GRID ("gol boler moto")
+                    if (state.showOverlayExcel) {
+                        val rowA = state.columnRowMap["A"] ?: 1
+                        val rowB = state.columnRowMap["B"] ?: 1
+                        val rowC = state.columnRowMap["C"] ?: 1
+                        val rowD = state.columnRowMap["D"] ?: 1
+                        val rowE = state.columnRowMap["E"] ?: 1
+                        val rowF = state.columnRowMap["F"] ?: 1
+
+                        // Grid Row 1: Columns A, B, C
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceEvenly,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             SheetCircularButton(
-                                title = "D$rowD",
+                                title = "A$rowA",
                                 onClick = {
-                                    OverlayStateManager.fastPasteToSheetColumn(context, "D")
+                                    OverlayStateManager.fastPasteToSheetColumn(context, "A")
                                 },
-                                testTag = "tab_col_d"
+                                testTag = "tab_col_a"
                             )
-                            if (state.columnCount >= 5) {
+                            SheetCircularButton(
+                                title = "B$rowB",
+                                onClick = {
+                                    OverlayStateManager.fastPasteToSheetColumn(context, "B")
+                                },
+                                testTag = "tab_col_b"
+                            )
+                            if (state.columnCount >= 3) {
                                 SheetCircularButton(
-                                    title = "E$rowE",
+                                    title = "C$rowC",
                                     onClick = {
-                                        OverlayStateManager.fastPasteToSheetColumn(context, "E")
+                                        OverlayStateManager.fastPasteToSheetColumn(context, "C")
                                     },
-                                    testTag = "tab_col_e"
+                                    testTag = "tab_col_c"
                                 )
                             }
-                            if (state.columnCount >= 6) {
+                        }
+
+                        // Grid Row 2: Columns D, E, F (if 4+ columns selected)
+                        if (state.columnCount >= 4) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceEvenly,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
                                 SheetCircularButton(
-                                    title = "F$rowF",
+                                    title = "D$rowD",
                                     onClick = {
-                                        OverlayStateManager.fastPasteToSheetColumn(context, "F")
+                                        OverlayStateManager.fastPasteToSheetColumn(context, "D")
                                     },
-                                    testTag = "tab_col_f"
+                                    testTag = "tab_col_d"
                                 )
+                                if (state.columnCount >= 5) {
+                                    SheetCircularButton(
+                                        title = "E$rowE",
+                                        onClick = {
+                                            OverlayStateManager.fastPasteToSheetColumn(context, "E")
+                                        },
+                                        testTag = "tab_col_e"
+                                    )
+                                }
+                                if (state.columnCount >= 6) {
+                                    SheetCircularButton(
+                                        title = "F$rowF",
+                                        onClick = {
+                                            OverlayStateManager.fastPasteToSheetColumn(context, "F")
+                                        },
+                                        testTag = "tab_col_f"
+                                    )
+                                }
                             }
                         }
                     }
 
-                    // 4. 2FA TAB (Displays '2FA' + code + timer cleanly on one line)
-                    val totpFormatted = state.totpResult?.formattedCode
-                    val totpSec = state.totpResult?.remainingSeconds
-                    val is2FaActive = !totpFormatted.isNullOrEmpty() && totpSec != null
-                    val title2Fa = if (is2FaActive) {
-                        "2FA ${totpFormatted!!.replace(" ", "")} (${totpSec}s)"
-                    } else {
-                        "2FA"
+                    // 4. 2FA TAB
+                    if (state.showOverlay2Fa) {
+                        val totpFormatted = state.totpResult?.formattedCode
+                        val totpSec = state.totpResult?.remainingSeconds
+                        val is2FaActive = !totpFormatted.isNullOrEmpty() && totpSec != null
+                        val title2Fa = if (is2FaActive) {
+                            "2FA ${totpFormatted!!.replace(" ", "")} (${totpSec}s)"
+                        } else {
+                            "2FA"
+                        }
+                        GlossyTactileButton(
+                            title = title2Fa,
+                            icon = Icons.Default.Lock,
+                            brush = grad2Fa,
+                            shape = tabShape,
+                            fontSize = if (is2FaActive) 9.2.sp else 12.sp,
+                            horizontalPadding = if (is2FaActive) 4.dp else 9.dp,
+                            onClick = {
+                                OverlayStateManager.triggerOverlay2FaPaste(context)
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                            testTag = "tab_2fa"
+                        )
                     }
-                    GlossyTactileButton(
-                        title = title2Fa,
-                        icon = Icons.Default.Lock,
-                        brush = grad2Fa,
-                        shape = tabShape,
-                        fontSize = if (is2FaActive) 9.2.sp else 12.sp,
-                        horizontalPadding = if (is2FaActive) 4.dp else 9.dp,
-                        onClick = {
-                            OverlayStateManager.triggerOverlay2FaPaste(context)
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                        testTag = "tab_2fa"
-                    )
 
-                    // 5. CUSTOM USER APPS (Via, Dual, FB, Multiple Space)
-                    if (state.customAppShortcuts.isNotEmpty()) {
+                    // 5. PW COPY TAB
+                    if (state.showOverlayPwCopy) {
+                        val gradPwCopy = Brush.verticalGradient(
+                            listOf(Color(0xFFAB47BC), Color(0xFF7B1FA2), Color(0xFF4A148C))
+                        )
+                        val pwTitle = if (state.isRandomPasswordMode) "PW (Random)" else "PW Copy"
+                        GlossyTactileButton(
+                            title = pwTitle,
+                            icon = Icons.Default.Key,
+                            brush = gradPwCopy,
+                            shape = tabShape,
+                            fontSize = 12.sp,
+                            horizontalPadding = 8.dp,
+                            onClick = {
+                                OverlayStateManager.copySavedPasswordToClipboard(context)
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                            testTag = "tab_pw_copy"
+                        )
+                    }
+
+                    // 6. CUSTOM USER APPS
+                    if (state.showOverlayApps && state.customAppShortcuts.isNotEmpty()) {
                         if (state.customAppShortcuts.size > 1) {
                             AppShortcutsGridBox(
                                 shortcuts = state.customAppShortcuts,
@@ -398,44 +497,60 @@ fun FloatingOverlayWindowContent(
                         }
                     }
 
-                    // 6. CLEAR DATA / CLEAN TAB (Original Rectangular Tactile Button)
-                    if (state.selectedClearDataApps.isNotEmpty()) {
-                        if (state.selectedClearDataApps.size > 1) {
-                            ClearDataGridBox(
-                                apps = state.selectedClearDataApps,
-                                brush = gradClean,
-                                context = context,
-                                modifier = Modifier.fillMaxWidth()
-                            )
+                    // 7. CLEAR DATA / CLEAN TAB
+                    if (state.showOverlayClean) {
+                        if (state.selectedClearDataApps.isNotEmpty()) {
+                            if (state.selectedClearDataApps.size > 1) {
+                                ClearDataGridBox(
+                                    apps = state.selectedClearDataApps,
+                                    brush = gradClean,
+                                    context = context,
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                            } else {
+                                val appItem = state.selectedClearDataApps[0]
+                                GlossyTactileButton(
+                                    title = appItem.appName.take(10),
+                                    iconLabel = "🧹",
+                                    brush = gradClean,
+                                    shape = tabShape,
+                                    onClick = {
+                                        OverlayStateManager.executeClearDataForApp(context, appItem)
+                                    },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    testTag = "tab_app_clean_${appItem.packageName}"
+                                )
+                            }
                         } else {
-                            val appItem = state.selectedClearDataApps[0]
                             GlossyTactileButton(
-                                title = appItem.appName.take(10),
+                                title = "Clean",
                                 iconLabel = "🧹",
                                 brush = gradClean,
                                 shape = tabShape,
                                 onClick = {
-                                    OverlayStateManager.executeClearDataForApp(context, appItem)
+                                    OverlayStateManager.executeSelfClearData(context)
                                 },
                                 modifier = Modifier.fillMaxWidth(),
-                                testTag = "tab_app_clean_${appItem.packageName}"
+                                testTag = "tab_clean"
                             )
                         }
-                    } else {
-                        GlossyTactileButton(
-                            title = "Clean",
-                            iconLabel = "🧹",
-                            brush = gradClean,
-                            shape = tabShape,
-                            onClick = {
-                                OverlayStateManager.executeSelfClearData(context)
-                            },
-                            modifier = Modifier.fillMaxWidth(),
-                            testTag = "tab_clean"
+                    }
+
+                    // 8. VIRTUAL NUMBERS TAB (At the very end of overlay: "Overly te o virtual number option add koro sesehe akdm")
+                    if (state.showOverlayVirtualNumbers) {
+                        val gradVirtual = Brush.verticalGradient(
+                            listOf(Color(0xFF00E5FF), Color(0xFF0091EA), Color(0xFF0D47A1))
+                        )
+                        VirtualNumbersOverlaySection(
+                            isExpanded = state.isVirtualNumbersOverlayExpanded,
+                            onToggleExpand = { OverlayStateManager.toggleVirtualNumbersOverlayExpanded() },
+                            tabShape = tabShape,
+                            brush = gradVirtual,
+                            context = context
                         )
                     }
 
-                    // 7. DOCK SIDE SWITCHER (⇄) & CLOSE BUTTON (✕) SIDE BY SIDE IN 2 COLUMNS
+                    // 9. DOCK SIDE SWITCHER (⇄) & CLOSE BUTTON (✕) SIDE BY SIDE IN 2 COLUMNS
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(4.dp)
@@ -576,6 +691,7 @@ fun GlossyTactileButton(
 fun ProxyInfoStatusPill(state: OverlayUiState) {
     val proxy = state.proxyState
     if (!proxy.isConnected) return
+    val context = androidx.compose.ui.platform.LocalContext.current
 
     val countryOpt = com.example.util.NameGenerator.getCountryOption(proxy.countryCode)
     val countryStr = "${countryOpt.flag} ${countryOpt.code}"
@@ -590,7 +706,11 @@ fun ProxyInfoStatusPill(state: OverlayUiState) {
             1.dp,
             Color(0xFF00E676)
         ),
-        modifier = Modifier.testTag("overlay_proxy_status_pill")
+        modifier = Modifier
+            .testTag("overlay_proxy_status_pill")
+            .clickable {
+                OverlayStateManager.refreshRotatingIp(context)
+            }
     ) {
         Row(
             modifier = Modifier.padding(horizontal = 9.dp, vertical = 3.dp),
@@ -604,7 +724,7 @@ fun ProxyInfoStatusPill(state: OverlayUiState) {
             )
             Spacer(modifier = Modifier.width(5.dp))
             Text(
-                text = "$countryStr • $ipStr • $timeStr",
+                text = "$countryStr • ${proxy.ipVersion} • $ipStr • $timeStr",
                 color = Color.White,
                 fontWeight = FontWeight.Bold,
                 fontSize = 10.sp,
@@ -1102,11 +1222,18 @@ fun CompactAppGridButton(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.Center
         ) {
+            com.example.ui.components.AppIconImage(
+                packageName = shortcut.packageName,
+                fallbackText = shortcut.appName,
+                size = 18.dp,
+                shape = RoundedCornerShape(4.dp)
+            )
+            Spacer(modifier = Modifier.width(4.dp))
             Text(
-                text = shortcut.appName.take(7),
+                text = shortcut.appName.take(6),
                 color = Color.White,
                 fontWeight = FontWeight.Black,
-                fontSize = 10.5.sp,
+                fontSize = 10.sp,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 textAlign = TextAlign.Center
@@ -1166,13 +1293,15 @@ fun CompactCleanGridButton(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.Center
         ) {
-            Text(
-                text = if (appItem.isLiteStorageApp) "⚡" else "🧹",
-                fontSize = 9.sp
+            com.example.ui.components.AppIconImage(
+                packageName = appItem.packageName,
+                fallbackText = appItem.appName,
+                size = 18.dp,
+                shape = RoundedCornerShape(4.dp)
             )
-            Spacer(modifier = Modifier.width(2.dp))
+            Spacer(modifier = Modifier.width(3.dp))
             Text(
-                text = appItem.appName.take(7),
+                text = appItem.appName.take(6),
                 color = Color.White,
                 fontWeight = FontWeight.Black,
                 fontSize = 10.sp,
@@ -1181,6 +1310,692 @@ fun CompactCleanGridButton(
                 textAlign = TextAlign.Center
             )
         }
+    }
+}
+
+/**
+ * Virtual Numbers in Floating Overlay (At the very end of overlay):
+ * Allows instant Get Number by range and count (1-10), displays numbers & incoming live OTPs.
+ * Auto-copies 4-8 digit OTP code to user's keyboard/clipboard!
+ */
+@Composable
+fun VirtualNumbersOverlaySection(
+    isExpanded: Boolean,
+    onToggleExpand: () -> Unit,
+    tabShape: RoundedCornerShape,
+    brush: Brush,
+    context: android.content.Context,
+    modifier: Modifier = Modifier
+) {
+    val selectedPanel by VirtualNumberManager.selectedPanel.collectAsState()
+    val unixState by UnixSmsManager.state.collectAsState()
+    val vnState by VirtualNumberManager.state.collectAsState()
+    val kop2State by KopEngine2Manager.state.collectAsState()
+    val v2State by PremiumNumberV2Manager.state.collectAsState()
+    var dropdownExpanded by remember { mutableStateOf(false) }
+
+    val activeCount = when (selectedPanel) {
+        0 -> unixState.activeNumbers.size
+        1 -> vnState.provisionedNumbers.size
+        2 -> kop2State.provisionedNumbers.size
+        else -> v2State.activeNumbers.size
+    }
+    val panelName = when (selectedPanel) {
+        0 -> "Unix"
+        1 -> "Zenex"
+        2 -> "Kop 2"
+        else -> "V2"
+    }
+
+    Column(
+        modifier = modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(3.dp)
+    ) {
+        // Main Button
+        GlossyTactileButton(
+            title = if (isExpanded) "$panelName # ▲" else if (activeCount > 0) "$panelName ($activeCount)" else "$panelName #",
+            icon = Icons.Default.Phone,
+            brush = brush,
+            shape = tabShape,
+            onClick = onToggleExpand,
+            modifier = Modifier.fillMaxWidth(),
+            testTag = "tab_virtual_numbers"
+        )
+
+        // Expanded Inline Panel
+        AnimatedVisibility(visible = isExpanded) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(
+                        Brush.verticalGradient(
+                            listOf(Color(0xF208111D), Color(0xF20F1D30))
+                        )
+                    )
+                    .border(
+                        1.dp,
+                        Brush.verticalGradient(
+                            when (selectedPanel) {
+                                0 -> listOf(Color(0xFF00E5FF).copy(alpha = 0.8f), Color(0xFF0288D1).copy(alpha = 0.4f))
+                                1 -> listOf(Color(0xFF00E676).copy(alpha = 0.8f), Color(0xFF00897B).copy(alpha = 0.4f))
+                                2 -> listOf(Color(0xFFFFD54F).copy(alpha = 0.8f), Color(0xFFF57C00).copy(alpha = 0.4f))
+                                else -> listOf(Color(0xFF38BDF8).copy(alpha = 0.8f), Color(0xFF0284C7).copy(alpha = 0.4f))
+                            }
+                        ),
+                        RoundedCornerShape(8.dp)
+                    )
+                    .padding(5.dp)
+                    .testTag("overlay_virtual_numbers_expanded_panel")
+            ) {
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    // Header label with Panel Switcher
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.clickable {
+                                // Cycle panel: 0 (Unix) -> 3 (V2) -> 1 (Zenex) -> 2 (Kop 2) -> 0
+                                val next = when (selectedPanel) {
+                                    0 -> 3
+                                    3 -> 1
+                                    1 -> 2
+                                    else -> 0
+                                }
+                                VirtualNumberManager.setSelectedPanel(next)
+                            }
+                        ) {
+                            Text(
+                                text = when (selectedPanel) {
+                                    0 -> "⚡ 1. UNIX SMS"
+                                    3 -> "⚡ 2. PREMIUM V2"
+                                    1 -> "⚡ 3. ZENEX SMS"
+                                    else -> "⚡ 4. KOP ENGINE 2"
+                                },
+                                fontSize = 8.5.sp,
+                                fontWeight = FontWeight.Black,
+                                color = when (selectedPanel) {
+                                    0 -> Color(0xFF00E5FF)
+                                    3 -> Color(0xFF38BDF8)
+                                    1 -> Color(0xFF00E676)
+                                    else -> Color(0xFFFFD54F)
+                                }
+                            )
+                            Spacer(modifier = Modifier.width(3.dp))
+                            Icon(
+                                imageVector = Icons.Default.SwapHoriz,
+                                contentDescription = "Switch Panel",
+                                tint = Color(0xFF80DEEA),
+                                modifier = Modifier.size(10.dp)
+                            )
+                        }
+
+                        Text(
+                            text = when (selectedPanel) {
+                                0 -> "OTP: ${unixState.todayOtpCount}"
+                                3 -> "OTP: ${v2State.todayOtpCount}"
+                                1 -> "OTP: ${vnState.todayOtpCount}"
+                                else -> "OTP: ${kop2State.todayOtpCount}"
+                            },
+                            fontSize = 8.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFF80DEEA)
+                        )
+                    }
+
+                    // Panel Specific Input & Get Button
+                    if (selectedPanel == 0) {
+                        // UNIX SMS: Shows Saved Country & Service with 1-Tap Get Number
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(3.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            // Saved Country Selector Chip
+                            val availableCountries = remember(unixState.uploadedNumbers) {
+                                listOf("ALL") + unixState.uploadedNumbers.map { it.countryCode }.distinct()
+                            }
+
+                            Box(modifier = Modifier.weight(1f)) {
+                                Surface(
+                                    color = Color(0xFF0A1420),
+                                    shape = RoundedCornerShape(4.dp),
+                                    border = androidx.compose.foundation.BorderStroke(0.8.dp, Color(0xFF0284C7)),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(26.dp)
+                                        .clickable { dropdownExpanded = true }
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(horizontal = 6.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.SpaceBetween
+                                    ) {
+                                        Text(
+                                            text = "🌐 ${unixState.selectedCountry}",
+                                            color = Color.White,
+                                            fontSize = 9.sp,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                        Text(text = "▼", color = Color(0xFF38BDF8), fontSize = 7.5.sp)
+                                    }
+                                }
+
+                                DropdownMenu(
+                                    expanded = dropdownExpanded,
+                                    onDismissRequest = { dropdownExpanded = false },
+                                    modifier = Modifier.background(Color(0xFF0A1420))
+                                ) {
+                                    availableCountries.forEach { code ->
+                                        DropdownMenuItem(
+                                            text = { Text(code, color = Color.White, fontSize = 10.sp) },
+                                            onClick = {
+                                                UnixSmsManager.setSelectedCountry(code)
+                                                dropdownExpanded = false
+                                            }
+                                        )
+                                    }
+                                }
+                            }
+
+                            // Service Badge
+                            Surface(
+                                color = Color(0xFF0B141E),
+                                shape = RoundedCornerShape(4.dp),
+                                border = androidx.compose.foundation.BorderStroke(0.8.dp, Color(0xFF1E3A56)),
+                                modifier = Modifier.height(26.dp)
+                            ) {
+                                Box(modifier = Modifier.padding(horizontal = 5.dp), contentAlignment = Alignment.Center) {
+                                    Text(
+                                        text = unixState.selectedService,
+                                        color = Color(0xFF38BDF8),
+                                        fontSize = 8.5.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                            }
+
+                            // GET Action Button for Unix SMS
+                            Surface(
+                                shape = RoundedCornerShape(4.dp),
+                                color = Color(0xFF0284C7),
+                                modifier = Modifier
+                                    .height(26.dp)
+                                    .clickable {
+                                        UnixSmsManager.getNumberForUser(
+                                            context = context,
+                                            countryCode = unixState.selectedCountry,
+                                            service = unixState.selectedService
+                                        ) { success, msg ->
+                                            Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                                        }
+                                    }
+                            ) {
+                                Box(
+                                    modifier = Modifier.padding(horizontal = 8.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        text = "GET",
+                                        color = Color.White,
+                                        fontWeight = FontWeight.Black,
+                                        fontSize = 10.sp
+                                    )
+                                }
+                            }
+                        }
+                    } else if (selectedPanel == 1) {
+                        // ZENEX SMS: Auto-Populates Range Selected in App with Qty and Get Button
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(3.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            // Compact Range TextField
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(26.dp)
+                                    .clip(RoundedCornerShape(4.dp))
+                                    .background(Color(0xFF060B12))
+                                    .border(0.8.dp, Color(0xFF1E3A56), RoundedCornerShape(4.dp))
+                                    .padding(horizontal = 4.dp),
+                                contentAlignment = Alignment.CenterStart
+                            ) {
+                                androidx.compose.foundation.text.BasicTextField(
+                                    value = vnState.targetRange,
+                                    onValueChange = { VirtualNumberManager.setTargetRange(it) },
+                                    singleLine = true,
+                                    textStyle = androidx.compose.ui.text.TextStyle(
+                                        color = Color.White,
+                                        fontSize = 9.5.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        fontFamily = FontFamily.Monospace
+                                    ),
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                                if (vnState.targetRange.isEmpty()) {
+                                    Text("237620XXX", color = Color(0xFF546E7A), fontSize = 9.sp)
+                                }
+                            }
+
+                            // Quantity Selector
+                            Surface(
+                                color = Color(0xFF0B141E),
+                                shape = RoundedCornerShape(4.dp),
+                                border = androidx.compose.foundation.BorderStroke(0.8.dp, Color(0xFF1E3A56)),
+                                modifier = Modifier
+                                    .height(26.dp)
+                                    .clickable {
+                                        val next = if (vnState.requestCount >= 10) 1 else vnState.requestCount + 1
+                                        VirtualNumberManager.setRequestCount(next)
+                                    }
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 6.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = "Qty: ${vnState.requestCount}",
+                                        color = Color(0xFF40C4FF),
+                                        fontSize = 9.5.sp,
+                                        fontWeight = FontWeight.ExtraBold
+                                    )
+                                }
+                            }
+
+                            // GET Action Button for Zenex
+                            Surface(
+                                shape = RoundedCornerShape(4.dp),
+                                color = Color(0xFF0091EA),
+                                modifier = Modifier
+                                    .height(26.dp)
+                                    .clickable(enabled = !vnState.isLoading) {
+                                        VirtualNumberManager.provisionNumbers(context)
+                                    }
+                            ) {
+                                Box(
+                                    modifier = Modifier.padding(horizontal = 6.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    if (vnState.isLoading) {
+                                        CircularProgressIndicator(
+                                            color = Color.White,
+                                            strokeWidth = 1.5.dp,
+                                            modifier = Modifier.size(12.dp)
+                                        )
+                                    } else {
+                                        Text(
+                                            text = "GET",
+                                            color = Color.White,
+                                            fontWeight = FontWeight.Black,
+                                            fontSize = 10.sp
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    } else if (selectedPanel == 2) {
+                        // KOP ENGINE 2 (MK Network): Auto-Populates Range Selected in App with Qty and Get Button
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(3.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            // Target Range Input
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(26.dp)
+                                    .clip(RoundedCornerShape(4.dp))
+                                    .background(Color(0xFF060B12))
+                                    .border(0.8.dp, Color(0xFF1E3A56), RoundedCornerShape(4.dp))
+                                    .padding(horizontal = 4.dp),
+                                contentAlignment = Alignment.CenterStart
+                            ) {
+                                androidx.compose.foundation.text.BasicTextField(
+                                    value = kop2State.targetRange,
+                                    onValueChange = { KopEngine2Manager.setTargetRange(it) },
+                                    singleLine = true,
+                                    textStyle = androidx.compose.ui.text.TextStyle(
+                                        color = Color(0xFFFFD54F),
+                                        fontSize = 9.5.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        fontFamily = FontFamily.Monospace
+                                    ),
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                                if (kop2State.targetRange.isEmpty()) {
+                                    Text("260XXX", color = Color(0xFF546E7A), fontSize = 9.sp)
+                                }
+                            }
+
+                            // Quantity Selector
+                            Surface(
+                                color = Color(0xFF0B141E),
+                                shape = RoundedCornerShape(4.dp),
+                                border = androidx.compose.foundation.BorderStroke(0.8.dp, Color(0xFF1E3A56)),
+                                modifier = Modifier
+                                    .height(26.dp)
+                                    .clickable {
+                                        val next = if (kop2State.requestCount >= 10) 1 else kop2State.requestCount + 1
+                                        KopEngine2Manager.setRequestCount(next)
+                                    }
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 6.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = "Qty: ${kop2State.requestCount}",
+                                        color = Color(0xFFFFD54F),
+                                        fontSize = 9.5.sp,
+                                        fontWeight = FontWeight.ExtraBold
+                                    )
+                                }
+                            }
+
+                            // GET Action Button for Kop Engine 2
+                            Surface(
+                                shape = RoundedCornerShape(4.dp),
+                                color = Color(0xFFF59E0B),
+                                modifier = Modifier
+                                    .height(26.dp)
+                                    .clickable(enabled = !kop2State.isLoading) {
+                                        KopEngine2Manager.provisionNumbers(context)
+                                    }
+                            ) {
+                                Box(
+                                    modifier = Modifier.padding(horizontal = 6.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    if (kop2State.isLoading) {
+                                        CircularProgressIndicator(
+                                            color = Color.Black,
+                                            strokeWidth = 1.5.dp,
+                                            modifier = Modifier.size(12.dp)
+                                        )
+                                    } else {
+                                        Text(
+                                            text = "GET",
+                                            color = Color.Black,
+                                            fontWeight = FontWeight.Black,
+                                            fontSize = 10.sp
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    } else if (selectedPanel == 3) {
+                        // PREMIUM NUMBER V2: Shows Selected Country & Service with 1-Tap Get Number (1-10 qty)
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(3.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Surface(
+                                shape = RoundedCornerShape(4.dp),
+                                color = Color(0xFF0C1929),
+                                border = androidx.compose.foundation.BorderStroke(0.7.dp, Color(0xFF38BDF8)),
+                                modifier = Modifier.weight(1f).height(26.dp)
+                            ) {
+                                Box(
+                                    modifier = Modifier.padding(horizontal = 4.dp),
+                                    contentAlignment = Alignment.CenterStart
+                                ) {
+                                    Text(
+                                        text = "${v2State.selectedCountryFlag} ${v2State.selectedCountryCode} • ${v2State.selectedService}",
+                                        color = Color.White,
+                                        fontSize = 8.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        maxLines = 1
+                                    )
+                                }
+                            }
+
+                            // Qty toggle (1-10)
+                            Surface(
+                                shape = RoundedCornerShape(4.dp),
+                                color = Color(0xFF132237),
+                                border = androidx.compose.foundation.BorderStroke(0.7.dp, Color(0xFF1E3A56)),
+                                modifier = Modifier.height(26.dp).clickable {
+                                    val nextQty = if (v2State.requestCount >= 10) 1 else v2State.requestCount + 1
+                                    PremiumNumberV2Manager.setRequestCount(nextQty)
+                                }
+                            ) {
+                                Box(
+                                    modifier = Modifier.padding(horizontal = 4.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        text = "${v2State.requestCount}x",
+                                        color = Color(0xFF38BDF8),
+                                        fontSize = 9.sp,
+                                        fontWeight = FontWeight.Black
+                                    )
+                                }
+                            }
+
+                            // GET Action Button for Premium V2
+                            Surface(
+                                shape = RoundedCornerShape(4.dp),
+                                color = Color(0xFF0284C7),
+                                modifier = Modifier
+                                    .height(26.dp)
+                                    .clickable(enabled = !v2State.isLoading) {
+                                        PremiumNumberV2Manager.acquireNumbers(context)
+                                    }
+                            ) {
+                                Box(
+                                    modifier = Modifier.padding(horizontal = 6.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    if (v2State.isLoading) {
+                                        CircularProgressIndicator(
+                                            color = Color.White,
+                                            strokeWidth = 1.5.dp,
+                                            modifier = Modifier.size(12.dp)
+                                        )
+                                    } else {
+                                        Text(
+                                            text = "GET",
+                                            color = Color.White,
+                                            fontWeight = FontWeight.Black,
+                                            fontSize = 10.sp
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // Numbers & Live OTP List (Unix, Zenex, Kop Engine 2, or Premium V2)
+                    val numbers = when (selectedPanel) {
+                        0 -> unixState.activeNumbers.take(4)
+                        1 -> vnState.provisionedNumbers.take(4)
+                        2 -> kop2State.provisionedNumbers.take(4)
+                        else -> v2State.activeNumbers.take(4)
+                    }
+                    if (numbers.isEmpty()) {
+                        Text(
+                            text = when (selectedPanel) {
+                                0 -> "দেশ [${unixState.selectedCountry}] সংরক্ষিত • GET চাপুন"
+                                3 -> "${v2State.selectedCountryFlag} ${v2State.selectedCountryName} • GET চাপুন"
+                                1 -> "রেঞ্জ দিয়ে GET চাপুন (Zenex)"
+                                else -> "রেঞ্জ দিয়ে GET চাপুন (Kop 2)"
+                            },
+                            color = Color(0xFF546E7A),
+                            fontSize = 8.5.sp,
+                            modifier = Modifier.align(Alignment.CenterHorizontally)
+                        )
+                    } else {
+                        numbers.forEach { item ->
+                            Surface(
+                                shape = RoundedCornerShape(5.dp),
+                                color = if (item.status == "success") Color(0xFF00E676).copy(alpha = 0.15f) else Color(0xFF07101B),
+                                border = androidx.compose.foundation.BorderStroke(
+                                    0.8.dp,
+                                    if (item.status == "success") Color(0xFF00E676).copy(alpha = 0.6f) else Color(0xFF1E3A56)
+                                ),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Column(modifier = Modifier.padding(3.dp)) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(
+                                            text = item.number,
+                                            color = Color.White,
+                                            fontSize = 9.sp,
+                                            fontFamily = FontFamily.Monospace,
+                                            fontWeight = FontWeight.Bold,
+                                            modifier = Modifier.clickable {
+                                                ClipboardHelper.copyToClipboard(context, item.number, "Phone")
+                                                Toast.makeText(context, "নম্বর কপি হয়েছে!", Toast.LENGTH_SHORT).show()
+                                            }
+                                        )
+                                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+                                            val platformTag = when {
+                                                item.range.contains("fb clone", ignoreCase = true) -> "👥 FB Clone"
+                                                item.range.contains("fb new", ignoreCase = true) || item.range.contains("facebook", ignoreCase = true) -> "✨ FB New"
+                                                item.range.contains("whatsapp", ignoreCase = true) || item.range.contains("wp", ignoreCase = true) -> "💬 WhatsApp"
+                                                item.range.contains("instagram", ignoreCase = true) || item.range.contains("ig", ignoreCase = true) -> "📸 Instagram"
+                                                item.range.contains("pc clone", ignoreCase = true) || item.operator.contains("pc clone", ignoreCase = true) -> "🖥️ PC Clone"
+                                                item.range.isNotBlank() && item.range != "Live Range" -> "🔥 ${item.range.take(8)}"
+                                                else -> null
+                                            }
+                                            if (platformTag != null) {
+                                                Surface(
+                                                    color = Color(0xFF1E293B),
+                                                    shape = RoundedCornerShape(3.dp),
+                                                    border = androidx.compose.foundation.BorderStroke(0.5.dp, Color(0xFF00E5FF).copy(alpha = 0.4f))
+                                                ) {
+                                                    Text(
+                                                        text = platformTag,
+                                                        color = Color(0xFF38BDF8),
+                                                        fontSize = 7.sp,
+                                                        fontWeight = FontWeight.Bold,
+                                                        modifier = Modifier.padding(horizontal = 3.dp, vertical = 0.5.dp)
+                                                    )
+                                                }
+                                            }
+                                            val fbTag = item.fbTagType
+                                            if (fbTag == com.example.service.PhoneItem.TagType.FRESH) {
+                                                Surface(
+                                                    color = Color(0xFF0F3B20),
+                                                    shape = RoundedCornerShape(3.dp),
+                                                    border = androidx.compose.foundation.BorderStroke(0.5.dp, Color(0xFF00E676))
+                                                ) {
+                                                    Text(
+                                                        text = "FRESH",
+                                                        color = Color(0xFF00E676),
+                                                        fontSize = 7.sp,
+                                                        fontWeight = FontWeight.Bold,
+                                                        modifier = Modifier.padding(horizontal = 3.dp, vertical = 0.5.dp)
+                                                    )
+                                                }
+                                            } else if (fbTag == com.example.service.PhoneItem.TagType.TAKEN) {
+                                                Surface(
+                                                    color = Color(0xFF381515),
+                                                    shape = RoundedCornerShape(3.dp),
+                                                    border = androidx.compose.foundation.BorderStroke(0.5.dp, Color(0xFFFF5252))
+                                                ) {
+                                                    Text(
+                                                        text = "TAKEN",
+                                                        color = Color(0xFFFF5252),
+                                                        fontSize = 7.sp,
+                                                        fontWeight = FontWeight.Bold,
+                                                        modifier = Modifier.padding(horizontal = 3.dp, vertical = 0.5.dp)
+                                                    )
+                                                }
+                                            }
+                                            if (selectedPanel == 3 && item.status != "success") {
+                                                Surface(
+                                                    color = Color(0xFFEF4444).copy(alpha = 0.2f),
+                                                    shape = RoundedCornerShape(3.dp),
+                                                    modifier = Modifier.clickable {
+                                                        val rId = item.rentalId ?: item.id
+                                                        PremiumNumberV2Manager.cancelRental(rId, context, isAutoReturn = false)
+                                                    }
+                                                ) {
+                                                    Text(
+                                                        text = "ফেরত",
+                                                        color = Color(0xFFF87171),
+                                                        fontSize = 7.5.sp,
+                                                        fontWeight = FontWeight.Bold,
+                                                        modifier = Modifier.padding(horizontal = 3.dp, vertical = 1.dp)
+                                                    )
+                                                }
+                                            }
+                                            if (item.otpCode != null) {
+                                                Surface(
+                                                    color = Color(0xFF00E676),
+                                                    shape = RoundedCornerShape(3.dp),
+                                                    modifier = Modifier.clickable {
+                                                        ClipboardHelper.copyToClipboard(context, item.otpCode, "OTP")
+                                                        Toast.makeText(context, "OTP কপি হয়েছে!", Toast.LENGTH_SHORT).show()
+                                                    }
+                                                ) {
+                                                    Text(
+                                                        text = "OTP: ${item.otpCode}",
+                                                        color = Color.Black,
+                                                        fontSize = 8.5.sp,
+                                                        fontWeight = FontWeight.Black,
+                                                        modifier = Modifier.padding(horizontal = 3.dp, vertical = 1.dp)
+                                                    )
+                                                }
+                                            } else {
+                                                OverlayCountdownBadge(expiresAt = item.expiresAt)
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun OverlayCountdownBadge(expiresAt: Long) {
+    var now by remember { mutableStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(expiresAt) {
+        while (expiresAt > System.currentTimeMillis()) {
+            delay(1000L)
+            now = System.currentTimeMillis()
+        }
+    }
+    val msRemaining = (expiresAt - now).coerceAtLeast(0L)
+    val mins = msRemaining / 60000L
+    val secs = (msRemaining % 60000L) / 1000L
+    val countdownText = String.format(Locale.US, "%02d:%02d", mins, secs)
+
+    Surface(
+        color = if (msRemaining > 0L) Color(0xFFD97706).copy(alpha = 0.22f) else Color(0xFFEF4444).copy(alpha = 0.22f),
+        shape = RoundedCornerShape(3.dp),
+        border = androidx.compose.foundation.BorderStroke(
+            0.5.dp,
+            if (msRemaining > 0L) Color(0xFFFFD600).copy(alpha = 0.7f) else Color(0xFFEF4444).copy(alpha = 0.7f)
+        )
+    ) {
+        Text(
+            text = if (msRemaining > 0L) "⏱ $countdownText" else "Expired",
+            color = if (msRemaining > 0L) Color(0xFFFFD600) else Color(0xFFF87171),
+            fontSize = 7.5.sp,
+            fontWeight = FontWeight.Bold,
+            modifier = Modifier.padding(horizontal = 3.dp, vertical = 1.dp)
+        )
     }
 }
 
