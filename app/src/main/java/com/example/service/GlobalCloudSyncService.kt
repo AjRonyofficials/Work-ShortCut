@@ -141,8 +141,6 @@ object GlobalCloudSyncService {
                         // Authoritative apply to UnixSmsManager for all users
                         UnixSmsManager.applyCloudNumbers(cloudNumbers, context)
                     } catch (_: Exception) {}
-                } else {
-                    UnixSmsManager.applyCloudNumbers(emptyList(), context)
                 }
 
                 // 2. Sync OTP Rates
@@ -216,8 +214,8 @@ object GlobalCloudSyncService {
         lastLocalPushTimestamp = patchTimestamp
         try {
             val numArr = JSONArray()
-            // Up to 300 numbers to maintain fast transmission
-            for (item in uploadedNumbers.take(300)) {
+            // Support up to 5000 numbers across all countries and platforms
+            for (item in uploadedNumbers.take(5000)) {
                 val o = JSONObject()
                 o.put("id", item.id)
                 o.put("number", item.number)

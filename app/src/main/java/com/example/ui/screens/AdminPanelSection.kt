@@ -4578,6 +4578,57 @@ fun AdminUserManagerCard(
 
                 Spacer(modifier = Modifier.height(10.dp))
 
+                var showWipeConfirmDialog by remember { mutableStateOf(false) }
+
+                if (showWipeConfirmDialog) {
+                    androidx.compose.material3.AlertDialog(
+                        onDismissRequest = { showWipeConfirmDialog = false },
+                        title = { Text("সকল ব্যালেন্স ও হিস্টোরি রিসেট", fontWeight = FontWeight.Bold, color = Color.White) },
+                        text = {
+                            Text(
+                                "আপনি কি নিশ্চিত যে সকল ইউজারের বর্তমান ব্যালেন্স, ওটিপি কাউন্ট এবং ওটিপি হিস্টোরি রিসেট করতে চান? ইউজারের অ্যাকাউন্ট বা পাসওয়ার্ড অক্ষত থাকবে এবং এখন থেকে প্রতিটি ইউজারের নিজস্ব ইমেইলে আলাদাভাবে কাউন্ট ও ব্যালেন্স যোগ হবে।",
+                                fontSize = 12.sp,
+                                color = Color(0xFFCBD5E1)
+                            )
+                        },
+                        confirmButton = {
+                            Button(
+                                onClick = {
+                                    showWipeConfirmDialog = false
+                                    AuthManager.wipeAllUserBalancesAndOtpHistory(context)
+                                    com.example.util.VibrationHelper.vibrateSuccess(context)
+                                    Toast.makeText(context, "✓ সকল ইউজারের ব্যালেন্স ও হিস্টোরি সফলভাবে রিসেট হয়েছে!", Toast.LENGTH_LONG).show()
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFEF4444))
+                            ) {
+                                Text("হ্যাঁ, রিসেট করুন", color = Color.White)
+                            }
+                        },
+                        dismissButton = {
+                            OutlinedButton(onClick = { showWipeConfirmDialog = false }) {
+                                Text("বাতিল", color = Color.White)
+                            }
+                        },
+                        containerColor = Color(0xFF0F1A2B),
+                        shape = RoundedCornerShape(14.dp)
+                    )
+                }
+
+                Button(
+                    onClick = { showWipeConfirmDialog = true },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFDC2626).copy(alpha = 0.2f)),
+                    border = BorderStroke(1.dp, Color(0xFFEF4444)),
+                    shape = RoundedCornerShape(8.dp),
+                    modifier = Modifier.fillMaxWidth(),
+                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp)
+                ) {
+                    Icon(Icons.Default.Delete, contentDescription = null, tint = Color(0xFFEF4444), modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("🧹 সকল ইউজারের ব্যালেন্স ও হিস্টোরি রিসেট করুন", fontSize = 11.sp, color = Color(0xFFEF4444), fontWeight = FontWeight.SemiBold)
+                }
+
+                Spacer(modifier = Modifier.height(10.dp))
+
                 var userFilterTab by remember { mutableStateOf("ALL") } // "ALL", "ACTIVE", "INACTIVE", "BANNED"
 
                 Row(

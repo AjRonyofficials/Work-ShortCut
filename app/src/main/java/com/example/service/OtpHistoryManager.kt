@@ -171,12 +171,8 @@ object OtpHistoryManager {
         if (currentEmail.isBlank()) return
 
         try {
-            val url = if (isAdmin) {
-                "$SUPABASE_BASE_URL/otp_history?select=*&order=created_at.desc&limit=150"
-            } else {
-                val encEmail = java.net.URLEncoder.encode(currentEmail, "UTF-8")
-                "$SUPABASE_BASE_URL/otp_history?user_email=eq.$encEmail&order=created_at.desc&limit=100"
-            }
+            val encEmail = java.net.URLEncoder.encode(currentEmail, "UTF-8")
+            val url = "$SUPABASE_BASE_URL/otp_history?user_email=eq.$encEmail&order=created_at.desc&limit=100"
 
             val req = Request.Builder()
                 .url(url)
@@ -194,8 +190,8 @@ object OtpHistoryManager {
                     val o = arr.getJSONObject(i)
                     val recUser = o.optString("user_email", "").trim().lowercase()
 
-                    // Strict Isolation: If not admin, strictly discard any record not belonging to the logged-in user
-                    if (!isAdmin && recUser.isNotEmpty() && recUser != currentEmail) {
+                    // Strict Isolation: Discard any record not belonging to the logged-in user
+                    if (recUser.isNotEmpty() && recUser != currentEmail) {
                         continue
                     }
 
@@ -312,6 +308,19 @@ object OtpHistoryManager {
 
     fun onUserLoggedOut() {
         _state.value = OtpHistoryState()
+    }
+
+    fun wipeAllHistory(context: Context? = null) {
+        _state.value = OtpHistoryState()
+        prefs?.edit()
+            ?.remove(KEY_RECORDS_JSON)
+            ?.remove(KEY_TOTAL_COUNT)
+            ?.remove(KEY_MONTHLY_CYCLE_START)
+            ?.apply()
+        // Also remove any per-user keys that might have been stored
+        prefs?.all?.keys?.filter { it.startsWith("otp_records_json") || it.startsWith("total_otp_all_time") }?.forEach { k ->
+            prefs?.edit()?.remove(k)?.apply()
+        }
     }
 
     private fun loadHistory() {

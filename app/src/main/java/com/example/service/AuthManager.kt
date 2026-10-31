@@ -105,6 +105,12 @@ object AuthManager {
             _currentUserRole.value = prefs?.getString(KEY_LOGGED_IN_ROLE, "USER") ?: "USER"
             loadUsers()
             val savedEmail = _currentEmail.value.trim().lowercase()
+            // One-time auto-wipe of old shared history/balances to establish strict per-user isolation
+            val hasWipedV3 = prefs?.getBoolean("wiped_v3_per_user_isolation", false) ?: false
+            if (!hasWipedV3) {
+                prefs?.edit()?.putBoolean("wiped_v3_per_user_isolation", true)?.apply()
+                wipeAllUserBalancesAndOtpHistory(context)
+            }
             if (_isLoggedIn.value && savedEmail.isNotEmpty()) {
                 VirtualNumberManager.onUserLoggedIn(savedEmail)
                 UnixSmsManager.onUserLoggedIn(savedEmail)
@@ -953,6 +959,65 @@ object AuthManager {
             put("otp_7days", last7d)
             put("otp_30days", last30d)
         })
+    }
+
+    /**
+     * Wipes all existing user balances, OTP counts, and history records across all accounts
+     * and in Supabase, establishing clean, strictly isolated per-user accounting.
+     */
+    fun wipeAllUserBalancesAndOtpHistory(context: Context? = null) {
+        val resetList = _managedUsers.value.map {
+            it.copy(
+                balanceTk = 0.0,
+                totalOtps = 0,
+                todayOtps = 0,
+                last7DaysOtps = 0,
+                last30DaysOtps = 0
+            )
+        }
+        _managedUsers.value = resetList
+        saveUsersLocallyOnly(resetList)
+
+        // Clear local OTP history and withdrawal state
+        OtpHistoryManager.wipeAllHistory(context)
+        WithdrawalManager.wipeAllBalances(context)
+
+        // Cloud wipe: Patch all users in Supabase to 0 balance & OTP counts
+        authScope.launch {
+            try {
+                val payload = JSONObject().apply {
+                    put("balance", 0.0)
+                    put("total_otps", 0)
+                    put("otp_today", 0)
+                    put("otp_7days", 0)
+                    put("otp_30days", 0)
+                }
+                val body = payload.toString().toRequestBody("application/json; charset=utf-8".toMediaTypeOrNull())
+                val req = okhttp3.Request.Builder()
+                    .url("$SUPABASE_BASE_URL/app_users?role=neq.PRIME_ADMIN")
+                    .header("apikey", SUPABASE_KEY)
+                    .header("Content-Type", "application/json")
+                    .patch(body)
+                    .build()
+                httpClient.newCall(req).execute()
+
+                // Delete past records from otp_history
+                val delOtp = okhttp3.Request.Builder()
+                    .url("$SUPABASE_BASE_URL/otp_history?id=neq.placeholder_none")
+                    .header("apikey", SUPABASE_KEY)
+                    .delete()
+                    .build()
+                httpClient.newCall(delOtp).execute()
+
+                // Delete past records from withdraw_history
+                val delWd = okhttp3.Request.Builder()
+                    .url("$SUPABASE_BASE_URL/withdraw_history?id=neq.placeholder_none")
+                    .header("apikey", SUPABASE_KEY)
+                    .delete()
+                    .build()
+                httpClient.newCall(delWd).execute()
+            } catch (_: Exception) {}
+        }
     }
 
     private const val KEY_BROADCAST_MESSAGE = "admin_broadcast_message"

@@ -103,6 +103,7 @@ object PremiumNumberV2Manager {
     val otpRate: StateFlow<Double> = _otpRate.asStateFlow()
 
     private val otpRegex = Pattern.compile("\\b\\d{4,8}\\b")
+    private val processedOtpTokens = java.util.Collections.synchronizedSet(mutableSetOf<String>())
 
     fun init(context: Context) {
         appContext = context.applicationContext
@@ -575,7 +576,8 @@ object PremiumNumberV2Manager {
                                         gateway = "PREMIUM_V2",
                                         rate = activeRate,
                                         rentalId = rentalId,
-                                        flag = rentFlag
+                                        flag = rentFlag,
+                                        userEmail = AuthManager.currentEmail.value.trim().lowercase()
                                     )
                                     val updated = (listOf(prov) + _state.value.activeNumbers).sortedByDescending { it.timestamp }
                                     saveNumbers(updated)
@@ -705,7 +707,7 @@ object PremiumNumberV2Manager {
 
                                     _state.update {
                                         it.copy(
-                                            liveConsoleFeed = items,
+                                            liveConsoleFeed = items.take(50),
                                             rangePrefix = autoPfx,
                                             isApiConnected = true
                                         )
@@ -897,7 +899,9 @@ object PremiumNumberV2Manager {
                 val isMatch = (rId.isNotBlank() && item.rentalId == rId) ||
                         (cleanItemPhone.isNotEmpty() && (cleanItemPhone == phone || cleanItemPhone.endsWith(phone) || phone.endsWith(cleanItemPhone)))
 
-                if (isMatch && item.otpCode.isNullOrEmpty()) {
+                val otpToken = "${item.id}_${item.number}_$otp"
+                if (isMatch && item.otpCode.isNullOrEmpty() && !processedOtpTokens.contains(otpToken)) {
+                    processedOtpTokens.add(otpToken)
                     val updatedItem = item.copy(
                         status = "success",
                         otpCode = otp,

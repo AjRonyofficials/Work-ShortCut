@@ -230,20 +230,28 @@ object UnixSmsManager {
             }
         }
         if (cloudList.isEmpty()) {
-            val keptActive = _state.value.activeNumbers.filter { !it.otpCode.isNullOrEmpty() || (System.currentTimeMillis() - it.timestamp < 20 * 60 * 1000L) }
-            _state.update { it.copy(uploadedNumbers = emptyList(), activeNumbers = keptActive) }
-            saveUploadedNumbers(emptyList())
-            saveActiveNumbers(keptActive)
+            // Never wipe local uploaded numbers if cloud array is empty!
             return
         }
         val current = _state.value.uploadedNumbers
-        val currentCleanMap = current.associateBy { it.number.replace("[^0-9]".toRegex(), "") }
         val activeNumbers = _state.value.activeNumbers
 
-        // Cloud list is merged, but any number ever used or claimed remains 100% permanently used!
-        val merged = cloudList.map { cloudItem ->
+        // Compound key: digits + numberType + service to safely preserve all platform tags
+        val allNumbersMap = linkedMapOf<String, UploadedNumberItem>()
+
+        // 1. Keep all existing local numbers (authoritative)
+        for (localItem in current) {
+            val cleanDigits = localItem.number.replace("[^0-9]".toRegex(), "")
+            val key = "${cleanDigits}_${localItem.numberType}_${localItem.service.lowercase()}"
+            allNumbersMap[key] = localItem
+        }
+
+        // 2. Safely merge cloud list
+        for (cloudItem in cloudList) {
             val cleanDigits = cloudItem.number.replace("[^0-9]".toRegex(), "")
-            val local = currentCleanMap[cleanDigits]
+            val key = "${cleanDigits}_${cloudItem.numberType}_${cloudItem.service.lowercase()}"
+            val local = allNumbersMap[key]
+
             val isClaimedLocally = permanentlyUsedDigits.contains(cleanDigits) ||
                     local?.isUsed == true ||
                     activeNumbers.any { isPhoneNumberMatch(it.number, cleanDigits) }
@@ -252,14 +260,20 @@ object UnixSmsManager {
             if (isPermanentlyUsed && cleanDigits.length >= 7) {
                 permanentlyUsedDigits.add(cleanDigits)
             }
-            cloudItem.copy(
-                isUsed = isPermanentlyUsed,
-                otpCode = cloudItem.otpCode ?: local?.otpCode,
-                otpMessage = cloudItem.otpMessage ?: local?.otpMessage
-            )
+
+            if (local == null) {
+                allNumbersMap[key] = cloudItem.copy(isUsed = isPermanentlyUsed)
+            } else {
+                allNumbersMap[key] = local.copy(
+                    isUsed = isPermanentlyUsed,
+                    otpCode = cloudItem.otpCode ?: local.otpCode,
+                    otpMessage = cloudItem.otpMessage ?: local.otpMessage
+                )
+            }
         }
         savePermanentlyUsedDigits()
 
+        val merged = allNumbersMap.values.toList()
         val keptActive = _state.value.activeNumbers.filter { prov ->
             !prov.otpCode.isNullOrEmpty() || (System.currentTimeMillis() - prov.timestamp < 20 * 60 * 1000L)
         }
@@ -514,8 +528,13 @@ object UnixSmsManager {
 
         if (lines.isEmpty()) return 0
 
-        val existingNumbers = _state.value.uploadedNumbers.map { it.number.replace("[^0-9]".toRegex(), "") }.toSet()
-        val toAdd = lines.filterNot { existingNumbers.contains(it) }.map { num ->
+        val targetType = if (numberType.contains("clone", ignoreCase = true)) "PC Clone" else "Fresh"
+        val existingKeys = _state.value.uploadedNumbers.map {
+            "${it.number.replace("[^0-9]".toRegex(), "")}_${it.numberType}_${it.service.lowercase()}"
+        }.toSet()
+        val toAdd = lines.filterNot { num ->
+            existingKeys.contains("${num}_${targetType}_${service.lowercase()}")
+        }.map { num ->
             UploadedNumberItem(
                 number = num,
                 countryCode = countryCode,
@@ -524,7 +543,7 @@ object UnixSmsManager {
                 service = service,
                 gateway = gateway.uppercase(),
                 customRate = customRate,
-                numberType = if (numberType.contains("clone", ignoreCase = true)) "PC Clone" else "Fresh"
+                numberType = targetType
             )
         }
 

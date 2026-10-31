@@ -707,6 +707,7 @@ object KopEngine2Manager {
                         val combinedBroadcast = (localOtps + radarBroadcastItems)
                             .distinctBy { it.id }
                             .sortedByDescending { it.time }
+                            .take(50)
 
                         current.copy(
                             activeRanges = dynamicRanges,

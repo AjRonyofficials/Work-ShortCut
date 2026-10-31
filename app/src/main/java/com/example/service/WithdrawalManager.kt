@@ -141,12 +141,8 @@ object WithdrawalManager {
         if (currentEmail.isBlank()) return
 
         try {
-            val url = if (isAdmin) {
-                "$SUPABASE_BASE_URL/withdraw_history?select=*&order=created_at.desc&limit=100"
-            } else {
-                val encEmail = java.net.URLEncoder.encode(currentEmail, "UTF-8")
-                "$SUPABASE_BASE_URL/withdraw_history?user_email=eq.$encEmail&order=created_at.desc&limit=50"
-            }
+            val encEmail = java.net.URLEncoder.encode(currentEmail, "UTF-8")
+            val url = "$SUPABASE_BASE_URL/withdraw_history?user_email=eq.$encEmail&order=created_at.desc&limit=50"
 
             val req = Request.Builder()
                 .url(url)
@@ -248,6 +244,14 @@ object WithdrawalManager {
         _state.value = WithdrawalState()
     }
 
+    fun wipeAllBalances(context: Context? = null) {
+        _state.value = WithdrawalState()
+        prefs?.edit()
+            ?.putFloat(KEY_BASE_CREDIT, 0.0f)
+            ?.remove(KEY_REQUESTS_JSON)
+            ?.apply()
+    }
+
     private fun recomputeBalances(requests: List<WithdrawalRequest>, baseCredit: Double) {
         val currentEmail = AuthManager.currentEmail.value.trim().lowercase()
         val records = OtpHistoryManager.state.value.recentRecords
@@ -279,7 +283,7 @@ object WithdrawalManager {
         val totalEarned = baseCredit + otpEarnedTk
         // Filter requests strictly for current user's balance deduction
         val userFilteredRequests = if (currentEmail.isBlank() || currentEmail == "user account") {
-            requests
+            emptyList()
         } else {
             requests.filter { it.userEmail.equals(currentEmail, ignoreCase = true) }
         }
@@ -293,7 +297,7 @@ object WithdrawalManager {
                 availableBalanceTk = available,
                 pendingWithdrawTk = pending,
                 approvedWithdrawTk = approved,
-                allRequests = requests
+                allRequests = if (AuthManager.isPrimeAdmin()) requests else userFilteredRequests
             )
         }
     }
