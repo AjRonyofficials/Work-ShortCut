@@ -214,8 +214,8 @@ object GlobalCloudSyncService {
         lastLocalPushTimestamp = patchTimestamp
         try {
             val numArr = JSONArray()
-            // Support up to 5000 numbers across all countries and platforms
-            for (item in uploadedNumbers.take(5000)) {
+            // Support up to 10,000 numbers across all countries and platforms
+            for (item in uploadedNumbers.take(10000)) {
                 val o = JSONObject()
                 o.put("id", item.id)
                 o.put("number", item.number)

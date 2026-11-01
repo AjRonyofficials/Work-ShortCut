@@ -90,7 +90,6 @@ import com.example.util.VibrationHelper
 val UNIX_SUPPORTED_SERVICES = listOf(
     "✨ FB Fresh",
     "👥 FB Clone",
-    "🖥️ PC Clone",
     "📸 Instagram (IG)",
     "💬 WhatsApp",
     "🔥 OTP Work"
@@ -110,7 +109,7 @@ fun UnixSmsSectionContent(
     var selectedSubTab by remember { mutableIntStateOf(0) } // 0: Get Number, 1: Live Console
     var selectedService by remember { mutableStateOf(UNIX_SUPPORTED_SERVICES.first()) }
     var selectedCountryCode by remember(unixState.selectedCountry) { mutableStateOf(unixState.selectedCountry) }
-    var selectedNumberType by remember { mutableStateOf("ALL") } // "ALL", "Fresh", "PC Clone"
+    var selectedNumberType by remember { mutableStateOf("ALL") } // "ALL", "Fresh", "Old"
     var isRequestingNumber by remember { mutableStateOf(false) }
     var consoleSearchFilter by remember { mutableStateOf("") }
     var dlrFilterTab by remember { mutableStateOf("ALL") } // "ALL", "OTP_ONLY"
@@ -264,10 +263,9 @@ fun UnixSmsSectionContent(
                             val isSelected = selectedService.equals(sName, ignoreCase = true)
                             val accentColor = when {
                                 sName.contains("FB Clone") -> Color(0xFF1877F2)
-                                sName.contains("FB New") -> Color(0xFF00E5FF)
+                                sName.contains("Fresh") || sName.contains("FB New") -> Color(0xFF00E5FF)
                                 sName.contains("WhatsApp") -> Color(0xFF25D366)
                                 sName.contains("Instagram") -> Color(0xFFE1306C)
-                                sName.contains("PC") -> Color(0xFFFF9100)
                                 else -> Color(0xFFFF3D00)
                             }
 
@@ -322,8 +320,7 @@ fun UnixSmsSectionContent(
                     val pTag = when {
                         selectedService.isNotBlank() && selectedService != "ALL" -> selectedService
                         nType.contains("Fresh", true) || nType.contains("New", true) -> "✨ FB Fresh"
-                        nType.contains("PC", true) -> "🖥️ PC Clone"
-                        nType.contains("Clone", true) -> "👥 FB Clone"
+                        nType.contains("Old", true) || nType.contains("Clone", true) -> "👥 FB Clone"
                         first.service.contains("WhatsApp", true) -> "💬 WhatsApp"
                         first.service.contains("Insta", true) || first.service.contains("IG", true) -> "📸 Instagram (IG)"
                         first.service.contains("OTP", true) -> "🔥 OTP Work"
@@ -375,7 +372,7 @@ fun UnixSmsSectionContent(
                                 )
                                 Spacer(modifier = Modifier.height(4.dp))
                                 Text(
-                                    text = "এডমিন প্যানেলে গিয়ে (Menu -> Admin Panel) $selectedService এর Fresh বা PC Clone নাম্বার আপলোড করুন।",
+                                    text = "এডমিন প্যানেলে গিয়ে (Menu -> Admin Panel) $selectedService এর Fresh বা Old নাম্বার আপলোড করুন।",
                                     color = Color(0xFF90A4AE),
                                     fontSize = 10.sp
                                 )
@@ -432,7 +429,6 @@ fun UnixSmsSectionContent(
                                     c.platformTag.contains("FB Fresh") || c.platformTag.contains("Fresh") || c.platformTag.contains("FB New") -> Color(0xFF00E676)
                                     c.platformTag.contains("WhatsApp") -> Color(0xFF25D366)
                                     c.platformTag.contains("Instagram") || c.platformTag.contains("IG") -> Color(0xFFE1306C)
-                                    c.platformTag.contains("PC") -> Color(0xFFFF9100)
                                     else -> Color(0xFFFF3D00)
                                 }
                                 val tagLabel = c.platformTag
@@ -459,7 +455,7 @@ fun UnixSmsSectionContent(
                                             fontSize = 11.sp,
                                             fontWeight = FontWeight.Bold
                                         )
-                                        // Fresh vs PC Clone Indicator
+                                        // Fresh vs Old Indicator
                                         Surface(
                                             color = tagColor.copy(alpha = 0.22f),
                                             shape = RoundedCornerShape(4.dp),

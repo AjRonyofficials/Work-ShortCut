@@ -123,9 +123,8 @@ fun KopRangeSelectorBox(
                     val rawTag = act.tag.trim()
                     val rawService = act.service.trim()
                     when {
-                        // If API has tag (FB New, FB Clone, PC Clone, etc.), use that
+                        // If API has tag (FB New, FB Clone, etc.), use that
                         rawTag.contains("Fresh", true) || rawTag.contains("New", true) -> "✨ FB New"
-                        rawTag.contains("PC", true) -> "🖥️ PC Clone"
                         rawTag.contains("Clone", true) -> "👥 FB Clone"
                         rawTag.contains("Insta", true) || rawTag.contains("IG", true) -> "📸 IG"
                         rawTag.contains("WhatsApp", true) || rawTag.contains("WA", true) || rawTag.contains("WP", true) -> "💬 WhatsApp"
@@ -134,7 +133,6 @@ fun KopRangeSelectorBox(
                         // If API does not have tag, derive from service (e.g. Facebook -> FB, Instagram -> IG)
                         rawService.contains("Insta", true) || rawService.contains("IG", true) -> "📸 IG"
                         rawService.contains("WhatsApp", true) || rawService.contains("WA", true) || rawService.contains("WP", true) -> "💬 WhatsApp"
-                        rawService.contains("PC", true) -> "🖥️ PC Clone"
                         rawService.contains("New", true) || rawService.contains("Fresh", true) -> "✨ FB New"
                         rawService.contains("FB", true) || rawService.contains("Face", true) -> "👥 FB Clone"
                         rawService.contains("OTP", true) -> "🔥 OTP"
@@ -189,7 +187,6 @@ fun KopRangeSelectorBox(
                     when {
                         feedItem.service.contains("Insta", true) || feedItem.operator.contains("Insta", true) || feedItem.service.contains("IG", true) -> "📸 IG"
                         feedItem.service.contains("WhatsApp", true) || feedItem.service.contains("WA", true) -> "💬 WhatsApp"
-                        feedItem.operator.contains("PC", true) -> "🖥️ PC Clone"
                         feedItem.service.contains("New", true) || feedItem.service.contains("Fresh", true) -> "✨ FB New"
                         feedItem.service.contains("FB", true) || feedItem.service.contains("Face", true) || feedItem.operator.contains("Clone", true) -> "👥 FB Clone"
                         else -> "👥 FB"
@@ -256,7 +253,7 @@ fun KopRangeSelectorBox(
 
         Spacer(modifier = Modifier.height(8.dp))
 
-        // Quick 1-Click Platform Filter Tabs (FB Clone, FB New, WhatsApp, Instagram, PC Clone, OTP Work)
+        // Quick 1-Click Platform Filter Tabs (FB Clone, FB New, WhatsApp, Instagram, OTP Work)
         LazyRow(
             horizontalArrangement = Arrangement.spacedBy(6.dp),
             modifier = Modifier.fillMaxWidth().padding(bottom = 6.dp)
@@ -266,7 +263,6 @@ fun KopRangeSelectorBox(
                 "✨ FB New" to Color(0xFF00E5FF),
                 "💬 WhatsApp" to Color(0xFF25D366),
                 "📸 Instagram" to Color(0xFFE1306C),
-                "🖥️ PC Clone" to Color(0xFFFF9100),
                 "🔥 OTP Work" to Color(0xFFFF3D00)
             )
             items(topPills.size) { pIdx ->
@@ -430,11 +426,10 @@ fun KopRangeSelectorBox(
             if (selectedTagFilter != "ALL") {
                 result = when (selectedTagFilter) {
                     "FB" -> result.filter { it.tag.contains("FB", ignoreCase = true) }
-                    "FB_CLONE" -> result.filter { it.tag.contains("Clone", ignoreCase = true) && !it.tag.contains("PC", ignoreCase = true) }
+                    "FB_CLONE" -> result.filter { it.tag.contains("Clone", ignoreCase = true) }
                     "FB_NEW" -> result.filter { it.tag.contains("New", ignoreCase = true) || it.tag.contains("Fresh", ignoreCase = true) }
                     "INSTAGRAM" -> result.filter { it.tag.contains("Instagram", ignoreCase = true) || it.tag.contains("IG", ignoreCase = true) }
                     "WHATSAPP" -> result.filter { it.tag.contains("WhatsApp", ignoreCase = true) || it.tag.contains("WA", ignoreCase = true) }
-                    "PC_CLONE" -> result.filter { it.tag.contains("PC", ignoreCase = true) }
                     "OTP_WORK" -> result.filter { it.tag.contains("OTP", ignoreCase = true) }
                     "LIVE" -> result.filter { it.isLive }
                     else -> result
@@ -580,13 +575,12 @@ fun KopRangeSelectorBox(
                             }
                         }
                     } else {
-                        // Quick Filter Chips (All, FB, FB Clone, New Fresh, PC Clone, IG, WA)
+                        // Quick Filter Chips (All, FB, FB Clone, New Fresh, IG, WA)
                         val filterChips = if (showServiceTags) {
                             listOf(
                                 "ALL" to "🌐 All (${livePoolEntries.size})",
                                 "FB" to "👥 FB (${livePoolEntries.count { it.tag.contains("FB") }})",
                                 "FB_NEW" to "✨ FB New (${livePoolEntries.count { it.tag.contains("New") || it.tag.contains("Fresh") }})",
-                                "PC_CLONE" to "🖥️ PC Clone (${livePoolEntries.count { it.tag.contains("PC") }})",
                                 "INSTAGRAM" to "📸 IG (${livePoolEntries.count { it.tag.contains("IG") || it.tag.contains("Insta") }})",
                                 "WHATSAPP" to "💬 WA (${livePoolEntries.count { it.tag.contains("WhatsApp") || it.tag.contains("WA") }})",
                                 "OTP_WORK" to "🔥 OTP (${livePoolEntries.count { it.tag.contains("OTP") }})"
@@ -683,7 +677,6 @@ fun KopRangeSelectorBox(
                                     entry.tag.contains("Instagram", ignoreCase = true) -> Color(0xFFE1306C).copy(alpha = 0.2f)
                                     entry.tag.contains("FB Clone", ignoreCase = true) -> Color(0xFF1877F2).copy(alpha = 0.2f)
                                     entry.tag.contains("FB New", ignoreCase = true) || entry.tag.contains("New", ignoreCase = true) -> Color(0xFF00E5FF).copy(alpha = 0.2f)
-                                    entry.tag.contains("PC", ignoreCase = true) -> Color(0xFFFF9100).copy(alpha = 0.2f)
                                     entry.tag.contains("WhatsApp", ignoreCase = true) -> Color(0xFF25D366).copy(alpha = 0.2f)
                                     entry.tag.contains("OTP", ignoreCase = true) -> Color(0xFFFF3D00).copy(alpha = 0.2f)
                                     else -> Color(0xFF1877F2).copy(alpha = 0.2f)
@@ -693,7 +686,6 @@ fun KopRangeSelectorBox(
                                     entry.tag.contains("Instagram", ignoreCase = true) -> Color(0xFFFF4081)
                                     entry.tag.contains("FB Clone", ignoreCase = true) -> Color(0xFF60A5FA)
                                     entry.tag.contains("FB New", ignoreCase = true) || entry.tag.contains("New", ignoreCase = true) -> Color(0xFF00E5FF)
-                                    entry.tag.contains("PC", ignoreCase = true) -> Color(0xFFFFB74D)
                                     entry.tag.contains("WhatsApp", ignoreCase = true) -> Color(0xFF4ADE80)
                                     entry.tag.contains("OTP", ignoreCase = true) -> Color(0xFFFF6E40)
                                     else -> Color(0xFF60A5FA)

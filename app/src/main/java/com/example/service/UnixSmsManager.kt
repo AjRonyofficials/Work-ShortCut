@@ -40,7 +40,7 @@ data class UploadedNumberItem(
     val isUsed: Boolean = false,
     val otpCode: String? = null,
     val otpMessage: String? = null,
-    val numberType: String = "Fresh" // "Fresh" (New Fresh Number) or "PC Clone" (Pc clone number)
+    val numberType: String = "Fresh" // "Fresh" (New Fresh Number) or "Old" (Old / Clone Number)
 )
 
 data class UnixSmsCdrRecord(
@@ -361,25 +361,29 @@ object UnixSmsManager {
     }
 
     private fun saveUploadedNumbers(list: List<UploadedNumberItem>) {
-        val arr = JSONArray()
-        for (item in list) {
-            val o = JSONObject()
-            o.put("id", item.id)
-            o.put("number", item.number)
-            o.put("countryCode", item.countryCode)
-            o.put("countryName", item.countryName)
-            o.put("flag", item.flag)
-            o.put("service", item.service)
-            o.put("gateway", item.gateway)
-            if (item.customRate != null) o.put("customRate", item.customRate)
-            o.put("addedAt", item.addedAt)
-            o.put("isUsed", item.isUsed)
-            item.otpCode?.let { o.put("otpCode", it) }
-            item.otpMessage?.let { o.put("otpMessage", it) }
-            o.put("numberType", item.numberType)
-            arr.put(o)
+        scope.launch(Dispatchers.IO) {
+            try {
+                val arr = JSONArray()
+                for (item in list) {
+                    val o = JSONObject()
+                    o.put("id", item.id)
+                    o.put("number", item.number)
+                    o.put("countryCode", item.countryCode)
+                    o.put("countryName", item.countryName)
+                    o.put("flag", item.flag)
+                    o.put("service", item.service)
+                    o.put("gateway", item.gateway)
+                    if (item.customRate != null) o.put("customRate", item.customRate)
+                    o.put("addedAt", item.addedAt)
+                    o.put("isUsed", item.isUsed)
+                    item.otpCode?.let { o.put("otpCode", it) }
+                    item.otpMessage?.let { o.put("otpMessage", it) }
+                    o.put("numberType", item.numberType)
+                    arr.put(o)
+                }
+                prefs?.edit()?.putString(KEY_UPLOADED_NUMBERS, arr.toString())?.apply()
+            } catch (_: Exception) {}
         }
-        prefs?.edit()?.putString(KEY_UPLOADED_NUMBERS, arr.toString())?.apply()
     }
 
     private fun getUserActiveNumbersKey(email: String = AuthManager.currentEmail.value): String {
@@ -519,17 +523,22 @@ object UnixSmsManager {
         customRate: Double? = null,
         numberType: String = "Fresh"
     ): Int {
-        val lines = rawContent.lines()
-            .flatMap { it.split(",", ";", " ", "\t") }
-            .map { it.trim().removePrefix("+").replace("[^0-9]".toRegex(), "") }
-            .filter { it.length >= 7 }
-            .distinct()
+        // High-performance single-pass regex extraction (supports 10,000+ numbers smoothly)
+        val phonePattern = Pattern.compile("\\+?[0-9]{7,16}")
+        val matcher = phonePattern.matcher(rawContent)
+        val extractedSet = LinkedHashSet<String>(8192)
+        while (matcher.find()) {
+            val digits = matcher.group().removePrefix("+").replace("[^0-9]".toRegex(), "")
+            if (digits.length >= 7) {
+                extractedSet.add(digits)
+            }
+        }
+        val lines = extractedSet.toList()
 
         if (lines.isEmpty()) return 0
 
         val targetType = when {
-            numberType.contains("pc", ignoreCase = true) -> "PC Clone"
-            numberType.contains("clone", ignoreCase = true) -> "FB Clone"
+            numberType.contains("old", ignoreCase = true) || numberType.contains("clone", ignoreCase = true) || numberType.contains("taken", ignoreCase = true) -> "Old"
             else -> "Fresh"
         }
 
@@ -538,7 +547,10 @@ object UnixSmsManager {
         savePermanentlyUsedDigits()
 
         val existingList = _state.value.uploadedNumbers
-        val existingByDigits = existingList.associateBy { it.number.replace("[^0-9]".toRegex(), "") }.toMutableMap()
+        val existingByDigits = HashMap<String, UploadedNumberItem>(existingList.size + lines.size + 16)
+        for (item in existingList) {
+            existingByDigits[item.number.replace("[^0-9]".toRegex(), "")] = item
+        }
         val now = System.currentTimeMillis()
         var processedCount = 0
 
@@ -739,20 +751,17 @@ object UnixSmsManager {
 
         val serviceMatches = when {
             serviceLabel.equals("ALL", ignoreCase = true) || serviceLabel.isBlank() -> true
-            serviceLabel.contains("Fresh", ignoreCase = true) || serviceLabel.contains("FB New", ignoreCase = true) -> {
+            serviceLabel.contains("Fresh", ignoreCase = true) || serviceLabel.contains("FB Fresh", ignoreCase = true) || serviceLabel.contains("FB New", ignoreCase = true) -> {
                 val isFbService = s.contains("FB", true) || s.contains("Face", true) || s.contains("Fresh", true) || s.isBlank() || s.equals("ALL", true)
-                val isFreshType = t.contains("Fresh", true) || t.contains("New", true) || t.isBlank() || (!t.contains("Clone", true) && !t.contains("PC", true))
+                val isFreshType = t.contains("Fresh", true) || t.contains("New", true) || t.isBlank() || !t.contains("Old", true)
                 isFbService && isFreshType
             }
             serviceLabel.contains("FB Clone", ignoreCase = true) -> {
                 val isFbService = s.contains("FB", true) || s.contains("Face", true) || s.contains("Clone", true) || s.isBlank() || s.equals("ALL", true)
-                val isCloneType = t.contains("Clone", true) || t.contains("Taken", true) || s.contains("Clone", true) || (!t.contains("Fresh", true) && !t.contains("New", true))
+                val isCloneType = t.contains("Old", true) || t.contains("Clone", true) || t.contains("Taken", true) || s.contains("Clone", true) || (!t.contains("Fresh", true) && !t.contains("New", true))
                 isFbService && isCloneType
             }
-            serviceLabel.contains("PC", ignoreCase = true) -> {
-                t.contains("PC", true) || s.contains("PC", true)
-            }
-            serviceLabel.contains("WhatsApp", ignoreCase = true) || serviceLabel.contains("WA", ignoreCase = true) -> {
+            serviceLabel.contains("WhatsApp", ignoreCase = true) || serviceLabel.contains("WA", ignoreCase = true) || serviceLabel.contains("WP", ignoreCase = true) -> {
                 s.contains("WhatsApp", true) || s.contains("WA", true) || s.contains("WP", true)
             }
             serviceLabel.contains("Instagram", ignoreCase = true) || serviceLabel.contains("IG", ignoreCase = true) -> {
@@ -770,9 +779,8 @@ object UnixSmsManager {
 
         // Specific sub-filter check only if targetNumberType is not ALL
         if (targetNumberType != "ALL" && targetNumberType.isNotBlank()) {
-            if (targetNumberType.contains("pc", true) && !t.contains("pc", true) && !s.contains("pc", true)) return false
-            if (targetNumberType.contains("clone", true) && !t.contains("clone", true) && !t.contains("pc", true) && !s.contains("clone", true)) return false
-            if ((targetNumberType.contains("fresh", true) || targetNumberType.contains("new", true)) && (t.contains("clone", true) || t.contains("pc", true))) return false
+            if (targetNumberType.contains("fresh", true) && !t.contains("fresh", true) && !t.contains("new", true)) return false
+            if (targetNumberType.contains("old", true) && !t.contains("old", true) && !t.contains("clone", true) && !t.contains("taken", true)) return false
         }
 
         return true

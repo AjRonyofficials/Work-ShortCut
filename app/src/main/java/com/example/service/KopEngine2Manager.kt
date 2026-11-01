@@ -669,7 +669,6 @@ object KopEngine2Manager {
                             val cleanTag = when {
                                 service.contains("Insta", ignoreCase = true) || operator.contains("Insta", ignoreCase = true) || service.contains("IG", ignoreCase = true) -> "📸 Instagram"
                                 service.contains("WhatsApp", ignoreCase = true) || operator.contains("WhatsApp", ignoreCase = true) || service.contains("WA", ignoreCase = true) || service.contains("WP", ignoreCase = true) -> "💬 WhatsApp"
-                                operator.contains("PC", ignoreCase = true) || service.contains("PC", ignoreCase = true) -> "🖥️ PC Clone"
                                 operator.contains("Fresh", ignoreCase = true) || operator.contains("New", ignoreCase = true) || service.contains("New", ignoreCase = true) -> "✨ FB New"
                                 service.contains("FB", ignoreCase = true) || service.contains("Face", ignoreCase = true) || operator.contains("Clone", ignoreCase = true) -> "👥 FB Clone"
                                 service.contains("OTP", ignoreCase = true) -> "🔥 OTP Work"

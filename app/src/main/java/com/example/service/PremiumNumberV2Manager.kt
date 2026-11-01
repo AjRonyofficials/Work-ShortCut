@@ -316,7 +316,6 @@ object PremiumNumberV2Manager {
                                 service.contains("fb clone", ignoreCase = true) || service.contains("fb new", ignoreCase = true) || service.contains("facebook", ignoreCase = true) -> "facebook"
                                 service.contains("whatsapp", ignoreCase = true) || service.contains("wp", ignoreCase = true) -> "whatsapp"
                                 service.contains("instagram", ignoreCase = true) || service.contains("ig", ignoreCase = true) -> "instagram"
-                                service.contains("pc clone", ignoreCase = true) -> "facebook"
                                 service.contains("otp", ignoreCase = true) -> ""
                                 else -> service.replace(Regex("[^a-zA-Z0-9]"), "").trim().lowercase()
                             }

@@ -115,7 +115,6 @@ val ALLOCATION_SERVICES = listOf(
     "✨ FB New",
     "💬 WhatsApp",
     "📸 Instagram",
-    "🖥️ PC Clone",
     "🔥 OTP Work",
     "Telegram",
     "Apple",
@@ -138,7 +137,7 @@ val ALLOCATION_COUNTRIES = listOf(
     V2CountryPreset("FR", "France", "🇫🇷", "+33", "USDT 0.006", "✨ FB New"),
     V2CountryPreset("SD", "Sudan", "🇸🇩", "+249", "USDT 0.005", "💬 WhatsApp"),
     V2CountryPreset("ZM", "Zambia", "🇿🇲", "+260", "USDT 0.005", "📸 Instagram"),
-    V2CountryPreset("IT", "Italy", "🇮🇹", "+39", "USDT 0.005", "🖥️ PC Clone"),
+    V2CountryPreset("IT", "Italy", "🇮🇹", "+39", "USDT 0.005", "👥 FB Clone"),
     V2CountryPreset("GB", "United Kingdom", "🇬🇧", "+44", "USDT 0.006", "🔥 OTP Work"),
     V2CountryPreset("US", "United States", "🇺🇸", "+1", "USDT 0.005", "👥 FB Clone"),
     V2CountryPreset("ANY", "ANY (All Countries)", "🌐", "", "LIVE POOL", "🔥 All Pools")
@@ -170,7 +169,7 @@ fun PremiumNumberV2SectionContent(
         val list = mutableListOf<V2CountryPreset>()
         val seen = mutableSetOf<String>()
         list.add(V2CountryPreset("ANY", "ANY (All Live Pool)", "🌐", "", "POOL", "🔥 All Pools"))
-        val tags = listOf("👥 FB Clone", "✨ FB New", "💬 WhatsApp", "📸 Instagram", "🖥️ PC Clone", "🔥 OTP Work")
+        val tags = listOf("👥 FB Clone", "✨ FB New", "💬 WhatsApp", "📸 Instagram", "🔥 OTP Work")
         for (item in state.liveConsoleFeed) {
             val iso = item.iso.uppercase()
             if (iso.isNotBlank() && !seen.contains(iso)) {
@@ -486,7 +485,6 @@ fun PremiumNumberV2SectionContent(
                             "✨ FB New" to Color(0xFF0EA5E9),
                             "💬 WhatsApp" to Color(0xFF25D366),
                             "📸 Instagram" to Color(0xFFE1306C),
-                            "🖥️ PC Clone" to Color(0xFF8B5CF6),
                             "🔥 OTP Work" to Color(0xFFF59E0B)
                         )
                         quickPlatforms.forEach { (tag, color) ->

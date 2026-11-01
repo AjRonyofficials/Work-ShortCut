@@ -953,7 +953,6 @@ private fun Kop2ProvisionedNumberCard(
                         item.range.contains("fb new", ignoreCase = true) || item.range.contains("facebook", ignoreCase = true) -> "✨ FB New"
                         item.range.contains("whatsapp", ignoreCase = true) || item.range.contains("wp", ignoreCase = true) -> "💬 WhatsApp"
                         item.range.contains("instagram", ignoreCase = true) || item.range.contains("ig", ignoreCase = true) -> "📸 Instagram"
-                        item.operator.contains("PC", ignoreCase = true) || item.range.contains("pc clone", ignoreCase = true) -> "🖥️ PC Clone"
                         else -> "👥 FB Clone"
                     }
                     Surface(
@@ -1358,7 +1357,6 @@ private fun MkLiveOtpFeedCard(
                     val liveServiceTag = when {
                         item.service.contains("Insta", ignoreCase = true) || item.operator.contains("Insta", ignoreCase = true) || item.service.contains("IG", ignoreCase = true) -> "📸 Instagram"
                         item.service.contains("WhatsApp", ignoreCase = true) || item.service.contains("WA", ignoreCase = true) || item.service.contains("WP", ignoreCase = true) -> "💬 WhatsApp"
-                        item.operator.contains("PC", ignoreCase = true) || item.service.contains("PC", ignoreCase = true) -> "🖥️ PC Clone"
                         item.service.contains("New", ignoreCase = true) || item.operator.contains("New", ignoreCase = true) -> "✨ FB New"
                         item.service.contains("FB", ignoreCase = true) || item.service.contains("Face", ignoreCase = true) || item.operator.contains("Clone", ignoreCase = true) -> "👥 FB Clone"
                         item.service.isNotBlank() && item.service != "MK Network" -> item.service

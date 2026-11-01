@@ -146,7 +146,7 @@ data class AdminCountryInfo(
 
 val ADMIN_PRESET_COUNTRIES = AllCountriesProvider.allCountries
 
-val ADMIN_SERVICES = listOf("Facebook", "WhatsApp", "Instagram", "OTP Work")
+val ADMIN_SERVICES = listOf("FB Fresh", "FB Clone", "Instagram", "WhatsApp", "OTP Work")
 
 @Composable
 fun AdminPanelSection(
@@ -567,7 +567,7 @@ fun AdminUnixSmsCard(
 ) {
     var selectedCountry by remember { mutableStateOf(ADMIN_PRESET_COUNTRIES.first()) }
     var selectedService by remember { mutableStateOf(ADMIN_SERVICES.first()) }
-    var selectedNumberType by remember { mutableStateOf("Fresh") } // "Fresh" (New Fresh Number) or "PC Clone" (PC Clone Number)
+    var selectedNumberType by remember { mutableStateOf("Fresh") } // "Fresh" (New Fresh Number) or "Old" (Old / Clone Number)
     var numbersInput by remember { mutableStateOf("") }
     var countryDropdownExpanded by remember { mutableStateOf(false) }
     var showCountrySearchDialog by remember { mutableStateOf(false) }
@@ -2475,17 +2475,16 @@ fun AdminUnixSmsCard(
 
                 Spacer(modifier = Modifier.height(12.dp))
 
-                // Service & Sub-Type Selector: FB Fresh, FB Clone, PC Clone, IG, WhatsApp, OTP Work
-                Text(text = "2. সার্ভিস ও ধরণ নির্বাচন করুন (FB Fresh / FB Clone / IG / ইত্যাদি):", fontSize = 11.sp, color = Color(0xFF94A3B8), fontWeight = FontWeight.SemiBold)
+                // 2A. সার্ভিস নির্বাচন করুন (FB Fresh, FB Clone, IG, WhatsApp, OTP Work)
+                Text(text = "2. সার্ভিস নির্বাচন করুন:", fontSize = 11.sp, color = Color(0xFF94A3B8), fontWeight = FontWeight.SemiBold)
                 Spacer(modifier = Modifier.height(6.dp))
 
-                val uploadServiceOptions = listOf(
-                    Triple("✨ FB Fresh", "Facebook", "Fresh"),
-                    Triple("👥 FB Clone", "Facebook", "FB Clone"),
-                    Triple("🖥️ PC Clone", "Facebook", "PC Clone"),
-                    Triple("📸 Instagram (IG)", "Instagram", "Fresh"),
-                    Triple("💬 WhatsApp", "WhatsApp", "Fresh"),
-                    Triple("🔥 OTP Work", "OTP Work", "Fresh")
+                val uploadServices = listOf(
+                    "✨ FB Fresh" to "FB Fresh",
+                    "👥 FB Clone" to "FB Clone",
+                    "📸 Instagram (IG)" to "Instagram",
+                    "💬 WhatsApp" to "WhatsApp",
+                    "🔥 OTP Work" to "OTP Work"
                 )
 
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -2493,23 +2492,16 @@ fun AdminUnixSmsCard(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
-                        uploadServiceOptions.take(3).forEach { (optLabel, optService, optType) ->
-                            val isSel = (selectedService == optService && selectedNumberType == optType)
-                            val accentCol = when {
-                                optLabel.contains("Fresh") -> Color(0xFF00E676)
-                                optLabel.contains("FB Clone") -> Color(0xFF1877F2)
-                                else -> Color(0xFFFF9100)
-                            }
+                        uploadServices.take(2).forEach { (label, srvKey) ->
+                            val isSel = (selectedService == srvKey)
+                            val accentCol = if (srvKey == "FB Fresh") Color(0xFF00E676) else Color(0xFF1877F2)
                             Surface(
                                 color = if (isSel) accentCol.copy(alpha = 0.25f) else Color(0xFF090E17),
                                 shape = RoundedCornerShape(8.dp),
                                 border = BorderStroke(1.2.dp, if (isSel) accentCol else Color(0xFF243B55)),
                                 modifier = Modifier
                                     .weight(1f)
-                                    .clickable {
-                                        selectedService = optService
-                                        selectedNumberType = optType
-                                    }
+                                    .clickable { selectedService = srvKey }
                             ) {
                                 Row(
                                     modifier = Modifier.padding(vertical = 9.dp),
@@ -2517,9 +2509,9 @@ fun AdminUnixSmsCard(
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     Text(
-                                        text = optLabel,
+                                        text = label,
                                         color = if (isSel) Color.White else Color(0xFF94A3B8),
-                                        fontSize = 10.5.sp,
+                                        fontSize = 11.sp,
                                         fontWeight = if (isSel) FontWeight.Bold else FontWeight.Medium
                                     )
                                 }
@@ -2531,11 +2523,11 @@ fun AdminUnixSmsCard(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
-                        uploadServiceOptions.drop(3).forEach { (optLabel, optService, optType) ->
-                            val isSel = (selectedService == optService && selectedNumberType == optType)
-                            val accentCol = when {
-                                optLabel.contains("Instagram") -> Color(0xFFE1306C)
-                                optLabel.contains("WhatsApp") -> Color(0xFF25D366)
+                        uploadServices.drop(2).forEach { (label, srvKey) ->
+                            val isSel = (selectedService == srvKey)
+                            val accentCol = when (srvKey) {
+                                "Instagram" -> Color(0xFFE1306C)
+                                "WhatsApp" -> Color(0xFF25D366)
                                 else -> Color(0xFFFF3D00)
                             }
                             Surface(
@@ -2544,10 +2536,7 @@ fun AdminUnixSmsCard(
                                 border = BorderStroke(1.2.dp, if (isSel) accentCol else Color(0xFF243B55)),
                                 modifier = Modifier
                                     .weight(1f)
-                                    .clickable {
-                                        selectedService = optService
-                                        selectedNumberType = optType
-                                    }
+                                    .clickable { selectedService = srvKey }
                             ) {
                                 Row(
                                     modifier = Modifier.padding(vertical = 9.dp),
@@ -2555,13 +2544,70 @@ fun AdminUnixSmsCard(
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     Text(
-                                        text = optLabel,
+                                        text = label,
                                         color = if (isSel) Color.White else Color(0xFF94A3B8),
                                         fontSize = 10.5.sp,
                                         fontWeight = if (isSel) FontWeight.Bold else FontWeight.Medium
                                     )
                                 }
                             }
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                // 2B. নম্বরের ধরণ নির্বাচন: Fresh নাকি Old
+                Text(text = "3. নম্বরের অবস্থা নির্বাচন করুন (Fresh নাকি Old):", fontSize = 11.sp, color = Color(0xFF94A3B8), fontWeight = FontWeight.SemiBold)
+                Spacer(modifier = Modifier.height(6.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    val isFreshSel = selectedNumberType.equals("Fresh", ignoreCase = true)
+                    Surface(
+                        color = if (isFreshSel) Color(0xFF00E676).copy(alpha = 0.25f) else Color(0xFF090E17),
+                        shape = RoundedCornerShape(8.dp),
+                        border = BorderStroke(1.2.dp, if (isFreshSel) Color(0xFF00E676) else Color(0xFF243B55)),
+                        modifier = Modifier
+                            .weight(1f)
+                            .clickable { selectedNumberType = "Fresh" }
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(vertical = 10.dp),
+                            horizontalArrangement = Arrangement.Center,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "✨ Fresh (নতুন ফ্রেশ নম্বর)",
+                                color = if (isFreshSel) Color.White else Color(0xFF94A3B8),
+                                fontSize = 11.sp,
+                                fontWeight = if (isFreshSel) FontWeight.Bold else FontWeight.Medium
+                            )
+                        }
+                    }
+
+                    val isOldSel = selectedNumberType.equals("Old", ignoreCase = true)
+                    Surface(
+                        color = if (isOldSel) Color(0xFFF59E0B).copy(alpha = 0.25f) else Color(0xFF090E17),
+                        shape = RoundedCornerShape(8.dp),
+                        border = BorderStroke(1.2.dp, if (isOldSel) Color(0xFFF59E0B) else Color(0xFF243B55)),
+                        modifier = Modifier
+                            .weight(1f)
+                            .clickable { selectedNumberType = "Old" }
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(vertical = 10.dp),
+                            horizontalArrangement = Arrangement.Center,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "⏳ Old (পুরাতন ক্লোন নম্বর)",
+                                color = if (isOldSel) Color.White else Color(0xFF94A3B8),
+                                fontSize = 11.sp,
+                                fontWeight = if (isOldSel) FontWeight.Bold else FontWeight.Medium
+                            )
                         }
                     }
                 }
@@ -2639,14 +2685,7 @@ fun AdminUnixSmsCard(
                         )
                         isUploading = false
                         if (addedCount > 0) {
-                            val typeLabel = when {
-                                selectedNumberType == "Fresh" && selectedService == "Facebook" -> "FB Fresh"
-                                selectedNumberType == "FB Clone" -> "FB Clone"
-                                selectedNumberType == "PC Clone" -> "PC Clone"
-                                selectedService == "Instagram" -> "IG"
-                                selectedService == "WhatsApp" -> "WhatsApp"
-                                else -> selectedService
-                            }
+                            val typeLabel = "$selectedService ($selectedNumberType)"
                             Toast.makeText(context, "✓ $addedCount টি নতুন ${selectedCountry.name} [$typeLabel] নাম্বার সফলভাবে আপলোড হয়েছে!", Toast.LENGTH_LONG).show()
                             numbersInput = ""
                             VibrationHelper.vibrateSuccess(context)
@@ -2846,6 +2885,9 @@ fun AdminUnixSmsCard(
         val addedCountryCodes = remember(unixState.uploadedNumbers) {
             unixState.uploadedNumbers.map { it.countryCode }.distinct()
         }
+        val countryCountMap = remember(unixState.uploadedNumbers) {
+            unixState.uploadedNumbers.groupingBy { it.countryCode }.eachCount()
+        }
 
         val countryNumbers = remember(unixState.uploadedNumbers, selectedUploadedCountryFilter) {
             if (selectedUploadedCountryFilter == "ALL") unixState.uploadedNumbers
@@ -3000,7 +3042,7 @@ fun AdminUnixSmsCard(
                         val isSelected = selectedUploadedCountryFilter == code
                         val sampleItem = unixState.uploadedNumbers.firstOrNull { it.countryCode == code }
                         val flag = sampleItem?.flag ?: "🌐"
-                        val count = unixState.uploadedNumbers.count { it.countryCode == code }
+                        val count = countryCountMap[code] ?: 0
 
                         Surface(
                             color = if (isSelected) Color(0xFF6366F1).copy(alpha = 0.3f) else Color(0xFF0D1522),
@@ -4709,12 +4751,39 @@ fun AdminUserManagerCard(
 
                 Spacer(modifier = Modifier.height(10.dp))
 
-                val displayedUsers = remember(managedUsers, userFilterTab) {
-                    when (userFilterTab) {
-                        "ACTIVE" -> managedUsers.filter { it.isActive && !it.isBanned }
-                        "INACTIVE" -> managedUsers.filter { !it.isActive && !it.isBanned }
-                        "BANNED" -> managedUsers.filter { it.isBanned }
-                        else -> managedUsers
+                var userSearchQuery by remember { mutableStateOf("") }
+
+                // Search Bar for Users
+                OutlinedTextField(
+                    value = userSearchQuery,
+                    onValueChange = { userSearchQuery = it },
+                    placeholder = { Text("ইউজার সার্চ করুন (ইমেইল বা নাম)...", fontSize = 11.sp, color = Color(0xFF64748B)) },
+                    singleLine = true,
+                    colors = androidx.compose.material3.OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = Color.White,
+                        unfocusedTextColor = Color.White,
+                        focusedBorderColor = Color(0xFF38BDF8),
+                        unfocusedBorderColor = Color(0xFF1E2D40),
+                        focusedContainerColor = Color(0xFF090E17),
+                        unfocusedContainerColor = Color(0xFF090E17)
+                    ),
+                    shape = RoundedCornerShape(8.dp),
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                val displayedUsers = remember(managedUsers, userFilterTab, userSearchQuery) {
+                    val q = userSearchQuery.trim().lowercase()
+                    managedUsers.filter { u ->
+                        val matchesStatus = when (userFilterTab) {
+                            "ACTIVE" -> u.isActive && !u.isBanned
+                            "INACTIVE" -> !u.isActive && !u.isBanned
+                            "BANNED" -> u.isBanned
+                            else -> true
+                        }
+                        val matchesQuery = q.isEmpty() || u.email.lowercase().contains(q) || u.name.lowercase().contains(q)
+                        matchesStatus && matchesQuery
                     }
                 }
 
@@ -4734,7 +4803,7 @@ fun AdminUserManagerCard(
                     }
                 } else {
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        displayedUsers.forEach { user ->
+                        displayedUsers.take(100).forEach { user ->
                             AdminUserItemRow(
                                 user = user,
                                 onToggleStatus = { AuthManager.toggleUserStatus(user.email) },
@@ -4769,6 +4838,15 @@ fun AdminUserManagerCard(
                                         }
                                     }
                                 }
+                            )
+                        }
+
+                        if (displayedUsers.size > 100) {
+                            Text(
+                                text = "... আরও ${displayedUsers.size - 100} জন ইউজার রয়েছে (সহজে পেতে উপরে সার্চ করুন)",
+                                color = Color(0xFF94A3B8),
+                                fontSize = 11.sp,
+                                modifier = Modifier.padding(top = 4.dp)
                             )
                         }
                     }

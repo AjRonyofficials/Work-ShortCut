@@ -1868,7 +1868,6 @@ fun VirtualNumbersOverlaySection(
                                                 item.range.contains("fb new", ignoreCase = true) || item.range.contains("facebook", ignoreCase = true) -> "✨ FB New"
                                                 item.range.contains("whatsapp", ignoreCase = true) || item.range.contains("wp", ignoreCase = true) -> "💬 WhatsApp"
                                                 item.range.contains("instagram", ignoreCase = true) || item.range.contains("ig", ignoreCase = true) -> "📸 Instagram"
-                                                item.range.contains("pc clone", ignoreCase = true) || item.operator.contains("pc clone", ignoreCase = true) -> "🖥️ PC Clone"
                                                 item.range.isNotBlank() && item.range != "Live Range" -> "🔥 ${item.range.take(8)}"
                                                 else -> null
                                             }

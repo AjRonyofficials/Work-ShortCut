@@ -1697,6 +1697,16 @@ object OverlayStateManager {
         saveCustomShortcuts(updated)
     }
 
+    fun renameAppShortcut(packageName: String, newName: String) {
+        val clean = newName.trim()
+        if (clean.isBlank()) return
+        val current = _uiState.value.customAppShortcuts.map {
+            if (it.packageName == packageName) it.copy(appName = clean.take(20)) else it
+        }
+        _uiState.update { it.copy(customAppShortcuts = current) }
+        saveCustomShortcuts(current)
+    }
+
     private fun saveCustomShortcuts(list: List<CustomAppShortcut>) {
         val serialized = list.joinToString(";;") { "${it.id}::${it.appName}::${it.packageName}::${it.colorHex}" }
         prefs?.edit()?.putString("custom_app_shortcuts", serialized)?.apply()
