@@ -1333,6 +1333,8 @@ fun VirtualNumbersOverlaySection(
     val kop2State by KopEngine2Manager.state.collectAsState()
     val v2State by PremiumNumberV2Manager.state.collectAsState()
     var dropdownExpanded by remember { mutableStateOf(false) }
+    var serviceDropdownExpanded by remember { mutableStateOf(false) }
+    var isUnixGettingNumber by remember { mutableStateOf(false) }
 
     val activeCount = when (selectedPanel) {
         0 -> unixState.activeNumbers.size
@@ -1451,18 +1453,20 @@ fun VirtualNumbersOverlaySection(
 
                     // Panel Specific Input & Get Button
                     if (selectedPanel == 0) {
-                        // UNIX SMS: Shows Saved Country & Service with 1-Tap Get Number
+                        // UNIX SMS: Shows Saved Country & Service with 1-Tap Get Number (Fully Synced)
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.spacedBy(3.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            // Saved Country Selector Chip
+                            // Country Selector Dropdown
                             val availableCountries = remember(unixState.uploadedNumbers) {
-                                listOf("ALL") + unixState.uploadedNumbers.map { it.countryCode }.distinct()
+                                listOf("ALL") + unixState.uploadedNumbers.map { it.countryCode }.filter { it.isNotBlank() }.distinct()
                             }
+                            val activeFlag = if (unixState.selectedCountry.equals("ALL", ignoreCase = true)) "🌐"
+                                else (com.example.util.AllCountriesProvider.findByCode(unixState.selectedCountry)?.flag ?: "🏳️")
 
-                            Box(modifier = Modifier.weight(1f)) {
+                            Box(modifier = Modifier.weight(0.42f)) {
                                 Surface(
                                     color = Color(0xFF0A1420),
                                     shape = RoundedCornerShape(4.dp),
@@ -1473,17 +1477,18 @@ fun VirtualNumbersOverlaySection(
                                         .clickable { dropdownExpanded = true }
                                 ) {
                                     Row(
-                                        modifier = Modifier.padding(horizontal = 6.dp),
+                                        modifier = Modifier.padding(horizontal = 4.dp),
                                         verticalAlignment = Alignment.CenterVertically,
                                         horizontalArrangement = Arrangement.SpaceBetween
                                     ) {
                                         Text(
-                                            text = "🌐 ${unixState.selectedCountry}",
+                                            text = "$activeFlag ${unixState.selectedCountry}",
                                             color = Color.White,
-                                            fontSize = 9.sp,
-                                            fontWeight = FontWeight.Bold
+                                            fontSize = 8.5.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            maxLines = 1
                                         )
-                                        Text(text = "▼", color = Color(0xFF38BDF8), fontSize = 7.5.sp)
+                                        Text(text = "▼", color = Color(0xFF38BDF8), fontSize = 7.sp)
                                     }
                                 }
 
@@ -1493,8 +1498,9 @@ fun VirtualNumbersOverlaySection(
                                     modifier = Modifier.background(Color(0xFF0A1420))
                                 ) {
                                     availableCountries.forEach { code ->
+                                        val f = if (code == "ALL") "🌐" else (com.example.util.AllCountriesProvider.findByCode(code)?.flag ?: "🏳️")
                                         DropdownMenuItem(
-                                            text = { Text(code, color = Color.White, fontSize = 10.sp) },
+                                            text = { Text("$f $code", color = Color.White, fontSize = 10.sp) },
                                             onClick = {
                                                 UnixSmsManager.setSelectedCountry(code)
                                                 dropdownExpanded = false
@@ -1504,49 +1510,94 @@ fun VirtualNumbersOverlaySection(
                                 }
                             }
 
-                            // Service Badge
-                            Surface(
-                                color = Color(0xFF0B141E),
-                                shape = RoundedCornerShape(4.dp),
-                                border = androidx.compose.foundation.BorderStroke(0.8.dp, Color(0xFF1E3A56)),
-                                modifier = Modifier.height(26.dp)
-                            ) {
-                                Box(modifier = Modifier.padding(horizontal = 5.dp), contentAlignment = Alignment.Center) {
-                                    Text(
-                                        text = unixState.selectedService,
-                                        color = Color(0xFF38BDF8),
-                                        fontSize = 8.5.sp,
-                                        fontWeight = FontWeight.Bold
-                                    )
+                            // Service Selector Dropdown
+                            val unixServices = listOf(
+                                "✨ FB Fresh",
+                                "👥 FB Clone",
+                                "📸 Instagram (IG)",
+                                "💬 WhatsApp",
+                                "🔥 OTP Work"
+                            )
+
+                            Box(modifier = Modifier.weight(0.43f)) {
+                                Surface(
+                                    color = Color(0xFF0B141E),
+                                    shape = RoundedCornerShape(4.dp),
+                                    border = androidx.compose.foundation.BorderStroke(0.8.dp, Color(0xFF1E3A56)),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(26.dp)
+                                        .clickable { serviceDropdownExpanded = true }
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(horizontal = 4.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.SpaceBetween
+                                    ) {
+                                        Text(
+                                            text = unixState.selectedService,
+                                            color = Color(0xFF38BDF8),
+                                            fontSize = 8.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            maxLines = 1
+                                        )
+                                        Text(text = "▼", color = Color(0xFF38BDF8), fontSize = 7.sp)
+                                    }
+                                }
+
+                                DropdownMenu(
+                                    expanded = serviceDropdownExpanded,
+                                    onDismissRequest = { serviceDropdownExpanded = false },
+                                    modifier = Modifier.background(Color(0xFF0A1420))
+                                ) {
+                                    unixServices.forEach { srv ->
+                                        DropdownMenuItem(
+                                            text = { Text(srv, color = Color.White, fontSize = 10.sp) },
+                                            onClick = {
+                                                UnixSmsManager.setSelectedService(srv)
+                                                serviceDropdownExpanded = false
+                                            }
+                                        )
+                                    }
                                 }
                             }
 
                             // GET Action Button for Unix SMS
                             Surface(
                                 shape = RoundedCornerShape(4.dp),
-                                color = Color(0xFF0284C7),
+                                color = if (isUnixGettingNumber) Color(0xFF0369A1) else Color(0xFF0284C7),
                                 modifier = Modifier
                                     .height(26.dp)
-                                    .clickable {
+                                    .clickable(enabled = !isUnixGettingNumber) {
+                                        isUnixGettingNumber = true
                                         UnixSmsManager.getNumberForUser(
                                             context = context,
                                             countryCode = unixState.selectedCountry,
                                             service = unixState.selectedService
                                         ) { success, msg ->
+                                            isUnixGettingNumber = false
                                             Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
                                         }
                                     }
                             ) {
                                 Box(
-                                    modifier = Modifier.padding(horizontal = 8.dp),
+                                    modifier = Modifier.padding(horizontal = 7.dp),
                                     contentAlignment = Alignment.Center
                                 ) {
-                                    Text(
-                                        text = "GET",
-                                        color = Color.White,
-                                        fontWeight = FontWeight.Black,
-                                        fontSize = 10.sp
-                                    )
+                                    if (isUnixGettingNumber) {
+                                        CircularProgressIndicator(
+                                            color = Color.White,
+                                            strokeWidth = 1.5.dp,
+                                            modifier = Modifier.size(11.dp)
+                                        )
+                                    } else {
+                                        Text(
+                                            text = "GET",
+                                            color = Color.White,
+                                            fontWeight = FontWeight.Black,
+                                            fontSize = 9.5.sp
+                                        )
+                                    }
                                 }
                             }
                         }

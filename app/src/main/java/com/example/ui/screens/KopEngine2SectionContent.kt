@@ -876,6 +876,61 @@ private fun Kop2ProvisionedNumberCard(
                             )
                         }
                     }
+
+                    // Fresh / Taken Tag Badge
+                    when (item.fbTagType) {
+                        com.example.service.PhoneItem.TagType.FRESH -> {
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Surface(
+                                color = Color(0xFF0F3B20),
+                                shape = RoundedCornerShape(4.dp),
+                                border = BorderStroke(0.8.dp, Color(0xFF00E676))
+                            ) {
+                                Text(
+                                    text = "✨ FRESH",
+                                    color = Color(0xFF00E676),
+                                    fontSize = 8.5.sp,
+                                    fontWeight = FontWeight.ExtraBold,
+                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.5.dp)
+                                )
+                            }
+                        }
+                        com.example.service.PhoneItem.TagType.TAKEN -> {
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Surface(
+                                color = Color(0xFF381515),
+                                shape = RoundedCornerShape(4.dp),
+                                border = BorderStroke(0.8.dp, Color(0xFFFF5252))
+                            ) {
+                                Text(
+                                    text = "👥 TAKEN",
+                                    color = Color(0xFFFF5252),
+                                    fontSize = 8.5.sp,
+                                    fontWeight = FontWeight.ExtraBold,
+                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.5.dp)
+                                )
+                            }
+                        }
+                        com.example.service.PhoneItem.TagType.PENDING -> {
+                            if (item.fbStatus == "Checking...") {
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Surface(
+                                    color = Color(0xFF1E293B),
+                                    shape = RoundedCornerShape(4.dp),
+                                    border = BorderStroke(0.6.dp, Color(0xFF38BDF8))
+                                ) {
+                                    Text(
+                                        text = "⏳ CHECKING...",
+                                        color = Color(0xFF38BDF8),
+                                        fontSize = 8.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                                    )
+                                }
+                            }
+                        }
+                        else -> {}
+                    }
                     IconButton(
                         onClick = {
                             KopEngine2Manager.copyAndRemovePlus(context, item.number)

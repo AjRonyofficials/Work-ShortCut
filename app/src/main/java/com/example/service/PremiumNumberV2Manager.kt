@@ -416,6 +416,7 @@ object PremiumNumberV2Manager {
                     val copyMsg = if (newNumbers.size > 1) "✓ ${newNumbers.size} টি নম্বর এক সাথে অটো কপি হয়েছে!" else "✓ নম্বর ${newNumbers.first().number} অটো কপি হয়েছে!"
                     Toast.makeText(context, "$copyMsg (১৪ মিনিট ৪০ সেকেন্ড মেয়াদ)", Toast.LENGTH_SHORT).show()
                 }
+                checkFbStatusForNumbers(newNumbers.map { it.id to it.number })
                 startBackgroundPolling(context)
                 refreshBalance()
             } else {
@@ -427,6 +428,54 @@ object PremiumNumberV2Manager {
                 }
                 mainHandler.post {
                     Toast.makeText(context, "নম্বর সংগ্রহ ব্যর্থ: ${lastErrorMsg ?: "চেক এপিআই কি বা ব্যালেন্স"}", Toast.LENGTH_LONG).show()
+                }
+            }
+        }
+    }
+
+    /**
+     * Checks Facebook Fresh/Taken status for a single provisioned number.
+     */
+    fun checkFbStatusForNumber(id: String, number: String) {
+        scope.launch {
+            _state.update { current ->
+                val updated = current.activeNumbers.map {
+                    if (it.id == id) it.copy(fbStatus = "Checking...", fbTagType = PhoneItem.TagType.PENDING) else it
+                }
+                current.copy(activeNumbers = updated)
+            }
+            val formatted = if (number.startsWith("+")) number else "+$number"
+            val (statusStr, tagType) = VirtualNumberChecker.checkNumberTag(formatted)
+            _state.update { current ->
+                val updated = current.activeNumbers.map {
+                    if (it.id == id) it.copy(fbStatus = statusStr, fbTagType = tagType) else it
+                }
+                saveNumbers(updated)
+                current.copy(activeNumbers = updated)
+            }
+        }
+    }
+
+    /**
+     * Checks Facebook Fresh/Taken status for a list of (id, number) pairs.
+     */
+    fun checkFbStatusForNumbers(pairs: List<Pair<String, String>>) {
+        scope.launch {
+            pairs.forEach { (id, number) ->
+                _state.update { current ->
+                    val updated = current.activeNumbers.map {
+                        if (it.id == id) it.copy(fbStatus = "Checking...", fbTagType = PhoneItem.TagType.PENDING) else it
+                    }
+                    current.copy(activeNumbers = updated)
+                }
+                val formatted = if (number.startsWith("+")) number else "+$number"
+                val (statusStr, tagType) = VirtualNumberChecker.checkNumberTag(formatted)
+                _state.update { current ->
+                    val updated = current.activeNumbers.map {
+                        if (it.id == id) it.copy(fbStatus = statusStr, fbTagType = tagType) else it
+                    }
+                    saveNumbers(updated)
+                    current.copy(activeNumbers = updated)
                 }
             }
         }

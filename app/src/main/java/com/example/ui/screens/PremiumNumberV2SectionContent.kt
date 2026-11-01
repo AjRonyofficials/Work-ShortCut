@@ -1758,14 +1758,68 @@ fun PremiumV2NumberCard(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(
-                    text = item.number,
-                    color = Color.White,
-                    fontSize = 15.sp,
-                    fontWeight = FontWeight.Black,
-                    fontFamily = FontFamily.Monospace,
-                    letterSpacing = 0.5.sp
-                )
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text(
+                        text = item.number,
+                        color = Color.White,
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Black,
+                        fontFamily = FontFamily.Monospace,
+                        letterSpacing = 0.5.sp
+                    )
+
+                    // Fresh / Taken Tag Badge
+                    when (item.fbTagType) {
+                        com.example.service.PhoneItem.TagType.FRESH -> {
+                            Surface(
+                                color = Color(0xFF0F3B20),
+                                shape = RoundedCornerShape(4.dp),
+                                border = BorderStroke(0.8.dp, Color(0xFF00E676))
+                            ) {
+                                Text(
+                                    text = "✨ FRESH",
+                                    color = Color(0xFF00E676),
+                                    fontSize = 8.5.sp,
+                                    fontWeight = FontWeight.ExtraBold,
+                                    modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.5.dp)
+                                )
+                            }
+                        }
+                        com.example.service.PhoneItem.TagType.TAKEN -> {
+                            Surface(
+                                color = Color(0xFF381515),
+                                shape = RoundedCornerShape(4.dp),
+                                border = BorderStroke(0.8.dp, Color(0xFFFF5252))
+                            ) {
+                                Text(
+                                    text = "👥 TAKEN",
+                                    color = Color(0xFFFF5252),
+                                    fontSize = 8.5.sp,
+                                    fontWeight = FontWeight.ExtraBold,
+                                    modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.5.dp)
+                                )
+                            }
+                        }
+                        com.example.service.PhoneItem.TagType.PENDING -> {
+                            if (item.fbStatus == "Checking...") {
+                                Surface(
+                                    color = Color(0xFF1E293B),
+                                    shape = RoundedCornerShape(4.dp),
+                                    border = BorderStroke(0.6.dp, Color(0xFF38BDF8))
+                                ) {
+                                    Text(
+                                        text = "⏳ CHECKING...",
+                                        color = Color(0xFF38BDF8),
+                                        fontSize = 8.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                                    )
+                                }
+                            }
+                        }
+                        else -> {}
+                    }
+                }
 
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     Surface(

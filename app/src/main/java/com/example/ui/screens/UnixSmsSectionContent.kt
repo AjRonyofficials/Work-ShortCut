@@ -107,7 +107,7 @@ fun UnixSmsSectionContent(
     val unixState by UnixSmsManager.state.collectAsState()
 
     var selectedSubTab by remember { mutableIntStateOf(0) } // 0: Get Number, 1: Live Console
-    var selectedService by remember { mutableStateOf(UNIX_SUPPORTED_SERVICES.first()) }
+    var selectedService by remember(unixState.selectedService) { mutableStateOf(unixState.selectedService) }
     var selectedCountryCode by remember(unixState.selectedCountry) { mutableStateOf(unixState.selectedCountry) }
     var selectedNumberType by remember { mutableStateOf("ALL") } // "ALL", "Fresh", "Old"
     var isRequestingNumber by remember { mutableStateOf(false) }
@@ -277,6 +277,7 @@ fun UnixSmsSectionContent(
                                     selectedService = sName
                                     selectedCountryCode = "ALL"
                                     selectedNumberType = "ALL"
+                                    UnixSmsManager.setSelectedService(sName)
                                     UnixSmsManager.setSelectedCountry("ALL")
                                 }
                             ) {
@@ -441,6 +442,7 @@ fun UnixSmsSectionContent(
                                         selectedCountryCode = c.code
                                         selectedNumberType = c.numberType
                                         UnixSmsManager.setSelectedCountry(c.code)
+                                        UnixSmsManager.setSelectedService(selectedService)
                                     }
                                 ) {
                                     Column(

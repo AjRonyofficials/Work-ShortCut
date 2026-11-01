@@ -612,9 +612,9 @@ object OverlayStateManager {
     }
 
     fun setCustomAppTitle(title: String) {
-        val clean = title.trim().ifEmpty { "Work ShortCut" }
-        _uiState.update { it.copy(customAppTitle = clean) }
-        prefs?.edit()?.putString("custom_app_title", clean)?.apply()
+        // App name is permanently locked to "Work ShortCut"
+        _uiState.update { it.copy(customAppTitle = "Work ShortCut") }
+        prefs?.edit()?.putString("custom_app_title", "Work ShortCut")?.apply()
     }
 
     fun toggleClearDataOverlayExpanded() {

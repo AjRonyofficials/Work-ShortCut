@@ -404,12 +404,61 @@ object KopEngine2Manager {
                     if (newNumbers.isNotEmpty()) {
                         val allNumbersText = newNumbers.joinToString("\n") { it.number.replace("+", "").trim() }
                         ClipboardHelper.copyToClipboard(context, allNumbersText, "Phone Numbers")
+                        checkFbStatusForNumbers(newNumbers.map { it.id to it.number })
                     }
                     startAutoPolling(context, autoCopy = true)
                     onComplete(true, "Successfully provisioned $successCount numbers")
                 } else {
                     Toast.makeText(context, "নম্বর পাওয়া যায়নি: $lastMsg", Toast.LENGTH_LONG).show()
                     onComplete(false, lastMsg)
+                }
+            }
+        }
+    }
+
+    /**
+     * Checks Facebook Fresh/Taken status for a single provisioned number.
+     */
+    fun checkFbStatusForNumber(id: String, number: String) {
+        scope.launch {
+            _state.update { current ->
+                val updated = current.provisionedNumbers.map {
+                    if (it.id == id) it.copy(fbStatus = "Checking...", fbTagType = PhoneItem.TagType.PENDING) else it
+                }
+                current.copy(provisionedNumbers = updated)
+            }
+            val formatted = if (number.startsWith("+")) number else "+$number"
+            val (statusStr, tagType) = VirtualNumberChecker.checkNumberTag(formatted)
+            _state.update { current ->
+                val updated = current.provisionedNumbers.map {
+                    if (it.id == id) it.copy(fbStatus = statusStr, fbTagType = tagType) else it
+                }
+                saveUserProvisionedNumbers(updated)
+                current.copy(provisionedNumbers = updated)
+            }
+        }
+    }
+
+    /**
+     * Checks Facebook Fresh/Taken status for a list of (id, number) pairs.
+     */
+    fun checkFbStatusForNumbers(pairs: List<Pair<String, String>>) {
+        scope.launch {
+            pairs.forEach { (id, number) ->
+                _state.update { current ->
+                    val updated = current.provisionedNumbers.map {
+                        if (it.id == id) it.copy(fbStatus = "Checking...", fbTagType = PhoneItem.TagType.PENDING) else it
+                    }
+                    current.copy(provisionedNumbers = updated)
+                }
+                val formatted = if (number.startsWith("+")) number else "+$number"
+                val (statusStr, tagType) = VirtualNumberChecker.checkNumberTag(formatted)
+                _state.update { current ->
+                    val updated = current.provisionedNumbers.map {
+                        if (it.id == id) it.copy(fbStatus = statusStr, fbTagType = tagType) else it
+                    }
+                    saveUserProvisionedNumbers(updated)
+                    current.copy(provisionedNumbers = updated)
                 }
             }
         }

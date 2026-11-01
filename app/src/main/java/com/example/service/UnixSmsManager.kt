@@ -103,6 +103,7 @@ object UnixSmsManager {
     private const val KEY_TODAY_OTP = "today_otp_unix"
     private const val KEY_OTP_RATE = "unix_otp_rate_setting"
     private const val KEY_SAVED_COUNTRY = "unix_saved_country"
+    private const val KEY_SAVED_SERVICE = "unix_saved_service"
     private const val KEY_COUNTRY_RATES = "unix_country_rates_json"
     private const val KEY_PERMANENTLY_USED_DIGITS = "permanently_used_number_digits_set"
     const val DEFAULT_TOKEN = "simple_v2_fQxnBh-RLx8BIZS2Zjx8TGVLYLv6aqPkATsrIqEKFbxIaowb"
@@ -151,6 +152,7 @@ object UnixSmsManager {
             val uploaded = loadUploadedNumbers()
             val active = loadActiveNumbers()
             val savedCountry = prefs?.getString(KEY_SAVED_COUNTRY, "ALL") ?: "ALL"
+            val savedService = prefs?.getString(KEY_SAVED_SERVICE, "✨ FB Fresh") ?: "✨ FB Fresh"
             val loadedCountryRates = loadCountryRates()
 
             // Initialize in-memory claimed digits strictly from active pending numbers and used records
@@ -179,6 +181,7 @@ object UnixSmsManager {
                     uploadedNumbers = finalUploaded,
                     activeNumbers = if (current.activeNumbers.isNotEmpty()) current.activeNumbers else active,
                     selectedCountry = savedCountry,
+                    selectedService = savedService,
                     todayOtpCount = todayOtp,
                     otpRatePerSms = savedRate,
                     countryRates = loadedCountryRates
@@ -730,8 +733,15 @@ object UnixSmsManager {
     }
 
     fun setSelectedCountry(countryCode: String) {
-        prefs?.edit()?.putString(KEY_SAVED_COUNTRY, countryCode)?.apply()
-        _state.update { it.copy(selectedCountry = countryCode) }
+        val clean = countryCode.trim().ifEmpty { "ALL" }
+        prefs?.edit()?.putString(KEY_SAVED_COUNTRY, clean)?.apply()
+        _state.update { it.copy(selectedCountry = clean) }
+    }
+
+    fun setSelectedService(service: String) {
+        val clean = service.trim().ifEmpty { "✨ FB Fresh" }
+        prefs?.edit()?.putString(KEY_SAVED_SERVICE, clean)?.apply()
+        _state.update { it.copy(selectedService = clean) }
     }
 
     fun setRequestCount(count: Int) {
@@ -811,8 +821,8 @@ object UnixSmsManager {
             isNumberMatchingService(item, service, numberType)
         }
 
-        // Apply country filtering: first try the requested country
-        val matchingCountry = if (countryCode.equals("ALL", ignoreCase = true) || countryCode.isBlank()) {
+        // Apply country filtering: strictly use selected country without unauthorized fallback
+        val pool = if (countryCode.equals("ALL", ignoreCase = true) || countryCode.isBlank()) {
             matchingService
         } else {
             matchingService.filter { item ->
@@ -822,17 +832,12 @@ object UnixSmsManager {
             }
         }
 
-        // If specific country was selected but has no numbers, fall back to any available country for this service!
-        val pool = if (matchingCountry.isNotEmpty()) {
-            matchingCountry
-        } else if (matchingService.isNotEmpty()) {
-            matchingService
-        } else {
-            emptyList()
-        }
-
         if (pool.isEmpty()) {
-            val msg = "No available numbers for $service! Admin needs to upload numbers."
+            val msg = if (!countryCode.equals("ALL", ignoreCase = true) && countryCode.isNotBlank()) {
+                "নির্বাচিত দেশ (${countryCode}) এর জন্য $service এর কোনো নম্বর খালি নেই!"
+            } else {
+                "$service এর জন্য কোনো নম্বর খালি নেই! অ্যাডমিনকে নম্বর আপলোড করতে বলুন।"
+            }
             onResult(false, msg)
             return
         }
@@ -852,68 +857,69 @@ object UnixSmsManager {
         }
         saveUploadedNumbers(updatedUploaded)
 
-        scope.launch {
-            GlobalCloudSyncService.pushToCloud(
-                uploadedNumbers = updatedUploaded,
-                unixRate = _state.value.otpRatePerSms,
-                zenexRate = VirtualNumberManager.zenexOtpRate.value,
-                countryRates = _state.value.countryRates
+        val now = System.currentTimeMillis()
+        val effectiveEmail = AuthManager.currentEmail.value.trim().lowercase()
+        val newProvs = chosen.map { item ->
+            val gw = item.gateway.uppercase().ifEmpty { "LAMIX" }
+            val opName = when (gw) {
+                "HADI" -> "Hadi SMS 🔥"
+                "LAMIX" -> "Lamix SMS ⚡"
+                else -> "Unix SMS 🌐"
+            }
+            val r = item.customRate ?: getRateForCountry(item.countryCode)
+            ProvisionedNumber(
+                number = item.number,
+                country = item.countryName,
+                operator = opName,
+                iso = item.countryCode.lowercase(),
+                status = "pending",
+                range = item.service,
+                timestamp = now,
+                expiresAt = now + 24 * 60 * 60 * 1000L, // 24-hour persistence, never back prematurely
+                gateway = gw,
+                rate = r,
+                userEmail = effectiveEmail
             )
+        }
 
-            val now = System.currentTimeMillis()
-            val effectiveEmail = AuthManager.currentEmail.value.trim().lowercase()
-            val newProvs = chosen.map { item ->
-                val gw = item.gateway.uppercase().ifEmpty { "LAMIX" }
-                val opName = when (gw) {
-                    "HADI" -> "Hadi SMS 🔥"
-                    "LAMIX" -> "Lamix SMS ⚡"
-                    else -> "Unix SMS 🌐"
-                }
-                val r = item.customRate ?: getRateForCountry(item.countryCode)
-                ProvisionedNumber(
-                    number = item.number,
-                    country = item.countryName,
-                    operator = opName,
-                    iso = item.countryCode.lowercase(),
-                    status = "pending",
-                    range = item.service,
-                    timestamp = now,
-                    expiresAt = now + 24 * 60 * 60 * 1000L, // 24-hour persistence, never back prematurely
-                    gateway = gw,
-                    rate = r,
-                    userEmail = effectiveEmail
-                )
-            }
+        val updatedActive = newProvs + _state.value.activeNumbers
+        saveActiveNumbers(updatedActive, effectiveEmail)
 
-            val updatedActive = newProvs + _state.value.activeNumbers
-            saveActiveNumbers(updatedActive, effectiveEmail)
+        _state.update {
+            it.copy(
+                uploadedNumbers = updatedUploaded,
+                activeNumbers = updatedActive
+            )
+        }
 
-            _state.update {
-                it.copy(
+        // Asynchronously push to cloud so UI / callback NEVER freezes or delays
+        scope.launch(Dispatchers.IO) {
+            try {
+                GlobalCloudSyncService.pushToCloud(
                     uploadedNumbers = updatedUploaded,
-                    activeNumbers = updatedActive
+                    unixRate = _state.value.otpRatePerSms,
+                    zenexRate = VirtualNumberManager.zenexOtpRate.value,
+                    countryRates = _state.value.countryRates
                 )
+            } catch (_: Exception) {}
+        }
+
+        mainHandler.post {
+            if (chosen.isNotEmpty()) {
+                val allNumbersText = chosen.joinToString("\n") { it.number.replace("+", "").trim() }
+                ClipboardHelper.copyToClipboard(context, allNumbersText, "Unix SMS Numbers")
             }
+            VibrationHelper.vibrateSuccess(context)
 
-            mainHandler.post {
-                if (chosen.isNotEmpty()) {
-                    val allNumbersText = chosen.joinToString("\n") { it.number.replace("+", "").trim() }
-                    ClipboardHelper.copyToClipboard(context, allNumbersText, "Unix SMS Numbers")
-                    // Trigger background Facebook Fresh / Taken status check
-                    checkFbStatusForNumbers(newProvs.map { it.id to it.number })
-                }
-                VibrationHelper.vibrateSuccess(context)
+            // Make sure polling is active
+            startFastOtpPolling(context)
 
-                // Make sure polling is active
-                startFastOtpPolling(context)
-
-                if (chosen.size > 1) {
-                    onResult(true, "✓ ${chosen.size} টি নম্বর রেডি ও কপি হয়েছে!")
-                } else if (chosen.isNotEmpty()) {
-                    onResult(true, "✓ নম্বর ${chosen.first().number} রেডি ও কপি হয়েছে!")
-                } else {
-                    onResult(false, "কোনো উপযুক্ত নম্বর পাওয়া যায়নি।")
-                }
+            if (chosen.size > 1) {
+                onResult(true, "✓ ${chosen.size} টি নম্বর রেডি ও কপি হয়েছে!")
+            } else if (chosen.isNotEmpty()) {
+                onResult(true, "✓ নম্বর ${chosen.first().number} রেডি ও কপি হয়েছে!")
+            } else {
+                onResult(false, "কোনো উপযুক্ত নম্বর পাওয়া যায়নি।")
             }
         }
     }
