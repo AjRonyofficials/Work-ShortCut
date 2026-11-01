@@ -190,7 +190,7 @@ fun MainScreen(
                             Spacer(modifier = Modifier.width(8.dp))
                             Column {
                                 Text(
-                                    text = "Work ShortCut",
+                                    text = state.customAppTitle,
                                     fontWeight = FontWeight.ExtraBold,
                                     fontSize = 16.sp,
                                     color = Color.White,

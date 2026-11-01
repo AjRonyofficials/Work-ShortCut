@@ -118,7 +118,8 @@ data class OverlayUiState(
     val autoCopyOtp: Boolean = true,
     val otpSoundVibrationEnabled: Boolean = true,
     val uploadNumberTxtLocked: Boolean = true,
-    val overlayScale: Float = 1.0f
+    val overlayScale: Float = 1.0f,
+    val customAppTitle: String = "Work ShortCut"
 )
 
 object OverlayStateManager {
@@ -332,6 +333,7 @@ object OverlayStateManager {
                     otpSoundVibrationEnabled = p.getBoolean("otp_sound_vibration_enabled", true),
                     uploadNumberTxtLocked = p.getBoolean("upload_number_txt_locked", true),
                     overlayScale = p.getFloat("overlay_scale_factor", 1.0f).coerceIn(0.20f, 2.00f),
+                    customAppTitle = p.getString("custom_app_title", "Work ShortCut") ?: "Work ShortCut",
                     proxyState = it.proxyState.copy(
                         profileName = profileName,
                         host = proxyHost,
@@ -596,6 +598,23 @@ object OverlayStateManager {
         _uiState.update { it.copy(selectedClearDataApps = current) }
         val serialized = current.joinToString(";;") { "${it.appName}::${it.packageName}::${it.isLiteStorageApp}" }
         prefs?.edit()?.putString("clear_data_apps_list", serialized)?.apply()
+    }
+
+    fun renameClearDataApp(packageName: String, newName: String) {
+        val clean = newName.trim()
+        if (clean.isBlank()) return
+        val current = _uiState.value.selectedClearDataApps.map {
+            if (it.packageName == packageName) it.copy(appName = clean) else it
+        }
+        _uiState.update { it.copy(selectedClearDataApps = current) }
+        val serialized = current.joinToString(";;") { "${it.appName}::${it.packageName}::${it.isLiteStorageApp}" }
+        prefs?.edit()?.putString("clear_data_apps_list", serialized)?.apply()
+    }
+
+    fun setCustomAppTitle(title: String) {
+        val clean = title.trim().ifEmpty { "Work ShortCut" }
+        _uiState.update { it.copy(customAppTitle = clean) }
+        prefs?.edit()?.putString("custom_app_title", clean)?.apply()
     }
 
     fun toggleClearDataOverlayExpanded() {

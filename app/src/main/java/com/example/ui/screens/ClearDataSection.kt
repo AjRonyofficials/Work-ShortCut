@@ -23,6 +23,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CleaningServices
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DeleteSweep
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.OpenInNew
 import androidx.compose.material.icons.filled.Search
@@ -83,6 +84,8 @@ fun ClearDataSection(
     val unixState by UnixSmsManager.state.collectAsState()
     var searchQuery by remember { mutableStateOf("") }
     val allInstalledApps = remember { mutableStateListOf<AppInfoItem>() }
+    var appToRename by remember { mutableStateOf<AppInfoItem?>(null) }
+    var newNameInput by remember { mutableStateOf("") }
 
     LaunchedEffect(Unit) {
         val apps = AppManagerHelper.getInstalledLauncherApps(context)
@@ -149,6 +152,118 @@ fun ClearDataSection(
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
+                        }
+                    }
+                }
+            }
+        }
+
+        // App Name Customization Card (অ্যাপের নাম পরিবর্তন)
+        item {
+            var customNameText by remember(state.customAppTitle) { mutableStateOf(state.customAppTitle) }
+
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = Color(0xFF101C2B)
+                ),
+                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF1E3A56))
+            ) {
+                Column(modifier = Modifier.padding(14.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Default.Edit,
+                                contentDescription = null,
+                                tint = Color(0xFF38BDF8),
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "অ্যাপের নাম পরিবর্তন (App Name)",
+                                color = Color.White,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 13.sp
+                            )
+                        }
+
+                        Surface(
+                            color = Color(0xFF0284C7).copy(alpha = 0.2f),
+                            shape = RoundedCornerShape(6.dp),
+                            border = androidx.compose.foundation.BorderStroke(0.8.dp, Color(0xFF38BDF8).copy(alpha = 0.5f))
+                        ) {
+                            Text(
+                                text = state.customAppTitle,
+                                color = Color(0xFF38BDF8),
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.ExtraBold,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.5.dp)
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text(
+                        text = "অ্যাপের প্রদর্শিত নাম পরিবর্তন করুন। এটি সাথে সাথে অ্যাপবার, ওভারলে ও নোটিফিকেশনে আপডেট হবে।",
+                        fontSize = 11.sp,
+                        color = Color(0xFF94A3B8)
+                    )
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        OutlinedTextField(
+                            value = customNameText,
+                            onValueChange = { customNameText = it },
+                            placeholder = { Text("যেমন: Work ShortCut, My Pro App...", fontSize = 11.sp, color = Color(0xFF64748B)) },
+                            singleLine = true,
+                            colors = androidx.compose.material3.OutlinedTextFieldDefaults.colors(
+                                focusedTextColor = Color.White,
+                                unfocusedTextColor = Color.White,
+                                focusedBorderColor = Color(0xFF38BDF8),
+                                unfocusedBorderColor = Color(0xFF1E2D40),
+                                focusedContainerColor = Color(0xFF090E17),
+                                unfocusedContainerColor = Color(0xFF090E17)
+                            ),
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier.weight(1f)
+                        )
+
+                        Button(
+                            onClick = {
+                                val clean = customNameText.trim()
+                                if (clean.isNotBlank()) {
+                                    OverlayStateManager.setCustomAppTitle(clean)
+                                    Toast.makeText(context, "✓ অ্যাপের নাম সেট হয়েছে: $clean", Toast.LENGTH_SHORT).show()
+                                }
+                            },
+                            shape = RoundedCornerShape(10.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0284C7))
+                        ) {
+                            Text("Save", fontSize = 11.5.sp, fontWeight = FontWeight.Bold)
+                        }
+
+                        if (state.customAppTitle != "Work ShortCut") {
+                            OutlinedButton(
+                                onClick = {
+                                    customNameText = "Work ShortCut"
+                                    OverlayStateManager.setCustomAppTitle("Work ShortCut")
+                                    Toast.makeText(context, "✓ ডিফল্ট নাম রিসেট হয়েছে", Toast.LENGTH_SHORT).show()
+                                },
+                                shape = RoundedCornerShape(10.dp),
+                                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF64748B))
+                            ) {
+                                Text("Reset", fontSize = 11.sp, color = Color(0xFF94A3B8))
+                            }
                         }
                     }
                 }
@@ -660,6 +775,21 @@ fun ClearDataSection(
                                     }
 
                                     Row(verticalAlignment = Alignment.CenterVertically) {
+                                        IconButton(
+                                            onClick = {
+                                                appToRename = itemApp
+                                                newNameInput = itemApp.appName
+                                            },
+                                            modifier = Modifier.size(34.dp)
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.Edit,
+                                                contentDescription = "Rename App",
+                                                tint = BrandSky,
+                                                modifier = Modifier.size(16.dp)
+                                            )
+                                        }
+
                                         Button(
                                             onClick = {
                                                 OverlayStateManager.executeClearDataForApp(context, itemApp)
@@ -852,5 +982,46 @@ fun ClearDataSection(
                 }
             }
         }
+    }
+
+    if (appToRename != null) {
+        val targetApp = appToRename!!
+        AlertDialog(
+            onDismissRequest = { appToRename = null },
+            title = {
+                Text("অ্যাপের নাম পরিবর্তন করুন", fontWeight = FontWeight.Bold, fontSize = 15.sp)
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("নতুন নাম লিখুন (${targetApp.packageName}):", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    OutlinedTextField(
+                        value = newNameInput,
+                        onValueChange = { newNameInput = it },
+                        singleLine = true,
+                        placeholder = { Text("যেমন: FB Fresh 1, FB Clone 2...") },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val clean = newNameInput.trim()
+                        if (clean.isNotBlank()) {
+                            OverlayStateManager.renameClearDataApp(targetApp.packageName, clean)
+                            Toast.makeText(context, "✓ নাম পরিবর্তন হয়েছে: $clean", Toast.LENGTH_SHORT).show()
+                            appToRename = null
+                        }
+                    }
+                ) {
+                    Text("Save")
+                }
+            },
+            dismissButton = {
+                OutlinedButton(onClick = { appToRename = null }) {
+                    Text("Cancel")
+                }
+            }
+        )
     }
 }

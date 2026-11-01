@@ -275,7 +275,12 @@ fun UnixSmsSectionContent(
                                 color = if (isSelected) accentColor.copy(alpha = 0.25f) else Color(0xFF0A111A),
                                 shape = RoundedCornerShape(10.dp),
                                 border = BorderStroke(1.dp, if (isSelected) accentColor else Color(0xFF1D2F42)),
-                                modifier = Modifier.clickable { selectedService = sName }
+                                modifier = Modifier.clickable {
+                                    selectedService = sName
+                                    selectedCountryCode = "ALL"
+                                    selectedNumberType = "ALL"
+                                    UnixSmsManager.setSelectedCountry("ALL")
+                                }
                             ) {
                                 Column(
                                     modifier = Modifier.padding(vertical = 8.dp, horizontal = 10.dp),

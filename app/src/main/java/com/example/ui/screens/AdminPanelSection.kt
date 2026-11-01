@@ -2775,6 +2775,30 @@ fun AdminUnixSmsCard(
                         fontWeight = FontWeight.Bold
                     )
                 }
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Button(
+                    onClick = {
+                        val resetCount = UnixSmsManager.resetUsedNumbersToAvailable { count ->
+                            Toast.makeText(context, "✓ $count টি ব্যবহৃত নাম্বার পুনরায় সচল ও এভেইলেবল করা হয়েছে!", Toast.LENGTH_LONG).show()
+                        }
+                        if (resetCount == 0) {
+                            Toast.makeText(context, "কোনো ব্যবহৃত নাম্বার পাওয়া যায়নি", Toast.LENGTH_SHORT).show()
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0284C7)),
+                    shape = RoundedCornerShape(10.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = "🔄 ব্যবহৃত নম্বরগুলো সচল করুন (RESET USED TO AVAILABLE)",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
             }
         }
 

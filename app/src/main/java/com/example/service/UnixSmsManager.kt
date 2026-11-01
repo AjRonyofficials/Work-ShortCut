@@ -153,14 +153,13 @@ object UnixSmsManager {
             val savedCountry = prefs?.getString(KEY_SAVED_COUNTRY, "ALL") ?: "ALL"
             val loadedCountryRates = loadCountryRates()
 
-            // Load persistent used numbers digits
-            val savedUsedDigits = prefs?.getStringSet(KEY_PERMANENTLY_USED_DIGITS, emptySet()) ?: emptySet()
-            permanentlyUsedDigits.addAll(savedUsedDigits)
-            uploaded.filter { it.isUsed || !it.otpCode.isNullOrEmpty() }.forEach {
+            // Initialize in-memory claimed digits strictly from active pending numbers and used records
+            permanentlyUsedDigits.clear()
+            active.filter { it.status == "pending" }.forEach {
                 val d = it.number.replace("[^0-9]".toRegex(), "")
                 if (d.length >= 7) permanentlyUsedDigits.add(d)
             }
-            active.forEach {
+            uploaded.filter { it.isUsed }.forEach {
                 val d = it.number.replace("[^0-9]".toRegex(), "")
                 if (d.length >= 7) permanentlyUsedDigits.add(d)
             }
@@ -170,10 +169,7 @@ object UnixSmsManager {
                 val finalUploaded = if (current.uploadedNumbers.isNotEmpty()) {
                     current.uploadedNumbers
                 } else {
-                    uploaded.map { item ->
-                        val d = item.number.replace("[^0-9]".toRegex(), "")
-                        if (permanentlyUsedDigits.contains(d)) item.copy(isUsed = true) else item
-                    }
+                    uploaded
                 }
                 current.copy(
                     apiToken = token,
@@ -252,20 +248,26 @@ object UnixSmsManager {
             val key = "${cleanDigits}_${cloudItem.numberType}_${cloudItem.service.lowercase()}"
             val local = allNumbersMap[key]
 
-            val isClaimedLocally = permanentlyUsedDigits.contains(cleanDigits) ||
-                    local?.isUsed == true ||
-                    activeNumbers.any { isPhoneNumberMatch(it.number, cleanDigits) }
+            val isActiveOnDevice = activeNumbers.any { it.status == "pending" && isPhoneNumberMatch(it.number, cleanDigits) }
+            val isUsed = if (isActiveOnDevice) {
+                true
+            } else if (!cloudItem.isUsed) {
+                permanentlyUsedDigits.remove(cleanDigits)
+                false
+            } else {
+                cloudItem.isUsed || local?.isUsed == true
+            }
 
-            val isPermanentlyUsed = cloudItem.isUsed || isClaimedLocally
-            if (isPermanentlyUsed && cleanDigits.length >= 7) {
+            if (isUsed && cleanDigits.length >= 7) {
                 permanentlyUsedDigits.add(cleanDigits)
             }
 
             if (local == null) {
-                allNumbersMap[key] = cloudItem.copy(isUsed = isPermanentlyUsed)
+                allNumbersMap[key] = cloudItem.copy(isUsed = isUsed)
             } else {
-                allNumbersMap[key] = local.copy(
-                    isUsed = isPermanentlyUsed,
+                allNumbersMap[key] = cloudItem.copy(
+                    id = local.id.ifEmpty { cloudItem.id },
+                    isUsed = isUsed,
                     otpCode = cloudItem.otpCode ?: local.otpCode,
                     otpMessage = cloudItem.otpMessage ?: local.otpMessage
                 )
@@ -530,38 +532,97 @@ object UnixSmsManager {
             numberType.contains("clone", ignoreCase = true) -> "FB Clone"
             else -> "Fresh"
         }
-        val existingKeys = _state.value.uploadedNumbers.map {
-            "${it.number.replace("[^0-9]".toRegex(), "")}_${it.numberType}_${it.service.lowercase()}"
-        }.toSet()
-        val toAdd = lines.filterNot { num ->
-            existingKeys.contains("${num}_${targetType}_${service.lowercase()}")
-        }.map { num ->
-            UploadedNumberItem(
-                number = num,
-                countryCode = countryCode,
-                countryName = countryName,
-                flag = flag,
-                service = service,
-                gateway = gateway.uppercase(),
-                customRate = customRate,
-                numberType = targetType
-            )
+
+        // Unconditionally remove all uploaded digits from permanentlyUsedDigits so they are 100% available
+        lines.forEach { permanentlyUsedDigits.remove(it) }
+        savePermanentlyUsedDigits()
+
+        val existingList = _state.value.uploadedNumbers
+        val existingByDigits = existingList.associateBy { it.number.replace("[^0-9]".toRegex(), "") }.toMutableMap()
+        val now = System.currentTimeMillis()
+        var processedCount = 0
+
+        for (num in lines) {
+            val existing = existingByDigits[num]
+            if (existing != null) {
+                // Refresh existing number: mark as NOT used, clear OTP, update to new service/type/country
+                existingByDigits[num] = existing.copy(
+                    countryCode = countryCode,
+                    countryName = countryName,
+                    flag = flag,
+                    service = service,
+                    gateway = gateway.uppercase(),
+                    customRate = customRate,
+                    numberType = targetType,
+                    isUsed = false,
+                    otpCode = null,
+                    otpMessage = null,
+                    addedAt = now
+                )
+            } else {
+                // Brand new number
+                existingByDigits[num] = UploadedNumberItem(
+                    number = num,
+                    countryCode = countryCode,
+                    countryName = countryName,
+                    flag = flag,
+                    service = service,
+                    gateway = gateway.uppercase(),
+                    customRate = customRate,
+                    numberType = targetType,
+                    isUsed = false,
+                    otpCode = null,
+                    otpMessage = null,
+                    addedAt = now
+                )
+            }
+            processedCount++
         }
 
-        if (toAdd.isNotEmpty()) {
-            val updated = _state.value.uploadedNumbers + toAdd
-            _state.update { it.copy(uploadedNumbers = updated) }
-            saveUploadedNumbers(updated)
-            // Push globally so all users receive the new numbers immediately
-            GlobalCloudSyncService.pushToCloud(
-                uploadedNumbers = updated,
-                unixRate = _state.value.otpRatePerSms,
-                zenexRate = VirtualNumberManager.zenexOtpRate.value,
-                countryRates = _state.value.countryRates
-            )
-        }
+        val updated = existingByDigits.values.toList()
+        _state.update { it.copy(uploadedNumbers = updated) }
+        saveUploadedNumbers(updated)
 
-        return toAdd.size
+        // Push globally so all users receive the new/refreshed numbers immediately
+        GlobalCloudSyncService.pushToCloud(
+            uploadedNumbers = updated,
+            unixRate = _state.value.otpRatePerSms,
+            zenexRate = VirtualNumberManager.zenexOtpRate.value,
+            countryRates = _state.value.countryRates
+        )
+
+        return processedCount
+    }
+
+    /**
+     * Admin: Reset all used uploaded numbers back to available status
+     */
+    fun resetUsedNumbersToAvailable(onComplete: ((Int) -> Unit)? = null): Int {
+        permanentlyUsedDigits.clear()
+        savePermanentlyUsedDigits()
+        val activeNumbers = _state.value.activeNumbers
+        val current = _state.value.uploadedNumbers
+        var count = 0
+        val updated = current.map { item ->
+            val cleanDigits = item.number.replace("[^0-9]".toRegex(), "")
+            val isActive = activeNumbers.any { it.status == "pending" && isPhoneNumberMatch(it.number, cleanDigits) }
+            if (item.isUsed && !isActive) {
+                count++
+                item.copy(isUsed = false, otpCode = null, otpMessage = null)
+            } else {
+                item
+            }
+        }
+        _state.update { it.copy(uploadedNumbers = updated) }
+        saveUploadedNumbers(updated)
+        GlobalCloudSyncService.pushToCloud(
+            uploadedNumbers = updated,
+            unixRate = _state.value.otpRatePerSms,
+            zenexRate = VirtualNumberManager.zenexOtpRate.value,
+            countryRates = _state.value.countryRates,
+            onComplete = { onComplete?.invoke(count) }
+        )
+        return count
     }
 
     /**
@@ -570,8 +631,13 @@ object UnixSmsManager {
      */
     fun deleteNumbersByCountry(countryCode: String, onComplete: ((Boolean) -> Unit)? = null) {
         val updated = if (countryCode.equals("ALL", ignoreCase = true)) {
+            permanentlyUsedDigits.clear()
+            savePermanentlyUsedDigits()
             emptyList()
         } else {
+            val toDelete = _state.value.uploadedNumbers.filter { it.countryCode.equals(countryCode, ignoreCase = true) }
+            toDelete.forEach { permanentlyUsedDigits.remove(it.number.replace("[^0-9]".toRegex(), "")) }
+            savePermanentlyUsedDigits()
             _state.value.uploadedNumbers.filterNot { it.countryCode.equals(countryCode, ignoreCase = true) }
         }
         // User's active taken numbers, OTP success records, and balances are 100% preserved
@@ -594,6 +660,11 @@ object UnixSmsManager {
      * Automatically and instantly syncs deletion to Supabase and all user devices.
      */
     fun deleteSingleNumber(id: String, onComplete: ((Boolean) -> Unit)? = null) {
+        val target = _state.value.uploadedNumbers.find { it.id == id }
+        if (target != null) {
+            permanentlyUsedDigits.remove(target.number.replace("[^0-9]".toRegex(), ""))
+            savePermanentlyUsedDigits()
+        }
         val updated = _state.value.uploadedNumbers.filterNot { it.id == id }
         val updatedActive = _state.value.activeNumbers
 
@@ -666,31 +737,45 @@ object UnixSmsManager {
         val s = item.service.trim()
         val t = item.numberType.trim()
 
-        if (targetNumberType != "ALL") {
-            if (targetNumberType.contains("pc", true) && !t.contains("pc", true)) return false
-            if ((targetNumberType.contains("fresh", true) || targetNumberType.contains("new", true)) && !t.contains("fresh", true) && !t.contains("new", true)) return false
-            if (targetNumberType.contains("clone", true) && !t.contains("clone", true) && !t.contains("pc", true)) return false
+        val serviceMatches = when {
+            serviceLabel.equals("ALL", ignoreCase = true) || serviceLabel.isBlank() -> true
+            serviceLabel.contains("Fresh", ignoreCase = true) || serviceLabel.contains("FB New", ignoreCase = true) -> {
+                val isFbService = s.contains("FB", true) || s.contains("Face", true) || s.contains("Fresh", true) || s.isBlank() || s.equals("ALL", true)
+                val isFreshType = t.contains("Fresh", true) || t.contains("New", true) || t.isBlank() || (!t.contains("Clone", true) && !t.contains("PC", true))
+                isFbService && isFreshType
+            }
+            serviceLabel.contains("FB Clone", ignoreCase = true) -> {
+                val isFbService = s.contains("FB", true) || s.contains("Face", true) || s.contains("Clone", true) || s.isBlank() || s.equals("ALL", true)
+                val isCloneType = t.contains("Clone", true) || t.contains("Taken", true) || s.contains("Clone", true) || (!t.contains("Fresh", true) && !t.contains("New", true))
+                isFbService && isCloneType
+            }
+            serviceLabel.contains("PC", ignoreCase = true) -> {
+                t.contains("PC", true) || s.contains("PC", true)
+            }
+            serviceLabel.contains("WhatsApp", ignoreCase = true) || serviceLabel.contains("WA", ignoreCase = true) -> {
+                s.contains("WhatsApp", true) || s.contains("WA", true) || s.contains("WP", true)
+            }
+            serviceLabel.contains("Instagram", ignoreCase = true) || serviceLabel.contains("IG", ignoreCase = true) -> {
+                s.contains("Instagram", true) || s.contains("Insta", true) || s.contains("IG", true)
+            }
+            serviceLabel.contains("OTP Work", ignoreCase = true) || serviceLabel.contains("OTP", ignoreCase = true) -> {
+                s.contains("OTP", true) || s.isBlank() || s.equals("ALL", true)
+            }
+            else -> {
+                s.isBlank() || s.equals("ALL", true) || s.contains(serviceLabel, true) || serviceLabel.contains(s, true)
+            }
         }
 
-        return when {
-            serviceLabel.equals("ALL", ignoreCase = true) -> true
-            serviceLabel.contains("Fresh", ignoreCase = true) || serviceLabel.contains("FB New", ignoreCase = true) ->
-                (s.contains("FB", true) || s.contains("Face", true) || s.isBlank() || s.equals("ALL", true)) &&
-                (t.contains("Fresh", true) || t.contains("New", true))
-            serviceLabel.contains("FB Clone", ignoreCase = true) ->
-                (s.contains("FB", true) || s.contains("Face", true) || s.isBlank() || s.equals("ALL", true)) &&
-                (t.contains("Clone", true) || t.contains("PC", true) || t.equals("Taken", true) || t.isBlank())
-            serviceLabel.contains("PC", ignoreCase = true) ->
-                t.contains("PC", true) || s.contains("PC", true)
-            serviceLabel.contains("WhatsApp", ignoreCase = true) || serviceLabel.contains("WA", ignoreCase = true) ->
-                s.contains("WhatsApp", true) || s.contains("WA", true) || s.contains("WP", true)
-            serviceLabel.contains("Instagram", ignoreCase = true) || serviceLabel.contains("IG", ignoreCase = true) ->
-                s.contains("Instagram", true) || s.contains("Insta", true) || s.contains("IG", true)
-            serviceLabel.contains("OTP Work", ignoreCase = true) || serviceLabel.contains("OTP", ignoreCase = true) ->
-                s.contains("OTP", true) || s.isBlank() || s.equals("ALL", true)
-            else ->
-                s.isBlank() || s.equals("ALL", true) || s.contains(serviceLabel, true) || serviceLabel.contains(s, true)
+        if (!serviceMatches) return false
+
+        // Specific sub-filter check only if targetNumberType is not ALL
+        if (targetNumberType != "ALL" && targetNumberType.isNotBlank()) {
+            if (targetNumberType.contains("pc", true) && !t.contains("pc", true) && !s.contains("pc", true)) return false
+            if (targetNumberType.contains("clone", true) && !t.contains("clone", true) && !t.contains("pc", true) && !s.contains("clone", true)) return false
+            if ((targetNumberType.contains("fresh", true) || targetNumberType.contains("new", true)) && (t.contains("clone", true) || t.contains("pc", true))) return false
         }
+
+        return true
     }
 
     /**
@@ -709,23 +794,42 @@ object UnixSmsManager {
         val safeCount = count.coerceIn(1, 10)
         val activeNumbers = _state.value.activeNumbers
 
-        // Exclude used numbers, permanently claimed digits, and currently active numbers
-        val available = _state.value.uploadedNumbers.filter { item ->
+        // Find numbers matching the requested service that are not used and not currently pending for this device
+        val matchingService = _state.value.uploadedNumbers.filter { item ->
             val cleanDigits = item.number.replace("[^0-9]".toRegex(), "")
             !item.isUsed &&
             !permanentlyUsedDigits.contains(cleanDigits) &&
-            !activeNumbers.any { isPhoneNumberMatch(it.number, cleanDigits) } &&
-            (countryCode == "ALL" || item.countryCode.equals(countryCode, ignoreCase = true)) &&
+            !activeNumbers.any { it.status == "pending" && isPhoneNumberMatch(it.number, cleanDigits) } &&
             isNumberMatchingService(item, service, numberType)
         }
 
-        if (available.isEmpty()) {
-            val msg = "No available numbers for $service ($countryCode)! Admin needs to upload numbers."
+        // Apply country filtering: first try the requested country
+        val matchingCountry = if (countryCode.equals("ALL", ignoreCase = true) || countryCode.isBlank()) {
+            matchingService
+        } else {
+            matchingService.filter { item ->
+                item.countryCode.equals(countryCode, ignoreCase = true) ||
+                item.countryName.equals(countryCode, ignoreCase = true) ||
+                com.example.util.AllCountriesProvider.detectCountry(item.number)?.code.equals(countryCode, ignoreCase = true)
+            }
+        }
+
+        // If specific country was selected but has no numbers, fall back to any available country for this service!
+        val pool = if (matchingCountry.isNotEmpty()) {
+            matchingCountry
+        } else if (matchingService.isNotEmpty()) {
+            matchingService
+        } else {
+            emptyList()
+        }
+
+        if (pool.isEmpty()) {
+            val msg = "No available numbers for $service! Admin needs to upload numbers."
             onResult(false, msg)
             return
         }
 
-        val chosen = available.take(safeCount)
+        val chosen = pool.take(safeCount)
         val chosenIds = chosen.map { it.id }.toSet()
 
         // Atomically mark chosen numbers as permanently used locally
