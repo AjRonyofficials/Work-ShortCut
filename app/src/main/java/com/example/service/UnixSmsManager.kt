@@ -64,7 +64,7 @@ data class UnixSmsState(
     val liveCdrRecords: List<UnixSmsCdrRecord> = emptyList(),
     val isPolling: Boolean = false,
     val selectedCountry: String = "ALL",
-    val selectedService: String = "Facebook",
+    val selectedService: String = "✨ FB Fresh",
     val todayOtpCount: Int = 0,
     val otpRatePerSms: Double = 0.50, // Default 0.50 ৳
     val countryRates: Map<String, Double> = mapOf(
@@ -776,10 +776,13 @@ object UnixSmsManager {
                 val isFreshType = t.contains("Fresh", true) || t.contains("New", true) || t.isBlank() || !t.contains("Old", true)
                 isFbService && isFreshType
             }
-            serviceLabel.contains("FB Clone", ignoreCase = true) -> {
+            serviceLabel.contains("FB Clone", ignoreCase = true) || serviceLabel.contains("Clone", ignoreCase = true) -> {
                 val isFbService = s.contains("FB", true) || s.contains("Face", true) || s.contains("Clone", true) || s.isBlank() || s.equals("ALL", true)
                 val isCloneType = t.contains("Old", true) || t.contains("Clone", true) || t.contains("Taken", true) || s.contains("Clone", true) || (!t.contains("Fresh", true) && !t.contains("New", true))
                 isFbService && isCloneType
+            }
+            serviceLabel.contains("Face", ignoreCase = true) || serviceLabel.equals("FB", ignoreCase = true) -> {
+                s.contains("FB", true) || s.contains("Face", true) || s.contains("Fresh", true) || s.contains("Clone", true) || s.isBlank() || s.equals("ALL", true)
             }
             serviceLabel.contains("WhatsApp", ignoreCase = true) || serviceLabel.contains("WA", ignoreCase = true) || serviceLabel.contains("WP", ignoreCase = true) -> {
                 s.contains("WhatsApp", true) || s.contains("WA", true) || s.contains("WP", true)
@@ -877,6 +880,13 @@ object UnixSmsManager {
                 else -> "Unix SMS 🌐"
             }
             val r = item.customRate ?: getRateForCountry(item.countryCode)
+            val initialTag = when {
+                item.numberType.contains("fresh", true) || item.numberType.contains("new", true) -> PhoneItem.TagType.FRESH
+                item.numberType.contains("old", true) || item.numberType.contains("clone", true) || item.numberType.contains("taken", true) -> PhoneItem.TagType.TAKEN
+                item.service.contains("fresh", true) || item.service.contains("new", true) -> PhoneItem.TagType.FRESH
+                item.service.contains("clone", true) || item.service.contains("old", true) -> PhoneItem.TagType.TAKEN
+                else -> PhoneItem.TagType.FRESH
+            }
             ProvisionedNumber(
                 number = item.number,
                 country = item.countryName,
@@ -888,7 +898,8 @@ object UnixSmsManager {
                 expiresAt = now + 24 * 60 * 60 * 1000L, // 24-hour persistence, never back prematurely
                 gateway = gw,
                 rate = r,
-                userEmail = effectiveEmail
+                userEmail = effectiveEmail,
+                fbTagType = initialTag
             )
         }
 

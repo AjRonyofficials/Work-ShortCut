@@ -2007,6 +2007,22 @@ fun VirtualNumbersOverlaySection(
                                                         modifier = Modifier.padding(horizontal = 3.dp, vertical = 0.8.dp)
                                                     )
                                                 }
+                                            } else if (fbTag == com.example.service.PhoneItem.TagType.PENDING) {
+                                                Surface(
+                                                    color = Color(0xFF1E293B),
+                                                    shape = RoundedCornerShape(3.dp),
+                                                    border = androidx.compose.foundation.BorderStroke(0.5.dp, Color(0xFF38BDF8))
+                                                ) {
+                                                    Text(
+                                                        text = "CHK...",
+                                                        color = Color(0xFF38BDF8),
+                                                        fontSize = 7.sp,
+                                                        fontWeight = FontWeight.Bold,
+                                                        maxLines = 1,
+                                                        softWrap = false,
+                                                        modifier = Modifier.padding(horizontal = 3.dp, vertical = 0.8.dp)
+                                                    )
+                                                }
                                             }
 
                                             if (selectedPanel == 3 && item.status != "success") {

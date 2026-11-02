@@ -472,7 +472,17 @@ object PremiumNumberV2Manager {
                 val (statusStr, tagType) = VirtualNumberChecker.checkNumberTag(formatted)
                 _state.update { current ->
                     val updated = current.activeNumbers.map {
-                        if (it.id == id) it.copy(fbStatus = statusStr, fbTagType = tagType) else it
+                        if (it.id == id) {
+                            val resolvedTag = if (tagType == PhoneItem.TagType.FRESH || tagType == PhoneItem.TagType.TAKEN) {
+                                tagType
+                            } else {
+                                when {
+                                    it.range.contains("clone", true) || it.range.contains("old", true) || it.range.contains("taken", true) -> PhoneItem.TagType.TAKEN
+                                    else -> PhoneItem.TagType.FRESH
+                                }
+                            }
+                            it.copy(fbStatus = statusStr, fbTagType = resolvedTag)
+                        } else it
                     }
                     saveNumbers(updated)
                     current.copy(activeNumbers = updated)
