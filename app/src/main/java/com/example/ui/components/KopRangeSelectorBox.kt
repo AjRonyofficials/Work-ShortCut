@@ -140,13 +140,21 @@ fun KopRangeSelectorBox(
                         else -> "👥 FB"
                     }
                 } else {
-                    // Kop Engine 2 & other engines: No fake FB tags
+                    // Kop Engine 2 & other engines: No fake FB tags, just clean Facebook or actual service
                     val rawTag = act.tag.trim()
                     val rawService = act.service.trim()
                     when {
+                        rawTag.contains("FB", true) || rawTag.contains("Face", true) || rawTag.contains("Clone", true) || rawTag.contains("New", true) -> "Facebook"
+                        rawTag.contains("WhatsApp", true) || rawTag.contains("WA", true) || rawTag.contains("WP", true) -> "💬 WhatsApp"
+                        rawTag.contains("Insta", true) || rawTag.contains("IG", true) -> "📸 Instagram"
+                        rawTag.contains("OTP", true) -> "🔥 OTP Work"
                         rawTag.isNotBlank() && !rawTag.equals("General", true) && !rawTag.equals("Premium", true) -> rawTag
+                        rawService.contains("FB", true) || rawService.contains("Face", true) || rawService.contains("Clone", true) || rawService.contains("New", true) -> "Facebook"
+                        rawService.contains("WhatsApp", true) || rawService.contains("WA", true) || rawService.contains("WP", true) -> "💬 WhatsApp"
+                        rawService.contains("Insta", true) || rawService.contains("IG", true) -> "📸 Instagram"
+                        rawService.contains("OTP", true) -> "🔥 OTP Work"
                         rawService.isNotBlank() && !rawService.equals("General", true) -> rawService
-                        else -> "⚡ Radar Live"
+                        else -> "Facebook"
                     }
                 }
 
@@ -192,7 +200,14 @@ fun KopRangeSelectorBox(
                         else -> "👥 FB"
                     }
                 } else {
-                    feedItem.operator.ifBlank { feedItem.service.ifBlank { "⚡ Radar Live" } }
+                    val op = feedItem.operator.ifBlank { feedItem.service.ifBlank { "Facebook" } }
+                    when {
+                        op.contains("FB", true) || op.contains("Face", true) || op.contains("Clone", true) || op.contains("New", true) -> "Facebook"
+                        op.contains("WhatsApp", true) || op.contains("WA", true) -> "💬 WhatsApp"
+                        op.contains("Insta", true) || op.contains("IG", true) -> "📸 Instagram"
+                        op.contains("OTP", true) -> "🔥 OTP Work"
+                        else -> op
+                    }
                 }
 
                 list.add(
@@ -258,17 +273,29 @@ fun KopRangeSelectorBox(
             horizontalArrangement = Arrangement.spacedBy(6.dp),
             modifier = Modifier.fillMaxWidth().padding(bottom = 6.dp)
         ) {
-            val topPills = listOf(
-                "👥 FB Clone" to Color(0xFF1877F2),
-                "✨ FB New" to Color(0xFF00E5FF),
-                "💬 WhatsApp" to Color(0xFF25D366),
-                "📸 Instagram" to Color(0xFFE1306C),
-                "🔥 OTP Work" to Color(0xFFFF3D00)
-            )
+            val topPills = if (showServiceTags) {
+                listOf(
+                    "👥 FB Clone" to Color(0xFF1877F2),
+                    "✨ FB New" to Color(0xFF00E5FF),
+                    "💬 WhatsApp" to Color(0xFF25D366),
+                    "📸 Instagram" to Color(0xFFE1306C),
+                    "🔥 OTP Work" to Color(0xFFFF3D00)
+                )
+            } else {
+                listOf(
+                    "Facebook" to Color(0xFF1877F2),
+                    "💬 WhatsApp" to Color(0xFF25D366),
+                    "📸 Instagram" to Color(0xFFE1306C),
+                    "🔥 OTP Work" to Color(0xFFFF3D00)
+                )
+            }
             items(topPills.size) { pIdx ->
                 val pill = topPills[pIdx]
-                val tagKey = pill.first.substringAfter(" ")
-                val matching = livePoolEntries.firstOrNull { it.tag.contains(tagKey, ignoreCase = true) }
+                val tagKey = if (pill.first.contains(" ")) pill.first.substringAfter(" ") else pill.first
+                val matching = livePoolEntries.firstOrNull {
+                    it.tag.contains(tagKey, ignoreCase = true) ||
+                    (!showServiceTags && pill.first == "Facebook" && (it.tag.contains("FB", true) || it.tag.contains("Face", true)))
+                }
                 val isCurrent = currentRange.isNotBlank() && matching?.range == currentRange.trim()
                 Surface(
                     onClick = {
@@ -588,7 +615,10 @@ fun KopRangeSelectorBox(
                         } else {
                             listOf(
                                 "ALL" to "🌐 All (${livePoolEntries.size})",
-                                "LIVE" to "⚡ Radar Live (${livePoolEntries.size})"
+                                "FB" to "Facebook (${livePoolEntries.count { it.tag.contains("FB", true) || it.tag.contains("Face", true) }})",
+                                "INSTAGRAM" to "📸 IG (${livePoolEntries.count { it.tag.contains("IG", true) || it.tag.contains("Insta", true) }})",
+                                "WHATSAPP" to "💬 WA (${livePoolEntries.count { it.tag.contains("WhatsApp", true) || it.tag.contains("WA", true) }})",
+                                "OTP_WORK" to "🔥 OTP (${livePoolEntries.count { it.tag.contains("OTP", true) }})"
                             )
                         }
 

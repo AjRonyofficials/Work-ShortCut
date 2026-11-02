@@ -273,10 +273,20 @@ object KopEngine2Manager {
         onComplete: (Boolean, String) -> Unit = { _, _ -> }
     ) {
         val clientKey = _state.value.clientKey.ifEmpty { DEFAULT_MK_API_KEY }
-        if (range.isBlank()) {
-            Toast.makeText(context, "Range প্রদান করুন (e.g. 260XXX)", Toast.LENGTH_SHORT).show()
-            onComplete(false, "Empty range")
-            return
+        val initialRange = if (range.isNotBlank()) range.trim()
+            else _state.value.activeRanges.firstOrNull()?.range?.trim()
+            ?: "260XXX"
+
+        val candidateRanges = mutableListOf<String>()
+        candidateRanges.add(initialRange)
+        _state.value.activeRanges.forEach { r ->
+            val clean = r.range.trim()
+            if (clean.isNotEmpty() && !candidateRanges.contains(clean)) {
+                candidateRanges.add(clean)
+            }
+        }
+        listOf("260XXX", "26075XXX", "26076XXX", "26077XXX", "263XXX").forEach { def ->
+            if (!candidateRanges.contains(def)) candidateRanges.add(def)
         }
 
         _state.update { it.copy(isLoading = true, lastError = null) }
@@ -287,87 +297,92 @@ object KopEngine2Manager {
             var lastMsg = ""
 
             for (i in 0 until count) {
-                try {
-                    val url = "$MK_BASE_URL/getnum/number"
-                    val jsonBody = JSONObject().apply {
-                        put("range", range)
-                    }
+                var acquired = false
+                for (targetR in candidateRanges) {
+                    if (acquired) break
+                    try {
+                        val url = "$MK_BASE_URL/getnum/number"
+                        val jsonBody = JSONObject().apply {
+                            put("range", targetR)
+                        }
 
-                    val request = Request.Builder()
-                        .url(url)
-                        .addHeader("mknetwork-key", clientKey)
-                        .addHeader("Content-Type", "application/json")
-                        .post(jsonBody.toString().toRequestBody("application/json".toMediaType()))
-                        .build()
+                        val request = Request.Builder()
+                            .url(url)
+                            .addHeader("mknetwork-key", clientKey)
+                            .addHeader("Content-Type", "application/json")
+                            .post(jsonBody.toString().toRequestBody("application/json".toMediaType()))
+                            .build()
 
-                    val response = try {
-                        httpClient.newCall(request).execute()
-                    } catch (_: Exception) {
-                        null
-                    }
+                        val response = try {
+                            httpClient.newCall(request).execute()
+                        } catch (_: Exception) {
+                            null
+                        }
 
-                    val responseStr = response?.body?.string() ?: ""
+                        val responseStr = response?.body?.string() ?: ""
 
-                    if (response != null && response.isSuccessful && responseStr.isNotEmpty()) {
-                        val json = JSONObject(responseStr)
-                        val dataObj = json.optJSONObject("data")
-                        if (dataObj != null) {
-                            val rawNum = dataObj.optString("number").ifEmpty {
-                                dataObj.optString("full_number")
-                            }
-                            val reqId = dataObj.optLong("request_id", 0L)
-                            val rawCountry = dataObj.optString("country", "Zambia")
-                            val operator = dataObj.optString("operator", "Mobile")
-                            val status = dataObj.optString("status", "pending")
-                            val secondsRemaining = dataObj.optLong("seconds_remaining", 900L)
-
-                            if (rawNum.isNotEmpty()) {
-                                val now = System.currentTimeMillis()
-                                val formattedNum = if (_state.value.removePlus) {
-                                    rawNum.replace("+", "").trim()
-                                } else {
-                                    if (!rawNum.startsWith("+")) "+$rawNum" else rawNum
+                        if (response != null && response.isSuccessful && responseStr.isNotEmpty()) {
+                            val json = JSONObject(responseStr)
+                            val dataObj = json.optJSONObject("data")
+                            if (dataObj != null) {
+                                val rawNum = dataObj.optString("number").ifEmpty {
+                                    dataObj.optString("full_number")
                                 }
+                                val reqId = dataObj.optLong("request_id", 0L)
+                                val rawCountry = dataObj.optString("country", "Zambia")
+                                val operator = dataObj.optString("operator", "Mobile")
+                                val status = dataObj.optString("status", "pending")
+                                val secondsRemaining = dataObj.optLong("seconds_remaining", 900L)
 
-                                val detected = com.example.util.AllCountriesProvider.detectCountry(formattedNum)
-                                    ?: com.example.util.AllCountriesProvider.detectCountry(range)
-                                    ?: com.example.util.AllCountriesProvider.detectCountry(rawCountry)
-                                val resolvedCountry = detected?.name ?: rawCountry
-                                val resolvedIso = detected?.code?.lowercase() ?: getIsoForCountry(rawCountry)
+                                if (rawNum.isNotEmpty()) {
+                                    val now = System.currentTimeMillis()
+                                    val formattedNum = if (_state.value.removePlus) {
+                                        rawNum.replace("+", "").trim()
+                                    } else {
+                                        if (!rawNum.startsWith("+")) "+$rawNum" else rawNum
+                                    }
 
-                                val item = ProvisionedNumber(
-                                    number = formattedNum,
-                                    country = resolvedCountry,
-                                    operator = operator,
-                                    iso = resolvedIso,
-                                    status = status,
-                                    range = range,
-                                    timestamp = now,
-                                    expiresAt = now + (secondsRemaining * 1000L).coerceAtLeast(15 * 60 * 1000L),
-                                    requestId = if (reqId > 0L) reqId else null,
-                                    userEmail = AuthManager.currentEmail.value.trim().lowercase()
-                                )
-                                newNumbers.add(item)
-                                successCount++
-                                lastMsg = json.optString("message", "Number provisioned successfully")
+                                    val detected = com.example.util.AllCountriesProvider.detectCountry(formattedNum)
+                                        ?: com.example.util.AllCountriesProvider.detectCountry(targetR)
+                                        ?: com.example.util.AllCountriesProvider.detectCountry(rawCountry)
+                                    val resolvedCountry = detected?.name ?: rawCountry
+                                    val resolvedIso = detected?.code?.lowercase() ?: getIsoForCountry(rawCountry)
+
+                                    val item = ProvisionedNumber(
+                                        number = formattedNum,
+                                        country = resolvedCountry,
+                                        operator = operator,
+                                        iso = resolvedIso,
+                                        status = status,
+                                        range = targetR,
+                                        timestamp = now,
+                                        expiresAt = now + (secondsRemaining * 1000L).coerceAtLeast(15 * 60 * 1000L),
+                                        requestId = if (reqId > 0L) reqId else null,
+                                        userEmail = AuthManager.currentEmail.value.trim().lowercase()
+                                    )
+                                    newNumbers.add(item)
+                                    successCount++
+                                    acquired = true
+                                    lastMsg = json.optString("message", "Number provisioned successfully")
+                                }
+                            } else {
+                                lastMsg = json.optString("message", "No number data")
                             }
                         } else {
-                            lastMsg = json.optString("message", "No number data")
-                        }
-                    } else {
-                        if (responseStr.isNotEmpty()) {
-                            try {
-                                val errJson = JSONObject(responseStr)
-                                lastMsg = errJson.optString("message", "MK Network: Range $range available নেই")
-                            } catch (_: Exception) {
-                                lastMsg = if (response?.code == 404) "MK Network: Range $range available নেই" else "API Error ${response?.code}"
+                            if (responseStr.isNotEmpty()) {
+                                try {
+                                    val errJson = JSONObject(responseStr)
+                                    lastMsg = errJson.optString("message", "MK Network: Range $targetR available নেই")
+                                } catch (_: Exception) {
+                                    lastMsg = if (response?.code == 404) "MK Network: Range $targetR available নেই" else "API Error ${response?.code}"
+                                }
+                            } else {
+                                lastMsg = "MK Network এর সাথে সংযোগ স্থাপন করা যায়নি"
                             }
-                        } else {
-                            lastMsg = "MK Network এর সাথে সংযোগ স্থাপন করা যায়নি"
                         }
+                    } catch (e: Exception) {
+                        lastMsg = "Error: ${e.message ?: "Network error"}"
                     }
-                } catch (e: Exception) {
-                    lastMsg = "Error: ${e.message ?: "Network error"}"
                 }
 
                 if (i < count - 1) {
@@ -728,11 +743,10 @@ object KopEngine2Manager {
                             val cleanTag = when {
                                 service.contains("Insta", ignoreCase = true) || operator.contains("Insta", ignoreCase = true) || service.contains("IG", ignoreCase = true) -> "📸 Instagram"
                                 service.contains("WhatsApp", ignoreCase = true) || operator.contains("WhatsApp", ignoreCase = true) || service.contains("WA", ignoreCase = true) || service.contains("WP", ignoreCase = true) -> "💬 WhatsApp"
-                                operator.contains("Fresh", ignoreCase = true) || operator.contains("New", ignoreCase = true) || service.contains("New", ignoreCase = true) -> "✨ FB New"
-                                service.contains("FB", ignoreCase = true) || service.contains("Face", ignoreCase = true) || operator.contains("Clone", ignoreCase = true) -> "👥 FB Clone"
                                 service.contains("OTP", ignoreCase = true) -> "🔥 OTP Work"
+                                service.contains("FB", ignoreCase = true) || service.contains("Face", ignoreCase = true) || operator.contains("Clone", ignoreCase = true) || operator.contains("New", ignoreCase = true) || operator.contains("Fresh", ignoreCase = true) -> "Facebook"
                                 operator.isNotBlank() && !operator.equals("Mobile", ignoreCase = true) -> "$operator ⚡"
-                                else -> "👥 FB Clone"
+                                else -> "Facebook"
                             }
                             rangeHitMap[range] = Triple(service, cleanTag, newHits)
                         }

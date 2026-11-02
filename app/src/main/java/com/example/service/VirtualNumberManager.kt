@@ -352,10 +352,20 @@ object VirtualNumberManager {
         onComplete: (Boolean, String) -> Unit = { _, _ -> }
     ) {
         val clientKey = _state.value.clientKey.ifEmpty { "ZNX_SDY9RBKGG8DO84EWZOMWEH2S" }
-        if (range.isBlank()) {
-            Toast.makeText(context, "Range প্রদান করুন (e.g. 237620XXX)", Toast.LENGTH_SHORT).show()
-            onComplete(false, "Empty range")
-            return
+        val initialRange = if (range.isNotBlank()) range.trim()
+            else _state.value.activeRanges.firstOrNull()?.range?.trim()
+            ?: "237620XXX"
+
+        val candidateRanges = mutableListOf<String>()
+        candidateRanges.add(initialRange)
+        _state.value.activeRanges.forEach { r ->
+            val clean = r.range.trim()
+            if (clean.isNotEmpty() && !candidateRanges.contains(clean)) {
+                candidateRanges.add(clean)
+            }
+        }
+        listOf("237620XXX", "237670XXX", "237650XXX", "237680XXX", "237690XXX").forEach { def ->
+            if (!candidateRanges.contains(def)) candidateRanges.add(def)
         }
 
         _state.update { it.copy(isLoading = true, lastError = null) }
@@ -366,67 +376,72 @@ object VirtualNumberManager {
             var lastMsg = ""
 
             for (i in 0 until count) {
-                try {
-                    val url = "https://api.zenexnetwork.com/v1/getnum"
-                    val jsonBody = JSONObject().apply {
-                        put("range", range)
-                        put("is_national", _state.value.isNational)
-                        put("remove_plus", _state.value.removePlus)
-                    }
+                var acquired = false
+                for (targetR in candidateRanges) {
+                    if (acquired) break
+                    try {
+                        val url = "https://api.zenexnetwork.com/v1/getnum"
+                        val jsonBody = JSONObject().apply {
+                            put("range", targetR)
+                            put("is_national", _state.value.isNational)
+                            put("remove_plus", _state.value.removePlus)
+                        }
 
-                    val request = Request.Builder()
-                        .url(url)
-                        .addHeader("mapikey", clientKey)
-                        .addHeader("Content-Type", "application/json")
-                        .post(jsonBody.toString().toRequestBody("application/json".toMediaType()))
-                        .build()
+                        val request = Request.Builder()
+                            .url(url)
+                            .addHeader("mapikey", clientKey)
+                            .addHeader("Content-Type", "application/json")
+                            .post(jsonBody.toString().toRequestBody("application/json".toMediaType()))
+                            .build()
 
-                    val response = httpClient.newCall(request).execute()
-                    val responseStr = response.body?.string() ?: ""
+                        val response = httpClient.newCall(request).execute()
+                        val responseStr = response.body?.string() ?: ""
 
-                    if (response.isSuccessful && responseStr.isNotEmpty()) {
-                        val json = JSONObject(responseStr)
-                        val dataObj = json.optJSONObject("data")
-                        if (dataObj != null) {
-                            val num = dataObj.optString("number").ifEmpty {
-                                dataObj.optString("copy").ifEmpty { dataObj.optString("full_number") }
-                            }
-                            val rawCountry = dataObj.optString("country", "Global")
-                            val operator = dataObj.optString("operator", "Mobile")
-                            val rawIso = dataObj.optString("iso", "gb")
-                            val status = dataObj.optString("status", "pending")
+                        if (response.isSuccessful && responseStr.isNotEmpty()) {
+                            val json = JSONObject(responseStr)
+                            val dataObj = json.optJSONObject("data")
+                            if (dataObj != null) {
+                                val num = dataObj.optString("number").ifEmpty {
+                                    dataObj.optString("copy").ifEmpty { dataObj.optString("full_number") }
+                                }
+                                val rawCountry = dataObj.optString("country", "Global")
+                                val operator = dataObj.optString("operator", "Mobile")
+                                val rawIso = dataObj.optString("iso", "gb")
+                                val status = dataObj.optString("status", "pending")
 
-                            val detected = com.example.util.AllCountriesProvider.detectCountry(num)
-                                ?: com.example.util.AllCountriesProvider.detectCountry(range)
-                                ?: com.example.util.AllCountriesProvider.detectCountry(rawCountry)
-                            val resolvedCountry = detected?.name ?: rawCountry
-                            val resolvedIso = detected?.code?.lowercase() ?: rawIso
+                                val detected = com.example.util.AllCountriesProvider.detectCountry(num)
+                                    ?: com.example.util.AllCountriesProvider.detectCountry(targetR)
+                                    ?: com.example.util.AllCountriesProvider.detectCountry(rawCountry)
+                                val resolvedCountry = detected?.name ?: rawCountry
+                                val resolvedIso = detected?.code?.lowercase() ?: rawIso
 
-                            if (num.isNotEmpty()) {
-                                val now = System.currentTimeMillis()
-                                val item = ProvisionedNumber(
-                                    number = num,
-                                    country = resolvedCountry,
-                                    operator = operator,
-                                    iso = resolvedIso,
-                                    status = status,
-                                    range = range,
-                                    timestamp = now,
-                                    expiresAt = now + 1_200_000L,
-                                    userEmail = AuthManager.currentEmail.value.trim().lowercase()
-                                )
-                                newNumbers.add(item)
-                                successCount++
-                                lastMsg = json.optString("message", "Number provisioned")
+                                if (num.isNotEmpty()) {
+                                    val now = System.currentTimeMillis()
+                                    val item = ProvisionedNumber(
+                                        number = num,
+                                        country = resolvedCountry,
+                                        operator = operator,
+                                        iso = resolvedIso,
+                                        status = status,
+                                        range = targetR,
+                                        timestamp = now,
+                                        expiresAt = now + 1_200_000L,
+                                        userEmail = AuthManager.currentEmail.value.trim().lowercase()
+                                    )
+                                    newNumbers.add(item)
+                                    successCount++
+                                    acquired = true
+                                    lastMsg = json.optString("message", "Number provisioned")
+                                }
+                            } else {
+                                lastMsg = json.optString("message", "No number data")
                             }
                         } else {
-                            lastMsg = json.optString("message", "No number data")
+                            lastMsg = "Error ${response.code}: $responseStr"
                         }
-                    } else {
-                        lastMsg = "Error ${response.code}: $responseStr"
+                    } catch (e: Exception) {
+                        lastMsg = e.message ?: "Network error"
                     }
-                } catch (e: Exception) {
-                    lastMsg = e.message ?: "Network error"
                 }
 
                 if (i < count - 1) {

@@ -1004,11 +1004,12 @@ private fun Kop2ProvisionedNumberCard(
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     val pTag = when {
-                        item.range.contains("fb clone", ignoreCase = true) -> "👥 FB Clone"
-                        item.range.contains("fb new", ignoreCase = true) || item.range.contains("facebook", ignoreCase = true) -> "✨ FB New"
                         item.range.contains("whatsapp", ignoreCase = true) || item.range.contains("wp", ignoreCase = true) -> "💬 WhatsApp"
                         item.range.contains("instagram", ignoreCase = true) || item.range.contains("ig", ignoreCase = true) -> "📸 Instagram"
-                        else -> "👥 FB Clone"
+                        item.range.contains("otp", ignoreCase = true) -> "🔥 OTP Work"
+                        item.range.contains("fb", ignoreCase = true) || item.range.contains("face", ignoreCase = true) || item.range.contains("clone", ignoreCase = true) || item.range.contains("new", ignoreCase = true) -> "Facebook"
+                        item.range.isNotBlank() && item.range != "Live Range" -> item.range
+                        else -> "Facebook"
                     }
                     Surface(
                         color = ThemeSurfaceDark,
@@ -1412,10 +1413,10 @@ private fun MkLiveOtpFeedCard(
                     val liveServiceTag = when {
                         item.service.contains("Insta", ignoreCase = true) || item.operator.contains("Insta", ignoreCase = true) || item.service.contains("IG", ignoreCase = true) -> "📸 Instagram"
                         item.service.contains("WhatsApp", ignoreCase = true) || item.service.contains("WA", ignoreCase = true) || item.service.contains("WP", ignoreCase = true) -> "💬 WhatsApp"
-                        item.service.contains("New", ignoreCase = true) || item.operator.contains("New", ignoreCase = true) -> "✨ FB New"
-                        item.service.contains("FB", ignoreCase = true) || item.service.contains("Face", ignoreCase = true) || item.operator.contains("Clone", ignoreCase = true) -> "👥 FB Clone"
+                        item.service.contains("OTP", ignoreCase = true) -> "🔥 OTP Work"
+                        item.service.contains("FB", ignoreCase = true) || item.service.contains("Face", ignoreCase = true) || item.operator.contains("Clone", ignoreCase = true) || item.operator.contains("New", ignoreCase = true) || item.service.contains("New", ignoreCase = true) -> "Facebook"
                         item.service.isNotBlank() && item.service != "MK Network" -> item.service
-                        else -> "👥 FB Clone"
+                        else -> "Facebook"
                     }
                     Surface(
                         color = ThemeSurfaceDark,

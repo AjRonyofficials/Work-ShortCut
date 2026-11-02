@@ -306,92 +306,107 @@ object PremiumNumberV2Manager {
             val newNumbers = mutableListOf<ProvisionedNumber>()
 
             for (i in 0 until count) {
-                try {
-                    val jsonPayload = JSONObject().apply {
-                        if (rangePrefix.isNotBlank()) {
-                            put("rangePrefix", rangePrefix)
-                        }
-                        if (service.isNotBlank() && !service.startsWith("ANY", ignoreCase = true)) {
-                            val apiSrv = when {
-                                service.contains("fb clone", ignoreCase = true) || service.contains("fb new", ignoreCase = true) || service.contains("facebook", ignoreCase = true) -> "facebook"
-                                service.contains("whatsapp", ignoreCase = true) || service.contains("wp", ignoreCase = true) -> "whatsapp"
-                                service.contains("instagram", ignoreCase = true) || service.contains("ig", ignoreCase = true) -> "instagram"
-                                service.contains("otp", ignoreCase = true) -> ""
-                                else -> service.replace(Regex("[^a-zA-Z0-9]"), "").trim().lowercase()
+                var itemAcquired: ProvisionedNumber? = null
+
+                // Attempt 1: Exact user selection; Attempt 2: Without rangePrefix; Attempt 3: ANY country live pool
+                val attempts = listOf(
+                    Triple(countryCode, service, rangePrefix),
+                    Triple(countryCode, service, ""),
+                    Triple("ANY", service, ""),
+                    Triple("ANY", "ANY", "")
+                ).distinct()
+
+                for ((cCode, srv, rPfx) in attempts) {
+                    try {
+                        val jsonPayload = JSONObject().apply {
+                            if (rPfx.isNotBlank()) {
+                                put("rangePrefix", rPfx)
                             }
-                            if (apiSrv.isNotBlank()) {
-                                put("service", apiSrv)
+                            if (srv.isNotBlank() && !srv.startsWith("ANY", ignoreCase = true)) {
+                                val apiSrv = when {
+                                    srv.contains("fb clone", ignoreCase = true) || srv.contains("fb new", ignoreCase = true) || srv.contains("facebook", ignoreCase = true) -> "facebook"
+                                    srv.contains("whatsapp", ignoreCase = true) || srv.contains("wp", ignoreCase = true) -> "whatsapp"
+                                    srv.contains("instagram", ignoreCase = true) || srv.contains("ig", ignoreCase = true) -> "instagram"
+                                    srv.contains("otp", ignoreCase = true) -> ""
+                                    else -> srv.replace(Regex("[^a-zA-Z0-9]"), "").trim().lowercase()
+                                }
+                                if (apiSrv.isNotBlank()) {
+                                    put("service", apiSrv)
+                                }
+                            }
+                            if (cCode.isNotBlank() && cCode != "ANY" && cCode != "ALL") {
+                                put("countryCode", cCode)
                             }
                         }
-                        if (countryCode.isNotBlank() && countryCode != "ANY" && countryCode != "ALL") {
-                            put("countryCode", countryCode)
-                        }
-                    }
 
-                    val body = jsonPayload.toString().toRequestBody("application/json; charset=utf-8".toMediaType())
-                    val request = Request.Builder()
-                        .url("$BASE_URL/rent")
-                        .addHeader("x-api-key", apiKey)
-                        .addHeader("Content-Type", "application/json")
-                        .post(body)
-                        .build()
+                        val body = jsonPayload.toString().toRequestBody("application/json; charset=utf-8".toMediaType())
+                        val request = Request.Builder()
+                            .url("$BASE_URL/rent")
+                            .addHeader("x-api-key", apiKey.ifBlank { DEFAULT_API_KEY })
+                            .addHeader("Content-Type", "application/json")
+                            .post(body)
+                            .build()
 
-                    httpClient.newCall(request).execute().use { response ->
-                        val respBody = response.body?.string() ?: ""
-                        if (response.isSuccessful) {
-                            val json = JSONObject(respBody)
-                            if (json.optString("status") == "success") {
-                                val dataObj = json.optJSONObject("data")
-                                if (dataObj != null) {
-                                    val rentalId = dataObj.optString("rentalId", "")
-                                    val phoneNumber = dataObj.optString("phoneNumber", "")
-                                    val rentService = dataObj.optString("service", service)
-                                    // Auto-detect country and flag directly from phone number digits
-                                    val autoCountry = com.example.util.AllCountriesProvider.findByPhoneNumber(phoneNumber)
-                                    val rentCountry = autoCountry?.name ?: dataObj.optString("country", "Live Range")
-                                    val rentCountryCode = autoCountry?.code ?: dataObj.optString("countryCode", "LIVE")
-                                    val rentFlag = autoCountry?.flag ?: "🌐"
+                        httpClient.newCall(request).execute().use { response ->
+                            val respBody = response.body?.string() ?: ""
+                            if (response.isSuccessful && respBody.isNotBlank()) {
+                                val json = JSONObject(respBody)
+                                if (json.optString("status") == "success") {
+                                    val dataObj = json.optJSONObject("data")
+                                    if (dataObj != null) {
+                                        val rentalId = dataObj.optString("rentalId", "")
+                                        val phoneNumber = dataObj.optString("phoneNumber", "")
+                                        val rentService = dataObj.optString("service", service)
+                                        val autoCountry = com.example.util.AllCountriesProvider.findByPhoneNumber(phoneNumber)
+                                        val rentCountry = autoCountry?.name ?: dataObj.optString("country", "Live Range")
+                                        val rentCountryCode = autoCountry?.code ?: dataObj.optString("countryCode", "LIVE")
+                                        val rentFlag = autoCountry?.flag ?: "🌐"
 
-                                    // 14-Minute 80-Second Auto-Return Limit (920,000 ms)
-                                    val now = System.currentTimeMillis()
-                                    val expiresAt = now + AUTO_RETURN_TIMEOUT_MS
+                                        val now = System.currentTimeMillis()
+                                        val expiresAt = now + AUTO_RETURN_TIMEOUT_MS
 
-                                    if (phoneNumber.isNotBlank()) {
-                                        val item = ProvisionedNumber(
-                                            id = if (rentalId.isNotBlank()) rentalId else java.util.UUID.randomUUID().toString(),
-                                            number = phoneNumber,
-                                            country = rentCountry,
-                                            operator = "Live Range",
-                                            iso = rentCountryCode.lowercase(),
-                                            status = "pending",
-                                            otpCode = null,
-                                            otpMessage = null,
-                                            range = rentService,
-                                            timestamp = now,
-                                            expiresAt = expiresAt,
-                                            gateway = "PREMIUM_V2",
-                                            rate = activeRate,
-                                            rentalId = rentalId,
-                                            flag = rentFlag
-                                        )
-                                        newNumbers.add(item)
-                                        successCount++
+                                        if (phoneNumber.isNotBlank()) {
+                                            itemAcquired = ProvisionedNumber(
+                                                id = if (rentalId.isNotBlank()) rentalId else java.util.UUID.randomUUID().toString(),
+                                                number = phoneNumber,
+                                                country = rentCountry,
+                                                operator = "Live Range",
+                                                iso = rentCountryCode.lowercase(),
+                                                status = "pending",
+                                                otpCode = null,
+                                                otpMessage = null,
+                                                range = rentService,
+                                                timestamp = now,
+                                                expiresAt = expiresAt,
+                                                gateway = "PREMIUM_V2",
+                                                rate = activeRate,
+                                                rentalId = rentalId,
+                                                flag = rentFlag
+                                            )
+                                        }
                                     }
+                                } else {
+                                    lastErrorMsg = json.optString("message", "Request unsuccessful")
                                 }
                             } else {
-                                lastErrorMsg = json.optString("message", "Request unsuccessful")
-                            }
-                        } else {
-                            try {
-                                val errJson = JSONObject(respBody)
-                                lastErrorMsg = errJson.optString("message", "HTTP ${response.code}")
-                            } catch (_: Exception) {
-                                lastErrorMsg = "HTTP ${response.code}: ${response.message}"
+                                try {
+                                    val errJson = JSONObject(respBody)
+                                    lastErrorMsg = errJson.optString("message", "HTTP ${response.code}")
+                                } catch (_: Exception) {
+                                    lastErrorMsg = "HTTP ${response.code}: ${response.message}"
+                                }
                             }
                         }
+                    } catch (e: Exception) {
+                        lastErrorMsg = e.message ?: "Network error"
                     }
-                } catch (e: Exception) {
-                    lastErrorMsg = e.message ?: "Network error"
+
+                    val finalItem = itemAcquired
+                    if (finalItem != null) {
+                        newNumbers.add(finalItem)
+                        successCount++
+                        break
+                    }
                 }
             }
 
@@ -736,7 +751,26 @@ object PremiumNumberV2Manager {
                                     val cFlag = autoC?.flag ?: obj.optString("flag", "🇿🇼")
                                     val srv = obj.optString("service", "FACEBOOK").uppercase()
 
-                                    val fullMsg = obj.optString("rawSnippet", obj.optString("message", "<#> ****** is your $srv code")).trim()
+                                    val rawOtp = obj.optString("otpCode", "").trim()
+                                    val rawSms = obj.optString("fullSms", obj.optString("sms", obj.optString("message", obj.optString("content", obj.optString("text", obj.optString("body", obj.optString("rawSnippet", ""))))))).trim()
+
+                                    val otpCodeResolved = if (rawOtp.isNotEmpty() && rawOtp != "******") {
+                                        rawOtp
+                                    } else {
+                                        val digits = Regex("\\b\\d{4,8}\\b").find(rawSms)?.value
+                                        val hashToken = Regex("[A-Za-z0-9+/]{6,15}").find(rawSms)?.value
+                                        digits ?: hashToken ?: ""
+                                    }
+
+                                    val fullMsg = if (rawSms.isNotBlank()) {
+                                        if (rawSms.contains("******") && otpCodeResolved.isNotBlank()) {
+                                            rawSms.replace("******", otpCodeResolved)
+                                        } else {
+                                            rawSms
+                                        }
+                                    } else {
+                                        if (otpCodeResolved.isNotBlank()) "<#> $otpCodeResolved is your $srv code" else "$srv verification code"
+                                    }
 
                                     items.add(
                                         PremiumV2ConsoleItem(
@@ -747,7 +781,7 @@ object PremiumNumberV2Manager {
                                             country = cName,
                                             iso = cIso,
                                             flag = cFlag,
-                                            otpCode = obj.optString("otpCode", "******"),
+                                            otpCode = otpCodeResolved,
                                             rawSnippet = fullMsg,
                                             receivedAt = obj.optString("receivedAt", ""),
                                             timeAgo = obj.optString("timeAgo", if (i == 0) "just now" else "${i * 2} mins ago")
@@ -799,8 +833,8 @@ object PremiumNumberV2Manager {
             country = "Ethiopia",
             iso = "ET",
             flag = "🇪🇹",
-            otpCode = "H29Q+Fsn4Sr",
-            rawSnippet = "<#> ****** is your Facebook code\nH29Q+Fsn4Sr",
+            otpCode = "849201",
+            rawSnippet = "<#> 849201 is your Facebook code\nH29Q+Fsn4Sr",
             timeAgo = "just now"
         ),
         PremiumV2ConsoleItem(
@@ -811,8 +845,8 @@ object PremiumNumberV2Manager {
             country = "Italy",
             iso = "IT",
             flag = "🇮🇹",
-            otpCode = "H29Q+Fsn4Sr",
-            rawSnippet = "<#> ****** is your Facebook code\nH29Q+Fsn4Sr",
+            otpCode = "539104",
+            rawSnippet = "<#> 539104 is your Facebook code\nH29Q+Fsn4Sr",
             timeAgo = "just now"
         ),
         PremiumV2ConsoleItem(
@@ -823,8 +857,8 @@ object PremiumNumberV2Manager {
             country = "Ethiopia",
             iso = "ET",
             flag = "🇪🇹",
-            otpCode = "H29Q+Fsn4Sr",
-            rawSnippet = "<#> ****** is your Facebook code\nH29Q+Fsn4Sr",
+            otpCode = "712048",
+            rawSnippet = "<#> 712048 is your Facebook code\nH29Q+Fsn4Sr",
             timeAgo = "1 min ago"
         ),
         PremiumV2ConsoleItem(
@@ -835,8 +869,8 @@ object PremiumNumberV2Manager {
             country = "Italy",
             iso = "IT",
             flag = "🇮🇹",
-            otpCode = "H29Q+Fsn4Sr",
-            rawSnippet = "<#> ****** is your Facebook code\nH29Q+Fsn4Sr",
+            otpCode = "604921",
+            rawSnippet = "<#> 604921 is your Facebook code\nH29Q+Fsn4Sr",
             timeAgo = "2 mins ago"
         ),
         PremiumV2ConsoleItem(
@@ -847,8 +881,8 @@ object PremiumNumberV2Manager {
             country = "France",
             iso = "FR",
             flag = "🇫🇷",
-            otpCode = "LaznxC",
-            rawSnippet = "<#> ****** is your Facebook code\nLaz+nxCarLW",
+            otpCode = "382915",
+            rawSnippet = "<#> 382915 is your Facebook code\nLaz+nxCarLW",
             timeAgo = "4 mins ago"
         ),
         PremiumV2ConsoleItem(
@@ -860,7 +894,7 @@ object PremiumNumberV2Manager {
             iso = "LB",
             flag = "🇱🇧",
             otpCode = "941028",
-            rawSnippet = "هو الرمز الخاص بك على Facebook: ******",
+            rawSnippet = "941028 هو الرمز الخاص بك على Facebook\nLaz+nxCarLW",
             timeAgo = "6 mins ago"
         )
     )
@@ -980,9 +1014,33 @@ object PremiumNumberV2Manager {
             val newTodayCount = _state.value.todayOtpCount + newlyArrived.size
             prefs?.edit()?.putInt(todayKey, newTodayCount)?.apply()
 
+            val newFeedEntries = newlyArrived.map { (item, otp) ->
+                val cInfo = com.example.util.AllCountriesProvider.findByPhoneNumber(item.number)
+                    ?: com.example.util.AllCountriesProvider.detectCountry(item.country)
+                val digits = item.number.replace("[^0-9]".toRegex(), "")
+                val pfx = if (digits.length >= 4) digits.take(4) else digits
+                val fullMsg = item.otpMessage?.ifBlank { null } ?: "<#> $otp is your ${item.range.ifEmpty { "Facebook" }} code"
+                val formattedNum = formatMaskedNumber(raw = item.number, itemId = item.id, rangePrefix = pfx)
+                PremiumV2ConsoleItem(
+                    id = "real-${item.id}-${System.currentTimeMillis()}",
+                    maskedNumber = formattedNum,
+                    rangePrefix = pfx,
+                    service = item.range.ifEmpty { "FACEBOOK" }.uppercase(),
+                    country = cInfo?.name ?: item.country,
+                    iso = cInfo?.code ?: item.iso,
+                    flag = cInfo?.flag ?: item.flag ?: "🌐",
+                    otpCode = otp,
+                    rawSnippet = fullMsg,
+                    receivedAt = SimpleDateFormat("HH:mm:ss", Locale.US).format(Date()),
+                    timeAgo = "just now"
+                )
+            }
+            val combinedFeed = (newFeedEntries + _state.value.liveConsoleFeed).take(60)
+
             _state.update {
                 it.copy(
                     activeNumbers = current,
+                    liveConsoleFeed = combinedFeed,
                     todayOtpCount = newTodayCount,
                     lastSyncTime = System.currentTimeMillis()
                 )
