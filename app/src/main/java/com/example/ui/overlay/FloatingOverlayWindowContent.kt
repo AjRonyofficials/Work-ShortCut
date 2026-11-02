@@ -222,7 +222,7 @@ fun FloatingOverlayWindowContent(
             }
         } else {
             // Elegant Frosted Dark Glass Dock Chassis / Container (Fixed Proportions - NEVER Squashed)
-            val chassisWidth = if (state.isVirtualNumbersOverlayExpanded) 195.dp else 94.dp
+            val chassisWidth = if (state.isVirtualNumbersOverlayExpanded) 260.dp else 94.dp
             Surface(
                 shape = dockChassisShape,
                 color = Color.Transparent,
@@ -252,22 +252,67 @@ fun FloatingOverlayWindowContent(
                     )
             ) {
                 Column(
-                    verticalArrangement = Arrangement.spacedBy(6.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 6.dp, vertical = 8.dp)
-                        .testTag("floating_edge_tabs_column")
+                        .padding(horizontal = 6.dp, vertical = 6.dp)
                 ) {
-                    // Sleek Drag Grip Header Handle
-                    Box(
+                    // Pinned Top Header: Drag Handle + Quick Side Switch (⇄) & Close (✕)
+                    Row(
                         modifier = Modifier
-                            .align(Alignment.CenterHorizontally)
-                            .width(28.dp)
-                            .height(4.dp)
-                            .clip(RoundedCornerShape(2.dp))
-                            .background(Color.White.copy(alpha = 0.35f))
-                    )
+                            .fillMaxWidth()
+                            .padding(bottom = 4.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .width(26.dp)
+                                .height(4.dp)
+                                .clip(RoundedCornerShape(2.dp))
+                                .background(Color.White.copy(alpha = 0.4f))
+                        )
+
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Surface(
+                                shape = RoundedCornerShape(5.dp),
+                                color = Color(0xFF37474F).copy(alpha = 0.85f),
+                                border = androidx.compose.foundation.BorderStroke(0.6.dp, Color(0xFF90A4AE)),
+                                modifier = Modifier
+                                    .size(20.dp)
+                                    .clickable { OverlayStateManager.toggleDockSide() }
+                            ) {
+                                Box(contentAlignment = Alignment.Center) {
+                                    Text("⇄", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                }
+                            }
+
+                            Surface(
+                                shape = RoundedCornerShape(5.dp),
+                                color = Color(0xFFD32F2F).copy(alpha = 0.9f),
+                                border = androidx.compose.foundation.BorderStroke(0.6.dp, Color(0xFFFF5252)),
+                                modifier = Modifier
+                                    .size(20.dp)
+                                    .clickable { OverlayStateManager.toggleEdgeBarMinimized() }
+                            ) {
+                                Box(contentAlignment = Alignment.Center) {
+                                    Text("✕", color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                }
+                            }
+                        }
+                    }
+
+                    Column(
+                        verticalArrangement = Arrangement.spacedBy(5.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(max = 480.dp)
+                            .verticalScroll(rememberScrollState())
+                            .testTag("floating_edge_tabs_column")
+                    ) {
 
                     // Live Heads-Up OTP Alert in Floating Overlay
                     if (liveOtpPopup != null) {
@@ -589,6 +634,7 @@ fun FloatingOverlayWindowContent(
             }
         }
     }
+}
 }
 
 /**
@@ -1868,10 +1914,10 @@ fun VirtualNumbersOverlaySection(
 
                     // Numbers & Live OTP List (Unix, Zenex, Kop Engine 2, or Premium V2)
                     val numbers = when (selectedPanel) {
-                        0 -> unixState.activeNumbers.take(4)
-                        1 -> vnState.provisionedNumbers.take(4)
-                        2 -> kop2State.provisionedNumbers.take(4)
-                        else -> v2State.activeNumbers.take(4)
+                        0 -> unixState.activeNumbers
+                        1 -> vnState.provisionedNumbers
+                        2 -> kop2State.provisionedNumbers
+                        else -> v2State.activeNumbers
                     }
                     if (numbers.isEmpty()) {
                         Text(
@@ -1886,57 +1932,48 @@ fun VirtualNumbersOverlaySection(
                             modifier = Modifier.align(Alignment.CenterHorizontally)
                         )
                     } else {
-                        numbers.forEach { item ->
-                            Surface(
-                                shape = RoundedCornerShape(5.dp),
-                                color = if (item.status == "success") Color(0xFF00E676).copy(alpha = 0.15f) else Color(0xFF07101B),
-                                border = androidx.compose.foundation.BorderStroke(
-                                    0.8.dp,
-                                    if (item.status == "success") Color(0xFF00E676).copy(alpha = 0.6f) else Color(0xFF1E3A56)
-                                ),
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                Column(modifier = Modifier.padding(3.dp)) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(max = 145.dp)
+                                .verticalScroll(rememberScrollState()),
+                            verticalArrangement = Arrangement.spacedBy(3.dp)
+                        ) {
+                            numbers.forEach { item ->
+                                Surface(
+                                    shape = RoundedCornerShape(5.dp),
+                                    color = if (item.status == "success") Color(0xFF00E676).copy(alpha = 0.15f) else Color(0xFF07101B),
+                                    border = androidx.compose.foundation.BorderStroke(
+                                        0.8.dp,
+                                        if (item.status == "success") Color(0xFF00E676).copy(alpha = 0.6f) else Color(0xFF1E3A56)
+                                    ),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
                                     Row(
-                                        modifier = Modifier.fillMaxWidth(),
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(horizontal = 4.dp, vertical = 3.dp),
                                         horizontalArrangement = Arrangement.SpaceBetween,
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
                                         Text(
-                                            text = item.number,
+                                            text = item.number.replace("+", ""),
                                             color = Color.White,
                                             fontSize = 9.sp,
                                             fontFamily = FontFamily.Monospace,
                                             fontWeight = FontWeight.Bold,
+                                            maxLines = 1,
+                                            softWrap = false,
                                             modifier = Modifier.clickable {
                                                 ClipboardHelper.copyToClipboard(context, item.number, "Phone")
                                                 Toast.makeText(context, "নম্বর কপি হয়েছে!", Toast.LENGTH_SHORT).show()
                                             }
                                         )
-                                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(3.dp)) {
-                                            val platformTag = when {
-                                                item.range.contains("fb clone", ignoreCase = true) -> "👥 FB Clone"
-                                                item.range.contains("fb new", ignoreCase = true) || item.range.contains("facebook", ignoreCase = true) -> "✨ FB New"
-                                                item.range.contains("whatsapp", ignoreCase = true) || item.range.contains("wp", ignoreCase = true) -> "💬 WhatsApp"
-                                                item.range.contains("instagram", ignoreCase = true) || item.range.contains("ig", ignoreCase = true) -> "📸 Instagram"
-                                                item.range.isNotBlank() && item.range != "Live Range" -> "🔥 ${item.range.take(8)}"
-                                                else -> null
-                                            }
-                                            if (platformTag != null) {
-                                                Surface(
-                                                    color = Color(0xFF1E293B),
-                                                    shape = RoundedCornerShape(3.dp),
-                                                    border = androidx.compose.foundation.BorderStroke(0.5.dp, Color(0xFF00E5FF).copy(alpha = 0.4f))
-                                                ) {
-                                                    Text(
-                                                        text = platformTag,
-                                                        color = Color(0xFF38BDF8),
-                                                        fontSize = 7.sp,
-                                                        fontWeight = FontWeight.Bold,
-                                                        modifier = Modifier.padding(horizontal = 3.dp, vertical = 0.5.dp)
-                                                    )
-                                                }
-                                            }
+
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(2.5.dp)
+                                        ) {
                                             val fbTag = item.fbTagType
                                             if (fbTag == com.example.service.PhoneItem.TagType.FRESH) {
                                                 Surface(
@@ -1949,7 +1986,9 @@ fun VirtualNumbersOverlaySection(
                                                         color = Color(0xFF00E676),
                                                         fontSize = 7.sp,
                                                         fontWeight = FontWeight.Bold,
-                                                        modifier = Modifier.padding(horizontal = 3.dp, vertical = 0.5.dp)
+                                                        maxLines = 1,
+                                                        softWrap = false,
+                                                        modifier = Modifier.padding(horizontal = 3.dp, vertical = 0.8.dp)
                                                     )
                                                 }
                                             } else if (fbTag == com.example.service.PhoneItem.TagType.TAKEN) {
@@ -1963,10 +2002,13 @@ fun VirtualNumbersOverlaySection(
                                                         color = Color(0xFFFF5252),
                                                         fontSize = 7.sp,
                                                         fontWeight = FontWeight.Bold,
-                                                        modifier = Modifier.padding(horizontal = 3.dp, vertical = 0.5.dp)
+                                                        maxLines = 1,
+                                                        softWrap = false,
+                                                        modifier = Modifier.padding(horizontal = 3.dp, vertical = 0.8.dp)
                                                     )
                                                 }
                                             }
+
                                             if (selectedPanel == 3 && item.status != "success") {
                                                 Surface(
                                                     color = Color(0xFFEF4444).copy(alpha = 0.2f),
@@ -1979,12 +2021,15 @@ fun VirtualNumbersOverlaySection(
                                                     Text(
                                                         text = "ফেরত",
                                                         color = Color(0xFFF87171),
-                                                        fontSize = 7.5.sp,
+                                                        fontSize = 7.sp,
                                                         fontWeight = FontWeight.Bold,
-                                                        modifier = Modifier.padding(horizontal = 3.dp, vertical = 1.dp)
+                                                        maxLines = 1,
+                                                        softWrap = false,
+                                                        modifier = Modifier.padding(horizontal = 3.dp, vertical = 0.8.dp)
                                                     )
                                                 }
                                             }
+
                                             if (item.otpCode != null) {
                                                 Surface(
                                                     color = Color(0xFF00E676),
@@ -1997,9 +2042,11 @@ fun VirtualNumbersOverlaySection(
                                                     Text(
                                                         text = "OTP: ${item.otpCode}",
                                                         color = Color.Black,
-                                                        fontSize = 8.5.sp,
+                                                        fontSize = 8.sp,
                                                         fontWeight = FontWeight.Black,
-                                                        modifier = Modifier.padding(horizontal = 3.dp, vertical = 1.dp)
+                                                        maxLines = 1,
+                                                        softWrap = false,
+                                                        modifier = Modifier.padding(horizontal = 3.dp, vertical = 0.8.dp)
                                                     )
                                                 }
                                             } else {

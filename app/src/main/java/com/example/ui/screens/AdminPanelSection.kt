@@ -4678,9 +4678,15 @@ fun AdminUserManagerCard(
                             Button(
                                 onClick = {
                                     showWipeConfirmDialog = false
-                                    AuthManager.wipeAllUserBalancesAndOtpHistory(context)
+                                    UnixSmsManager.clearLiveDlrLogs()
+                                    AuthManager.wipeAllUserBalancesAndOtpHistory(context) { ok ->
+                                        if (ok) {
+                                            Toast.makeText(context, "✓ ডাটাবেস ও সকল ইউজারের ব্যালেন্স, ওটিপি হিস্টোরি ও DLR সফলভাবে রিসেট হয়েছে!", Toast.LENGTH_LONG).show()
+                                        } else {
+                                            Toast.makeText(context, "✓ লোকাল ব্যালেন্স ও হিস্টোরি রিসেট হয়েছে!", Toast.LENGTH_LONG).show()
+                                        }
+                                    }
                                     com.example.util.VibrationHelper.vibrateSuccess(context)
-                                    Toast.makeText(context, "✓ সকল ইউজারের ব্যালেন্স ও হিস্টোরি সফলভাবে রিসেট হয়েছে!", Toast.LENGTH_LONG).show()
                                 },
                                 colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFEF4444))
                             ) {
@@ -4820,8 +4826,13 @@ fun AdminUserManagerCard(
                                     Toast.makeText(context, "✓ পারমিশন আপডেট সম্পন্ন হয়েছে", Toast.LENGTH_SHORT).show()
                                 },
                                 onUpdateStats = { tot, bal, td, l7, l30 ->
-                                    AuthManager.updateUserOtpAndBalance(user.email, tot, bal, td, l7, l30)
-                                    Toast.makeText(context, "✓ ${user.name}-এর OTP ও ব্যালেন্স আপডেট হয়েছে", Toast.LENGTH_SHORT).show()
+                                    AuthManager.updateUserOtpAndBalance(user.email, tot, bal, td, l7, l30) { success ->
+                                        if (success) {
+                                            Toast.makeText(context, "✓ ${user.name}-এর OTP ও ব্যালেন্স ডাটাবেসে সেভ হয়েছে", Toast.LENGTH_SHORT).show()
+                                        } else {
+                                            Toast.makeText(context, "✓ ${user.name}-এর OTP ও ব্যালেন্স আপডেট হয়েছে", Toast.LENGTH_SHORT).show()
+                                        }
+                                    }
                                 },
                                 onCopy = {
                                     val text = "Email: ${user.email}\nPassword: ${user.passwordHash}"

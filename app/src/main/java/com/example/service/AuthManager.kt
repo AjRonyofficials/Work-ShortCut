@@ -455,20 +455,34 @@ object AuthManager {
         }
     }
 
-    fun patchUserField(email: String, fields: JSONObject) {
+    fun patchUserField(email: String, fields: JSONObject, onComplete: ((Boolean) -> Unit)? = null) {
         val target = email.trim().lowercase()
-        if (target.isBlank() || target == ADMIN_EMAIL.lowercase()) return
+        if (target.isBlank()) {
+            onComplete?.invoke(false)
+            return
+        }
         authScope.launch {
             try {
                 val body = fields.toString().toRequestBody("application/json; charset=utf-8".toMediaTypeOrNull())
                 val req = okhttp3.Request.Builder()
                     .url("$SUPABASE_BASE_URL/app_users?email=eq.$target")
                     .header("apikey", SUPABASE_KEY)
+                    .header("Authorization", "Bearer $SUPABASE_KEY")
+                    .header("Prefer", "return=minimal")
                     .header("Content-Type", "application/json")
                     .patch(body)
                     .build()
-                httpClient.newCall(req).execute()
-            } catch (_: Exception) {}
+                val resp = httpClient.newCall(req).execute()
+                val ok = resp.isSuccessful
+                resp.close()
+                withContext(Dispatchers.Main) {
+                    onComplete?.invoke(ok)
+                }
+            } catch (_: Exception) {
+                withContext(Dispatchers.Main) {
+                    onComplete?.invoke(false)
+                }
+            }
         }
     }
 
@@ -935,9 +949,13 @@ object AuthManager {
         balanceTk: Double,
         today: Int,
         last7d: Int,
-        last30d: Int
+        last30d: Int,
+        onComplete: ((Boolean) -> Unit)? = null
     ) {
-        if (!isAdmin()) return
+        if (!isAdmin()) {
+            onComplete?.invoke(false)
+            return
+        }
         val target = email.trim().lowercase()
         val newList = _managedUsers.value.map {
             if (it.email.lowercase() == target) {
@@ -958,14 +976,14 @@ object AuthManager {
             put("otp_today", today)
             put("otp_7days", last7d)
             put("otp_30days", last30d)
-        })
+        }, onComplete)
     }
 
     /**
      * Wipes all existing user balances, OTP counts, and history records across all accounts
      * and in Supabase, establishing clean, strictly isolated per-user accounting.
      */
-    fun wipeAllUserBalancesAndOtpHistory(context: Context? = null) {
+    fun wipeAllUserBalancesAndOtpHistory(context: Context? = null, onComplete: ((Boolean) -> Unit)? = null) {
         val resetList = _managedUsers.value.map {
             it.copy(
                 balanceTk = 0.0,
@@ -996,27 +1014,41 @@ object AuthManager {
                 val req = okhttp3.Request.Builder()
                     .url("$SUPABASE_BASE_URL/app_users?role=neq.PRIME_ADMIN")
                     .header("apikey", SUPABASE_KEY)
+                    .header("Authorization", "Bearer $SUPABASE_KEY")
+                    .header("Prefer", "return=minimal")
                     .header("Content-Type", "application/json")
                     .patch(body)
                     .build()
-                httpClient.newCall(req).execute()
+                httpClient.newCall(req).execute().close()
 
                 // Delete past records from otp_history
                 val delOtp = okhttp3.Request.Builder()
                     .url("$SUPABASE_BASE_URL/otp_history?id=neq.placeholder_none")
                     .header("apikey", SUPABASE_KEY)
+                    .header("Authorization", "Bearer $SUPABASE_KEY")
+                    .header("Prefer", "return=minimal")
                     .delete()
                     .build()
-                httpClient.newCall(delOtp).execute()
+                httpClient.newCall(delOtp).execute().close()
 
                 // Delete past records from withdraw_history
                 val delWd = okhttp3.Request.Builder()
                     .url("$SUPABASE_BASE_URL/withdraw_history?id=neq.placeholder_none")
                     .header("apikey", SUPABASE_KEY)
+                    .header("Authorization", "Bearer $SUPABASE_KEY")
+                    .header("Prefer", "return=minimal")
                     .delete()
                     .build()
-                httpClient.newCall(delWd).execute()
-            } catch (_: Exception) {}
+                httpClient.newCall(delWd).execute().close()
+
+                withContext(Dispatchers.Main) {
+                    onComplete?.invoke(true)
+                }
+            } catch (_: Exception) {
+                withContext(Dispatchers.Main) {
+                    onComplete?.invoke(false)
+                }
+            }
         }
     }
 

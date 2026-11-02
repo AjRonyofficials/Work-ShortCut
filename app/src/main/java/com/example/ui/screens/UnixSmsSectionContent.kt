@@ -275,10 +275,7 @@ fun UnixSmsSectionContent(
                                 border = BorderStroke(1.dp, if (isSelected) accentColor else Color(0xFF1D2F42)),
                                 modifier = Modifier.clickable {
                                     selectedService = sName
-                                    selectedCountryCode = "ALL"
-                                    selectedNumberType = "ALL"
                                     UnixSmsManager.setSelectedService(sName)
-                                    UnixSmsManager.setSelectedCountry("ALL")
                                 }
                             ) {
                                 Column(
@@ -768,18 +765,38 @@ fun UnixSmsSectionContent(
                             )
                         }
 
-                        Surface(
-                            color = Color(0xFF00E676).copy(alpha = 0.15f),
-                            shape = RoundedCornerShape(6.dp),
-                            border = BorderStroke(1.dp, Color(0xFF00E676).copy(alpha = 0.5f))
-                        ) {
-                            Text(
-                                text = "100% Delivered",
-                                color = Color(0xFF00E676),
-                                fontSize = 9.5.sp,
-                                fontWeight = FontWeight.ExtraBold,
-                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                            )
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                            Surface(
+                                color = Color(0xFFEF4444).copy(alpha = 0.2f),
+                                shape = RoundedCornerShape(6.dp),
+                                border = BorderStroke(1.dp, Color(0xFFEF4444).copy(alpha = 0.6f)),
+                                modifier = Modifier.clickable {
+                                    UnixSmsManager.clearLiveDlrLogs()
+                                    Toast.makeText(context, "DLR লগস ও সংরক্ষিত ডাটা মুছে ফেলা হয়েছে!", Toast.LENGTH_SHORT).show()
+                                }
+                            ) {
+                                Text(
+                                    text = "লগ মুছুন",
+                                    color = Color(0xFFF87171),
+                                    fontSize = 9.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                )
+                            }
+
+                            Surface(
+                                color = Color(0xFF00E676).copy(alpha = 0.15f),
+                                shape = RoundedCornerShape(6.dp),
+                                border = BorderStroke(1.dp, Color(0xFF00E676).copy(alpha = 0.5f))
+                            ) {
+                                Text(
+                                    text = "100% Delivered",
+                                    color = Color(0xFF00E676),
+                                    fontSize = 9.5.sp,
+                                    fontWeight = FontWeight.ExtraBold,
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                )
+                            }
                         }
                     }
 

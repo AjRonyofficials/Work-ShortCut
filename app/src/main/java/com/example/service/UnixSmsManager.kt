@@ -192,8 +192,21 @@ object UnixSmsManager {
                 saveUploadedNumbers(_state.value.uploadedNumbers)
             }
 
+            clearLiveDlrLogs()
             startFastOtpPolling(context)
         }
+    }
+
+    /**
+     * Delete and purge all existing live DLR logs and remove saved CDR cache.
+     */
+    fun clearLiveDlrLogs() {
+        _state.update { it.copy(liveCdrRecords = emptyList()) }
+        prefs?.edit()
+            ?.remove("unix_live_cdr_records_v2")
+            ?.remove("unix_cdr_records")
+            ?.remove("unix_cdr_cycle_start_v2")
+            ?.apply()
     }
 
     private fun savePermanentlyUsedDigits() {
@@ -251,14 +264,11 @@ object UnixSmsManager {
             val key = "${cleanDigits}_${cloudItem.numberType}_${cloudItem.service.lowercase()}"
             val local = allNumbersMap[key]
 
-            val isActiveOnDevice = activeNumbers.any { it.status == "pending" && isPhoneNumberMatch(it.number, cleanDigits) }
-            val isUsed = if (isActiveOnDevice) {
+            val isActiveOnDevice = activeNumbers.any { isPhoneNumberMatch(it.number, cleanDigits) }
+            val isUsed = if (isActiveOnDevice || local?.isUsed == true) {
                 true
-            } else if (!cloudItem.isUsed) {
-                permanentlyUsedDigits.remove(cleanDigits)
-                false
             } else {
-                cloudItem.isUsed || local?.isUsed == true
+                cloudItem.isUsed
             }
 
             if (isUsed && cleanDigits.length >= 7) {
@@ -834,7 +844,7 @@ object UnixSmsManager {
 
         if (pool.isEmpty()) {
             val msg = if (!countryCode.equals("ALL", ignoreCase = true) && countryCode.isNotBlank()) {
-                "নির্বাচিত দেশ (${countryCode}) এর জন্য $service এর কোনো নম্বর খালি নেই!"
+                "নির্বাচিত দেশ (${countryCode}) ও সার্ভিস (${service}) এর কোনো খালি নম্বর নেই!"
             } else {
                 "$service এর জন্য কোনো নম্বর খালি নেই! অ্যাডমিনকে নম্বর আপলোড করতে বলুন।"
             }
@@ -1268,15 +1278,23 @@ object UnixSmsManager {
         }
 
         val newCdrEntries = rawCdrList.map { it.first }
-        val mergedCdr = (newCdrEntries + _state.value.liveCdrRecords)
-            .distinctBy { "${it.num}_${it.message}" }
-            .take(35)
-
-        _state.update {
-            it.copy(
+        _state.update { current ->
+            val mergedActive = current.activeNumbers.map { prov ->
+                val matched = newlyArrivedOtps.firstOrNull { isPhoneNumberMatch(it.first.number, prov.number) }
+                if (matched != null) {
+                    prov.copy(status = "success", otpCode = matched.second, otpMessage = matched.first.otpMessage)
+                } else prov
+            }
+            if (newlyArrivedOtps.isNotEmpty()) {
+                saveActiveNumbers(mergedActive)
+            }
+            val mergedCdr = (newCdrEntries + current.liveCdrRecords)
+                .distinctBy { "${it.num}_${it.message}" }
+                .take(35)
+            current.copy(
                 liveCdrRecords = mergedCdr,
-                activeNumbers = updatedActive,
-                uploadedNumbers = if (uploadedModified) updatedUploaded else it.uploadedNumbers,
+                activeNumbers = mergedActive,
+                uploadedNumbers = if (uploadedModified) updatedUploaded else current.uploadedNumbers,
                 todayOtpCount = newTodayOtpCount,
                 lastSyncTime = System.currentTimeMillis()
             )
@@ -1451,10 +1469,19 @@ object UnixSmsManager {
                 }
             }
 
-            _state.update {
-                it.copy(
-                    activeNumbers = updatedActive,
-                    uploadedNumbers = if (uploadedModified) updatedUploaded else it.uploadedNumbers,
+            _state.update { current ->
+                val mergedActive = current.activeNumbers.map { prov ->
+                    val matched = newlyArrivedOtps.firstOrNull { isPhoneNumberMatch(it.first.number, prov.number) }
+                    if (matched != null) {
+                        prov.copy(status = "success", otpCode = matched.second, otpMessage = matched.first.otpMessage)
+                    } else prov
+                }
+                if (newlyArrivedOtps.isNotEmpty()) {
+                    saveActiveNumbers(mergedActive)
+                }
+                current.copy(
+                    activeNumbers = mergedActive,
+                    uploadedNumbers = if (uploadedModified) updatedUploaded else current.uploadedNumbers,
                     todayOtpCount = newTodayOtpCount,
                     lastSyncTime = System.currentTimeMillis()
                 )
@@ -1642,11 +1669,23 @@ object UnixSmsManager {
                 }
 
                 val cdrList = rawCdrList.map { it.first }
-                _state.update {
-                    it.copy(
-                        liveCdrRecords = cdrList.take(35),
-                        activeNumbers = updatedActive,
-                        uploadedNumbers = if (uploadedModified) updatedUploaded else it.uploadedNumbers,
+                _state.update { current ->
+                    val mergedActive = current.activeNumbers.map { prov ->
+                        val matched = newlyArrivedOtps.firstOrNull { isPhoneNumberMatch(it.first.number, prov.number) }
+                        if (matched != null) {
+                            prov.copy(status = "success", otpCode = matched.second, otpMessage = matched.first.otpMessage)
+                        } else prov
+                    }
+                    if (newlyArrivedOtps.isNotEmpty()) {
+                        saveActiveNumbers(mergedActive)
+                    }
+                    val mergedCdr = (cdrList + current.liveCdrRecords)
+                        .distinctBy { "${it.num}_${it.message}" }
+                        .take(35)
+                    current.copy(
+                        liveCdrRecords = mergedCdr,
+                        activeNumbers = mergedActive,
+                        uploadedNumbers = if (uploadedModified) updatedUploaded else current.uploadedNumbers,
                         todayOtpCount = newTodayOtpCount,
                         lastSyncTime = System.currentTimeMillis()
                     )
