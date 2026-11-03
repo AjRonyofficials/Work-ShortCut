@@ -3,6 +3,7 @@ package com.example.ui.screens
 import android.content.Context
 import android.widget.Toast
 import java.util.Locale
+import com.example.service.AuthManager
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
@@ -764,7 +765,237 @@ fun PremiumNumberV2SectionContent(
                 }
             }
 
-            // ACTIVE VIRTUAL NUMBERS & LIVE OTP MONITOR (Directly below Allocation Desk)
+            // ACTIVE LIVE POOL COUNTRIES & PANEL-CONFIGURED OTP RATES
+            Card(
+                colors = CardDefaults.cardColors(containerColor = Color(0xFF09121D)),
+                shape = RoundedCornerShape(14.dp),
+                border = BorderStroke(1.2.dp, Color(0xFF162D42)),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Surface(
+                        color = Color(0xFF070E18),
+                        shape = RoundedCornerShape(10.dp),
+                        border = BorderStroke(1.dp, Color(0xFF162D42)),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text("🌐", fontSize = 13.sp)
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Column {
+                                        Text(
+                                            text = "LIVE POOL COUNTRIES & RATES",
+                                            color = Color(0xFF38BDF8),
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                        Text(
+                                            text = "লাইভ পুলের সক্রিয় দেশসমূহ ও ওটিপি রেট",
+                                            color = Color(0xFF64748B),
+                                            fontSize = 9.sp
+                                        )
+                                    }
+                                }
+
+                                Surface(
+                                    color = Color(0xFF0284C7).copy(alpha = 0.2f),
+                                    shape = RoundedCornerShape(6.dp),
+                                    border = BorderStroke(1.dp, Color(0xFF38BDF8).copy(alpha = 0.5f))
+                                ) {
+                                    Text(
+                                        text = "${livePoolCountries.size} Countries",
+                                        color = Color(0xFF38BDF8),
+                                        fontSize = 9.5.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                    )
+                                }
+                            }
+
+                            // Horizontal scroll of active Live Pool Countries with their OTP rates
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .horizontalScroll(rememberScrollState()),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                livePoolCountries.forEach { c ->
+                                    val isSelected = state.selectedCountryCode.equals(c.code, ignoreCase = true)
+                                    val cRate = PremiumNumberV2Manager.getRateForCountry(c.code)
+                                    Surface(
+                                        color = if (isSelected) Color(0xFF0C2A44) else Color(0xFF0B1626),
+                                        shape = RoundedCornerShape(8.dp),
+                                        border = BorderStroke(
+                                            if (isSelected) 1.5.dp else 0.8.dp,
+                                            if (isSelected) Color(0xFF00E5FF) else Color(0xFF1B314B)
+                                        ),
+                                        modifier = Modifier.clickable {
+                                            PremiumNumberV2Manager.setSelectedCountry(c.code)
+                                            if (c.dialCode.isNotBlank()) {
+                                                PremiumNumberV2Manager.setRangePrefix(c.dialCode.replace("+", ""))
+                                            }
+                                        }
+                                    ) {
+                                        Column(
+                                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp),
+                                            horizontalAlignment = Alignment.CenterHorizontally
+                                        ) {
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                Text(c.flag, fontSize = 14.sp)
+                                                Spacer(modifier = Modifier.width(4.dp))
+                                                Text(
+                                                    text = c.name.take(10),
+                                                    color = if (isSelected) Color.White else Color(0xFFCBD5E1),
+                                                    fontSize = 10.5.sp,
+                                                    fontWeight = if (isSelected) FontWeight.ExtraBold else FontWeight.Bold
+                                                )
+                                                Spacer(modifier = Modifier.width(3.dp))
+                                                Surface(
+                                                    color = Color(0xFF1E293B),
+                                                    shape = RoundedCornerShape(3.dp),
+                                                    border = BorderStroke(0.5.dp, Color(0xFF00E5FF).copy(alpha = 0.3f))
+                                                ) {
+                                                    Text(
+                                                        text = c.platformTag,
+                                                        color = Color(0xFF38BDF8),
+                                                        fontSize = 7.sp,
+                                                        fontWeight = FontWeight.Bold,
+                                                        modifier = Modifier.padding(horizontal = 3.dp, vertical = 0.5.dp)
+                                                    )
+                                                }
+                                            }
+
+                                            Spacer(modifier = Modifier.height(3.dp))
+
+                                            Row(
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                            ) {
+                                                if (c.dialCode.isNotBlank()) {
+                                                    Surface(
+                                                        color = Color(0xFF1E293B),
+                                                        shape = RoundedCornerShape(3.dp)
+                                                    ) {
+                                                        Text(
+                                                            text = c.dialCode,
+                                                            color = Color(0xFF94A3B8),
+                                                            fontSize = 9.sp,
+                                                            fontWeight = FontWeight.SemiBold,
+                                                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                                                        )
+                                                    }
+                                                }
+
+                                                Surface(
+                                                    color = Color(0xFF00E676).copy(alpha = 0.15f),
+                                                    shape = RoundedCornerShape(3.dp),
+                                                    border = BorderStroke(0.6.dp, Color(0xFF00E676).copy(alpha = 0.5f))
+                                                ) {
+                                                    Text(
+                                                        text = "${String.format(Locale.US, "%.2f", cRate)}৳",
+                                                        color = Color(0xFF00E676),
+                                                        fontSize = 9.5.sp,
+                                                        fontWeight = FontWeight.ExtraBold,
+                                                        modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp)
+                                                    )
+                                                }
+                                            }
+
+                                            if (isSelected) {
+                                                Spacer(modifier = Modifier.height(3.dp))
+                                                Text(
+                                                    text = "✓ SELECTED",
+                                                    color = Color(0xFF00E5FF),
+                                                    fontSize = 8.sp,
+                                                    fontWeight = FontWeight.Black
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            // Optional manual prefix fine-tuning input
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = if (state.rangePrefix.isNotBlank()) "Prefix: +${state.rangePrefix}" else "Auto Prefix active",
+                                    color = Color(0xFF94A3B8),
+                                    fontSize = 9.sp,
+                                    fontWeight = FontWeight.Medium
+                                )
+                                if (state.rangePrefix.isNotBlank()) {
+                                    Text(
+                                        text = "Reset Prefix ✕",
+                                        color = Color(0xFFEF4444),
+                                        fontSize = 9.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        modifier = Modifier.clickable { PremiumNumberV2Manager.setRangePrefix("") }
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    // INDICATORS ROW (Screenshot 1: 15-min hold, Live polling 3s, Auto-copied, National Format)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text("🕒", fontSize = 10.sp)
+                                Spacer(modifier = Modifier.width(3.dp))
+                                Text("15-min exclusive hold", color = Color(0xFF94A3B8), fontSize = 9.sp)
+                            }
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text("((o))", fontSize = 9.sp, color = Color(0xFF00E5FF))
+                                Spacer(modifier = Modifier.width(3.dp))
+                                Text("Live polling 3s", color = Color(0xFF94A3B8), fontSize = 9.sp)
+                            }
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text("⚡", fontSize = 10.sp)
+                                Spacer(modifier = Modifier.width(3.dp))
+                                Text("Auto-copied", color = Color(0xFF94A3B8), fontSize = 9.sp)
+                            }
+                        }
+
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("🌐 National:", color = Color(0xFF64748B), fontSize = 9.sp)
+                            Spacer(modifier = Modifier.width(3.dp))
+                            Surface(
+                                color = if (state.nationalFormat) Color(0xFF00E5FF) else Color(0xFF1E293B),
+                                shape = RoundedCornerShape(4.dp),
+                                modifier = Modifier.clickable { PremiumNumberV2Manager.setNationalFormat(!state.nationalFormat) }
+                            ) {
+                                Text(
+                                    text = if (state.nationalFormat) "ON" else "OFF",
+                                    color = if (state.nationalFormat) Color.Black else Color(0xFF94A3B8),
+                                    fontSize = 8.5.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            // ACTIVE VIRTUAL NUMBERS & LIVE OTP MONITOR
             Card(
                 colors = CardDefaults.cardColors(containerColor = Color(0xFF09121D)),
                 shape = RoundedCornerShape(14.dp),
@@ -996,236 +1227,6 @@ fun PremiumNumberV2SectionContent(
                     }
                 }
             }
-
-            // ACTIVE LIVE POOL COUNTRIES & PANEL-CONFIGURED OTP RATES
-            Card(
-                colors = CardDefaults.cardColors(containerColor = Color(0xFF09121D)),
-                shape = RoundedCornerShape(14.dp),
-                border = BorderStroke(1.2.dp, Color(0xFF162D42)),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Surface(
-                        color = Color(0xFF070E18),
-                        shape = RoundedCornerShape(10.dp),
-                        border = BorderStroke(1.dp, Color(0xFF162D42)),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Text("🌐", fontSize = 13.sp)
-                                    Spacer(modifier = Modifier.width(6.dp))
-                                    Column {
-                                        Text(
-                                            text = "LIVE POOL COUNTRIES & RATES",
-                                            color = Color(0xFF38BDF8),
-                                            fontSize = 11.sp,
-                                            fontWeight = FontWeight.Bold
-                                        )
-                                        Text(
-                                            text = "লাইভ পুলের সক্রিয় দেশসমূহ ও ওটিপি রেট",
-                                            color = Color(0xFF64748B),
-                                            fontSize = 9.sp
-                                        )
-                                    }
-                                }
-
-                                Surface(
-                                    color = Color(0xFF0284C7).copy(alpha = 0.2f),
-                                    shape = RoundedCornerShape(6.dp),
-                                    border = BorderStroke(1.dp, Color(0xFF38BDF8).copy(alpha = 0.5f))
-                                ) {
-                                    Text(
-                                        text = "${livePoolCountries.size} Countries",
-                                        color = Color(0xFF38BDF8),
-                                        fontSize = 9.5.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                                    )
-                                }
-                            }
-
-                            // Horizontal scroll of active Live Pool Countries with their OTP rates
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .horizontalScroll(rememberScrollState()),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                livePoolCountries.forEach { c ->
-                                    val isSelected = state.selectedCountryCode.equals(c.code, ignoreCase = true)
-                                    val cRate = PremiumNumberV2Manager.getRateForCountry(c.code)
-                                    Surface(
-                                        color = if (isSelected) Color(0xFF0C2A44) else Color(0xFF0B1626),
-                                        shape = RoundedCornerShape(8.dp),
-                                        border = BorderStroke(
-                                            if (isSelected) 1.5.dp else 0.8.dp,
-                                            if (isSelected) Color(0xFF00E5FF) else Color(0xFF1B314B)
-                                        ),
-                                        modifier = Modifier.clickable {
-                                            PremiumNumberV2Manager.setSelectedCountry(c.code)
-                                            if (c.dialCode.isNotBlank()) {
-                                                PremiumNumberV2Manager.setRangePrefix(c.dialCode.replace("+", ""))
-                                            }
-                                        }
-                                    ) {
-                                        Column(
-                                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp),
-                                            horizontalAlignment = Alignment.CenterHorizontally
-                                        ) {
-                                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                                Text(c.flag, fontSize = 14.sp)
-                                                Spacer(modifier = Modifier.width(4.dp))
-                                                Text(
-                                                    text = c.name.take(10),
-                                                    color = if (isSelected) Color.White else Color(0xFFCBD5E1),
-                                                    fontSize = 10.5.sp,
-                                                    fontWeight = if (isSelected) FontWeight.ExtraBold else FontWeight.Bold
-                                                )
-                                                Spacer(modifier = Modifier.width(3.dp))
-                                                Surface(
-                                                    color = Color(0xFF1E293B),
-                                                    shape = RoundedCornerShape(3.dp),
-                                                    border = BorderStroke(0.5.dp, Color(0xFF00E5FF).copy(alpha = 0.3f))
-                                                ) {
-                                                    Text(
-                                                        text = c.platformTag,
-                                                        color = Color(0xFF38BDF8),
-                                                        fontSize = 7.sp,
-                                                        fontWeight = FontWeight.Bold,
-                                                        modifier = Modifier.padding(horizontal = 3.dp, vertical = 0.5.dp)
-                                                    )
-                                                }
-                                            }
-
-                                            Spacer(modifier = Modifier.height(3.dp))
-
-                                            Row(
-                                                verticalAlignment = Alignment.CenterVertically,
-                                                horizontalArrangement = Arrangement.spacedBy(4.dp)
-                                            ) {
-                                                if (c.dialCode.isNotBlank()) {
-                                                    Surface(
-                                                        color = Color(0xFF1E293B),
-                                                        shape = RoundedCornerShape(3.dp)
-                                                    ) {
-                                                        Text(
-                                                            text = c.dialCode,
-                                                            color = Color(0xFF94A3B8),
-                                                            fontSize = 9.sp,
-                                                            fontWeight = FontWeight.SemiBold,
-                                                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
-                                                        )
-                                                    }
-                                                }
-
-                                                Surface(
-                                                    color = Color(0xFF00E676).copy(alpha = 0.15f),
-                                                    shape = RoundedCornerShape(3.dp),
-                                                    border = BorderStroke(0.6.dp, Color(0xFF00E676).copy(alpha = 0.5f))
-                                                ) {
-                                                    Text(
-                                                        text = "${String.format(Locale.US, "%.2f", cRate)}৳",
-                                                        color = Color(0xFF00E676),
-                                                        fontSize = 9.5.sp,
-                                                        fontWeight = FontWeight.ExtraBold,
-                                                        modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp)
-                                                    )
-                                                }
-                                            }
-
-                                            if (isSelected) {
-                                                Spacer(modifier = Modifier.height(3.dp))
-                                                Text(
-                                                    text = "✓ SELECTED",
-                                                    color = Color(0xFF00E5FF),
-                                                    fontSize = 8.sp,
-                                                    fontWeight = FontWeight.Black
-                                                )
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-
-                            // Optional manual prefix fine-tuning input
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text(
-                                    text = if (state.rangePrefix.isNotBlank()) "Prefix: +${state.rangePrefix}" else "Auto Prefix active",
-                                    color = Color(0xFF94A3B8),
-                                    fontSize = 9.sp,
-                                    fontWeight = FontWeight.Medium
-                                )
-                                if (state.rangePrefix.isNotBlank()) {
-                                    Text(
-                                        text = "Reset Prefix ✕",
-                                        color = Color(0xFFEF4444),
-                                        fontSize = 9.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        modifier = Modifier.clickable { PremiumNumberV2Manager.setRangePrefix("") }
-                                    )
-                                }
-                            }
-                        }
-                    }
-
-                    // INDICATORS ROW (Screenshot 1: 15-min hold, Live polling 3s, Auto-copied, National Format)
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Row(
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text("🕒", fontSize = 10.sp)
-                                Spacer(modifier = Modifier.width(3.dp))
-                                Text("15-min exclusive hold", color = Color(0xFF94A3B8), fontSize = 9.sp)
-                            }
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text("((o))", fontSize = 9.sp, color = Color(0xFF00E5FF))
-                                Spacer(modifier = Modifier.width(3.dp))
-                                Text("Live polling 3s", color = Color(0xFF94A3B8), fontSize = 9.sp)
-                            }
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text("⚡", fontSize = 10.sp)
-                                Spacer(modifier = Modifier.width(3.dp))
-                                Text("Auto-copied", color = Color(0xFF94A3B8), fontSize = 9.sp)
-                            }
-                        }
-
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text("🌐 National:", color = Color(0xFF64748B), fontSize = 9.sp)
-                            Spacer(modifier = Modifier.width(3.dp))
-                            Surface(
-                                color = if (state.nationalFormat) Color(0xFF00E5FF) else Color(0xFF1E293B),
-                                shape = RoundedCornerShape(4.dp),
-                                modifier = Modifier.clickable { PremiumNumberV2Manager.setNationalFormat(!state.nationalFormat) }
-                            ) {
-                                Text(
-                                    text = if (state.nationalFormat) "ON" else "OFF",
-                                    color = if (state.nationalFormat) Color.Black else Color(0xFF94A3B8),
-                                    fontSize = 8.5.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
-                                )
-                            }
-                        }
-                    }
-                }
-            }
         } else {
             // ==================== TAB 1: LIVE CONSOLE / LIVE OTP (HUBU SAME AS SCREENSHOT 2) ====================
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -1378,17 +1379,40 @@ fun PremiumNumberV2SectionContent(
                                         )
                                     }
 
-                                    Surface(
-                                        color = Color(0xFF00E5FF).copy(alpha = 0.15f),
-                                        shape = RoundedCornerShape(4.dp)
-                                    ) {
-                                        Text(
-                                            text = "((o)) ${state.liveConsoleFeed.size} LIVE EVENTS",
-                                            color = Color(0xFF00E5FF),
-                                            fontSize = 8.5.sp,
-                                            fontWeight = FontWeight.Bold,
-                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                                        )
+                                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                        Surface(
+                                            color = Color(0xFF00E5FF).copy(alpha = 0.15f),
+                                            shape = RoundedCornerShape(4.dp)
+                                        ) {
+                                            Text(
+                                                text = "((o)) ${state.liveConsoleFeed.size} LIVE EVENTS",
+                                                color = Color(0xFF00E5FF),
+                                                fontSize = 8.5.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                            )
+                                        }
+
+                                        if (AuthManager.isAdmin()) {
+                                            Surface(
+                                                color = Color(0xFFEF4444).copy(alpha = 0.15f),
+                                                shape = RoundedCornerShape(4.dp),
+                                                border = BorderStroke(0.8.dp, Color(0xFFEF4444).copy(alpha = 0.5f)),
+                                                modifier = Modifier.clickable {
+                                                    PremiumNumberV2Manager.clearLiveConsoleFeed()
+                                                    Toast.makeText(context, "🧹 Premium V2 Live Console ক্লিয়ার হয়েছে", Toast.LENGTH_SHORT).show()
+                                                }
+                                            ) {
+                                                Row(
+                                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                                    verticalAlignment = Alignment.CenterVertically
+                                                ) {
+                                                    Icon(Icons.Default.Delete, contentDescription = "Clear", tint = Color(0xFFEF4444), modifier = Modifier.size(12.dp))
+                                                    Spacer(modifier = Modifier.width(2.dp))
+                                                    Text("Clear", color = Color(0xFFEF4444), fontSize = 8.5.sp, fontWeight = FontWeight.Bold)
+                                                }
+                                            }
+                                        }
                                     }
                                 }
 
@@ -1957,217 +1981,206 @@ fun PremiumV2NumberCard(
 }
 
 /**
- * Live OTP Stream Feed Item Card (Hubu same as Screenshot 2)
+ * Live OTP Stream Feed Item Card (Hubu same as Screenshot)
  */
 @Composable
 fun LiveOtpStreamCard(
     item: PremiumV2ConsoleItem,
     onGetNumber: () -> Unit
 ) {
-    Surface(
-        color = Color(0xFF0B1726),
-        shape = RoundedCornerShape(10.dp),
-        border = BorderStroke(0.9.dp, Color(0xFF162D42)),
+    val context = LocalContext.current
+    val rangeText = if (item.rangePrefix.isNotBlank()) "${item.rangePrefix}XXX" else item.maskedNumber
+
+    Card(
+        colors = CardDefaults.cardColors(containerColor = Color(0xFF131E2B)),
+        shape = RoundedCornerShape(14.dp),
+        border = BorderStroke(1.dp, Color(0xFF1E2D40)),
         modifier = Modifier.fillMaxWidth()
     ) {
-        Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            // Top Row: [Flag ZW]  ● FACEBOOK  +2637••••0889    [ ⚙️ GET NUMBER ]  just now
+        Column(modifier = Modifier.padding(12.dp)) {
+            // Line 1: [ 2372XXX 📋 ] Range Pill + Chips [Service] [Country] [Operator] [• NEW]
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                // Range Pill with Copy icon (Exact design from screenshot)
+                Surface(
+                    color = Color(0xFF0F263B),
+                    shape = RoundedCornerShape(8.dp),
+                    border = BorderStroke(1.dp, Color(0xFF0284C7)),
+                    modifier = Modifier.clickable {
+                        ClipboardHelper.copyToClipboard(context, rangeText, "Range")
+                        Toast.makeText(context, "Range কপি হয়েছে: $rangeText", Toast.LENGTH_SHORT).show()
+                        onGetNumber()
+                    }
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = rangeText,
+                            color = Color(0xFF00E5FF),
+                            fontSize = 12.5.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            fontFamily = FontFamily.Monospace
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Icon(
+                            imageVector = Icons.Default.ContentCopy,
+                            contentDescription = "Copy Range",
+                            tint = Color(0xFF00E5FF),
+                            modifier = Modifier.size(12.dp)
+                        )
+                    }
+                }
+
+                // Chips Row: [Service] [Country] [Operator] [• NEW]
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    // Service Chip
+                    val cleanSrv = when {
+                        item.service.contains("facebook", ignoreCase = true) || item.service.contains("fb", ignoreCase = true) -> "Facebook"
+                        item.service.contains("threads", ignoreCase = true) -> "Threads"
+                        item.service.contains("whatsapp", ignoreCase = true) || item.service.contains("wa", ignoreCase = true) -> "WhatsApp"
+                        item.service.contains("insta", ignoreCase = true) || item.service.contains("ig", ignoreCase = true) -> "Instagram"
+                        item.service.isBlank() || item.service.contains("ANY", ignoreCase = true) -> "Other"
+                        else -> item.service
+                    }
+                    Surface(
+                        color = Color(0xFF132237),
+                        shape = RoundedCornerShape(6.dp),
+                        border = BorderStroke(0.8.dp, Color(0xFF1E3A56))
+                    ) {
+                        Text(
+                            text = cleanSrv,
+                            color = Color(0xFF38BDF8),
+                            fontSize = 9.5.sp,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                        )
+                    }
+
+                    // Country Chip
+                    Surface(
+                        color = Color(0xFF0F2C33),
+                        shape = RoundedCornerShape(6.dp),
+                        border = BorderStroke(0.8.dp, Color(0xFF134E4A))
+                    ) {
+                        Text(
+                            text = item.country.ifBlank { "Global" },
+                            color = Color(0xFF2DD4BF),
+                            fontSize = 9.5.sp,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                        )
+                    }
+
+                    // Operator Chip
+                    Surface(
+                        color = Color(0xFF281E13),
+                        shape = RoundedCornerShape(6.dp),
+                        border = BorderStroke(0.8.dp, Color(0xFF452B14))
+                    ) {
+                        Text(
+                            text = item.operator.ifBlank { "MTN" },
+                            color = Color(0xFFFBBF24),
+                            fontSize = 9.5.sp,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                        )
+                    }
+
+                    // • NEW Badge
+                    if (item.isNew) {
+                        Surface(
+                            color = Color(0xFF064E3B).copy(alpha = 0.4f),
+                            shape = RoundedCornerShape(6.dp),
+                            border = BorderStroke(0.8.dp, Color(0xFF10B981))
+                        ) {
+                            Text(
+                                text = "• NEW",
+                                color = Color(0xFF34D399),
+                                fontSize = 9.sp,
+                                fontWeight = FontWeight.Black,
+                                modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
+                            )
+                        }
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(10.dp))
+
+            // Line 2: Monospace full SMS Body in rounded container (Click to copy)
+            val fullSnippet = item.rawSnippet.ifBlank { "<#> ${item.otpCode} is your Facebook code\nLaz+nxCarLW" }
+            Surface(
+                color = Color(0xFF0D1520),
+                shape = RoundedCornerShape(8.dp),
+                border = BorderStroke(1.dp, Color(0xFF1E2D3D)),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable {
+                        val cleanCode = com.example.util.OtpExtractionHelper.extractOtp(fullSnippet) ?: item.otpCode
+                        if (cleanCode.isNotBlank() && cleanCode != "******") {
+                            ClipboardHelper.copyToClipboard(context, cleanCode, "OTP Code")
+                            Toast.makeText(context, "✓ ওটিপি কপি হয়েছে: $cleanCode", Toast.LENGTH_SHORT).show()
+                        } else {
+                            ClipboardHelper.copyToClipboard(context, fullSnippet, "SMS Body")
+                            Toast.makeText(context, "✓ পুরো এসএমএস কপি হয়েছে", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+            ) {
+                Text(
+                    text = fullSnippet,
+                    color = Color(0xFFE2E8F0),
+                    fontSize = 11.5.sp,
+                    fontFamily = FontFamily.Monospace,
+                    lineHeight = 16.sp,
+                    modifier = Modifier.padding(10.dp)
+                )
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // Line 3: Bottom metadata (Timestamp and Green Elapsed time badge)
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
-                    // Country Badge: Flag + ISO
-                    Surface(
-                        color = Color(0xFF132237),
-                        shape = RoundedCornerShape(4.dp),
-                        border = BorderStroke(0.6.dp, Color(0xFF1E3A56))
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(text = item.flag, fontSize = 11.sp)
-                            Spacer(modifier = Modifier.width(3.dp))
-                            Text(
-                                text = item.iso,
-                                color = Color.White,
-                                fontSize = 8.5.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.width(6.dp))
-
-                    // Service Pill: ● FACEBOOK
-                    val srvColor = when {
-                        item.service.contains("facebook", ignoreCase = true) -> Color(0xFF38BDF8)
-                        item.service.contains("apple", ignoreCase = true) -> Color(0xFF00E5FF)
-                        item.service.contains("whatsapp", ignoreCase = true) -> Color(0xFF10B981)
-                        else -> Color(0xFFA78BFA)
-                    }
-                    Surface(
-                        color = srvColor.copy(alpha = 0.15f),
-                        shape = RoundedCornerShape(4.dp)
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .size(5.dp)
-                                    .clip(CircleShape)
-                                    .background(srvColor)
-                            )
-                            Spacer(modifier = Modifier.width(3.dp))
-                            Text(
-                                text = item.service,
-                                color = srvColor,
-                                fontSize = 8.5.sp,
-                                fontWeight = FontWeight.Black
-                            )
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.width(6.dp))
-
-                    // Masked Phone Number
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Default.AccessTime,
+                        contentDescription = null,
+                        tint = Color(0xFF64748B),
+                        modifier = Modifier.size(13.dp)
+                    )
+                    Spacer(modifier = Modifier.width(5.dp))
                     Text(
-                        text = item.maskedNumber,
-                        color = Color.White,
-                        fontSize = 11.5.sp,
-                        fontWeight = FontWeight.Bold,
+                        text = item.fullTimeFormatted,
+                        color = Color(0xFF64748B),
+                        fontSize = 10.sp,
                         fontFamily = FontFamily.Monospace
                     )
                 }
 
-                // Right: [ ⚙️ GET NUMBER ] Button & Time
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Surface(
-                        color = Color(0xFF0284C7).copy(alpha = 0.15f),
-                        shape = RoundedCornerShape(5.dp),
-                        border = BorderStroke(1.dp, Color(0xFF00E5FF)),
-                        modifier = Modifier.clickable { onGetNumber() }
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text("⚡", fontSize = 9.sp, color = Color(0xFF00E5FF))
-                            Spacer(modifier = Modifier.width(2.dp))
-                            Text(
-                                text = "GET NUMBER",
-                                color = Color(0xFF00E5FF),
-                                fontSize = 8.5.sp,
-                                fontWeight = FontWeight.Black
-                            )
-                        }
-                    }
-
+                // Green Elapsed Time Badge (e.g. "13s ago")
+                Surface(
+                    color = Color(0xFF064E3B).copy(alpha = 0.35f),
+                    shape = RoundedCornerShape(12.dp),
+                    border = BorderStroke(0.8.dp, Color(0xFF059669).copy(alpha = 0.6f))
+                ) {
                     Text(
                         text = item.timeAgo,
-                        color = Color(0xFF64748B),
-                        fontSize = 9.sp
+                        color = Color(0xFF34D399),
+                        fontSize = 9.5.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp)
                     )
-                }
-            }
-
-            // Bottom Snippet Row: Full unmasked SMS + Copy buttons
-            if (item.rawSnippet.isNotBlank()) {
-                val context = LocalContext.current
-                val cleanOtp = item.otpCode.trim()
-                Surface(
-                    color = Color(0xFF070E18),
-                    shape = RoundedCornerShape(8.dp),
-                    border = BorderStroke(0.8.dp, Color(0xFF1E3A56)),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Column(modifier = Modifier.padding(9.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text("💬", fontSize = 11.sp)
-                                Spacer(modifier = Modifier.width(5.dp))
-                                Text(
-                                    text = "FULL LIVE SMS MESSAGE",
-                                    color = Color(0xFF38BDF8),
-                                    fontSize = 9.sp,
-                                    fontWeight = FontWeight.Bold
-                                )
-                            }
-
-                            // Copy Actions Row
-                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
-                                if (cleanOtp.isNotEmpty() && cleanOtp != "******") {
-                                    Surface(
-                                        color = Color(0xFF10B981).copy(alpha = 0.2f),
-                                        shape = RoundedCornerShape(5.dp),
-                                        border = BorderStroke(1.dp, Color(0xFF10B981)),
-                                        modifier = Modifier.clickable {
-                                            ClipboardHelper.copyToClipboard(context, cleanOtp, "OTP")
-                                            Toast.makeText(context, "✓ ওটিপি কপি হয়েছে: $cleanOtp", Toast.LENGTH_SHORT).show()
-                                        }
-                                    ) {
-                                        Row(
-                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.5.dp),
-                                            verticalAlignment = Alignment.CenterVertically
-                                        ) {
-                                            Icon(Icons.Default.ContentCopy, contentDescription = null, tint = Color(0xFF10B981), modifier = Modifier.size(10.dp))
-                                            Spacer(modifier = Modifier.width(3.dp))
-                                            Text(
-                                                text = "OTP: $cleanOtp",
-                                                color = Color(0xFF34D399),
-                                                fontSize = 9.sp,
-                                                fontWeight = FontWeight.Black,
-                                                fontFamily = FontFamily.Monospace
-                                            )
-                                        }
-                                    }
-                                }
-
-                                Surface(
-                                    color = Color(0xFF1E293B),
-                                    shape = RoundedCornerShape(5.dp),
-                                    border = BorderStroke(0.8.dp, Color(0xFF475569)),
-                                    modifier = Modifier.clickable {
-                                        ClipboardHelper.copyToClipboard(context, item.rawSnippet, "Full SMS")
-                                        Toast.makeText(context, "✓ পুরো SMS কপি হয়েছে!", Toast.LENGTH_SHORT).show()
-                                    }
-                                ) {
-                                    Row(
-                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.5.dp),
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Icon(Icons.Default.ContentCopy, contentDescription = null, tint = Color(0xFF94A3B8), modifier = Modifier.size(10.dp))
-                                        Spacer(modifier = Modifier.width(3.dp))
-                                        Text(
-                                            text = "Copy SMS",
-                                            color = Color(0xFFCBD5E1),
-                                            fontSize = 8.5.sp,
-                                            fontWeight = FontWeight.Bold
-                                        )
-                                    }
-                                }
-                            }
-                        }
-
-                        // Full Unmasked SMS Text
-                        Text(
-                            text = item.rawSnippet,
-                            color = Color(0xFFF1F5F9),
-                            fontSize = 11.sp,
-                            lineHeight = 16.sp,
-                            fontFamily = FontFamily.Monospace,
-                            maxLines = Int.MAX_VALUE,
-                            softWrap = true
-                        )
-                    }
                 }
             }
         }

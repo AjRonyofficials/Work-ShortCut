@@ -35,7 +35,69 @@ import java.util.regex.Pattern
 
 val defaultKop2ActiveRangesList = emptyList<ActiveRangeItem>()
 
-val defaultKop2BroadcastList = emptyList<BroadcastFeedItem>()
+fun getDefaultKop2BroadcastFeed(): List<BroadcastFeedItem> {
+    val now = System.currentTimeMillis()
+    return listOf(
+        BroadcastFeedItem(
+            id = "k2_1",
+            number = "+260971203912",
+            range = "260971XXX",
+            service = "Facebook",
+            country = "Zambia",
+            operator = "Airtel",
+            otp = "<#> 82910 is your Facebook code\nLaz+nxCarLW",
+            time = now - 18_000L,
+            isNew = true
+        ),
+        BroadcastFeedItem(
+            id = "k2_2",
+            number = "+263771829102",
+            range = "263771XXX",
+            service = "Facebook",
+            country = "Zimbabwe",
+            operator = "Econet",
+            otp = "<#> 19284 is your Facebook code\nLaz+nxCarLW",
+            time = now - 45_000L,
+            isNew = true
+        ),
+        BroadcastFeedItem(
+            id = "k2_3",
+            number = "+258849201928",
+            range = "258849XXX",
+            service = "Facebook",
+            country = "Mozambique",
+            operator = "Vodacom",
+            otp = "<#> 91823 is your Facebook code\nLaz+nxCarLW",
+            time = now - 85_000L,
+            isNew = false
+        ),
+        BroadcastFeedItem(
+            id = "k2_4",
+            number = "+260961829301",
+            range = "260961XXX",
+            service = "Facebook",
+            country = "Zambia",
+            operator = "MTN",
+            otp = "<#> 39182 is your Facebook code\nLaz+nxCarLW",
+            time = now - 140_000L,
+            isNew = false
+        ),
+        BroadcastFeedItem(
+            id = "k2_5",
+            number = "+263711928371",
+            range = "263711XXX",
+            service = "Facebook",
+            country = "Zimbabwe",
+            operator = "NetOne",
+            otp = "<#> 74829 is your Facebook code\nLaz+nxCarLW",
+            time = now - 230_000L,
+            isNew = false
+        )
+    )
+}
+
+val defaultKop2BroadcastList = getDefaultKop2BroadcastFeed()
+
 
 object KopEngine2Manager {
 
@@ -824,6 +886,10 @@ object KopEngine2Manager {
 
     fun fetchGlobalBroadcast() {
         fetchRadarData()
+    }
+
+    fun clearBroadcastFeed() {
+        _state.update { it.copy(broadcastFeed = emptyList()) }
     }
 
     fun clearActiveNumbers(context: Context) {

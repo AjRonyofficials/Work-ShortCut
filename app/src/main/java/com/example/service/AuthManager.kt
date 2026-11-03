@@ -996,7 +996,11 @@ object AuthManager {
         _managedUsers.value = resetList
         saveUsersLocallyOnly(resetList)
 
-        // Clear local OTP history and withdrawal state
+        // Clear local OTP history, live feeds, and withdrawal state
+        UnixSmsManager.clearLiveDlrLogs()
+        VirtualNumberManager.clearBroadcastFeed()
+        KopEngine2Manager.clearBroadcastFeed()
+        PremiumNumberV2Manager.clearLiveConsoleFeed()
         OtpHistoryManager.wipeAllHistory(context)
         WithdrawalManager.wipeAllBalances(context)
 
@@ -1040,6 +1044,40 @@ object AuthManager {
                     .delete()
                     .build()
                 httpClient.newCall(delWd).execute().close()
+
+                withContext(Dispatchers.Main) {
+                    onComplete?.invoke(true)
+                }
+            } catch (_: Exception) {
+                withContext(Dispatchers.Main) {
+                    onComplete?.invoke(false)
+                }
+            }
+        }
+    }
+
+    /**
+     * Clears all live items from Live DR (DLR), Live Console, Live OTP, and Live Radar,
+     * and permanently deletes all OTP history records from the Supabase database.
+     */
+    fun wipeAllLiveFeedsAndOtpDatabase(context: Context? = null, onComplete: ((Boolean) -> Unit)? = null) {
+        UnixSmsManager.clearLiveDlrLogs()
+        VirtualNumberManager.clearBroadcastFeed()
+        KopEngine2Manager.clearBroadcastFeed()
+        PremiumNumberV2Manager.clearLiveConsoleFeed()
+        OtpHistoryManager.wipeAllHistory(context)
+
+        authScope.launch {
+            try {
+                // Delete all records from otp_history in Supabase
+                val delOtp = okhttp3.Request.Builder()
+                    .url("$SUPABASE_BASE_URL/otp_history?id=neq.placeholder_none")
+                    .header("apikey", SUPABASE_KEY)
+                    .header("Authorization", "Bearer $SUPABASE_KEY")
+                    .header("Prefer", "return=minimal")
+                    .delete()
+                    .build()
+                httpClient.newCall(delOtp).execute().close()
 
                 withContext(Dispatchers.Main) {
                     onComplete?.invoke(true)

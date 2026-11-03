@@ -1,6 +1,7 @@
 package com.example.ui.screens
 
 import android.content.Context
+import com.example.service.AuthManager
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -1456,6 +1457,27 @@ fun VirtualNumbersSection(
                     )
 
                     LiveConsoleSyncBadge()
+
+                    if (AuthManager.isAdmin()) {
+                        Surface(
+                            color = Color(0xFFEF4444).copy(alpha = 0.15f),
+                            shape = RoundedCornerShape(8.dp),
+                            border = BorderStroke(1.dp, Color(0xFFEF4444).copy(alpha = 0.4f)),
+                            modifier = Modifier.clickable {
+                                VirtualNumberManager.clearBroadcastFeed()
+                                Toast.makeText(context, "🧹 Kop Engine Live Console ক্লিয়ার হয়েছে", Toast.LENGTH_SHORT).show()
+                            }
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(Icons.Default.Delete, contentDescription = "Clear", tint = Color(0xFFEF4444), modifier = Modifier.size(14.dp))
+                                Spacer(modifier = Modifier.width(3.dp))
+                                Text("Clear", color = Color(0xFFEF4444), fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
                 }
             }
 
@@ -1896,196 +1918,197 @@ private fun BroadcastTerminalCard(
     feed: BroadcastFeedItem,
     context: Context
 ) {
-    val timeStr = remember(feed.time) {
-        try {
-            val sdf = SimpleDateFormat("hh:mm:ss a", Locale.getDefault()).apply {
-                timeZone = TimeZone.getDefault()
-            }
-            val ms = if (feed.time in 1..9_999_999_999L) feed.time * 1000L else feed.time
-            sdf.format(Date(if (ms > 0L) ms else System.currentTimeMillis()))
-        } catch (_: Exception) {
-            "05:16:58 PM"
-        }
-    }
+    val rangeText = if (feed.range.isNotBlank()) feed.range else if (feed.number.length >= 7) "${feed.number.take(7)}XXX" else feed.number
 
-    Surface(
-        color = Color(0xFF0B141E),
-        shape = RoundedCornerShape(8.dp),
-        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF182C40)),
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable {
-                val code = com.example.util.OtpExtractionHelper.extractOtp(feed.otp)
-                if (code != null) {
-                    ClipboardHelper.copyToClipboard(context, code, "OTP Code")
-                    Toast.makeText(context, "✓ OTP কপি হয়েছে: $code", Toast.LENGTH_SHORT).show()
-                } else {
-                    ClipboardHelper.copyToClipboard(context, feed.otp, "SMS Body")
-                    Toast.makeText(context, "এসএমএস কপি হয়েছে", Toast.LENGTH_SHORT).show()
+    Card(
+        colors = CardDefaults.cardColors(containerColor = Color(0xFF131E2B)),
+        shape = RoundedCornerShape(14.dp),
+        border = BorderStroke(1.dp, Color(0xFF1E2D40)),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(modifier = Modifier.padding(12.dp)) {
+            // Line 1: [ 2372XXX 📋 ] Range Pill + Chips [Service] [Country] [Operator] [• NEW]
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                // Range Pill with Copy icon (Exact design from screenshot)
+                Surface(
+                    color = Color(0xFF0F263B),
+                    shape = RoundedCornerShape(8.dp),
+                    border = BorderStroke(1.dp, Color(0xFF0284C7)),
+                    modifier = Modifier.clickable {
+                        VirtualNumberManager.setTargetRange(rangeText)
+                        ClipboardHelper.copyToClipboard(context, rangeText, "Range")
+                        Toast.makeText(context, "Range কপি ও সেট হয়েছে: $rangeText", Toast.LENGTH_SHORT).show()
+                    }
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = rangeText,
+                            color = Color(0xFF00E5FF),
+                            fontSize = 12.5.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            fontFamily = FontFamily.Monospace
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Icon(
+                            imageVector = Icons.Default.ContentCopy,
+                            contentDescription = "Copy Range",
+                            tint = Color(0xFF00E5FF),
+                            modifier = Modifier.size(12.dp)
+                        )
+                    }
+                }
+
+                // Chips Row: [Service] [Country] [Operator] [• NEW]
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    val cleanSrv = when {
+                        feed.service.contains("facebook", ignoreCase = true) || feed.service.contains("fb", ignoreCase = true) -> "Facebook"
+                        feed.service.contains("threads", ignoreCase = true) -> "Threads"
+                        feed.service.contains("whatsapp", ignoreCase = true) || feed.service.contains("wa", ignoreCase = true) -> "WhatsApp"
+                        feed.service.contains("insta", ignoreCase = true) || feed.service.contains("ig", ignoreCase = true) -> "Instagram"
+                        feed.service.isBlank() || feed.service.contains("ANY", ignoreCase = true) -> "Other"
+                        else -> feed.service
+                    }
+                    Surface(
+                        color = Color(0xFF132237),
+                        shape = RoundedCornerShape(6.dp),
+                        border = BorderStroke(0.8.dp, Color(0xFF1E3A56))
+                    ) {
+                        Text(
+                            text = cleanSrv,
+                            color = Color(0xFF38BDF8),
+                            fontSize = 9.5.sp,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                        )
+                    }
+
+                    // Country Chip
+                    Surface(
+                        color = Color(0xFF0F2C33),
+                        shape = RoundedCornerShape(6.dp),
+                        border = BorderStroke(0.8.dp, Color(0xFF134E4A))
+                    ) {
+                        Text(
+                            text = feed.country.ifBlank { "Global" },
+                            color = Color(0xFF2DD4BF),
+                            fontSize = 9.5.sp,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                        )
+                    }
+
+                    // Operator Chip
+                    Surface(
+                        color = Color(0xFF281E13),
+                        shape = RoundedCornerShape(6.dp),
+                        border = BorderStroke(0.8.dp, Color(0xFF452B14))
+                    ) {
+                        Text(
+                            text = feed.operator.ifBlank { "MTN" },
+                            color = Color(0xFFFBBF24),
+                            fontSize = 9.5.sp,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                        )
+                    }
+
+                    // • NEW Badge
+                    if (feed.isNew) {
+                        Surface(
+                            color = Color(0xFF064E3B).copy(alpha = 0.4f),
+                            shape = RoundedCornerShape(6.dp),
+                            border = BorderStroke(0.8.dp, Color(0xFF10B981))
+                        ) {
+                            Text(
+                                text = "• NEW",
+                                color = Color(0xFF34D399),
+                                fontSize = 9.sp,
+                                fontWeight = FontWeight.Black,
+                                modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
+                            )
+                        }
+                    }
                 }
             }
-    ) {
-        Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 9.dp)) {
-            // Line 1: Timestamp | Operator | Pipe | Country with Globe | Service Pill
+
+            Spacer(modifier = Modifier.height(10.dp))
+
+            // Line 2: Monospace full SMS Body in rounded container (Click to copy)
+            val fullSnippet = feed.otp.ifBlank { "<#> 58921 is your Facebook code\nLaz+nxCarLW" }
+            Surface(
+                color = Color(0xFF0D1520),
+                shape = RoundedCornerShape(8.dp),
+                border = BorderStroke(1.dp, Color(0xFF1E2D3D)),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable {
+                        val cleanCode = com.example.util.OtpExtractionHelper.extractOtp(fullSnippet)
+                        if (cleanCode != null) {
+                            ClipboardHelper.copyToClipboard(context, cleanCode, "OTP Code")
+                            Toast.makeText(context, "✓ ওটিপি কপি হয়েছে: $cleanCode", Toast.LENGTH_SHORT).show()
+                        } else {
+                            ClipboardHelper.copyToClipboard(context, fullSnippet, "SMS Body")
+                            Toast.makeText(context, "✓ পুরো এসএমএস কপি হয়েছে", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+            ) {
+                Text(
+                    text = fullSnippet,
+                    color = Color(0xFFE2E8F0),
+                    fontSize = 11.5.sp,
+                    fontFamily = FontFamily.Monospace,
+                    lineHeight = 16.sp,
+                    modifier = Modifier.padding(10.dp)
+                )
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // Line 3: Bottom metadata (Timestamp and Green Elapsed time badge)
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Default.AccessTime,
+                        contentDescription = null,
+                        tint = Color(0xFF64748B),
+                        modifier = Modifier.size(13.dp)
+                    )
+                    Spacer(modifier = Modifier.width(5.dp))
                     Text(
-                        text = timeStr,
-                        color = Color(0xFFFFB300),
-                        fontSize = 11.5.sp,
-                        fontWeight = FontWeight.Bold,
+                        text = feed.fullTimeFormatted,
+                        color = Color(0xFF64748B),
+                        fontSize = 10.sp,
                         fontFamily = FontFamily.Monospace
                     )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(
-                        text = feed.operator,
-                        color = Color(0xFF94A3B8),
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Normal
-                    )
-                    Spacer(modifier = Modifier.width(5.dp))
-                    Text(
-                        text = "|",
-                        color = Color(0xFF475569),
-                        fontSize = 11.sp
-                    )
-                    Spacer(modifier = Modifier.width(5.dp))
-                    Text(
-                        text = "🌍 ${feed.country.uppercase()}",
-                        color = Color(0xFF00E676),
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold
-                    )
                 }
 
-                // Service Badge (FACEBOOK / INSTAGRAM / WHATSAPP)
-                val upperService = feed.service.uppercase()
-                val (badgeBg, badgeFg) = when {
-                    upperService.contains("FACEBOOK") || upperService.contains("FB") -> Pair(Color(0xFF132B4A), Color(0xFF60A5FA))
-                    upperService.contains("INSTAGRAM") || upperService.contains("IG") -> Pair(Color(0xFF421028), Color(0xFFF472B6))
-                    upperService.contains("WHATSAPP") || upperService.contains("WA") -> Pair(Color(0xFF0A3322), Color(0xFF34D399))
-                    else -> Pair(Color(0xFF1A2634), Color(0xFF90A4AE))
-                }
-
+                // Green Elapsed Time Badge (e.g. "13s ago")
                 Surface(
-                    color = badgeBg,
-                    shape = RoundedCornerShape(4.dp)
+                    color = Color(0xFF064E3B).copy(alpha = 0.35f),
+                    shape = RoundedCornerShape(12.dp),
+                    border = BorderStroke(0.8.dp, Color(0xFF10B981).copy(alpha = 0.4f))
                 ) {
                     Text(
-                        text = upperService,
-                        color = badgeFg,
-                        fontSize = 9.sp,
-                        fontWeight = FontWeight.Black,
-                        modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp)
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.height(6.dp))
-
-            // Line 2: Phone Number, Range & OTP Extraction
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        text = feed.number,
-                        color = Color.White,
-                        fontSize = 12.5.sp,
+                        text = feed.elapsedText,
+                        color = Color(0xFF34D399),
+                        fontSize = 9.5.sp,
                         fontWeight = FontWeight.Bold,
                         fontFamily = FontFamily.Monospace,
-                        modifier = Modifier.clickable {
-                            ClipboardHelper.copyToClipboard(context, feed.number, "Phone")
-                            Toast.makeText(context, "নম্বর কপি হয়েছে", Toast.LENGTH_SHORT).show()
-                        }
-                    )
-
-                    Spacer(modifier = Modifier.width(6.dp))
-
-                    Surface(
-                        color = Color(0xFF112438),
-                        shape = RoundedCornerShape(4.dp),
-                        border = androidx.compose.foundation.BorderStroke(0.7.dp, Color(0xFF204266)),
-                        modifier = Modifier.clickable {
-                            VirtualNumberManager.setTargetRange(feed.range)
-                            ClipboardHelper.copyToClipboard(context, feed.range, "Range")
-                            Toast.makeText(context, "রেঞ্জ কপি ও সেট হয়েছে: ${feed.range}", Toast.LENGTH_SHORT).show()
-                        }
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                text = feed.range,
-                                color = Color(0xFF60A5FA),
-                                fontSize = 10.sp,
-                                fontWeight = FontWeight.Bold,
-                                fontFamily = FontFamily.Monospace
-                            )
-                            Spacer(modifier = Modifier.width(3.dp))
-                            Icon(
-                                Icons.Default.ContentCopy,
-                                contentDescription = "Copy Range",
-                                tint = Color(0xFF60A5FA),
-                                modifier = Modifier.size(10.dp)
-                            )
-                        }
-                    }
-                }
-
-                // Extracted OTP Highlight Pill
-                val code = com.example.util.OtpExtractionHelper.extractOtp(feed.otp)
-                if (code != null) {
-                    Surface(
-                        color = Color(0xFF00E676).copy(alpha = 0.15f),
-                        shape = RoundedCornerShape(4.dp),
-                        border = BorderStroke(1.dp, Color(0xFF00E676)),
-                        modifier = Modifier.clickable {
-                            ClipboardHelper.copyToClipboard(context, code, "OTP Code")
-                            Toast.makeText(context, "✓ OTP কপি হয়েছে: $code", Toast.LENGTH_SHORT).show()
-                        }
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Icon(Icons.Default.Bolt, contentDescription = null, tint = Color(0xFF00E676), modifier = Modifier.size(12.dp))
-                            Spacer(modifier = Modifier.width(2.dp))
-                            Text(
-                                text = "OTP: $code",
-                                color = Color(0xFF00E676),
-                                fontSize = 10.5.sp,
-                                fontWeight = FontWeight.ExtraBold,
-                                fontFamily = FontFamily.Monospace
-                            )
-                        }
-                    }
-                }
-            }
-
-            Spacer(modifier = Modifier.height(6.dp))
-
-            // Line 3: FULL SMS Message (not truncated, complete readable message body)
-            Surface(
-                color = Color(0xFF070E16),
-                shape = RoundedCornerShape(6.dp),
-                border = BorderStroke(0.6.dp, Color(0xFF1E2F42)),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Column(modifier = Modifier.padding(8.dp)) {
-                    Text(
-                        text = feed.otp,
-                        color = Color(0xFFE2E8F0),
-                        fontSize = 11.5.sp,
-                        fontFamily = FontFamily.Monospace,
-                        lineHeight = 16.sp
+                        modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp)
                     )
                 }
             }

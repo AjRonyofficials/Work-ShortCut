@@ -4716,6 +4716,62 @@ fun AdminUserManagerCard(
                     Text("🧹 সকল ইউজারের ব্যালেন্স ও হিস্টোরি রিসেট করুন", fontSize = 11.sp, color = Color(0xFFEF4444), fontWeight = FontWeight.SemiBold)
                 }
 
+                Spacer(modifier = Modifier.height(8.dp))
+
+                var showWipeLiveDialog by remember { mutableStateOf(false) }
+
+                if (showWipeLiveDialog) {
+                    androidx.compose.material3.AlertDialog(
+                        onDismissRequest = { showWipeLiveDialog = false },
+                        title = { Text("লাইভ DR, কনসোল ও ওটিপি ডাটাবেস ক্লিয়ার", fontWeight = FontWeight.Bold, color = Color.White) },
+                        text = {
+                            Text(
+                                "আপনি কি নিশ্চিত যে সকল লাইভ DR (DLR), লাইভ কনসোল, লাইভ OTP এবং লাইভ রাডারের ৫০টি রেকর্ড তাৎক্ষণিকভাবে পরিষ্কার করতে চান এবং ক্লাউড ডাটাবেস থেকে সকল OTP রেকর্ড মুছে ফেলতে চান?",
+                                fontSize = 12.sp,
+                                color = Color(0xFFCBD5E1)
+                            )
+                        },
+                        confirmButton = {
+                            Button(
+                                onClick = {
+                                    showWipeLiveDialog = false
+                                    AuthManager.wipeAllLiveFeedsAndOtpDatabase(context) { ok ->
+                                        if (ok) {
+                                            Toast.makeText(context, "✓ ডাটাবেস ও সকল লাইভ কনসোল / DR / রাডার ৫০টি রেকর্ড মুছে ফেলা হয়েছে!", Toast.LENGTH_LONG).show()
+                                        } else {
+                                            Toast.makeText(context, "✓ লোকাল লাইভ রেকর্ড পরিষ্কার হয়েছে!", Toast.LENGTH_SHORT).show()
+                                        }
+                                    }
+                                    com.example.util.VibrationHelper.vibrateSuccess(context)
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFEF4444))
+                            ) {
+                                Text("হ্যাঁ, সব ক্লিয়ার করুন", color = Color.White)
+                            }
+                        },
+                        dismissButton = {
+                            OutlinedButton(onClick = { showWipeLiveDialog = false }) {
+                                Text("বাতিল", color = Color.White)
+                            }
+                        },
+                        containerColor = Color(0xFF0F1A2B),
+                        shape = RoundedCornerShape(14.dp)
+                    )
+                }
+
+                Button(
+                    onClick = { showWipeLiveDialog = true },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFF59E0B).copy(alpha = 0.15f)),
+                    border = BorderStroke(1.dp, Color(0xFFF59E0B)),
+                    shape = RoundedCornerShape(8.dp),
+                    modifier = Modifier.fillMaxWidth(),
+                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp)
+                ) {
+                    Icon(Icons.Default.DeleteSweep, contentDescription = null, tint = Color(0xFFF59E0B), modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("⚡ CLEAR LIVE DR, RADAR & CONSOLE (ডাটাবেস ও সকল লাইভ OTP মুছুন)", fontSize = 10.5.sp, color = Color(0xFFF59E0B), fontWeight = FontWeight.Bold)
+                }
+
                 Spacer(modifier = Modifier.height(10.dp))
 
                 var userFilterTab by remember { mutableStateOf("ALL") } // "ALL", "ACTIVE", "INACTIVE", "BANNED"

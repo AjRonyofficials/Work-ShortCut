@@ -1301,7 +1301,7 @@ object UnixSmsManager {
             }
             val mergedCdr = (newCdrEntries + current.liveCdrRecords)
                 .distinctBy { "${it.num}_${it.message}" }
-                .take(35)
+                .take(50)
             current.copy(
                 liveCdrRecords = mergedCdr,
                 activeNumbers = mergedActive,
@@ -1692,7 +1692,7 @@ object UnixSmsManager {
                     }
                     val mergedCdr = (cdrList + current.liveCdrRecords)
                         .distinctBy { "${it.num}_${it.message}" }
-                        .take(35)
+                        .take(50)
                     current.copy(
                         liveCdrRecords = mergedCdr,
                         activeNumbers = mergedActive,
