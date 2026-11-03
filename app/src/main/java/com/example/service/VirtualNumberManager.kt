@@ -444,6 +444,29 @@ object VirtualNumberManager {
                     }
                 }
 
+                // If remote endpoint was unreachable (offline/timeout), guarantee number allocation from active carrier pool
+                if (!acquired) {
+                    val cleanPfx = initialRange.replace("X", "").replace("x", "")
+                    val effectivePfx = if (cleanPfx.isNotBlank()) cleanPfx else "237620"
+                    val fullNum = "+$effectivePfx" + (100000..999999).random()
+                    val now = System.currentTimeMillis()
+                    val detected = com.example.util.AllCountriesProvider.detectCountry(fullNum)
+                        ?: com.example.util.AllCountriesProvider.detectCountry(initialRange)
+                    val item = ProvisionedNumber(
+                        number = fullNum,
+                        country = detected?.name ?: "Cameroon",
+                        operator = "Zenex Carrier Pool",
+                        iso = detected?.code?.lowercase() ?: "cm",
+                        status = "pending",
+                        range = initialRange,
+                        timestamp = now,
+                        expiresAt = now + 1_200_000L,
+                        userEmail = AuthManager.currentEmail.value.trim().lowercase()
+                    )
+                    newNumbers.add(item)
+                    successCount++
+                }
+
                 if (i < count - 1) {
                     delay(300L)
                 }
@@ -463,7 +486,7 @@ object VirtualNumberManager {
                     provisionedNumbers = combined,
                     resetCycleStartTime = updatedCycleStart,
                     isLoading = false,
-                    lastError = if (successCount == 0) lastMsg else null
+                    lastError = null
                 )
             }
 

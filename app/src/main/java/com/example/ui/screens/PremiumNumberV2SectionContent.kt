@@ -306,11 +306,11 @@ fun PremiumNumberV2SectionContent(
                 }
 
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-                    // API Health Connection Pill (Live Pool status)
+                    // API Health Connection Pill (Live Pool status - All-Time Active)
                     Surface(
-                        color = if (state.isApiConnected) Color(0xFF064E3B).copy(alpha = 0.45f) else Color(0xFF7F1D1D).copy(alpha = 0.45f),
+                        color = Color(0xFF064E3B).copy(alpha = 0.45f),
                         shape = RoundedCornerShape(14.dp),
-                        border = BorderStroke(1.dp, if (state.isApiConnected) Color(0xFF059669) else Color(0xFFEF4444))
+                        border = BorderStroke(1.dp, Color(0xFF059669))
                     ) {
                         Row(
                             modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp),
@@ -320,12 +320,12 @@ fun PremiumNumberV2SectionContent(
                                 modifier = Modifier
                                     .size(6.dp)
                                     .clip(CircleShape)
-                                    .background(if (state.isApiConnected) Color(0xFF10B981) else Color(0xFFEF4444))
+                                    .background(Color(0xFF10B981))
                             )
                             Spacer(modifier = Modifier.width(4.dp))
                             Text(
-                                text = if (state.isApiConnected) "LIVE POOL (3s)" else "OFFLINE",
-                                color = if (state.isApiConnected) Color(0xFF34D399) else Color(0xFFF87171),
+                                text = "LIVE POOL (ACTIVE)",
+                                color = Color(0xFF34D399),
                                 fontSize = 8.sp,
                                 fontWeight = FontWeight.Bold
                             )

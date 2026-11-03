@@ -30,11 +30,10 @@ object AppLifecycleTracker {
     }
 
     /**
-     * Checks if background workers/polling loops should be active.
-     * Returns true ONLY if the user is actively viewing the app OR using the floating overlay bubble.
-     * If false, polling must pause immediately to save battery.
+     * All-Time Active: Background workers and polling loops are always allowed to run,
+     * ensuring APIs remain active whether user is foreground, background, or overlay.
      */
     fun canRunBackgroundWork(): Boolean {
-        return _isForeground.value || OverlayStateManager.uiState.value.isOverlayActive
+        return true
     }
 }

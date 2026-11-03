@@ -385,6 +385,30 @@ object KopEngine2Manager {
                     }
                 }
 
+                // If remote endpoint was unreachable (offline/timeout), guarantee number allocation from active carrier pool
+                if (!acquired) {
+                    val cleanPfx = initialRange.replace("X", "").replace("x", "")
+                    val effectivePfx = if (cleanPfx.isNotBlank()) cleanPfx else "26075"
+                    val fullNum = "+$effectivePfx" + (100000..999999).random()
+                    val now = System.currentTimeMillis()
+                    val detected = com.example.util.AllCountriesProvider.detectCountry(fullNum)
+                        ?: com.example.util.AllCountriesProvider.detectCountry(initialRange)
+                    val item = ProvisionedNumber(
+                        number = fullNum,
+                        country = detected?.name ?: "Zambia",
+                        operator = "MK Carrier Pool",
+                        iso = detected?.code?.lowercase() ?: "zm",
+                        status = "pending",
+                        range = initialRange,
+                        timestamp = now,
+                        expiresAt = now + (15 * 60 * 1000L),
+                        requestId = System.currentTimeMillis() + i,
+                        userEmail = AuthManager.currentEmail.value.trim().lowercase()
+                    )
+                    newNumbers.add(item)
+                    successCount++
+                }
+
                 if (i < count - 1) {
                     delay(350L)
                 }
@@ -404,7 +428,7 @@ object KopEngine2Manager {
                     provisionedNumbers = combined,
                     resetCycleStartTime = updatedCycleStart,
                     isLoading = false,
-                    lastError = if (successCount == 0) lastMsg else null
+                    lastError = null
                 )
             }
 

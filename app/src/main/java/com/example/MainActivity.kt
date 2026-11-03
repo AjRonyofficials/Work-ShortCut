@@ -77,6 +77,7 @@ class MainActivity : ComponentActivity() {
         try { com.example.service.UnixSmsManager.init(this) } catch (e: Throwable) { e.printStackTrace() }
         try { com.example.service.VirtualNumberManager.init(this) } catch (e: Throwable) { e.printStackTrace() }
         try { com.example.service.KopEngine2Manager.init(this) } catch (e: Throwable) { e.printStackTrace() }
+        try { com.example.service.PremiumNumberV2Manager.init(this) } catch (e: Throwable) { e.printStackTrace() }
         try { com.example.service.AuthManager.init(this) } catch (e: Throwable) { e.printStackTrace() }
         try { com.example.service.WithdrawalManager.init(this) } catch (e: Throwable) { e.printStackTrace() }
         try { com.example.service.OtpHistoryManager.init(this) } catch (e: Throwable) { e.printStackTrace() }
@@ -139,6 +140,14 @@ class MainActivity : ComponentActivity() {
     override fun onStart() {
         super.onStart()
         com.example.util.AppLifecycleTracker.onActivityStarted()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        com.example.util.AppLifecycleTracker.onActivityStarted()
+        try { com.example.service.VirtualNumberManager.init(this); com.example.service.VirtualNumberManager.fetchActiveRanges() } catch (_: Throwable) {}
+        try { com.example.service.KopEngine2Manager.init(this); com.example.service.KopEngine2Manager.fetchActiveRanges() } catch (_: Throwable) {}
+        try { com.example.service.PremiumNumberV2Manager.init(this); com.example.service.PremiumNumberV2Manager.refreshLiveConsole() } catch (_: Throwable) {}
     }
 
     override fun onStop() {
