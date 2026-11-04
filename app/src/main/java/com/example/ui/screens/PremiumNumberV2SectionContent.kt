@@ -193,13 +193,7 @@ fun PremiumNumberV2SectionContent(
             }
         }
         if (list.size <= 1) {
-            listOf(
-                V2CountryPreset("ANY", "ANY (All Live Pool)", "🌐", "", "POOL", "🔥 All Pools"),
-                V2CountryPreset("ZW", "Zimbabwe", "🇿🇼", "+263", "LIVE", "👥 FB Clone"),
-                V2CountryPreset("SD", "Sudan", "🇸🇩", "+249", "LIVE", "✨ FB New"),
-                V2CountryPreset("FR", "France", "🇫🇷", "+33", "LIVE", "💬 WhatsApp"),
-                V2CountryPreset("ZM", "Zambia", "🇿🇲", "+260", "LIVE", "📸 Instagram")
-            )
+            ALLOCATION_COUNTRIES
         } else list
     }
 
@@ -281,7 +275,7 @@ fun PremiumNumberV2SectionContent(
                     Column {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(
-                                text = "SL VIRTUAL NUMBER",
+                                text = "PREMIUM NUMBERS",
                                 color = Color.White,
                                 fontSize = 12.5.sp,
                                 fontWeight = FontWeight.Black
@@ -1642,29 +1636,10 @@ fun PremiumNumberV2SectionContent(
                         } else {
                             feedItems.forEach { item ->
                                 LiveOtpStreamCard(
-                                    item = item,
-                                    onGetNumber = {
-                                        if (item.rangePrefix.isNotBlank()) {
-                                            PremiumNumberV2Manager.setRangePrefix(item.rangePrefix)
-                                        }
-                                        if (item.iso.isNotBlank() && item.iso != "ANY") {
-                                            PremiumNumberV2Manager.setSelectedCountry(item.iso)
-                                        }
-                                        PremiumNumberV2Manager.rentDirectFromConsoleItem(item, context)
-                                    }
+                                    item = item
                                 )
                             }
-
-                            Spacer(modifier = Modifier.height(14.dp))
-                            Text(
-                                text = "SL VIRTUAL NUMBER © 2026 // ALL RIGHTS RESERVED",
-                                color = Color(0xFF64748B),
-                                fontSize = 10.sp,
-                                fontWeight = FontWeight.Medium,
-                                letterSpacing = 1.sp,
-                                textAlign = TextAlign.Center,
-                                modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp)
-                            )
+                            Spacer(modifier = Modifier.height(16.dp))
                         }
                     }
                 }
@@ -1992,8 +1967,7 @@ fun PremiumV2NumberCard(
  */
 @Composable
 fun LiveOtpStreamCard(
-    item: PremiumV2ConsoleItem,
-    onGetNumber: () -> Unit
+    item: PremiumV2ConsoleItem
 ) {
     val context = LocalContext.current
     val fullSnippet = item.rawSnippet.ifBlank { "<#> ***** is your Facebook code\nH29Q+Fsn4Sr" }
@@ -2086,33 +2060,29 @@ fun LiveOtpStreamCard(
                 )
             }
 
-            // Row 2: [ ⚙️ GET NUMBER ]          just now / 1 min ago
+            // Row 2: Live status and relative time (no GET NUMBER button)
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                // [ ⚙️ GET NUMBER ] Pill Button
-                Surface(
-                    color = Color(0xFF042F2E).copy(alpha = 0.5f),
-                    shape = RoundedCornerShape(12.dp),
-                    border = BorderStroke(1.2.dp, Color(0xFF00E676)),
-                    modifier = Modifier.clickable { onGetNumber() }
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text("⚙️", fontSize = 11.sp)
-                        Spacer(modifier = Modifier.width(5.dp))
-                        Text(
-                            text = "GET NUMBER",
-                            color = Color(0xFF00E676),
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.ExtraBold,
-                            letterSpacing = 0.5.sp
-                        )
-                    }
+                    Box(
+                        modifier = Modifier
+                            .size(6.dp)
+                            .clip(CircleShape)
+                            .background(Color(0xFF00E676))
+                    )
+                    Text(
+                        text = "LIVE OTP",
+                        color = Color(0xFF00E676),
+                        fontSize = 10.5.sp,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 0.5.sp
+                    )
                 }
 
                 // Relative time label (just now, 1 min ago)

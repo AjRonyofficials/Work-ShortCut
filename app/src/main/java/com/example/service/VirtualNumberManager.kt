@@ -956,7 +956,11 @@ object VirtualNumberManager {
                                         )
                                     }
                                 val cmList = list.filter { it.country.contains("Cameroon", true) || it.number.contains("237") || it.range.startsWith("237") }
-                                val combined = (localOtps + cmList + defaultBroadcastList).distinctBy { "${it.number}_${it.otp}" }.take(50)
+                                val combined = if (cmList.isNotEmpty()) {
+                                    (localOtps + cmList).distinctBy { "${it.number}_${it.otp}" }.take(50)
+                                } else {
+                                    (localOtps + defaultBroadcastList).distinctBy { "${it.number}_${it.otp}" }.take(50)
+                                }
                                 current.copy(broadcastFeed = combined)
                             }
                             return@launch

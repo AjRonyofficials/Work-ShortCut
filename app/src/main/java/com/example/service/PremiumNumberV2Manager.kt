@@ -730,11 +730,16 @@ object PremiumNumberV2Manager {
 
     fun formatMaskedNumber(raw: String, itemId: String = "", rangePrefix: String = ""): String {
         val trimmed = raw.trim()
-        if (trimmed.isBlank()) return "+2637••••0889"
+        if (trimmed.isBlank()) return "+3932••••4885"
 
         // If already formatted like +2519••••8156 with 4 trailing digits
         val exactMatch = Pattern.compile("^\\+[0-9]{3,5}••••[0-9]{4}$").matcher(trimmed)
         if (exactMatch.matches()) return trimmed
+
+        // If it contains XXXX like +2519XXXX1387, convert directly to +2519••••1387
+        if (trimmed.contains("XXXX", ignoreCase = true)) {
+            return trimmed.replace("XXXX", "••••").replace("xxxx", "••••")
+        }
 
         val rawDigits = trimmed.replace("[^0-9]".toRegex(), "")
 
@@ -744,10 +749,13 @@ object PremiumNumberV2Manager {
             if (pfxClean.length >= 4) pfxClean.take(4) else pfxClean
         } else if (rawDigits.length >= 4) {
             rawDigits.take(4)
-        } else "2637"
+        } else "3932"
 
         // 2. 4-digit suffix
-        val suffixPart = if (rawDigits.length >= 8 && !trimmed.contains("X", ignoreCase = true) && !trimmed.contains("*")) {
+        val trailingDigits = Regex("\\d{4}$").find(trimmed)?.value
+        val suffixPart = if (!trailingDigits.isNullOrBlank()) {
+            trailingDigits
+        } else if (rawDigits.length >= 8) {
             rawDigits.takeLast(4)
         } else {
             val seed = if (itemId.isNotBlank()) Math.abs(itemId.hashCode()) else Math.abs(trimmed.hashCode())
@@ -755,6 +763,55 @@ object PremiumNumberV2Manager {
         }
 
         return "+$prefixPart••••$suffixPart"
+    }
+
+    fun expandToFullRawSms(rawSms: String, service: String = "FACEBOOK", otpCode: String = ""): String {
+        val trimmed = rawSms.trim()
+        if (trimmed.isBlank()) {
+            val code = if (otpCode.isNotBlank() && otpCode != "******" && otpCode != "*****") otpCode else "*****"
+            return "<#> $code is your Facebook code\nH29Q+Fsn4Sr"
+        }
+
+        // 1. If it's a Facebook SMS
+        if (trimmed.contains("Facebook", ignoreCase = true) || service.contains("Facebook", ignoreCase = true) || service.contains("FB", ignoreCase = true)) {
+            val codePart = when {
+                trimmed.contains("FB-") -> "FB-*****"
+                otpCode.isNotBlank() && otpCode != "******" && otpCode != "*****" && !otpCode.equals("Facebook", ignoreCase = true) -> otpCode
+                trimmed.contains("******") -> "******"
+                else -> "*****"
+            }
+
+            val hashPart = when {
+                trimmed.contains("Laz", ignoreCase = true) || trimmed.contains("La...", ignoreCase = true) -> "Laz+nxCarLW"
+                trimmed.contains("H29", ignoreCase = true) || trimmed.contains("H29Q", ignoreCase = true) || trimmed.contains("H29QF", ignoreCase = true) -> "H29Q+Fsn4Sr"
+                trimmed.contains("\n") -> {
+                    val afterNewline = trimmed.substringAfter("\n").trim().removeSuffix("...")
+                    if (afterNewline.length >= 8 && !afterNewline.contains(" ")) afterNewline else "H29Q+Fsn4Sr"
+                }
+                else -> "H29Q+Fsn4Sr"
+            }
+
+            return when {
+                trimmed.contains("confirmat", ignoreCase = true) -> "FB-***** is your Facebook confirmation code"
+                trimmed.contains("<#>") -> "<#> $codePart is your Facebook code\n$hashPart"
+                trimmed.startsWith("#") -> "<#> $codePart is your Facebook code\n$hashPart"
+                else -> "<#> $codePart is your Facebook code\n$hashPart"
+            }
+        }
+
+        // 2. WhatsApp
+        if (trimmed.contains("WhatsApp", ignoreCase = true) || service.contains("WhatsApp", ignoreCase = true) || service.contains("WA", ignoreCase = true)) {
+            val clean = trimmed.removeSuffix("...")
+            return if (clean.contains("code", ignoreCase = true)) clean else "Your WhatsApp code: 918-204. You can also tap on this link to verify your phone."
+        }
+
+        // 3. Instagram
+        if (trimmed.contains("Instagram", ignoreCase = true) || service.contains("Instagram", ignoreCase = true) || service.contains("IG", ignoreCase = true)) {
+            val clean = trimmed.removeSuffix("...")
+            return if (clean.contains("code", ignoreCase = true)) clean else "481029 is your Instagram code. Don't share it."
+        }
+
+        return trimmed.removeSuffix("...")
     }
 
     /**
@@ -800,24 +857,23 @@ object PremiumNumberV2Manager {
                                     val srv = obj.optString("service", "FACEBOOK").uppercase()
 
                                     val rawOtp = obj.optString("otpCode", "").trim()
-                                    val rawSms = obj.optString("fullSms", obj.optString("sms", obj.optString("message", obj.optString("content", obj.optString("text", obj.optString("body", obj.optString("rawSnippet", ""))))))).trim()
+                                    val rawSms = obj.optString("fullSms",
+                                        obj.optString("sms",
+                                        obj.optString("full_sms",
+                                        obj.optString("raw_sms",
+                                        obj.optString("message",
+                                        obj.optString("msg",
+                                        obj.optString("content",
+                                        obj.optString("text",
+                                        obj.optString("body",
+                                        obj.optString("rawSnippet", "")))))))))).trim()
 
-                                    val otpCodeResolved = if (rawOtp.isNotEmpty() && rawOtp != "******") {
+                                    val fullMsg = expandToFullRawSms(rawSms = rawSms, service = srv, otpCode = rawOtp)
+                                    val otpCodeResolved = if (rawOtp.isNotEmpty() && rawOtp != "******" && rawOtp != "*****") {
                                         rawOtp
                                     } else {
-                                        val digits = Regex("\\b\\d{4,8}\\b").find(rawSms)?.value
-                                        val hashToken = Regex("[A-Za-z0-9+/]{6,15}").find(rawSms)?.value
-                                        digits ?: hashToken ?: ""
-                                    }
-
-                                    val fullMsg = if (rawSms.isNotBlank()) {
-                                        if (rawSms.contains("******") && otpCodeResolved.isNotBlank()) {
-                                            rawSms.replace("******", otpCodeResolved)
-                                        } else {
-                                            rawSms
-                                        }
-                                    } else {
-                                        if (otpCodeResolved.isNotBlank()) "<#> $otpCodeResolved is your $srv code" else "$srv verification code"
+                                        val digits = Regex("\\b\\d{4,8}\\b").find(fullMsg)?.value
+                                        digits ?: if (rawOtp.isNotBlank()) rawOtp else "*****"
                                     }
 
                                     items.add(
@@ -843,8 +899,11 @@ object PremiumNumberV2Manager {
                                         it.iso.equals("ZM", true) || it.country.contains("Zambia", true) ||
                                         it.maskedNumber.contains("260") || it.rangePrefix.startsWith("260")
                                     }
-                                    val defaults = getDefaultLiveConsoleFeed()
-                                    val combinedFeed = (filteredItems + defaults).distinctBy { "${it.maskedNumber}_${it.rawSnippet}" }.take(50)
+                                    val combinedFeed = if (filteredItems.isNotEmpty()) {
+                                        filteredItems.distinctBy { "${it.maskedNumber}_${it.rawSnippet}" }.take(50)
+                                    } else {
+                                        getDefaultLiveConsoleFeed()
+                                    }
 
                                     // Auto-update range prefix if current prefix is blank
                                     val currentPfx = _state.value.rangePrefix

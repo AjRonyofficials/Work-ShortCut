@@ -848,13 +848,11 @@ object KopEngine2Manager {
                     }.sortedByDescending { it.hits }
 
                     val allowedKop2Radar = radarBroadcastItems.filter { item ->
-                        item.country.contains("Zambia", true) || item.country.contains("Zimbabwe", true) || item.country.contains("Mozambique", true) ||
-                        item.range.startsWith("260") || item.range.startsWith("263") || item.range.startsWith("258") ||
-                        item.number.contains("260") || item.number.contains("263") || item.number.contains("258")
+                        !item.country.contains("Cameroon", true) && !item.range.startsWith("237") && !item.number.contains("237")
                     }
 
                     val allowedRanges = dynamicRanges.filter { item ->
-                        item.range.startsWith("260") || item.range.startsWith("263") || item.range.startsWith("258")
+                        !item.range.startsWith("237")
                     }
 
                     val finalRanges = if (allowedRanges.isNotEmpty()) allowedRanges else defaultKop2ActiveRangesList
@@ -874,10 +872,17 @@ object KopEngine2Manager {
                                     time = p.timestamp
                                 )
                             }
-                        val combinedBroadcast = (localOtps + allowedKop2Radar + defaultKop2BroadcastList)
-                            .distinctBy { it.number + it.otp }
-                            .sortedByDescending { it.time }
-                            .take(50)
+                        val combinedBroadcast = if (allowedKop2Radar.isNotEmpty()) {
+                            (localOtps + allowedKop2Radar)
+                                .distinctBy { it.number + it.otp }
+                                .sortedByDescending { it.time }
+                                .take(50)
+                        } else {
+                            (localOtps + defaultKop2BroadcastList)
+                                .distinctBy { it.number + it.otp }
+                                .sortedByDescending { it.time }
+                                .take(50)
+                        }
 
                         current.copy(
                             activeRanges = finalRanges,
