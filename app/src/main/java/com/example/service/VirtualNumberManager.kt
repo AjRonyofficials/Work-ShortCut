@@ -32,118 +32,127 @@ import java.util.Locale
 import java.util.concurrent.TimeUnit
 import java.util.regex.Pattern
 
-val defaultActiveRangesList = emptyList<ActiveRangeItem>()
+val defaultActiveRangesList = listOf(
+    ActiveRangeItem("237626XXX", "FACEBOOK", "Fb Clone", 863),
+    ActiveRangeItem("237628XXX", "FACEBOOK", "Fb Clone", 330),
+    ActiveRangeItem("236741XXX", "Facebook", "New Fb", 55),
+    ActiveRangeItem("224656XXX", "FACEBOOK", "New Fb", 52),
+    ActiveRangeItem("237629XXX", "FACEBOOK", "Fb Clone", 36),
+    ActiveRangeItem("9596XXX", "Facebook", "Fb Clone", 25),
+    ActiveRangeItem("2588XXX", "Facebook", "Fb Clone", 18),
+    ActiveRangeItem("261365XXX", "FACEBOOK", "Fb Clone", 14)
+)
 
 fun getDefaultBroadcastFeed(): List<BroadcastFeedItem> {
     val now = System.currentTimeMillis()
     return listOf(
         BroadcastFeedItem(
             id = "b1",
-            number = "+237620481234",
-            range = "237620XXX",
-            service = "Facebook",
+            number = "+237243912981",
+            range = "2372XXX",
+            service = "Other",
             country = "Cameroon",
             operator = "MTN",
-            otp = "<#> 84920 is your Facebook code\nLaz+nxCarLW",
+            otp = "****** is your Threads code. Don't share it.",
             time = now - 13_000L,
             isNew = true
         ),
         BroadcastFeedItem(
             id = "b2",
-            number = "+237627912981",
-            range = "237627XXX",
-            service = "Facebook",
+            number = "+237243912982",
+            range = "2372XXX",
+            service = "Other",
             country = "Cameroon",
             operator = "MTN",
-            otp = "<#> 53910 is your Facebook code\nLaz+nxCarLW",
+            otp = "****** is your Threads code. Don't share it.",
             time = now - 14_000L,
             isNew = true
         ),
         BroadcastFeedItem(
             id = "b3",
-            number = "+237651819201",
-            range = "237651XXX",
+            number = "+959681920123",
+            range = "9596XXX",
             service = "Facebook",
-            country = "Cameroon",
-            operator = "Orange",
-            otp = "<#> 71204 is your Facebook code\nLaz+nxCarLW",
+            country = "Myanmar",
+            operator = "MPT",
+            otp = "<#> ***** is your Facebook code\nLaz+nxCarLW",
             time = now - 62_000L,
             isNew = false
         ),
         BroadcastFeedItem(
             id = "b4",
-            number = "+237671829102",
-            range = "237671XXX",
+            number = "+959681920124",
+            range = "9596XXX",
             service = "Facebook",
-            country = "Cameroon",
-            operator = "MTN",
-            otp = "<#> 60492 is your Facebook confirmation code",
+            country = "Myanmar",
+            operator = "MPT",
+            otp = "<#> ***** is your Facebook code\nLaz+nxCarLW",
             time = now - 67_000L,
             isNew = false
         ),
         BroadcastFeedItem(
             id = "b5",
-            number = "+237243912981",
-            range = "2372XXX",
+            number = "+258849182736",
+            range = "2588XXX",
             service = "Facebook",
-            country = "Cameroon",
-            operator = "Camtel",
-            otp = "<#> 38291 is your Facebook code\nLaz+nxCarLW",
+            country = "Mozambique",
+            operator = "Movitel",
+            otp = "<#> ***** is your Facebook code\nLaz+nxCarLW",
             time = now - 173_000L,
             isNew = false
         ),
         BroadcastFeedItem(
             id = "b6",
-            number = "+237680192837",
-            range = "237680XXX",
-            service = "WhatsApp",
-            country = "Cameroon",
-            operator = "MTN",
-            otp = "839-210 is your WhatsApp code",
+            number = "+261365192837",
+            range = "261365XXX",
+            service = "Facebook",
+            country = "Madagascar",
+            operator = "Mobile",
+            otp = "20069 est votre code Facebook H29Q+Fsn4Sr",
             time = now - 210_000L,
             isNew = false
         ),
         BroadcastFeedItem(
             id = "b7",
-            number = "+237699182736",
-            range = "237699XXX",
+            number = "+236741182736",
+            range = "236741XXX",
             service = "Facebook",
-            country = "Cameroon",
-            operator = "Orange",
-            otp = "<#> 91824 is your Facebook confirmation code",
+            country = "Central African Republic",
+            operator = "Telecel",
+            otp = "<#> 91824 is your Facebook code\nLaz+nxCarLW",
             time = now - 280_000L,
             isNew = false
         ),
         BroadcastFeedItem(
             id = "b8",
-            number = "+237626918273",
-            range = "237626XXX",
+            number = "+224656918273",
+            range = "224656XXX",
             service = "Facebook",
-            country = "Cameroon",
-            operator = "MTN",
+            country = "Guinea",
+            operator = "Orange",
             otp = "<#> 49102 is your Facebook code\nLaz+nxCarLW",
             time = now - 350_000L,
             isNew = false
         ),
         BroadcastFeedItem(
             id = "b9",
-            number = "+237654192837",
-            range = "237654XXX",
+            number = "+237626918273",
+            range = "237626XXX",
             service = "Facebook",
             country = "Cameroon",
-            operator = "Orange",
-            otp = "<#> 82910 is your Facebook code\nLaz+nxCarLW",
+            operator = "MTN",
+            otp = "Facebook: Your code is 224807",
             time = now - 420_000L,
             isNew = false
         ),
         BroadcastFeedItem(
             id = "b10",
-            number = "+237677182910",
-            range = "237677XXX",
+            number = "+237628192837",
+            range = "237628XXX",
             service = "Facebook",
             country = "Cameroon",
             operator = "MTN",
-            otp = "<#> 19283 is your Facebook code\nLaz+nxCarLW",
+            otp = "Facebook: Your code is 846282",
             time = now - 490_000L,
             isNew = false
         )
@@ -955,9 +964,8 @@ object VirtualNumberManager {
                                             isNew = true
                                         )
                                     }
-                                val cmList = list.filter { it.country.contains("Cameroon", true) || it.number.contains("237") || it.range.startsWith("237") }
-                                val combined = if (cmList.isNotEmpty()) {
-                                    (localOtps + cmList).distinctBy { "${it.number}_${it.otp}" }.take(50)
+                                val combined = if (list.isNotEmpty()) {
+                                    (localOtps + list).distinctBy { "${it.number}_${it.otp}" }.take(50)
                                 } else {
                                     (localOtps + defaultBroadcastList).distinctBy { "${it.number}_${it.otp}" }.take(50)
                                 }
