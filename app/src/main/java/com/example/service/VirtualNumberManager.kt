@@ -32,145 +32,18 @@ import java.util.Locale
 import java.util.concurrent.TimeUnit
 import java.util.regex.Pattern
 
-val defaultActiveRangesList = listOf(
-    ActiveRangeItem("237626XXX", "FACEBOOK", "Fb Clone", 863),
-    ActiveRangeItem("237628XXX", "FACEBOOK", "Fb Clone", 330),
-    ActiveRangeItem("236741XXX", "Facebook", "New Fb", 55),
-    ActiveRangeItem("224656XXX", "FACEBOOK", "New Fb", 52),
-    ActiveRangeItem("237629XXX", "FACEBOOK", "Fb Clone", 36),
-    ActiveRangeItem("9596XXX", "Facebook", "Fb Clone", 25),
-    ActiveRangeItem("2588XXX", "Facebook", "Fb Clone", 18),
-    ActiveRangeItem("261365XXX", "FACEBOOK", "Fb Clone", 14)
-)
-
-fun getDefaultBroadcastFeed(): List<BroadcastFeedItem> {
-    val now = System.currentTimeMillis()
-    return listOf(
-        BroadcastFeedItem(
-            id = "b1",
-            number = "+237243912981",
-            range = "2372XXX",
-            service = "Other",
-            country = "Cameroon",
-            operator = "MTN",
-            otp = "****** is your Threads code. Don't share it.",
-            time = now - 13_000L,
-            isNew = true
-        ),
-        BroadcastFeedItem(
-            id = "b2",
-            number = "+237243912982",
-            range = "2372XXX",
-            service = "Other",
-            country = "Cameroon",
-            operator = "MTN",
-            otp = "****** is your Threads code. Don't share it.",
-            time = now - 14_000L,
-            isNew = true
-        ),
-        BroadcastFeedItem(
-            id = "b3",
-            number = "+959681920123",
-            range = "9596XXX",
-            service = "Facebook",
-            country = "Myanmar",
-            operator = "MPT",
-            otp = "<#> ***** is your Facebook code\nLaz+nxCarLW",
-            time = now - 62_000L,
-            isNew = false
-        ),
-        BroadcastFeedItem(
-            id = "b4",
-            number = "+959681920124",
-            range = "9596XXX",
-            service = "Facebook",
-            country = "Myanmar",
-            operator = "MPT",
-            otp = "<#> ***** is your Facebook code\nLaz+nxCarLW",
-            time = now - 67_000L,
-            isNew = false
-        ),
-        BroadcastFeedItem(
-            id = "b5",
-            number = "+258849182736",
-            range = "2588XXX",
-            service = "Facebook",
-            country = "Mozambique",
-            operator = "Movitel",
-            otp = "<#> ***** is your Facebook code\nLaz+nxCarLW",
-            time = now - 173_000L,
-            isNew = false
-        ),
-        BroadcastFeedItem(
-            id = "b6",
-            number = "+261365192837",
-            range = "261365XXX",
-            service = "Facebook",
-            country = "Madagascar",
-            operator = "Mobile",
-            otp = "20069 est votre code Facebook H29Q+Fsn4Sr",
-            time = now - 210_000L,
-            isNew = false
-        ),
-        BroadcastFeedItem(
-            id = "b7",
-            number = "+236741182736",
-            range = "236741XXX",
-            service = "Facebook",
-            country = "Central African Republic",
-            operator = "Telecel",
-            otp = "<#> 91824 is your Facebook code\nLaz+nxCarLW",
-            time = now - 280_000L,
-            isNew = false
-        ),
-        BroadcastFeedItem(
-            id = "b8",
-            number = "+224656918273",
-            range = "224656XXX",
-            service = "Facebook",
-            country = "Guinea",
-            operator = "Orange",
-            otp = "<#> 49102 is your Facebook code\nLaz+nxCarLW",
-            time = now - 350_000L,
-            isNew = false
-        ),
-        BroadcastFeedItem(
-            id = "b9",
-            number = "+237626918273",
-            range = "237626XXX",
-            service = "Facebook",
-            country = "Cameroon",
-            operator = "MTN",
-            otp = "Facebook: Your code is 224807",
-            time = now - 420_000L,
-            isNew = false
-        ),
-        BroadcastFeedItem(
-            id = "b10",
-            number = "+237628192837",
-            range = "237628XXX",
-            service = "Facebook",
-            country = "Cameroon",
-            operator = "MTN",
-            otp = "Facebook: Your code is 846282",
-            time = now - 490_000L,
-            isNew = false
-        )
-    )
-}
-
-val defaultBroadcastList = getDefaultBroadcastFeed()
-
+val defaultActiveRangesList = emptyList<ActiveRangeItem>()
+val defaultBroadcastList = emptyList<BroadcastFeedItem>()
 
 data class VirtualNumbersUiState(
     val clientKey: String = "ZNX_SDY9RBKGG8DO84EWZOMWEH2S",
-    val targetRange: String = "237627XXX",
+    val targetRange: String = "",
     val requestCount: Int = 1,
     val isNational: Boolean = false,
     val removePlus: Boolean = false,
     val provisionedNumbers: List<ProvisionedNumber> = emptyList(),
-    val activeRanges: List<ActiveRangeItem> = defaultActiveRangesList,
-    val broadcastFeed: List<BroadcastFeedItem> = defaultBroadcastList,
+    val activeRanges: List<ActiveRangeItem> = emptyList(),
+    val broadcastFeed: List<BroadcastFeedItem> = emptyList(),
     val todayOtpCount: Int = 0,
     val resetCycleStartTime: Long = 0L,
     val isLoading: Boolean = false,
@@ -262,7 +135,7 @@ object VirtualNumberManager {
                 prefs?.edit()?.putString("api_key", "ZNX_SDY9RBKGG8DO84EWZOMWEH2S")?.apply()
                 "ZNX_SDY9RBKGG8DO84EWZOMWEH2S"
             } else rawKey
-            val savedRange = prefs?.getString("target_range", "237620XXX") ?: "237620XXX"
+            val savedRange = prefs?.getString("target_range", "") ?: ""
             val savedCount = prefs?.getInt("request_count", 1) ?: 1
             val todayKey = getTodayKey()
             val savedTodayCount = prefs?.getInt(todayKey, 0) ?: 0
@@ -480,18 +353,17 @@ object VirtualNumberManager {
         val clientKey = _state.value.clientKey.ifEmpty { "ZNX_SDY9RBKGG8DO84EWZOMWEH2S" }
         val initialRange = if (range.isNotBlank()) range.trim()
             else _state.value.activeRanges.firstOrNull()?.range?.trim()
-            ?: "237620XXX"
+            ?: ""
 
         val candidateRanges = mutableListOf<String>()
-        candidateRanges.add(initialRange)
+        if (initialRange.isNotBlank()) {
+            candidateRanges.add(initialRange)
+        }
         _state.value.activeRanges.forEach { r ->
             val clean = r.range.trim()
             if (clean.isNotEmpty() && !candidateRanges.contains(clean)) {
                 candidateRanges.add(clean)
             }
-        }
-        listOf("237620XXX", "237670XXX", "237650XXX", "237680XXX", "237690XXX").forEach { def ->
-            if (!candidateRanges.contains(def)) candidateRanges.add(def)
         }
 
         _state.update { it.copy(isLoading = true, lastError = null) }
@@ -573,18 +445,18 @@ object VirtualNumberManager {
                 // If remote endpoint was unreachable (offline/timeout), guarantee number allocation from active carrier pool
                 if (!acquired) {
                     val cleanPfx = initialRange.replace("X", "").replace("x", "")
-                    val effectivePfx = if (cleanPfx.isNotBlank()) cleanPfx else "237620"
+                    val effectivePfx = if (cleanPfx.isNotBlank()) cleanPfx else (_state.value.activeRanges.firstOrNull()?.range?.replace("X", "")?.replace("x", "") ?: "1202")
                     val fullNum = "+$effectivePfx" + (100000..999999).random()
                     val now = System.currentTimeMillis()
                     val detected = com.example.util.AllCountriesProvider.detectCountry(fullNum)
                         ?: com.example.util.AllCountriesProvider.detectCountry(initialRange)
                     val item = ProvisionedNumber(
                         number = fullNum,
-                        country = detected?.name ?: "Cameroon",
+                        country = detected?.name ?: "Global",
                         operator = "Zenex Carrier Pool",
-                        iso = detected?.code?.lowercase() ?: "cm",
+                        iso = detected?.code?.lowercase() ?: "un",
                         status = "pending",
-                        range = initialRange,
+                        range = initialRange.ifBlank { _state.value.activeRanges.firstOrNull()?.range ?: "" },
                         timestamp = now,
                         expiresAt = now + 1_200_000L,
                         userEmail = AuthManager.currentEmail.value.trim().lowercase()
@@ -899,7 +771,15 @@ object VirtualNumberManager {
                             )
                         }
                         if (list.isNotEmpty()) {
-                            _state.update { it.copy(activeRanges = list) }
+                            _state.update { current ->
+                                val target = if (current.targetRange.isBlank() || list.none { it.range == current.targetRange }) {
+                                    list.first().range
+                                } else current.targetRange
+                                current.copy(
+                                    activeRanges = list,
+                                    targetRange = target
+                                )
+                            }
                         }
                     }
                 }
@@ -932,73 +812,47 @@ object VirtualNumberManager {
                         for (i in 0 until dataArr.length()) {
                             val obj = dataArr.optJSONObject(i) ?: continue
                             val number = obj.optString("number")
-                            val range = if (number.length >= 8) number.take(7) + "XXX" else number
+                            val rawCountry = obj.optString("country", "")
+                            val country = if (rawCountry.isNotBlank() && !rawCountry.equals("null", true)) {
+                                rawCountry
+                            } else {
+                                com.example.util.AllCountriesProvider.detectCountry(number)?.name ?: "Global"
+                            }
+                            val rawRange = obj.optString("range", "")
+                            val range = if (rawRange.isNotBlank()) {
+                                rawRange
+                            } else if (number.endsWith("XXX")) {
+                                number
+                            } else if (number.length >= 7) {
+                                number.take(7) + "XXX"
+                            } else number
+
+                            val service = obj.optString("service", "SMS")
+                            val operator = obj.optString("operator", "Mobile")
+                            val otp = obj.optString("otp", obj.optString("sms", obj.optString("message", obj.optString("text", ""))))
+                            val time = obj.optLong("time", System.currentTimeMillis())
+
                             list.add(
                                 BroadcastFeedItem(
                                     id = obj.optString("id", java.util.UUID.randomUUID().toString()),
                                     number = number,
                                     range = range,
-                                    service = obj.optString("service", "WHATSAPP").uppercase(),
-                                    country = obj.optString("country", "Cameroon"),
-                                    operator = obj.optString("operator", "MTN"),
-                                    otp = obj.optString("otp"),
-                                    time = obj.optLong("time", System.currentTimeMillis()),
+                                    service = service,
+                                    country = country,
+                                    operator = operator,
+                                    otp = otp,
+                                    time = time,
                                     isNew = i < 3
                                 )
                             )
                         }
                         if (list.isNotEmpty()) {
-                            _state.update { current ->
-                                val localOtps = current.provisionedNumbers
-                                    .filter { !it.otpCode.isNullOrEmpty() }
-                                    .map { p ->
-                                        BroadcastFeedItem(
-                                            id = "local_${p.id}",
-                                            number = p.number,
-                                            range = if (p.range.isNotBlank()) p.range else if (p.number.length >= 7) p.number.take(7) + "XXX" else p.number,
-                                            service = if (p.range.isNotBlank()) p.range else "Facebook",
-                                            country = p.country,
-                                            operator = p.operator,
-                                            otp = p.otpMessage ?: "<#> ${p.otpCode} is your Facebook code",
-                                            time = p.timestamp,
-                                            isNew = true
-                                        )
-                                    }
-                                val combined = if (list.isNotEmpty()) {
-                                    (localOtps + list).distinctBy { "${it.number}_${it.otp}" }.take(50)
-                                } else {
-                                    (localOtps + defaultBroadcastList).distinctBy { "${it.number}_${it.otp}" }.take(50)
-                                }
-                                current.copy(broadcastFeed = combined)
-                            }
+                            _state.update { it.copy(broadcastFeed = list.take(50)) }
                             return@launch
                         }
                     }
                 }
             } catch (_: Exception) {}
-
-            // Fallback: Ensure broadcastFeed is never empty
-            _state.update { current ->
-                if (current.broadcastFeed.isEmpty()) {
-                    val localOtps = current.provisionedNumbers
-                        .filter { !it.otpCode.isNullOrEmpty() }
-                        .map { p ->
-                            BroadcastFeedItem(
-                                id = "local_${p.id}",
-                                number = p.number,
-                                range = if (p.range.isNotBlank()) p.range else if (p.number.length >= 7) p.number.take(7) + "XXX" else p.number,
-                                service = if (p.range.isNotBlank()) p.range else "Facebook",
-                                country = p.country,
-                                operator = p.operator,
-                                otp = p.otpMessage ?: "<#> ${p.otpCode} is your Facebook code",
-                                time = p.timestamp,
-                                isNew = true
-                            )
-                        }
-                    val fallback = (localOtps + defaultBroadcastList).distinctBy { "${it.number}_${it.otp}" }.take(50)
-                    current.copy(broadcastFeed = fallback)
-                } else current
-            }
         }
     }
 

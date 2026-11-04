@@ -865,7 +865,10 @@ fun VirtualNumbersSection(
                 )
                 Tab(
                     selected = selectedSubTab == 1,
-                    onClick = { selectedSubTab = 1 },
+                    onClick = {
+                        selectedSubTab = 1
+                        VirtualNumberManager.fetchGlobalBroadcast()
+                    },
                     text = {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Icon(Icons.Default.Terminal, contentDescription = null, modifier = Modifier.size(16.dp))
@@ -1244,7 +1247,7 @@ fun VirtualNumbersSection(
             // 1. Unified Range Option Card (All ranges in one single compact option)
             item {
                 var rangeOptionExpanded by remember { mutableStateOf(false) }
-                val currentSelectedRange = state.targetRange.ifEmpty { "237627XXX" }
+                val currentSelectedRange = state.targetRange.ifEmpty { state.activeRanges.firstOrNull()?.range ?: "" }
                 val matchingRangeItem = state.activeRanges.firstOrNull { it.range == currentSelectedRange }
                     ?: state.activeRanges.firstOrNull()
 

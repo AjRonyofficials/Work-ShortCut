@@ -1678,7 +1678,7 @@ fun VirtualNumbersOverlaySection(
                                     modifier = Modifier.fillMaxWidth()
                                 )
                                 if (vnState.targetRange.isEmpty()) {
-                                    Text("237620XXX", color = Color(0xFF546E7A), fontSize = 9.sp)
+                                    Text("Range...", color = Color(0xFF546E7A), fontSize = 9.sp)
                                 }
                             }
 
