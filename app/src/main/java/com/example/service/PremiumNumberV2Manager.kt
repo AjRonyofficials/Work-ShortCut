@@ -837,17 +837,26 @@ object PremiumNumberV2Manager {
                                     )
                                 }
                                 if (items.isNotEmpty()) {
+                                    val filteredItems = items.filterNot {
+                                        it.iso.equals("CM", true) || it.country.contains("Cameroon", true) ||
+                                        it.maskedNumber.contains("237") || it.rangePrefix.startsWith("237") ||
+                                        it.iso.equals("ZM", true) || it.country.contains("Zambia", true) ||
+                                        it.maskedNumber.contains("260") || it.rangePrefix.startsWith("260")
+                                    }
+                                    val defaults = getDefaultLiveConsoleFeed()
+                                    val combinedFeed = (filteredItems + defaults).distinctBy { "${it.maskedNumber}_${it.rawSnippet}" }.take(50)
+
                                     // Auto-update range prefix if current prefix is blank
                                     val currentPfx = _state.value.rangePrefix
                                     val autoPfx = if (currentPfx.isBlank()) {
-                                        val match = items.firstOrNull { it.iso.equals(_state.value.selectedCountryCode, ignoreCase = true) }
-                                            ?: items.firstOrNull()
+                                        val match = combinedFeed.firstOrNull { it.iso.equals(_state.value.selectedCountryCode, ignoreCase = true) }
+                                            ?: combinedFeed.firstOrNull()
                                         match?.rangePrefix ?: ""
                                     } else currentPfx
 
                                     _state.update {
                                         it.copy(
-                                            liveConsoleFeed = items.take(50),
+                                            liveConsoleFeed = combinedFeed,
                                             rangePrefix = autoPfx,
                                             isApiConnected = true
                                         )
@@ -863,7 +872,7 @@ object PremiumNumberV2Manager {
                 _state.update { it.copy(isApiConnected = true) }
             }
 
-            // Fallback default stream items matching Screenshot 1/2 if network feed is unavailable
+            // Fallback default stream items matching Screenshot 2 if network feed is unavailable
             if (_state.value.liveConsoleFeed.isEmpty()) {
                 val defaults = getDefaultLiveConsoleFeed()
                 val defPfx = if (_state.value.rangePrefix.isBlank()) defaults.firstOrNull()?.rangePrefix ?: "" else _state.value.rangePrefix
@@ -877,128 +886,311 @@ object PremiumNumberV2Manager {
         _state.update { it.copy(liveConsoleFeed = emptyList()) }
     }
 
-    fun getDefaultLiveConsoleFeed(): List<PremiumV2ConsoleItem> = listOf(
-        PremiumV2ConsoleItem(
-            id = "live-1",
-            maskedNumber = "+2372••••4821",
-            rangePrefix = "2372",
-            service = "Other",
-            country = "Cameroon",
-            operator = "MTN",
-            iso = "CM",
-            flag = "🇨🇲",
-            otpCode = "849201",
-            rawSnippet = "****** is your Threads code. Don't share it.",
-            timeAgo = "13s ago",
-            timestamp = System.currentTimeMillis() - 13000L,
-            isNew = true
-        ),
-        PremiumV2ConsoleItem(
-            id = "live-2",
-            maskedNumber = "+2372••••9104",
-            rangePrefix = "2372",
-            service = "Other",
-            country = "Cameroon",
-            operator = "MTN",
-            iso = "CM",
-            flag = "🇨🇲",
-            otpCode = "539104",
-            rawSnippet = "****** is your Threads code. Don't share it.",
-            timeAgo = "14s ago",
-            timestamp = System.currentTimeMillis() - 14000L,
-            isNew = false
-        ),
-        PremiumV2ConsoleItem(
-            id = "live-3",
-            maskedNumber = "+9596••••3821",
-            rangePrefix = "9596",
-            service = "Facebook",
-            country = "Myanmar",
-            operator = "MPT",
-            iso = "MM",
-            flag = "🇲🇲",
-            otpCode = "712048",
-            rawSnippet = "<#> ***** is your Facebook code\nLaz+nxCarLW",
-            timeAgo = "1m 2s ago",
-            timestamp = System.currentTimeMillis() - 62000L,
-            isNew = false
-        ),
-        PremiumV2ConsoleItem(
-            id = "live-4",
-            maskedNumber = "+9596••••7721",
-            rangePrefix = "9596",
-            service = "Facebook",
-            country = "Myanmar",
-            operator = "MPT",
-            iso = "MM",
-            flag = "🇲🇲",
-            otpCode = "604921",
-            rawSnippet = "<#> ***** is your Facebook code\nLaz+nxCarLW",
-            timeAgo = "1m 7s ago",
-            timestamp = System.currentTimeMillis() - 67000L,
-            isNew = false
-        ),
-        PremiumV2ConsoleItem(
-            id = "live-5",
-            maskedNumber = "+9596••••9941",
-            rangePrefix = "9596",
-            service = "Facebook",
-            country = "Myanmar",
-            operator = "MPT",
-            iso = "MM",
-            flag = "🇲🇲",
-            otpCode = "382915",
-            rawSnippet = "<#> ***** is your Facebook code\nLaz+nxCarLW",
-            timeAgo = "2m 53s ago",
-            timestamp = System.currentTimeMillis() - 173000L,
-            isNew = false
-        ),
-        PremiumV2ConsoleItem(
-            id = "live-6",
-            maskedNumber = "+2588••••4102",
-            rangePrefix = "2588",
-            service = "Facebook",
-            country = "Mozambique",
-            operator = "Mobile",
-            iso = "MZ",
-            flag = "🇲🇿",
-            otpCode = "941028",
-            rawSnippet = "<#> 941028 is your Facebook code\nLaz+nxCarLW",
-            timeAgo = "3m 12s ago",
-            timestamp = System.currentTimeMillis() - 192000L,
-            isNew = false
-        ),
-        PremiumV2ConsoleItem(
-            id = "live-7",
-            maskedNumber = "+2637••••5521",
-            rangePrefix = "2637",
-            service = "Facebook",
-            country = "Zimbabwe",
-            operator = "Econet",
-            iso = "ZW",
-            flag = "🇿🇼",
-            otpCode = "819203",
-            rawSnippet = "<#> 819203 is your Facebook code\nLaz+nxCarLW",
-            timeAgo = "4m 20s ago",
-            timestamp = System.currentTimeMillis() - 260000L,
-            isNew = false
-        ),
-        PremiumV2ConsoleItem(
-            id = "live-8",
-            maskedNumber = "+3365••••3422",
-            rangePrefix = "3365",
-            service = "Facebook",
-            country = "France",
-            operator = "Orange",
-            iso = "FR",
-            flag = "🇫🇷",
-            otpCode = "382915",
-            rawSnippet = "<#> 382915 is your Facebook code\nLaz+nxCarLW",
-            timeAgo = "5m 10s ago",
-            timestamp = System.currentTimeMillis() - 310000L,
-            isNew = false
+    fun getDefaultLiveConsoleFeed(): List<PremiumV2ConsoleItem> {
+        val now = System.currentTimeMillis()
+        return listOf(
+            PremiumV2ConsoleItem(
+                id = "v2_live_1",
+                maskedNumber = "+3932••••4885",
+                rangePrefix = "3932",
+                service = "FACEBOOK",
+                country = "Italy",
+                operator = "TIM",
+                iso = "IT",
+                flag = "🇮🇹",
+                otpCode = "739201",
+                rawSnippet = "<#> ***** is your Facebook code\nH29Q+Fsn4Sr",
+                timeAgo = "just now",
+                timestamp = now - 15000L,
+                isNew = true
+            ),
+            PremiumV2ConsoleItem(
+                id = "v2_live_2",
+                maskedNumber = "+2519••••3769",
+                rangePrefix = "2519",
+                service = "FACEBOOK",
+                country = "Ethiopia",
+                operator = "Ethio Telecom",
+                iso = "ET",
+                flag = "🇪🇹",
+                otpCode = "619402",
+                rawSnippet = "<#> ***** is your Facebook code\nH29Q+Fsn4Sr",
+                timeAgo = "1 min ago",
+                timestamp = now - 65000L,
+                isNew = false
+            ),
+            PremiumV2ConsoleItem(
+                id = "v2_live_3",
+                maskedNumber = "+2519••••1637",
+                rangePrefix = "2519",
+                service = "FACEBOOK",
+                country = "Ethiopia",
+                operator = "Ethio Telecom",
+                iso = "ET",
+                flag = "🇪🇹",
+                otpCode = "482019",
+                rawSnippet = "<#> ***** is your Facebook code\nLaz+nxCarLW",
+                timeAgo = "1 min ago",
+                timestamp = now - 75000L,
+                isNew = false
+            ),
+            PremiumV2ConsoleItem(
+                id = "v2_live_4",
+                maskedNumber = "+2519••••1642",
+                rangePrefix = "2519",
+                service = "FACEBOOK",
+                country = "Ethiopia",
+                operator = "Ethio Telecom",
+                iso = "ET",
+                flag = "🇪🇹",
+                otpCode = "918302",
+                rawSnippet = "<#> ***** is your Facebook code",
+                timeAgo = "1 min ago",
+                timestamp = now - 85000L,
+                isNew = false
+            ),
+            PremiumV2ConsoleItem(
+                id = "v2_live_5",
+                maskedNumber = "+3365••••9102",
+                rangePrefix = "3365",
+                service = "FACEBOOK",
+                country = "France",
+                operator = "Orange",
+                iso = "FR",
+                flag = "🇫🇷",
+                otpCode = "582910",
+                rawSnippet = "<#> ***** is your Facebook code\nH29Q+Fsn4Sr",
+                timeAgo = "2 mins ago",
+                timestamp = now - 130000L,
+                isNew = false
+            ),
+            PremiumV2ConsoleItem(
+                id = "v2_live_6",
+                maskedNumber = "+2348••••4819",
+                rangePrefix = "2348",
+                service = "FACEBOOK",
+                country = "Nigeria",
+                operator = "MTN",
+                iso = "NG",
+                flag = "🇳🇬",
+                otpCode = "391028",
+                rawSnippet = "<#> ***** is your Facebook code\nLaz+nxCarLW",
+                timeAgo = "2 mins ago",
+                timestamp = now - 150000L,
+                isNew = false
+            ),
+            PremiumV2ConsoleItem(
+                id = "v2_live_7",
+                maskedNumber = "+2547••••3910",
+                rangePrefix = "2547",
+                service = "FACEBOOK",
+                country = "Kenya",
+                operator = "Safaricom",
+                iso = "KE",
+                flag = "🇰🇪",
+                otpCode = "829103",
+                rawSnippet = "<#> ***** is your Facebook code\nH29Q+Fsn4Sr",
+                timeAgo = "3 mins ago",
+                timestamp = now - 190000L,
+                isNew = false
+            ),
+            PremiumV2ConsoleItem(
+                id = "v2_live_8",
+                maskedNumber = "+5731••••8210",
+                rangePrefix = "5731",
+                service = "FACEBOOK",
+                country = "Colombia",
+                operator = "Claro",
+                iso = "CO",
+                flag = "🇨🇴",
+                otpCode = "204918",
+                rawSnippet = "<#> ***** is your Facebook code\nLaz+nxCarLW",
+                timeAgo = "3 mins ago",
+                timestamp = now - 220000L,
+                isNew = false
+            ),
+            PremiumV2ConsoleItem(
+                id = "v2_live_9",
+                maskedNumber = "+2772••••5519",
+                rangePrefix = "2772",
+                service = "WHATSAPP",
+                country = "South Africa",
+                operator = "Vodacom",
+                iso = "ZA",
+                flag = "🇿🇦",
+                otpCode = "918-204",
+                rawSnippet = "Your WhatsApp code: 918-204. You can also tap on this link to verify your phone.",
+                timeAgo = "4 mins ago",
+                timestamp = now - 260000L,
+                isNew = false
+            ),
+            PremiumV2ConsoleItem(
+                id = "v2_live_10",
+                maskedNumber = "+3934••••7721",
+                rangePrefix = "3934",
+                service = "INSTAGRAM",
+                country = "Italy",
+                operator = "Vodafone",
+                iso = "IT",
+                flag = "🇮🇹",
+                otpCode = "481029",
+                rawSnippet = "481029 is your Instagram code. Don't share it.",
+                timeAgo = "4 mins ago",
+                timestamp = now - 280000L,
+                isNew = false
+            ),
+            PremiumV2ConsoleItem(
+                id = "v2_live_11",
+                maskedNumber = "+4474••••8819",
+                rangePrefix = "4474",
+                service = "FACEBOOK",
+                country = "United Kingdom",
+                operator = "EE",
+                iso = "GB",
+                flag = "🇬🇧",
+                otpCode = "720192",
+                rawSnippet = "<#> 720192 is your Facebook code\nLaz+nxCarLW",
+                timeAgo = "5 mins ago",
+                timestamp = now - 310000L,
+                isNew = false
+            ),
+            PremiumV2ConsoleItem(
+                id = "v2_live_12",
+                maskedNumber = "+1202••••9910",
+                rangePrefix = "1202",
+                service = "WHATSAPP",
+                country = "United States",
+                operator = "Verizon",
+                iso = "US",
+                flag = "🇺🇸",
+                otpCode = "392-108",
+                rawSnippet = "392-108 is your WhatsApp code",
+                timeAgo = "6 mins ago",
+                timestamp = now - 370000L,
+                isNew = false
+            ),
+            PremiumV2ConsoleItem(
+                id = "v2_live_13",
+                maskedNumber = "+4915••••3318",
+                rangePrefix = "4915",
+                service = "FACEBOOK",
+                country = "Germany",
+                operator = "Telekom",
+                iso = "DE",
+                flag = "🇩🇪",
+                otpCode = "819203",
+                rawSnippet = "<#> 819203 is your Facebook code\nH29Q+Fsn4Sr",
+                timeAgo = "7 mins ago",
+                timestamp = now - 430000L,
+                isNew = false
+            ),
+            PremiumV2ConsoleItem(
+                id = "v2_live_14",
+                maskedNumber = "+3461••••7720",
+                rangePrefix = "3461",
+                service = "INSTAGRAM",
+                country = "Spain",
+                operator = "Movistar",
+                iso = "ES",
+                flag = "🇪🇸",
+                otpCode = "281930",
+                rawSnippet = "281930 is your Instagram code.",
+                timeAgo = "8 mins ago",
+                timestamp = now - 490000L,
+                isNew = false
+            ),
+            PremiumV2ConsoleItem(
+                id = "v2_live_15",
+                maskedNumber = "+5511••••6612",
+                rangePrefix = "5511",
+                service = "FACEBOOK",
+                country = "Brazil",
+                operator = "Vivo",
+                iso = "BR",
+                flag = "🇧🇷",
+                otpCode = "391823",
+                rawSnippet = "<#> 391823 is your Facebook code\nLaz+nxCarLW",
+                timeAgo = "9 mins ago",
+                timestamp = now - 550000L,
+                isNew = false
+            ),
+            PremiumV2ConsoleItem(
+                id = "v2_live_16",
+                maskedNumber = "+6281••••4421",
+                rangePrefix = "6281",
+                service = "WHATSAPP",
+                country = "Indonesia",
+                operator = "Telkomsel",
+                iso = "ID",
+                flag = "🇮🇩",
+                otpCode = "582-192",
+                rawSnippet = "582-192 is your WhatsApp code",
+                timeAgo = "10 mins ago",
+                timestamp = now - 610000L,
+                isNew = false
+            ),
+            PremiumV2ConsoleItem(
+                id = "v2_live_17",
+                maskedNumber = "+6391••••5532",
+                rangePrefix = "6391",
+                service = "FACEBOOK",
+                country = "Philippines",
+                operator = "Globe",
+                iso = "PH",
+                flag = "🇵🇭",
+                otpCode = "491028",
+                rawSnippet = "<#> 491028 is your Facebook code\nH29Q+Fsn4Sr",
+                timeAgo = "11 mins ago",
+                timestamp = now - 670000L,
+                isNew = false
+            ),
+            PremiumV2ConsoleItem(
+                id = "v2_live_18",
+                maskedNumber = "+9198••••2210",
+                rangePrefix = "9198",
+                service = "WHATSAPP",
+                country = "India",
+                operator = "Jio",
+                iso = "IN",
+                flag = "🇮🇳",
+                otpCode = "481-920",
+                rawSnippet = "481-920 is your WhatsApp code",
+                timeAgo = "12 mins ago",
+                timestamp = now - 730000L,
+                isNew = false
+            ),
+            PremiumV2ConsoleItem(
+                id = "v2_live_19",
+                maskedNumber = "+8490••••6618",
+                rangePrefix = "8490",
+                service = "FACEBOOK",
+                country = "Vietnam",
+                operator = "Viettel",
+                iso = "VN",
+                flag = "🇻🇳",
+                otpCode = "619283",
+                rawSnippet = "<#> 619283 is your Facebook code\nLaz+nxCarLW",
+                timeAgo = "13 mins ago",
+                timestamp = now - 790000L,
+                isNew = false
+            ),
+            PremiumV2ConsoleItem(
+                id = "v2_live_20",
+                maskedNumber = "+2010••••3319",
+                rangePrefix = "2010",
+                service = "INSTAGRAM",
+                country = "Egypt",
+                operator = "Vodafone",
+                iso = "EG",
+                flag = "🇪🇬",
+                otpCode = "819204",
+                rawSnippet = "819204 is your Instagram code.",
+                timeAgo = "14 mins ago",
+                timestamp = now - 850000L,
+                isNew = false
+            )
         )
-    )
+    }
 
     /**
      * Start Background High-Speed Polling and 15-Minute Expiry Ticker

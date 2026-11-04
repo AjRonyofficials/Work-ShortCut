@@ -39,110 +39,110 @@ fun getDefaultBroadcastFeed(): List<BroadcastFeedItem> {
     return listOf(
         BroadcastFeedItem(
             id = "b1",
-            number = "+237233481234",
-            range = "2372XXX",
-            service = "Other",
+            number = "+237620481234",
+            range = "237620XXX",
+            service = "Facebook",
             country = "Cameroon",
             operator = "MTN",
-            otp = "****** is your Threads code. Don't share it.",
+            otp = "<#> 84920 is your Facebook code\nLaz+nxCarLW",
             time = now - 13_000L,
             isNew = true
         ),
         BroadcastFeedItem(
             id = "b2",
-            number = "+237243912981",
-            range = "2372XXX",
-            service = "Other",
+            number = "+237627912981",
+            range = "237627XXX",
+            service = "Facebook",
             country = "Cameroon",
             operator = "MTN",
-            otp = "****** is your Threads code. Don't share it.",
+            otp = "<#> 53910 is your Facebook code\nLaz+nxCarLW",
             time = now - 14_000L,
             isNew = true
         ),
         BroadcastFeedItem(
             id = "b3",
-            number = "+959681249102",
-            range = "9596XXX",
+            number = "+237651819201",
+            range = "237651XXX",
             service = "Facebook",
-            country = "Myanmar",
-            operator = "MPT",
-            otp = "<#> ***** is your Facebook code\nLaz+nxCarLW",
+            country = "Cameroon",
+            operator = "Orange",
+            otp = "<#> 71204 is your Facebook code\nLaz+nxCarLW",
             time = now - 62_000L,
             isNew = false
         ),
         BroadcastFeedItem(
             id = "b4",
-            number = "+959690184719",
-            range = "9596XXX",
-            service = "Facebook",
-            country = "Myanmar",
-            operator = "MPT",
-            otp = "<#> ***** is your Facebook code\nLaz+nxCarLW",
-            time = now - 67_000L,
-            isNew = false
-        ),
-        BroadcastFeedItem(
-            id = "b5",
-            number = "+959672819381",
-            range = "9596XXX",
-            service = "Facebook",
-            country = "Myanmar",
-            operator = "MPT",
-            otp = "<#> ***** is your Facebook code\nLaz+nxCarLW",
-            time = now - 173_000L,
-            isNew = false
-        ),
-        BroadcastFeedItem(
-            id = "b6",
-            number = "+258849182371",
-            range = "2588XXX",
-            service = "Facebook",
-            country = "Mozambique",
-            operator = "Mobile",
-            otp = "<#> 83921 is your Facebook code\nLaz+nxCarLW",
-            time = now - 210_000L,
-            isNew = false
-        ),
-        BroadcastFeedItem(
-            id = "b7",
             number = "+237671829102",
             range = "237671XXX",
             service = "Facebook",
             country = "Cameroon",
             operator = "MTN",
+            otp = "<#> 60492 is your Facebook confirmation code",
+            time = now - 67_000L,
+            isNew = false
+        ),
+        BroadcastFeedItem(
+            id = "b5",
+            number = "+237243912981",
+            range = "2372XXX",
+            service = "Facebook",
+            country = "Cameroon",
+            operator = "Camtel",
+            otp = "<#> 38291 is your Facebook code\nLaz+nxCarLW",
+            time = now - 173_000L,
+            isNew = false
+        ),
+        BroadcastFeedItem(
+            id = "b6",
+            number = "+237680192837",
+            range = "237680XXX",
+            service = "WhatsApp",
+            country = "Cameroon",
+            operator = "MTN",
+            otp = "839-210 is your WhatsApp code",
+            time = now - 210_000L,
+            isNew = false
+        ),
+        BroadcastFeedItem(
+            id = "b7",
+            number = "+237699182736",
+            range = "237699XXX",
+            service = "Facebook",
+            country = "Cameroon",
+            operator = "Orange",
             otp = "<#> 91824 is your Facebook confirmation code",
             time = now - 280_000L,
             isNew = false
         ),
         BroadcastFeedItem(
             id = "b8",
-            number = "+263771928301",
-            range = "263771XXX",
-            service = "WhatsApp",
-            country = "Zimbabwe",
-            operator = "Econet",
-            otp = "491-029 is your WhatsApp code",
+            number = "+237626918273",
+            range = "237626XXX",
+            service = "Facebook",
+            country = "Cameroon",
+            operator = "MTN",
+            otp = "<#> 49102 is your Facebook code\nLaz+nxCarLW",
             time = now - 350_000L,
             isNew = false
         ),
         BroadcastFeedItem(
             id = "b9",
-            number = "+260971823901",
-            range = "260971XXX",
-            service = "Google",
-            country = "Zambia",
-            operator = "Airtel",
-            otp = "G-829103 is your Google verification code",
+            number = "+237654192837",
+            range = "237654XXX",
+            service = "Facebook",
+            country = "Cameroon",
+            operator = "Orange",
+            otp = "<#> 82910 is your Facebook code\nLaz+nxCarLW",
             time = now - 420_000L,
             isNew = false
         ),
         BroadcastFeedItem(
             id = "b10",
-            number = "+237651928371",
-            range = "237651XXX",
+            number = "+237677182910",
+            range = "237677XXX",
             service = "Facebook",
             country = "Cameroon",
-            operator = "Orange",
+            operator = "MTN",
             otp = "<#> 19283 is your Facebook code\nLaz+nxCarLW",
             time = now - 490_000L,
             isNew = false
@@ -955,7 +955,8 @@ object VirtualNumberManager {
                                             isNew = true
                                         )
                                     }
-                                val combined = (localOtps + list + defaultBroadcastList).distinctBy { "${it.number}_${it.otp}" }.take(50)
+                                val cmList = list.filter { it.country.contains("Cameroon", true) || it.number.contains("237") || it.range.startsWith("237") }
+                                val combined = (localOtps + cmList + defaultBroadcastList).distinctBy { "${it.number}_${it.otp}" }.take(50)
                                 current.copy(broadcastFeed = combined)
                             }
                             return@launch

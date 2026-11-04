@@ -292,6 +292,48 @@ object OtpHistoryManager {
         }
     }
 
+    suspend fun deleteUserOtpRecord(recordId: String): Boolean = kotlinx.coroutines.withContext(Dispatchers.IO) {
+        if (recordId.isBlank()) return@withContext false
+        try {
+            val url = "$SUPABASE_BASE_URL/otp_history?id=eq.$recordId"
+            val req = Request.Builder()
+                .url(url)
+                .header("apikey", SUPABASE_KEY)
+                .header("Authorization", "Bearer $SUPABASE_KEY")
+                .header("Prefer", "return=minimal")
+                .delete()
+                .build()
+            val resp = httpClient.newCall(req).execute()
+            val ok = resp.isSuccessful
+            resp.close()
+            ok
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    suspend fun clearAllUserOtpRecords(userEmail: String): Boolean = kotlinx.coroutines.withContext(Dispatchers.IO) {
+        val cleanEmail = userEmail.trim().lowercase()
+        if (cleanEmail.isBlank()) return@withContext false
+        try {
+            val encEmail = java.net.URLEncoder.encode(cleanEmail, "UTF-8")
+            val url = "$SUPABASE_BASE_URL/otp_history?user_email=eq.$encEmail"
+            val req = Request.Builder()
+                .url(url)
+                .header("apikey", SUPABASE_KEY)
+                .header("Authorization", "Bearer $SUPABASE_KEY")
+                .header("Prefer", "return=minimal")
+                .delete()
+                .build()
+            val resp = httpClient.newCall(req).execute()
+            val ok = resp.isSuccessful
+            resp.close()
+            ok
+        } catch (_: Exception) {
+            false
+        }
+    }
+
     fun triggerLiveCloudSync() {
         scope.launch {
             syncFromCloud()

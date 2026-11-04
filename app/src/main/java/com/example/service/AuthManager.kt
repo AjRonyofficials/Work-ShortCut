@@ -973,6 +973,7 @@ object AuthManager {
         patchUserField(target, JSONObject().apply {
             put("total_otps", totalOtps)
             put("balance", balanceTk)
+            put("total_balance", balanceTk)
             put("otp_today", today)
             put("otp_7days", last7d)
             put("otp_30days", last30d)
@@ -1210,17 +1211,11 @@ object AuthManager {
         authScope.launch {
             try {
                 val deviceModel = "${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}"
-                val st = OtpHistoryManager.state.value
-                val bal = WithdrawalManager.state.value.availableBalanceTk
+                val nowTime = System.currentTimeMillis()
                 val payload = JSONObject().apply {
-                    put("last_active", System.currentTimeMillis())
+                    put("last_active", nowTime)
                     put("device_model", deviceModel)
                     put("status", "ONLINE")
-                    put("total_otps", st.totalOtpsAllTime)
-                    put("balance", bal)
-                    put("otp_today", st.todayOtps)
-                    put("otp_7days", st.last7DaysOtps)
-                    put("otp_30days", st.last30DaysOtps)
                 }
                 val body = payload.toString().toRequestBody("application/json; charset=utf-8".toMediaTypeOrNull())
                 val req = okhttp3.Request.Builder()
@@ -1231,17 +1226,12 @@ object AuthManager {
                     .build()
                 httpClient.newCall(req).execute()
 
-                // Update local representation in memory as well
+                // Update online status in local memory
                 _managedUsers.value = _managedUsers.value.map { u ->
                     if (u.email.lowercase() == email) {
                         u.copy(
-                            totalOtps = st.totalOtpsAllTime,
-                            balanceTk = bal,
-                            todayOtps = st.todayOtps,
-                            last7DaysOtps = st.last7DaysOtps,
-                            last30DaysOtps = st.last30DaysOtps,
                             isOnline = true,
-                            lastActive = System.currentTimeMillis()
+                            lastActive = nowTime
                         )
                     } else u
                 }

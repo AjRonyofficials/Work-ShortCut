@@ -133,11 +133,13 @@ data class V2CountryPreset(
 )
 
 val ALLOCATION_COUNTRIES = listOf(
-    V2CountryPreset("ZW", "Zimbabwe", "🇿🇼", "+263", "USDT 0.005", "Facebook"),
-    V2CountryPreset("FR", "France", "🇫🇷", "+33", "USDT 0.006", "Facebook"),
-    V2CountryPreset("SD", "Sudan", "🇸🇩", "+249", "USDT 0.005", "💬 WhatsApp"),
-    V2CountryPreset("ZM", "Zambia", "🇿🇲", "+260", "USDT 0.005", "📸 Instagram"),
     V2CountryPreset("IT", "Italy", "🇮🇹", "+39", "USDT 0.005", "Facebook"),
+    V2CountryPreset("ET", "Ethiopia", "🇪🇹", "+251", "USDT 0.005", "Facebook"),
+    V2CountryPreset("FR", "France", "🇫🇷", "+33", "USDT 0.006", "Facebook"),
+    V2CountryPreset("NG", "Nigeria", "🇳🇬", "+234", "USDT 0.005", "Facebook"),
+    V2CountryPreset("KE", "Kenya", "🇰🇪", "+254", "USDT 0.005", "Facebook"),
+    V2CountryPreset("CO", "Colombia", "🇨🇴", "+57", "USDT 0.005", "Facebook"),
+    V2CountryPreset("ZA", "South Africa", "🇿🇦", "+27", "USDT 0.005", "💬 WhatsApp"),
     V2CountryPreset("GB", "United Kingdom", "🇬🇧", "+44", "USDT 0.006", "🔥 OTP Work"),
     V2CountryPreset("US", "United States", "🇺🇸", "+1", "USDT 0.005", "Facebook"),
     V2CountryPreset("ANY", "ANY (All Countries)", "🌐", "", "LIVE POOL", "🔥 All Pools")
@@ -1582,27 +1584,30 @@ fun PremiumNumberV2SectionContent(
                             modifier = Modifier.fillMaxWidth().height(44.dp)
                         )
 
-                        // Scrollable Category Filter Chips
+                        // Category Filter Chips (Matching Screenshot 2: ALL, Facebook, WhatsApp, Instagram)
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .horizontalScroll(rememberScrollState()),
-                            horizontalArrangement = Arrangement.spacedBy(5.dp)
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            listOf("ALL", "WhatsApp", "Telegram", "Facebook", "Apple", "Google", "Instagram", "TikTok", "Other").forEach { cat ->
+                            listOf("ALL", "Facebook", "WhatsApp", "Instagram").forEach { cat ->
                                 val isSel = selectedConsoleCategory.equals(cat, ignoreCase = true)
+                                val pillBg = if (isSel) Color(0xFF00E676) else Color(0xFF0E1A29)
+                                val pillFg = if (isSel) Color(0xFF041B26) else Color(0xFF94A3B8)
+                                val pillBorder = if (isSel) Color(0xFF00E676) else Color(0xFF1E2D40)
                                 Surface(
-                                    color = if (isSel) Color(0xFF00E5FF) else Color(0xFF0E1A29),
-                                    shape = RoundedCornerShape(6.dp),
-                                    border = BorderStroke(0.8.dp, if (isSel) Color(0xFF00E5FF) else Color(0xFF1E3A56)),
+                                    color = pillBg,
+                                    shape = RoundedCornerShape(20.dp),
+                                    border = BorderStroke(1.dp, pillBorder),
                                     modifier = Modifier.clickable { selectedConsoleCategory = cat }
                                 ) {
                                     Text(
                                         text = cat,
-                                        color = if (isSel) Color(0xFF041B26) else Color(0xFF94A3B8),
-                                        fontSize = 9.5.sp,
-                                        fontWeight = if (isSel) FontWeight.Bold else FontWeight.Normal,
-                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                        color = pillFg,
+                                        fontSize = 11.5.sp,
+                                        fontWeight = if (isSel) FontWeight.ExtraBold else FontWeight.SemiBold,
+                                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp)
                                     )
                                 }
                             }
@@ -1610,16 +1615,7 @@ fun PremiumNumberV2SectionContent(
 
                         val feedItems = remember(state.liveConsoleFeed, selectedConsoleCategory, liveFeedSearchQuery) {
                             var list = if (selectedConsoleCategory == "ALL") state.liveConsoleFeed
-                            else if (selectedConsoleCategory == "Other") {
-                                state.liveConsoleFeed.filter {
-                                    !it.service.contains("facebook", ignoreCase = true) &&
-                                    !it.service.contains("whatsapp", ignoreCase = true) &&
-                                    !it.service.contains("instagram", ignoreCase = true) &&
-                                    !it.service.contains("telegram", ignoreCase = true) &&
-                                    !it.service.contains("apple", ignoreCase = true) &&
-                                    !it.service.contains("google", ignoreCase = true)
-                                }
-                            } else {
+                            else {
                                 state.liveConsoleFeed.filter { it.service.contains(selectedConsoleCategory, ignoreCase = true) }
                             }
 
@@ -1658,6 +1654,17 @@ fun PremiumNumberV2SectionContent(
                                     }
                                 )
                             }
+
+                            Spacer(modifier = Modifier.height(14.dp))
+                            Text(
+                                text = "SL VIRTUAL NUMBER © 2026 // ALL RIGHTS RESERVED",
+                                color = Color(0xFF64748B),
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Medium,
+                                letterSpacing = 1.sp,
+                                textAlign = TextAlign.Center,
+                                modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp)
+                            )
                         }
                     }
                 }
@@ -1981,7 +1988,7 @@ fun PremiumV2NumberCard(
 }
 
 /**
- * Live OTP Stream Feed Item Card (Hubu same as Screenshot)
+ * Live OTP Stream Feed Item Card (Strictly Matching Screenshot 2 from slvirtualnumber.com)
  */
 @Composable
 fun LiveOtpStreamCard(
@@ -1989,197 +1996,164 @@ fun LiveOtpStreamCard(
     onGetNumber: () -> Unit
 ) {
     val context = LocalContext.current
-    val rangeText = if (item.rangePrefix.isNotBlank()) "${item.rangePrefix}XXX" else item.maskedNumber
+    val fullSnippet = item.rawSnippet.ifBlank { "<#> ***** is your Facebook code\nH29Q+Fsn4Sr" }
 
     Card(
-        colors = CardDefaults.cardColors(containerColor = Color(0xFF131E2B)),
-        shape = RoundedCornerShape(14.dp),
-        border = BorderStroke(1.dp, Color(0xFF1E2D40)),
+        colors = CardDefaults.cardColors(containerColor = Color(0xFF09121D)),
+        shape = RoundedCornerShape(16.dp),
+        border = BorderStroke(1.2.dp, Color(0xFF132F42)),
         modifier = Modifier.fillMaxWidth()
     ) {
-        Column(modifier = Modifier.padding(12.dp)) {
-            // Line 1: [ 2372XXX 📋 ] Range Pill + Chips [Service] [Country] [Operator] [• NEW]
+        Column(
+            modifier = Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            // Row 1: [ 🇮🇹 IT ]   [ ● FACEBOOK ]       +3932••••4885
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                // Range Pill with Copy icon (Exact design from screenshot)
-                Surface(
-                    color = Color(0xFF0F263B),
-                    shape = RoundedCornerShape(8.dp),
-                    border = BorderStroke(1.dp, Color(0xFF0284C7)),
-                    modifier = Modifier.clickable {
-                        ClipboardHelper.copyToClipboard(context, rangeText, "Range")
-                        Toast.makeText(context, "Range কপি হয়েছে: $rangeText", Toast.LENGTH_SHORT).show()
-                        onGetNumber()
-                    }
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = rangeText,
-                            color = Color(0xFF00E5FF),
-                            fontSize = 12.5.sp,
-                            fontWeight = FontWeight.ExtraBold,
-                            fontFamily = FontFamily.Monospace
-                        )
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Icon(
-                            imageVector = Icons.Default.ContentCopy,
-                            contentDescription = "Copy Range",
-                            tint = Color(0xFF00E5FF),
-                            modifier = Modifier.size(12.dp)
-                        )
-                    }
-                }
-
-                // Chips Row: [Service] [Country] [Operator] [• NEW]
                 Row(
-                    horizontalArrangement = Arrangement.spacedBy(4.dp),
-                    verticalAlignment = Alignment.CenterVertically
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    // Service Chip
-                    val cleanSrv = when {
-                        item.service.contains("facebook", ignoreCase = true) || item.service.contains("fb", ignoreCase = true) -> "Facebook"
-                        item.service.contains("threads", ignoreCase = true) -> "Threads"
-                        item.service.contains("whatsapp", ignoreCase = true) || item.service.contains("wa", ignoreCase = true) -> "WhatsApp"
-                        item.service.contains("insta", ignoreCase = true) || item.service.contains("ig", ignoreCase = true) -> "Instagram"
-                        item.service.isBlank() || item.service.contains("ANY", ignoreCase = true) -> "Other"
-                        else -> item.service
-                    }
+                    // Country / ISO Pill [ 🇮🇹 IT ]
                     Surface(
-                        color = Color(0xFF132237),
-                        shape = RoundedCornerShape(6.dp),
-                        border = BorderStroke(0.8.dp, Color(0xFF1E3A56))
+                        color = Color(0xFF111C28),
+                        shape = RoundedCornerShape(12.dp),
+                        border = BorderStroke(0.8.dp, Color(0xFF1E2D40))
                     ) {
-                        Text(
-                            text = cleanSrv,
-                            color = Color(0xFF38BDF8),
-                            fontSize = 9.5.sp,
-                            fontWeight = FontWeight.Bold,
-                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                        )
-                    }
-
-                    // Country Chip
-                    Surface(
-                        color = Color(0xFF0F2C33),
-                        shape = RoundedCornerShape(6.dp),
-                        border = BorderStroke(0.8.dp, Color(0xFF134E4A))
-                    ) {
-                        Text(
-                            text = item.country.ifBlank { "Global" },
-                            color = Color(0xFF2DD4BF),
-                            fontSize = 9.5.sp,
-                            fontWeight = FontWeight.Bold,
-                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                        )
-                    }
-
-                    // Operator Chip
-                    Surface(
-                        color = Color(0xFF281E13),
-                        shape = RoundedCornerShape(6.dp),
-                        border = BorderStroke(0.8.dp, Color(0xFF452B14))
-                    ) {
-                        Text(
-                            text = item.operator.ifBlank { "MTN" },
-                            color = Color(0xFFFBBF24),
-                            fontSize = 9.5.sp,
-                            fontWeight = FontWeight.Bold,
-                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                        )
-                    }
-
-                    // • NEW Badge
-                    if (item.isNew) {
-                        Surface(
-                            color = Color(0xFF064E3B).copy(alpha = 0.4f),
-                            shape = RoundedCornerShape(6.dp),
-                            border = BorderStroke(0.8.dp, Color(0xFF10B981))
+                        Row(
+                            modifier = Modifier.padding(horizontal = 9.dp, vertical = 5.dp),
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
+                            Text(text = item.flag, fontSize = 13.sp)
+                            Spacer(modifier = Modifier.width(5.dp))
                             Text(
-                                text = "• NEW",
-                                color = Color(0xFF34D399),
-                                fontSize = 9.sp,
-                                fontWeight = FontWeight.Black,
-                                modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
+                                text = item.iso.uppercase(),
+                                color = Color.White,
+                                fontSize = 11.5.sp,
+                                fontWeight = FontWeight.ExtraBold
+                            )
+                        }
+                    }
+
+                    // Service Pill [ ● FACEBOOK ]
+                    Surface(
+                        color = Color(0xFF111C28),
+                        shape = RoundedCornerShape(12.dp),
+                        border = BorderStroke(0.8.dp, Color(0xFF1E2D40))
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 9.dp, vertical = 5.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(7.dp)
+                                    .clip(CircleShape)
+                                    .background(Color(0xFF2563EB))
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            val srvText = when {
+                                item.service.contains("facebook", ignoreCase = true) || item.service.contains("fb", ignoreCase = true) -> "FACEBOOK"
+                                item.service.contains("whatsapp", ignoreCase = true) || item.service.contains("wa", ignoreCase = true) -> "WHATSAPP"
+                                item.service.contains("instagram", ignoreCase = true) || item.service.contains("ig", ignoreCase = true) -> "INSTAGRAM"
+                                else -> item.service.uppercase()
+                            }
+                            Text(
+                                text = srvText,
+                                color = Color.White,
+                                fontSize = 11.5.sp,
+                                fontWeight = FontWeight.Bold
                             )
                         }
                     }
                 }
+
+                // Masked Number (+3932••••4885)
+                Text(
+                    text = item.maskedNumber,
+                    color = Color.White,
+                    fontSize = 13.5.sp,
+                    fontWeight = FontWeight.Bold,
+                    fontFamily = FontFamily.Monospace,
+                    modifier = Modifier.clickable {
+                        ClipboardHelper.copyToClipboard(context, item.maskedNumber, "Phone Number")
+                        Toast.makeText(context, "নম্বর কপি হয়েছে: ${item.maskedNumber}", Toast.LENGTH_SHORT).show()
+                    }
+                )
             }
 
-            Spacer(modifier = Modifier.height(10.dp))
+            // Row 2: [ ⚙️ GET NUMBER ]          just now / 1 min ago
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                // [ ⚙️ GET NUMBER ] Pill Button
+                Surface(
+                    color = Color(0xFF042F2E).copy(alpha = 0.5f),
+                    shape = RoundedCornerShape(12.dp),
+                    border = BorderStroke(1.2.dp, Color(0xFF00E676)),
+                    modifier = Modifier.clickable { onGetNumber() }
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("⚙️", fontSize = 11.sp)
+                        Spacer(modifier = Modifier.width(5.dp))
+                        Text(
+                            text = "GET NUMBER",
+                            color = Color(0xFF00E676),
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            letterSpacing = 0.5.sp
+                        )
+                    }
+                }
 
-            // Line 2: Monospace full SMS Body in rounded container (Click to copy)
-            val fullSnippet = item.rawSnippet.ifBlank { "<#> ${item.otpCode} is your Facebook code\nLaz+nxCarLW" }
+                // Relative time label (just now, 1 min ago)
+                Text(
+                    text = item.timeAgo,
+                    color = Color(0xFF94A3B8),
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Medium
+                )
+            }
+
+            // Row 3: Speech bubble box with 💬 and Monospace full SMS
             Surface(
-                color = Color(0xFF0D1520),
-                shape = RoundedCornerShape(8.dp),
-                border = BorderStroke(1.dp, Color(0xFF1E2D3D)),
+                color = Color(0xFF070E18),
+                shape = RoundedCornerShape(12.dp),
+                border = BorderStroke(1.dp, Color(0xFF132233)),
                 modifier = Modifier
                     .fillMaxWidth()
                     .clickable {
                         val cleanCode = com.example.util.OtpExtractionHelper.extractOtp(fullSnippet) ?: item.otpCode
                         if (cleanCode.isNotBlank() && cleanCode != "******") {
                             ClipboardHelper.copyToClipboard(context, cleanCode, "OTP Code")
-                            Toast.makeText(context, "✓ ওটিপি কপি হয়েছে: $cleanCode", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, "✓ ওটিপি কোড কপি হয়েছে: $cleanCode", Toast.LENGTH_SHORT).show()
                         } else {
-                            ClipboardHelper.copyToClipboard(context, fullSnippet, "SMS Body")
+                            ClipboardHelper.copyToClipboard(context, fullSnippet, "Full SMS")
                             Toast.makeText(context, "✓ পুরো এসএমএস কপি হয়েছে", Toast.LENGTH_SHORT).show()
                         }
                     }
             ) {
-                Text(
-                    text = fullSnippet,
-                    color = Color(0xFFE2E8F0),
-                    fontSize = 11.5.sp,
-                    fontFamily = FontFamily.Monospace,
-                    lineHeight = 16.sp,
-                    modifier = Modifier.padding(10.dp)
-                )
-            }
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            // Line 3: Bottom metadata (Timestamp and Green Elapsed time badge)
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        imageVector = Icons.Default.AccessTime,
-                        contentDescription = null,
-                        tint = Color(0xFF64748B),
-                        modifier = Modifier.size(13.dp)
-                    )
-                    Spacer(modifier = Modifier.width(5.dp))
-                    Text(
-                        text = item.fullTimeFormatted,
-                        color = Color(0xFF64748B),
-                        fontSize = 10.sp,
-                        fontFamily = FontFamily.Monospace
-                    )
-                }
-
-                // Green Elapsed Time Badge (e.g. "13s ago")
-                Surface(
-                    color = Color(0xFF064E3B).copy(alpha = 0.35f),
-                    shape = RoundedCornerShape(12.dp),
-                    border = BorderStroke(0.8.dp, Color(0xFF059669).copy(alpha = 0.6f))
+                Row(
+                    modifier = Modifier.padding(12.dp),
+                    verticalAlignment = Alignment.Top
                 ) {
+                    Text("💬", fontSize = 13.sp)
+                    Spacer(modifier = Modifier.width(10.dp))
                     Text(
-                        text = item.timeAgo,
-                        color = Color(0xFF34D399),
-                        fontSize = 9.5.sp,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp)
+                        text = fullSnippet,
+                        color = Color(0xFFE2E8F0),
+                        fontSize = 12.sp,
+                        fontFamily = FontFamily.Monospace,
+                        lineHeight = 18.sp
                     )
                 }
             }

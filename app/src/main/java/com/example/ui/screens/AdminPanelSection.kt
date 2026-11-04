@@ -6045,6 +6045,7 @@ fun AdminUserOtpHistoryDialog(
     onDismiss: () -> Unit
 ) {
     val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
     var records by remember { mutableStateOf<List<OtpHistoryRecord>>(emptyList()) }
     var isLoading by remember { mutableStateOf(true) }
     var searchQuery by remember { mutableStateOf("") }
@@ -6114,7 +6115,7 @@ fun AdminUserOtpHistoryDialog(
                     leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = Color(0xFF64748B), modifier = Modifier.size(14.dp)) }
                 )
 
-                // Summary Row
+                // Summary Row with Clear All OTPs button
                 Surface(
                     color = Color(0xFF111C2B),
                     shape = RoundedCornerShape(8.dp),
@@ -6126,9 +6127,39 @@ fun AdminUserOtpHistoryDialog(
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text("মোট রিসিভড: ${records.size} টি", fontSize = 10.sp, color = Color(0xFF38BDF8), fontWeight = FontWeight.Bold)
-                        val totalEarned = records.sumOf { it.rate }
-                        Text("মোট অর্জিত: ৳${String.format(Locale.US, "%.2f", totalEarned)}", fontSize = 10.sp, color = Color(0xFF34D399), fontWeight = FontWeight.Bold)
+                        Column {
+                            Text("মোট রিসিভড: ${records.size} টি", fontSize = 10.sp, color = Color(0xFF38BDF8), fontWeight = FontWeight.Bold)
+                            val totalEarned = records.sumOf { it.rate }
+                            Text("মোট অর্জিত: ৳${String.format(Locale.US, "%.2f", totalEarned)}", fontSize = 10.sp, color = Color(0xFF34D399), fontWeight = FontWeight.Bold)
+                        }
+
+                        if (records.isNotEmpty()) {
+                            Surface(
+                                color = Color(0xFFEF4444).copy(alpha = 0.2f),
+                                shape = RoundedCornerShape(6.dp),
+                                border = BorderStroke(0.8.dp, Color(0xFFEF4444)),
+                                modifier = Modifier.clickable {
+                                    coroutineScope.launch {
+                                        val ok = OtpHistoryManager.clearAllUserOtpRecords(user.email)
+                                        if (ok) {
+                                            Toast.makeText(context, "✓ ডাটাবেস থেকে ইউজারের সব ওটিপি রেকর্ড মুছে ফেলা হয়েছে", Toast.LENGTH_SHORT).show()
+                                            refreshTrigger++
+                                        } else {
+                                            Toast.makeText(context, "মুছতে সমস্যা হয়েছে", Toast.LENGTH_SHORT).show()
+                                        }
+                                    }
+                                }
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(Icons.Default.Delete, contentDescription = null, tint = Color(0xFFEF4444), modifier = Modifier.size(11.dp))
+                                    Spacer(modifier = Modifier.width(3.dp))
+                                    Text("ডাটাবেস ক্লিয়ার", fontSize = 9.sp, color = Color(0xFFEF4444), fontWeight = FontWeight.Bold)
+                                }
+                            }
+                        }
                     }
                 }
 
@@ -6200,33 +6231,58 @@ fun AdminUserOtpHistoryDialog(
                                         )
                                     }
 
-                                    // OTP Code Box
-                                    Surface(
-                                        color = Color(0xFF10B981).copy(alpha = 0.2f),
-                                        shape = RoundedCornerShape(6.dp),
-                                        border = BorderStroke(1.dp, Color(0xFF10B981)),
-                                        modifier = Modifier.clickable {
-                                            ClipboardHelper.copyToClipboard(context, rec.otpCode, "OTP Code")
-                                            Toast.makeText(context, "OTP কোড কপি করা হয়েছে: ${rec.otpCode}", Toast.LENGTH_SHORT).show()
-                                        }
-                                    ) {
-                                        Row(
-                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                                            verticalAlignment = Alignment.CenterVertically
+                                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                        // OTP Code Box
+                                        Surface(
+                                            color = Color(0xFF10B981).copy(alpha = 0.2f),
+                                            shape = RoundedCornerShape(6.dp),
+                                            border = BorderStroke(1.dp, Color(0xFF10B981)),
+                                            modifier = Modifier.clickable {
+                                                ClipboardHelper.copyToClipboard(context, rec.otpCode, "OTP Code")
+                                                Toast.makeText(context, "OTP কোড কপি করা হয়েছে: ${rec.otpCode}", Toast.LENGTH_SHORT).show()
+                                            }
                                         ) {
-                                            Text(
-                                                text = rec.otpCode,
-                                                color = Color(0xFF34D399),
-                                                fontSize = 12.sp,
-                                                fontWeight = FontWeight.ExtraBold,
-                                                fontFamily = FontFamily.Monospace
-                                            )
-                                            Spacer(modifier = Modifier.width(4.dp))
+                                            Row(
+                                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                Text(
+                                                    text = rec.otpCode,
+                                                    color = Color(0xFF34D399),
+                                                    fontSize = 12.sp,
+                                                    fontWeight = FontWeight.ExtraBold,
+                                                    fontFamily = FontFamily.Monospace
+                                                )
+                                                Spacer(modifier = Modifier.width(4.dp))
+                                                Icon(
+                                                    Icons.Default.ContentCopy,
+                                                    contentDescription = "Copy",
+                                                    tint = Color(0xFF34D399),
+                                                    modifier = Modifier.size(11.dp)
+                                                )
+                                            }
+                                        }
+
+                                        // Delete single record button
+                                        IconButton(
+                                            onClick = {
+                                                coroutineScope.launch {
+                                                    val ok = OtpHistoryManager.deleteUserOtpRecord(rec.id)
+                                                    if (ok) {
+                                                        Toast.makeText(context, "✓ ওটিপি ডাটাবেস থেকে মোছা হয়েছে", Toast.LENGTH_SHORT).show()
+                                                        refreshTrigger++
+                                                    } else {
+                                                        Toast.makeText(context, "মুছতে সমস্যা হয়েছে", Toast.LENGTH_SHORT).show()
+                                                    }
+                                                }
+                                            },
+                                            modifier = Modifier.size(26.dp)
+                                        ) {
                                             Icon(
-                                                Icons.Default.ContentCopy,
-                                                contentDescription = "Copy",
-                                                tint = Color(0xFF34D399),
-                                                modifier = Modifier.size(11.dp)
+                                                Icons.Default.Delete,
+                                                contentDescription = "Delete record",
+                                                tint = Color(0xFFEF4444).copy(alpha = 0.85f),
+                                                modifier = Modifier.size(15.dp)
                                             )
                                         }
                                     }
