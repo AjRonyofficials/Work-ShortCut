@@ -97,6 +97,7 @@ class SuperProxyVpnService : VpnService() {
                 .addRoute("0.0.0.0", 0)       // Capture all IPv4 traffic into tun0
                 .addRoute("240.0.0.0", 4)     // Explicit route for Fake IP mapping pool so Android kernel never drops fake IPs
                 .addDnsServer("198.18.0.2")   // MapDNS internal DNS resolver (Fake-IP translation)
+                .addDnsServer("8.8.8.8")      // High-speed Google DNS fallback
                 .addDnsServer("1.1.1.1")      // Encrypted secure Cloudflare DNS fallback
 
             // Strict Anti-Leak: Route IPv6 into tunnel to prevent carrier IPv6 leak for WhatsApp/FB/Instagram
@@ -184,7 +185,7 @@ class SuperProxyVpnService : VpnService() {
             sb.append("socks5:\n")
             sb.append("  port: ").append(finalPort).append("\n")
             sb.append("  address: '").append(finalServerIp).append("'\n")
-            sb.append("  udp: 'udp'\n")
+            sb.append("  udp: 'tcp'\n")
             if (finalUser.isNotBlank() && finalPass.isNotBlank()) {
                 val safeUser = finalUser.replace("'", "''")
                 val safePass = finalPass.replace("'", "''")
@@ -202,9 +203,9 @@ class SuperProxyVpnService : VpnService() {
             sb.append("misc:\n")
             sb.append("  task-stack-size: 81920\n")
             sb.append("  tcp-buffer-size: 65536\n")
-            sb.append("  connect-timeout: 3500\n")
+            sb.append("  connect-timeout: 8000\n")
             sb.append("  tcp-read-write-timeout: 60000\n")
-            sb.append("  udp-read-write-timeout: 15000\n")
+            sb.append("  udp-read-write-timeout: 20000\n")
             sb.append("  limit-nofile: 65535\n")
 
             FileOutputStream(configFile).use { it.write(sb.toString().toByteArray()) }

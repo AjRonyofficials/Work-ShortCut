@@ -1202,16 +1202,17 @@ fun UnixCdrMessageCard(
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     val resolvedCountry = remember(cdr.num, cdr.countryName, cdr.countryFlag) {
-                        if (cdr.countryName.isNotEmpty() && cdr.countryFlag.isNotEmpty()) {
-                            Pair(cdr.countryFlag, cdr.countryName)
-                        } else {
-                            val info = com.example.util.AllCountriesProvider.findByPhoneNumber(cdr.num)
-                            Pair(info?.flag ?: "🌐", info?.name ?: "Global")
-                        }
+                        val info = com.example.util.AllCountriesProvider.findByPhoneNumber(cdr.num)
+                            ?: com.example.util.AllCountriesProvider.detectCountry(cdr.countryName)
+                        Triple(
+                            info?.flag ?: cdr.countryFlag.ifEmpty { "🌐" },
+                            info?.name ?: cdr.countryName.ifEmpty { "Global" },
+                            (info?.code ?: "").uppercase()
+                        )
                     }
-                    val (countryFlag, countryName) = resolvedCountry
+                    val (countryFlag, countryName, isoCode) = resolvedCountry
 
-                    // Country Flag + Country Name Badge
+                    // Country Flag + Country Name + ISO Badge [ 🇲🇬 Madagascar MG ]
                     Surface(
                         color = Color(0xFF162536),
                         shape = RoundedCornerShape(6.dp),
@@ -1224,7 +1225,7 @@ fun UnixCdrMessageCard(
                             Text(text = countryFlag, fontSize = 13.sp)
                             Spacer(modifier = Modifier.width(4.dp))
                             Text(
-                                text = countryName,
+                                text = if (isoCode.isNotBlank()) "$countryName $isoCode" else countryName,
                                 color = Color(0xFFE2E8F0),
                                 fontSize = 10.sp,
                                 fontWeight = FontWeight.Bold,

@@ -1432,19 +1432,32 @@ private fun MkLiveOtpFeedCard(
                         )
                     }
 
-                    // Country Chip
+                    // Country Chip [ 🇲🇬 Madagascar MG ]
+                    val cInfo = com.example.util.AllCountriesProvider.detectCountry(item.country)
+                        ?: com.example.util.AllCountriesProvider.detectCountry(item.number)
+                        ?: com.example.util.AllCountriesProvider.detectCountry(item.range)
+                    val flagEmoji = cInfo?.flag ?: "🌐"
+                    val countryName = cInfo?.name ?: item.country.ifBlank { "Global" }
+                    val isoCode = (cInfo?.code ?: "").uppercase()
+
                     Surface(
                         color = ThemeSurfaceDark,
                         shape = RoundedCornerShape(6.dp),
                         border = BorderStroke(0.8.dp, ThemeBorder)
                     ) {
-                        Text(
-                            text = item.country,
-                            color = Color(0xFF2DD4BF),
-                            fontSize = 9.5.sp,
-                            fontWeight = FontWeight.Bold,
-                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                        )
+                        Row(
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(text = flagEmoji, fontSize = 11.sp)
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                text = if (isoCode.isNotBlank()) "$countryName $isoCode" else countryName,
+                                color = Color(0xFF2DD4BF),
+                                fontSize = 9.5.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
                     }
 
                     // Operator Chip

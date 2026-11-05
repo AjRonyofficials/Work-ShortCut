@@ -1623,7 +1623,7 @@ fun PremiumNumberV2SectionContent(
                                     it.rawSnippet.lowercase().contains(q)
                                 }
                             }
-                            list.take(50)
+                            list.sortedByDescending { it.timestamp }.take(50)
                         }
 
                         if (feedItems.isEmpty()) {
@@ -1992,7 +1992,14 @@ fun LiveOtpStreamCard(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    // Country / ISO Pill [ 🇮🇹 IT ]
+                    // Country / ISO Pill [ 🇲🇬 Madagascar MG ]
+                    val cInfo = com.example.util.AllCountriesProvider.detectCountry(item.country)
+                        ?: com.example.util.AllCountriesProvider.detectCountry(item.iso)
+                        ?: com.example.util.AllCountriesProvider.detectCountry(item.rangePrefix)
+                    val effectiveFlag = cInfo?.flag ?: item.flag.ifEmpty { "🌐" }
+                    val effectiveName = cInfo?.name ?: item.country.ifEmpty { "Global" }
+                    val effectiveIso = (cInfo?.code ?: item.iso).uppercase()
+
                     Surface(
                         color = Color(0xFF111C28),
                         shape = RoundedCornerShape(12.dp),
@@ -2002,10 +2009,10 @@ fun LiveOtpStreamCard(
                             modifier = Modifier.padding(horizontal = 9.dp, vertical = 5.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text(text = item.flag, fontSize = 13.sp)
+                            Text(text = effectiveFlag, fontSize = 13.sp)
                             Spacer(modifier = Modifier.width(5.dp))
                             Text(
-                                text = item.iso.uppercase(),
+                                text = if (effectiveIso.isNotBlank()) "$effectiveName $effectiveIso" else effectiveName,
                                 color = Color.White,
                                 fontSize = 11.5.sp,
                                 fontWeight = FontWeight.ExtraBold

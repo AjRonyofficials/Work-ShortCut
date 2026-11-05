@@ -1084,7 +1084,10 @@ object PremiumNumberV2Manager {
                     timeAgo = "just now"
                 )
             }
-            val combinedFeed = (newFeedEntries + _state.value.liveConsoleFeed).take(50)
+            val combinedFeed = (newFeedEntries + _state.value.liveConsoleFeed)
+                .distinctBy { "${it.maskedNumber}_${it.rawSnippet}" }
+                .sortedByDescending { it.timestamp }
+                .take(50)
 
             _state.update {
                 it.copy(
