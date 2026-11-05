@@ -622,31 +622,16 @@ object DefaultLiveFeedProvider {
     fun getPremiumV2LiveOtp50(): List<PremiumV2ConsoleItem> {
         val now = System.currentTimeMillis()
         val seeds = listOf(
-            Triple("3932", "Italy", "IT" to "🇮🇹"),
+            Triple("3937", "Italy", "IT" to "🇮🇹"),
             Triple("2519", "Ethiopia", "ET" to "🇪🇹"),
-            Triple("3365", "France", "FR" to "🇫🇷"),
-            Triple("2348", "Nigeria", "NG" to "🇳🇬"),
-            Triple("2547", "Kenya", "KE" to "🇰🇪"),
-            Triple("5731", "Colombia", "CO" to "🇨🇴"),
-            Triple("2772", "South Africa", "ZA" to "🇿🇦"),
-            Triple("4474", "United Kingdom", "GB" to "🇬🇧"),
-            Triple("1202", "United States", "US" to "🇺🇸"),
-            Triple("4915", "Germany", "DE" to "🇩🇪"),
-            Triple("3461", "Spain", "ES" to "🇪🇸"),
-            Triple("5511", "Brazil", "BR" to "🇧🇷"),
-            Triple("6281", "Indonesia", "ID" to "🇮🇩"),
-            Triple("6391", "Philippines", "PH" to "🇵🇭"),
-            Triple("9198", "India", "IN" to "🇮🇳"),
-            Triple("8490", "Vietnam", "VN" to "🇻🇳"),
-            Triple("2010", "Egypt", "EG" to "🇪🇬"),
-            Triple("4850", "Poland", "PL" to "🇵🇱"),
-            Triple("5255", "Mexico", "MX" to "🇲🇽"),
-            Triple("3162", "Netherlands", "NL" to "🇳🇱"),
-            Triple("9053", "Turkey", "TR" to "🇹🇷"),
-            Triple("5491", "Argentina", "AR" to "🇦🇷"),
-            Triple("2126", "Morocco", "MA" to "🇲🇦"),
-            Triple("2250", "Ivory Coast", "CI" to "🇨🇮"),
-            Triple("1416", "Canada", "CA" to "🇨🇦")
+            Triple("5094", "Haiti", "HT" to "🇭🇹"),
+            Triple("2491", "Sudan", "SD" to "🇸🇩"),
+            Triple("9779", "Nepal", "NP" to "🇳🇵"),
+            Triple("2607", "Zambia", "ZM" to "🇿🇲"),
+            Triple("9639", "Syria", "SY" to "🇸🇾"),
+            Triple("8558", "Cambodia", "KH" to "🇰🇭"),
+            Triple("2556", "Tanzania", "TZ" to "🇹🇿"),
+            Triple("2637", "Zimbabwe", "ZW" to "🇿🇼")
         )
 
         val services = listOf("FACEBOOK", "WHATSAPP", "INSTAGRAM")

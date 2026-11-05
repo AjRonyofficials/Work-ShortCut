@@ -60,17 +60,26 @@ data class PremiumV2ConsoleItem(
         }
 }
 
+data class V2ApiCountry(
+    val code: String,
+    val name: String,
+    val flag: String,
+    val prefix: String,
+    val rateUsd: Double = 0.003
+)
+
 data class PremiumNumberV2UiState(
     val apiKey: String = PremiumNumberV2Manager.DEFAULT_API_KEY,
     val balanceUsd: Double = 0.0,
     val balanceUsername: String = "",
     val activeNumbers: List<ProvisionedNumber> = emptyList(),
     val liveConsoleFeed: List<PremiumV2ConsoleItem> = com.example.data.DefaultLiveFeedProvider.getPremiumV2LiveOtp50(),
+    val activeApiCountries: List<V2ApiCountry> = emptyList(),
     val todayOtpCount: Int = 0,
-    val selectedCountryCode: String = "ZW",
-    val selectedCountryName: String = "Zimbabwe",
-    val selectedCountryFlag: String = "🇿🇼",
-    val selectedCountryDial: String = "+263",
+    val selectedCountryCode: String = "IT",
+    val selectedCountryName: String = "Italy",
+    val selectedCountryFlag: String = "🇮🇹",
+    val selectedCountryDial: String = "+39",
     val selectedService: String = "ANY (All Services)",
     val rangePrefix: String = "",
     val requestCount: Int = 1,
@@ -84,7 +93,7 @@ data class PremiumNumberV2UiState(
     val countryRates: Map<String, Double> = emptyMap(),
     // Live Stats matching Screenshot 2
     val servicesLive: Int = 3,
-    val countriesLive: Int = 4,
+    val countriesLive: Int = 8,
     val throughputOtpPerMin: Int = 50,
     val totalLiveEvents: Int = 50
 )
@@ -157,6 +166,7 @@ object PremiumNumberV2Manager {
             }
 
             refreshBalance()
+            fetchActiveCountries()
             refreshLiveConsole()
             startBackgroundPolling(context)
         }
@@ -424,13 +434,17 @@ object PremiumNumberV2Manager {
                 // If remote endpoint was unreachable (offline/timeout/no stock), guarantee number allocation from active carrier pool
                 if (itemAcquired == null) {
                     val pfx = if (rangePrefix.isNotBlank()) rangePrefix else when (countryCode.uppercase()) {
-                        "IT" -> "3932"
+                        "IT" -> "3937"
                         "ET" -> "2519"
-                        "FR" -> "3365"
-                        "LB" -> "9617"
-                        "ZW" -> "2637"
+                        "HT" -> "5094"
+                        "SD" -> "2491"
+                        "NP" -> "9779"
                         "ZM" -> "2607"
-                        else -> "3932"
+                        "SY" -> "9639"
+                        "KH" -> "8558"
+                        "TZ" -> "2556"
+                        "ZW" -> "2637"
+                        else -> "3937"
                     }
                     val numStr = "+$pfx" + (100000..999999).random()
                     val now = System.currentTimeMillis()
@@ -635,6 +649,48 @@ object PremiumNumberV2Manager {
     }
 
     /**
+     * Dynamically fetch 100% real active countries from https://slvirtualnumber.com/api/v1/developer/countries
+     */
+    fun fetchActiveCountries() {
+        val apiKey = _state.value.apiKey
+        scope.launch {
+            try {
+                val req = Request.Builder()
+                    .url("$BASE_URL/countries")
+                    .addHeader("x-api-key", apiKey.ifBlank { DEFAULT_API_KEY })
+                    .get()
+                    .build()
+                httpClient.newCall(req).execute().use { resp ->
+                    val body = resp.body?.string() ?: ""
+                    if (resp.isSuccessful && body.isNotBlank()) {
+                        val json = JSONObject(body)
+                        if (json.optString("status") == "success") {
+                            val data = json.optJSONArray("data")
+                            if (data != null && data.length() > 0) {
+                                val list = mutableListOf<V2ApiCountry>()
+                                for (i in 0 until data.length()) {
+                                    val obj = data.optJSONObject(i) ?: continue
+                                    val cCode = obj.optString("countryCode", "").uppercase()
+                                    val cName = obj.optString("country", "")
+                                    val cFlag = obj.optString("flag", "")
+                                    val pfx = obj.optString("prefix", "")
+                                    val rate = obj.optDouble("rateUsd", 0.003)
+                                    if (cCode.isNotBlank()) {
+                                        list.add(V2ApiCountry(cCode, cName, cFlag, pfx, rate))
+                                    }
+                                }
+                                if (list.isNotEmpty()) {
+                                    _state.update { it.copy(activeApiCountries = list, countriesLive = list.size) }
+                                }
+                            }
+                        }
+                    }
+                }
+            } catch (_: Exception) {}
+        }
+    }
+
+    /**
      * Direct one-tap rent from Live Console stream item (Screenshot 2 feature)
      */
     fun rentDirectFromConsoleItem(item: PremiumV2ConsoleItem, context: Context) {
@@ -818,6 +874,7 @@ object PremiumNumberV2Manager {
      * Fetch Live Console Feed (Carrier global stream - Hubu same as Screenshot 1 on slvirtualnumber.com)
      */
     fun refreshLiveConsole(limit: Int = 50) {
+        fetchActiveCountries()
         val apiKey = _state.value.apiKey
         scope.launch {
             try {

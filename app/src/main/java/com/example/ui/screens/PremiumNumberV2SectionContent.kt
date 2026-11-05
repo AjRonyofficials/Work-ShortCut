@@ -133,16 +133,17 @@ data class V2CountryPreset(
 )
 
 val ALLOCATION_COUNTRIES = listOf(
-    V2CountryPreset("IT", "Italy", "🇮🇹", "+39", "USDT 0.005", "Facebook"),
-    V2CountryPreset("ET", "Ethiopia", "🇪🇹", "+251", "USDT 0.005", "Facebook"),
-    V2CountryPreset("FR", "France", "🇫🇷", "+33", "USDT 0.006", "Facebook"),
-    V2CountryPreset("NG", "Nigeria", "🇳🇬", "+234", "USDT 0.005", "Facebook"),
-    V2CountryPreset("KE", "Kenya", "🇰🇪", "+254", "USDT 0.005", "Facebook"),
-    V2CountryPreset("CO", "Colombia", "🇨🇴", "+57", "USDT 0.005", "Facebook"),
-    V2CountryPreset("ZA", "South Africa", "🇿🇦", "+27", "USDT 0.005", "💬 WhatsApp"),
-    V2CountryPreset("GB", "United Kingdom", "🇬🇧", "+44", "USDT 0.006", "🔥 OTP Work"),
-    V2CountryPreset("US", "United States", "🇺🇸", "+1", "USDT 0.005", "Facebook"),
-    V2CountryPreset("ANY", "ANY (All Countries)", "🌐", "", "LIVE POOL", "🔥 All Pools")
+    V2CountryPreset("IT", "Italy", "🇮🇹", "+39", "$0.001", "Facebook"),
+    V2CountryPreset("ET", "Ethiopia", "🇪🇹", "+251", "$0.003", "Facebook"),
+    V2CountryPreset("HT", "Haiti", "🇭🇹", "+509", "$0.005", "Facebook"),
+    V2CountryPreset("SD", "Sudan", "🇸🇩", "+249", "$0.005", "Facebook"),
+    V2CountryPreset("NP", "Nepal", "🇳🇵", "+977", "$0.003", "Facebook"),
+    V2CountryPreset("ZM", "Zambia", "🇿🇲", "+260", "$0.005", "Facebook"),
+    V2CountryPreset("SY", "Syria", "🇸🇾", "+963", "$0.005", "Facebook"),
+    V2CountryPreset("KH", "Cambodia", "🇰🇭", "+855", "$0.005", "Facebook"),
+    V2CountryPreset("TZ", "Tanzania", "🇹🇿", "+255", "$0.005", "Facebook"),
+    V2CountryPreset("ZW", "Zimbabwe", "🇿🇼", "+263", "$0.005", "Facebook"),
+    V2CountryPreset("ANY", "ANY (All Live Pool)", "🌐", "", "POOL", "🔥 All Pools")
 )
 
 @OptIn(ExperimentalLayoutApi::class)
@@ -166,12 +167,33 @@ fun PremiumNumberV2SectionContent(
     var selectedConsoleCategory by remember { mutableStateOf("ALL") } // "ALL", "Facebook", "WhatsApp", "Instagram", "Telegram", "Other"
     var liveFeedSearchQuery by remember { mutableStateOf("") }
 
-    // Dynamically derive ONLY countries present in Live Pool
-    val livePoolCountries = remember(state.liveConsoleFeed) {
+    // Dynamically derive ONLY real active countries from API & Live Pool
+    val livePoolCountries = remember(state.liveConsoleFeed, state.activeApiCountries) {
         val list = mutableListOf<V2CountryPreset>()
         val seen = mutableSetOf<String>()
         list.add(V2CountryPreset("ANY", "ANY (All Live Pool)", "🌐", "", "POOL", "🔥 All Pools"))
         val tags = listOf("Facebook", "💬 WhatsApp", "📸 Instagram", "🔥 OTP Work")
+
+        // 1. Add active countries fetched directly from slvirtualnumber developer API
+        for (c in state.activeApiCountries) {
+            val iso = c.code.uppercase()
+            if (!seen.contains(iso)) {
+                seen.add(iso)
+                val tag = tags[seen.size % tags.size]
+                list.add(
+                    V2CountryPreset(
+                        code = iso,
+                        name = c.name,
+                        flag = c.flag,
+                        dialCode = if (c.prefix.isNotBlank()) "+${c.prefix}" else "",
+                        rateText = "$${String.format(Locale.US, "%.3f", c.rateUsd)}",
+                        platformTag = tag
+                    )
+                )
+            }
+        }
+
+        // 2. Also incorporate active countries from the live console feed
         for (item in state.liveConsoleFeed) {
             val iso = item.iso.uppercase()
             if (iso.isNotBlank() && !seen.contains(iso)) {
