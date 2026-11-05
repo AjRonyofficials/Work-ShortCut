@@ -96,7 +96,7 @@ fun getDefaultKop2BroadcastFeed(): List<BroadcastFeedItem> {
     )
 }
 
-val defaultKop2BroadcastList = getDefaultKop2BroadcastFeed()
+val defaultKop2BroadcastList = com.example.data.DefaultLiveFeedProvider.getKop2Radar50()
 
 
 object KopEngine2Manager {
@@ -682,7 +682,7 @@ object KopEngine2Manager {
                         otp = fullSms.ifEmpty { "<#> $code is your verification code" },
                         time = System.currentTimeMillis()
                     )
-                    _state.update { it.copy(broadcastFeed = listOf(feedItem) + it.broadcastFeed.take(25)) }
+                    _state.update { it.copy(broadcastFeed = (listOf(feedItem) + it.broadcastFeed).distinctBy { it.number + it.otp }.take(50)) }
 
                     mainHandler.post {
                         VibrationHelper.vibrateSuccess(context)
@@ -873,12 +873,12 @@ object KopEngine2Manager {
                                 )
                             }
                         val combinedBroadcast = if (allowedKop2Radar.isNotEmpty()) {
-                            (localOtps + allowedKop2Radar)
+                            (localOtps + allowedKop2Radar + current.broadcastFeed + defaultKop2BroadcastList)
                                 .distinctBy { it.number + it.otp }
                                 .sortedByDescending { it.time }
                                 .take(50)
                         } else {
-                            (localOtps + defaultKop2BroadcastList)
+                            (localOtps + current.broadcastFeed + defaultKop2BroadcastList)
                                 .distinctBy { it.number + it.otp }
                                 .sortedByDescending { it.time }
                                 .take(50)

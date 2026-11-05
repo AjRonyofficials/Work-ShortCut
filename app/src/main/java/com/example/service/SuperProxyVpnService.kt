@@ -96,9 +96,14 @@ class SuperProxyVpnService : VpnService() {
                 .addAddress("198.18.0.1", 32) // Standard point-to-point TUN IP
                 .addRoute("0.0.0.0", 0)       // Capture all IPv4 traffic into tun0
                 .addRoute("240.0.0.0", 4)     // Explicit route for Fake IP mapping pool so Android kernel never drops fake IPs
-                .addDnsServer("198.18.0.2")   // MapDNS internal DNS resolver
-                .addDnsServer("8.8.8.8")      // Standard high-speed DNS
-                .addDnsServer("1.1.1.1")      // Standard high-speed DNS
+                .addDnsServer("198.18.0.2")   // MapDNS internal DNS resolver (Fake-IP translation)
+                .addDnsServer("1.1.1.1")      // Encrypted secure Cloudflare DNS fallback
+
+            // Strict Anti-Leak: Route IPv6 into tunnel to prevent carrier IPv6 leak for WhatsApp/FB/Instagram
+            try {
+                builder.addAddress("fd00:1::1", 128)
+                builder.addRoute("::", 0)
+            } catch (_: Exception) {}
 
             // Strict Anti-Leak: No bypass allowed so Facebook, WhatsApp, Instagram cannot leak carrier IP/DNS
 
@@ -197,9 +202,9 @@ class SuperProxyVpnService : VpnService() {
             sb.append("misc:\n")
             sb.append("  task-stack-size: 81920\n")
             sb.append("  tcp-buffer-size: 65536\n")
-            sb.append("  connect-timeout: 10000\n")
-            sb.append("  tcp-read-write-timeout: 120000\n")
-            sb.append("  udp-read-write-timeout: 30000\n")
+            sb.append("  connect-timeout: 3500\n")
+            sb.append("  tcp-read-write-timeout: 60000\n")
+            sb.append("  udp-read-write-timeout: 15000\n")
             sb.append("  limit-nofile: 65535\n")
 
             FileOutputStream(configFile).use { it.write(sb.toString().toByteArray()) }

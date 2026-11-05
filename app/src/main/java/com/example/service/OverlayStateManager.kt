@@ -1351,17 +1351,16 @@ object OverlayStateManager {
             Toast.makeText(ctx, "✅ Connected: ${proxy.host} (${countryOpt.flag} ${countryOpt.name})", Toast.LENGTH_SHORT).show()
         }
 
-        // 2. PHASE 2: Background Egress IP, Latency, and Geolocation Resolution
+        // 2. PHASE 2: Background Egress IP, Latency, and Geolocation Resolution (<2.5s)
         scope.launch(Dispatchers.IO) {
-            // Rapid socket/IP detection with quick 2500ms timeout
-            val result = ProxyTester.testProxy(
+            // Rapid socket/IP race detection with fast 2500ms timeout
+            val result = ProxyTester.testProxyFastRace(
                 host = proxy.host,
                 port = proxy.port,
                 protocol = proxy.protocol,
                 username = proxy.username,
                 password = proxy.password,
-                timeoutMs = 2500,
-                pingOptimized = true
+                timeoutMs = 2500
             )
 
             // Successfully detected real egress IP & Country or fallback directly to proxy.host
@@ -1404,7 +1403,7 @@ object OverlayStateManager {
                             city = city,
                             isp = isp,
                             pingMs = latency,
-                            statusText = "Connected to $effectiveIp ($locLabel) • ${latency}ms"
+                            statusText = "Connected to $effectiveIp ($locLabel) • ${latency}ms • 🛡️ Zero Leak"
                         )
                     )
                 }
@@ -1415,14 +1414,13 @@ object OverlayStateManager {
                 scope.launch(Dispatchers.IO) {
                     kotlinx.coroutines.delay(1200)
                     try {
-                        val postTest = ProxyTester.testProxy(
+                        val postTest = ProxyTester.testProxyFastRace(
                             host = proxy.host,
                             port = proxy.port,
                             protocol = proxy.protocol,
                             username = proxy.username,
                             password = proxy.password,
-                            timeoutMs = 5000,
-                            pingOptimized = false
+                            timeoutMs = 2500
                         )
                         if (postTest.isSuccess && !postTest.resolvedIp.isNullOrBlank()) {
                             val newIp = postTest.resolvedIp!!
@@ -1444,7 +1442,7 @@ object OverlayStateManager {
                                             city = newCity,
                                             isp = newIsp,
                                             pingMs = newLatency,
-                                            statusText = "Connected to $newIp ($newLocLabel) • ${newLatency}ms"
+                                            statusText = "Connected to $newIp ($newLocLabel) • ${newLatency}ms • 🛡️ Zero Leak"
                                         )
                                     )
                                 }

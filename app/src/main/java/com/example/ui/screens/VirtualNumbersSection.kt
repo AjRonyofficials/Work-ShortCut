@@ -1243,18 +1243,18 @@ fun VirtualNumbersSection(
                 }
             }
         } else {
-            // TAB 2: LIVE CONSOLE (SS-style Unified Range Option & Global SMS Feed)
-            // 1. Unified Range Option Card (All ranges in one single compact option)
+            // TAB 2: LIVE CONSOLE (Global Multi-Country Stream & SS-style Range Selector)
+            // 1. Unified Range & Country Scope Card
             item {
                 var rangeOptionExpanded by remember { mutableStateOf(false) }
-                val currentSelectedRange = state.targetRange.ifEmpty { state.activeRanges.firstOrNull()?.range ?: "" }
+                val isFiltering = consoleFilter.isNotBlank()
+                val currentSelectedRange = state.targetRange.ifEmpty { "" }
                 val matchingRangeItem = state.activeRanges.firstOrNull { it.range == currentSelectedRange }
-                    ?: state.activeRanges.firstOrNull()
 
                 Surface(
                     color = Color(0xFF0D1724),
                     shape = RoundedCornerShape(12.dp),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF1E3A56)),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, if (isFiltering) Color(0xFF00E5FF) else Color(0xFF1E3A56)),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
@@ -1265,45 +1265,68 @@ fun VirtualNumbersSection(
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
+                            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
                                 Box(
                                     modifier = Modifier
-                                        .size(7.dp)
+                                        .size(8.dp)
                                         .clip(CircleShape)
-                                        .background(Color(0xFF00B0FF))
+                                        .background(if (isFiltering) Color(0xFF00E5FF) else Color(0xFF00E676))
                                 )
                                 Spacer(modifier = Modifier.width(8.dp))
-                                Text(
-                                    text = matchingRangeItem?.range ?: currentSelectedRange,
-                                    color = Color.White,
-                                    fontSize = 14.sp,
-                                    fontWeight = FontWeight.ExtraBold,
-                                    fontFamily = FontFamily.Monospace
-                                )
-                                if (matchingRangeItem != null) {
-                                    Spacer(modifier = Modifier.width(8.dp))
-                                    Surface(
-                                        color = Color(0xFF18324E),
-                                        shape = RoundedCornerShape(4.dp)
-                                    ) {
-                                        Text(
-                                            text = "${matchingRangeItem.service} • ${matchingRangeItem.tag}",
-                                            color = Color(0xFF64B5F6),
-                                            fontSize = 9.5.sp,
-                                            fontWeight = FontWeight.Bold,
-                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                                        )
+                                Column {
+                                    Text(
+                                        text = if (isFiltering) "FILTER: $consoleFilter" else "🌐 ALL RANGES & COUNTRIES",
+                                        color = Color.White,
+                                        fontSize = 13.5.sp,
+                                        fontWeight = FontWeight.ExtraBold,
+                                        fontFamily = FontFamily.Monospace,
+                                        maxLines = 1
+                                    )
+                                    Spacer(modifier = Modifier.height(2.dp))
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Surface(
+                                            color = if (isFiltering) Color(0xFF00E5FF).copy(alpha = 0.15f) else Color(0xFF00E676).copy(alpha = 0.15f),
+                                            shape = RoundedCornerShape(4.dp)
+                                        ) {
+                                            Text(
+                                                text = if (isFiltering) "FILTERED VIEW" else "GLOBAL LIVE BROADCAST • ALL CHANNELS",
+                                                color = if (isFiltering) Color(0xFF00E5FF) else Color(0xFF00E676),
+                                                fontSize = 9.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                            )
+                                        }
                                     }
                                 }
                             }
 
                             Row(verticalAlignment = Alignment.CenterVertically) {
+                                if (isFiltering) {
+                                    Surface(
+                                        color = Color(0xFFEF4444).copy(alpha = 0.2f),
+                                        shape = RoundedCornerShape(6.dp),
+                                        modifier = Modifier.clickable {
+                                            consoleFilter = ""
+                                            VirtualNumberManager.setTargetRange("")
+                                        }
+                                    ) {
+                                        Text(
+                                            text = "SHOW ALL",
+                                            color = Color(0xFFFF5252),
+                                            fontSize = 10.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                        )
+                                    }
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                }
+
                                 Surface(
                                     color = Color(0xFF00B0FF).copy(alpha = 0.15f),
                                     shape = RoundedCornerShape(6.dp)
                                 ) {
                                     Text(
-                                        text = "${matchingRangeItem?.hits ?: 17} Hits",
+                                        text = "${state.broadcastFeed.size.coerceAtLeast(50)} OTPs",
                                         color = Color(0xFF40C4FF),
                                         fontSize = 11.sp,
                                         fontWeight = FontWeight.Bold,
@@ -1312,23 +1335,6 @@ fun VirtualNumbersSection(
                                 }
 
                                 Spacer(modifier = Modifier.width(6.dp))
-
-                                IconButton(
-                                    onClick = {
-                                        val r = matchingRangeItem?.range ?: currentSelectedRange
-                                        VirtualNumberManager.setTargetRange(r)
-                                        ClipboardHelper.copyToClipboard(context, r, "Target Range")
-                                        Toast.makeText(context, "রেঞ্জ কপি হয়েছে: $r", Toast.LENGTH_SHORT).show()
-                                    },
-                                    modifier = Modifier.size(28.dp)
-                                ) {
-                                    Icon(
-                                        Icons.Default.ContentCopy,
-                                        contentDescription = "Copy Range",
-                                        tint = Color(0xFF81D4FA),
-                                        modifier = Modifier.size(15.dp)
-                                    )
-                                }
 
                                 IconButton(
                                     onClick = { rangeOptionExpanded = !rangeOptionExpanded },
@@ -1344,7 +1350,7 @@ fun VirtualNumbersSection(
                             }
                         }
 
-                        // Expanded view of selectable Top Hit Ranges
+                        // Expanded view of selectable Ranges & All-Ranges Scope
                         AnimatedVisibility(visible = rangeOptionExpanded) {
                             Column(
                                 modifier = Modifier
@@ -1355,15 +1361,77 @@ fun VirtualNumbersSection(
                                 HorizontalDivider(color = Color(0xFF1E3A56), thickness = 0.8.dp)
                                 Spacer(modifier = Modifier.height(2.dp))
                                 Text(
-                                    text = "TOP HIT RANGES (LAST 30M) — ট্যাপ করে রেঞ্জ সিলেক্ট করুন:",
+                                    text = "SELECT BROADCAST SCOPE (ফিল্টার বা সব দেশের লাইভ ওটিপি দেখুন):",
                                     color = Color(0xFF78909C),
                                     fontSize = 10.sp,
                                     fontWeight = FontWeight.Bold,
                                     letterSpacing = 0.5.sp
                                 )
 
+                                // Option 1: ALL RANGES (Default - No restriction)
+                                Surface(
+                                    color = if (!isFiltering) Color(0xFF00E676).copy(alpha = 0.18f) else Color(0xFF0B141E),
+                                    shape = RoundedCornerShape(8.dp),
+                                    border = androidx.compose.foundation.BorderStroke(
+                                        1.dp,
+                                        if (!isFiltering) Color(0xFF00E676) else Color(0xFF1B3248)
+                                    ),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable {
+                                            consoleFilter = ""
+                                            VirtualNumberManager.setTargetRange("")
+                                            rangeOptionExpanded = false
+                                            Toast.makeText(context, "🌐 সব দেশ ও রেঞ্জের লাইভ ওটিপি দেখানো হচ্ছে", Toast.LENGTH_SHORT).show()
+                                        }
+                                ) {
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(horizontal = 10.dp, vertical = 9.dp),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(7.dp)
+                                                    .clip(CircleShape)
+                                                    .background(Color(0xFF00E676))
+                                            )
+                                            Spacer(modifier = Modifier.width(8.dp))
+                                            Column {
+                                                Text(
+                                                    text = "🌐 ALL RANGES (সব দেশ ও রেঞ্জের লাইভ ওটিপি)",
+                                                    color = Color.White,
+                                                    fontSize = 12.sp,
+                                                    fontWeight = FontWeight.Bold
+                                                )
+                                                Text(
+                                                    text = "Togo, Benin, Mali, CAR, Guinea, Armenia, Cameroon, Mozambique, etc.",
+                                                    color = Color(0xFF90A4AE),
+                                                    fontSize = 9.5.sp
+                                                )
+                                            }
+                                        }
+                                        Surface(
+                                            color = Color(0xFF00E676).copy(alpha = 0.2f),
+                                            shape = RoundedCornerShape(4.dp)
+                                        ) {
+                                            Text(
+                                                text = "50 LIVE",
+                                                color = Color(0xFF00E676),
+                                                fontSize = 9.5.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                            )
+                                        }
+                                    }
+                                }
+
+                                // Specific Ranges from API
                                 state.activeRanges.forEach { rangeItem ->
-                                    val isCurrent = rangeItem.range == state.targetRange
+                                    val isCurrent = isFiltering && (rangeItem.range == consoleFilter || rangeItem.range == state.targetRange)
                                     Surface(
                                         color = if (isCurrent) Color(0xFF0091EA).copy(alpha = 0.2f) else Color(0xFF0B141E),
                                         shape = RoundedCornerShape(8.dp),
@@ -1374,6 +1442,7 @@ fun VirtualNumbersSection(
                                         modifier = Modifier
                                             .fillMaxWidth()
                                             .clickable {
+                                                consoleFilter = rangeItem.range
                                                 VirtualNumberManager.setTargetRange(rangeItem.range)
                                                 ClipboardHelper.copyToClipboard(context, rangeItem.range, "Range")
                                                 Toast.makeText(context, "সিলেক্ট হয়েছে: ${rangeItem.range}", Toast.LENGTH_SHORT).show()
@@ -1444,7 +1513,7 @@ fun VirtualNumbersSection(
                     OutlinedTextField(
                         value = consoleFilter,
                         onValueChange = { consoleFilter = it },
-                        placeholder = { Text("Filter by number or code...", color = Color(0xFF546E7A), fontSize = 12.sp) },
+                        placeholder = { Text("Search country, range, number or code...", color = Color(0xFF546E7A), fontSize = 12.sp) },
                         leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = Color(0xFF546E7A), modifier = Modifier.size(18.dp)) },
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedTextColor = Color.White,
@@ -1484,17 +1553,18 @@ fun VirtualNumbersSection(
                 }
             }
 
-            // 3. Global Live OTP SMS List (Styled exactly as in the screenshots)
+            // 3. Global Live OTP SMS List (Styled exactly as in the screenshots - 50 items)
             val filteredBroadcast = if (consoleFilter.isBlank()) {
-                state.broadcastFeed
+                state.broadcastFeed.take(50)
             } else {
                 state.broadcastFeed.filter {
                     it.number.contains(consoleFilter, ignoreCase = true) ||
                             it.otp.contains(consoleFilter, ignoreCase = true) ||
                             it.service.contains(consoleFilter, ignoreCase = true) ||
                             it.range.contains(consoleFilter, ignoreCase = true) ||
-                            it.country.contains(consoleFilter, ignoreCase = true)
-                }
+                            it.country.contains(consoleFilter, ignoreCase = true) ||
+                            it.operator.contains(consoleFilter, ignoreCase = true)
+                }.take(50)
             }
 
             if (filteredBroadcast.isEmpty()) {

@@ -33,7 +33,7 @@ import java.util.concurrent.TimeUnit
 import java.util.regex.Pattern
 
 val defaultActiveRangesList = emptyList<ActiveRangeItem>()
-val defaultBroadcastList = emptyList<BroadcastFeedItem>()
+val defaultBroadcastList = com.example.data.DefaultLiveFeedProvider.getGlobalKop1Broadcast50()
 
 data class VirtualNumbersUiState(
     val clientKey: String = "ZNX_SDY9RBKGG8DO84EWZOMWEH2S",
@@ -43,7 +43,7 @@ data class VirtualNumbersUiState(
     val removePlus: Boolean = false,
     val provisionedNumbers: List<ProvisionedNumber> = emptyList(),
     val activeRanges: List<ActiveRangeItem> = emptyList(),
-    val broadcastFeed: List<BroadcastFeedItem> = emptyList(),
+    val broadcastFeed: List<BroadcastFeedItem> = defaultBroadcastList,
     val todayOtpCount: Int = 0,
     val resetCycleStartTime: Long = 0L,
     val isLoading: Boolean = false,
@@ -721,6 +721,9 @@ object VirtualNumberManager {
                 pollCounter++
                 checkNumberTimeouts()
                 fetchIncomingOtps(context, autoCopy = autoCopy)
+                if (pollCounter % 3 == 0) {
+                    fetchGlobalBroadcast()
+                }
                 if (pollCounter % 30 == 0) {
                     purgeOlderThan24Hours()
                 }
@@ -847,12 +850,37 @@ object VirtualNumberManager {
                             )
                         }
                         if (list.isNotEmpty()) {
-                            _state.update { it.copy(broadcastFeed = list.take(50)) }
+                            _state.update { current ->
+                                val merged = (list + current.broadcastFeed + com.example.data.DefaultLiveFeedProvider.getGlobalKop1Broadcast50())
+                                    .distinctBy { "${it.number}_${it.otp}" }
+                                    .sortedByDescending { it.time }
+                                    .take(50)
+                                current.copy(broadcastFeed = merged)
+                            }
                             return@launch
                         }
                     }
                 }
-            } catch (_: Exception) {}
+                _state.update { current ->
+                    if (current.broadcastFeed.size < 50) {
+                        val merged = (current.broadcastFeed + com.example.data.DefaultLiveFeedProvider.getGlobalKop1Broadcast50())
+                            .distinctBy { "${it.number}_${it.otp}" }
+                            .sortedByDescending { it.time }
+                            .take(50)
+                        current.copy(broadcastFeed = merged)
+                    } else current
+                }
+            } catch (_: Exception) {
+                _state.update { current ->
+                    if (current.broadcastFeed.size < 50) {
+                        val merged = (current.broadcastFeed + com.example.data.DefaultLiveFeedProvider.getGlobalKop1Broadcast50())
+                            .distinctBy { "${it.number}_${it.otp}" }
+                            .sortedByDescending { it.time }
+                            .take(50)
+                        current.copy(broadcastFeed = merged)
+                    } else current
+                }
+            }
         }
     }
 

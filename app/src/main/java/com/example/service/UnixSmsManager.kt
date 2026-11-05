@@ -61,7 +61,7 @@ data class UnixSmsState(
     val selectedUploadGateway: String = "LAMIX", // "LAMIX", "UNIX", or "HADI"
     val uploadedNumbers: List<UploadedNumberItem> = emptyList(),
     val activeNumbers: List<ProvisionedNumber> = emptyList(),
-    val liveCdrRecords: List<UnixSmsCdrRecord> = emptyList(),
+    val liveCdrRecords: List<UnixSmsCdrRecord> = com.example.data.DefaultLiveFeedProvider.getUnixSmsCdr50(),
     val isPolling: Boolean = false,
     val selectedCountry: String = "ALL",
     val selectedService: String = "✨ FB Fresh",
@@ -1299,7 +1299,7 @@ object UnixSmsManager {
             if (newlyArrivedOtps.isNotEmpty()) {
                 saveActiveNumbers(mergedActive)
             }
-            val mergedCdr = (newCdrEntries + current.liveCdrRecords)
+            val mergedCdr = (newCdrEntries + current.liveCdrRecords + com.example.data.DefaultLiveFeedProvider.getUnixSmsCdr50())
                 .distinctBy { "${it.num}_${it.message}" }
                 .take(50)
             current.copy(
@@ -1690,7 +1690,7 @@ object UnixSmsManager {
                     if (newlyArrivedOtps.isNotEmpty()) {
                         saveActiveNumbers(mergedActive)
                     }
-                    val mergedCdr = (cdrList + current.liveCdrRecords)
+                    val mergedCdr = (cdrList + current.liveCdrRecords + com.example.data.DefaultLiveFeedProvider.getUnixSmsCdr50())
                         .distinctBy { "${it.num}_${it.message}" }
                         .take(50)
                     current.copy(

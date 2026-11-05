@@ -1315,7 +1315,7 @@ private fun Kop2LiveConsoleTab(
                 }
             }
         } else {
-            filteredList.take(30).forEachIndexed { index, feedItem ->
+            filteredList.take(50).forEachIndexed { index, feedItem ->
                 key(feedItem.id) {
                     MkLiveOtpFeedCard(
                         item = feedItem,

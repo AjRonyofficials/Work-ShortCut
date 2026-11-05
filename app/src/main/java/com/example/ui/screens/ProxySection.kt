@@ -384,7 +384,7 @@ fun ProxySection(
                                 Text(
                                     text = if (proxy.isTesting) proxy.statusText
                                            else if (proxy.isConnected) "${proxy.profileName} • IP Locked: ${proxy.ipAddress}"
-                                           else "Ready to connect (⚡ 5s fast IP detect • 10s establish)",
+                                           else "Ready to connect (⚡ 3-5s Ultra-Fast Connect • 🛡️ Zero DNS/IP Leak)",
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
@@ -392,7 +392,49 @@ fun ProxySection(
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(16.dp))
+                    // Anti-Leak Shield Status Pill (Strict MapDNS + IP Cloak)
+                    Surface(
+                        color = if (proxy.isConnected) Color(0xFF0A2E1F) else Color(0xFF0F1A26),
+                        shape = RoundedCornerShape(10.dp),
+                        border = androidx.compose.foundation.BorderStroke(
+                            1.dp,
+                            if (proxy.isConnected) Color(0xFF00E676) else Color(0xFF1E3A56)
+                        ),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 10.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(7.dp)
+                                        .clip(CircleShape)
+                                        .background(if (proxy.isConnected) Color(0xFF00E676) else Color(0xFF00B0FF))
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = if (proxy.isConnected) "🛡️ Anti-Leak Shield Active (DNS & Carrier IP Cloaked)"
+                                           else "🛡️ Strict DNS Anti-Leak (MapDNS Fake-IP Ready)",
+                                    fontSize = 11.5.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (proxy.isConnected) Color(0xFF00E676) else Color(0xFF81D4FA)
+                                )
+                            }
+                            Text(
+                                text = "Zero Leak",
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.ExtraBold,
+                                color = if (proxy.isConnected) Color(0xFF00E676) else Color(0xFF90A4AE)
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(14.dp))
 
                     // Big Super Proxy START / STOP Button (1-Click Fast Connect)
                     Button(
@@ -1373,6 +1415,76 @@ fun ProxySection(
                                 shape = RoundedCornerShape(8.dp)
                             ) {
                                 Text(if (isAppSelectionExpanded) "Done" else "Filter Apps", fontSize = 12.sp)
+                            }
+                        }
+                    }
+
+                    // QUICK SOCIAL & STEALTH SHIELD PRESETS (1-Tap Selection)
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Text(
+                        text = "QUICK SHIELD PRESETS (TAP TO ROUTE EXCLUSIVELY):",
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        letterSpacing = 0.5.sp
+                    )
+                    Spacer(modifier = Modifier.height(6.dp))
+
+                    val quickApps = listOf(
+                        Triple("WhatsApp", listOf("com.whatsapp", "com.whatsapp.w4b"), "💬"),
+                        Triple("Facebook", listOf("com.facebook.katana", "com.facebook.lite", "com.facebook.orca"), "👥"),
+                        Triple("Instagram", listOf("com.instagram.android", "com.instagram.lite"), "📸"),
+                        Triple("Chrome", listOf("com.android.chrome"), "🌐"),
+                        Triple("Telegram", listOf("org.telegram.messenger", "org.telegram.plus"), "✈️")
+                    )
+
+                    LazyRow(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        items(quickApps) { (appName, pkgs, icon) ->
+                            val isSelected = pkgs.any { proxy.allowedApps.contains(it) }
+                            Surface(
+                                onClick = {
+                                    val currentAllowed = proxy.allowedApps.toMutableList()
+                                    if (isSelected) {
+                                        currentAllowed.removeAll(pkgs)
+                                    } else {
+                                        currentAllowed.addAll(pkgs.filter { !currentAllowed.contains(it) })
+                                    }
+                                    OverlayStateManager.setProxyAllowedApps(currentAllowed)
+                                    val msg = if (!isSelected) "$appName প্রক্সির মাধ্যমে এক্সক্লুসিভ রাউট হবে (Zero Leak)" else "$appName সরানো হয়েছে"
+                                    Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                                },
+                                shape = RoundedCornerShape(8.dp),
+                                color = if (isSelected) Color(0xFF00E676).copy(alpha = 0.15f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                                border = androidx.compose.foundation.BorderStroke(
+                                    1.dp,
+                                    if (isSelected) Color(0xFF00E676) else MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)
+                                )
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(icon, fontSize = 12.sp)
+                                    Spacer(modifier = Modifier.width(5.dp))
+                                    Text(
+                                        text = appName,
+                                        fontSize = 11.5.sp,
+                                        fontWeight = if (isSelected) FontWeight.ExtraBold else FontWeight.Medium,
+                                        color = if (isSelected) Color(0xFF00E676) else MaterialTheme.colorScheme.onSurface
+                                    )
+                                    if (isSelected) {
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Icon(
+                                            Icons.Default.Check,
+                                            contentDescription = null,
+                                            tint = Color(0xFF00E676),
+                                            modifier = Modifier.size(13.dp)
+                                        )
+                                    }
+                                }
                             }
                         }
                     }

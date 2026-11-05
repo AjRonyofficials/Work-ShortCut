@@ -1623,7 +1623,7 @@ fun PremiumNumberV2SectionContent(
                                     it.rawSnippet.lowercase().contains(q)
                                 }
                             }
-                            list
+                            list.take(50)
                         }
 
                         if (feedItems.isEmpty()) {

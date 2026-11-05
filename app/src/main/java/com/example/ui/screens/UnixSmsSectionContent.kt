@@ -865,7 +865,7 @@ fun UnixSmsSectionContent(
                     } else true
 
                     matchesSearch && matchesTab
-                }
+                }.take(50)
             }
 
             if (filteredCdrs.isEmpty()) {
