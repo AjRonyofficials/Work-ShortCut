@@ -876,6 +876,13 @@ object PremiumNumberV2Manager {
                                         digits ?: if (rawOtp.isNotBlank()) rawOtp else "*****"
                                     }
 
+                                    val now = System.currentTimeMillis()
+                                    val rawTimestamp = obj.optLong("timestamp", obj.optLong("time", 0L))
+                                    // Index 0 is the newest SMS from server; assign decreasing timestamps so newest is at the top
+                                    val calculatedTimestamp = if (rawTimestamp > 0L) rawTimestamp else (now - (i * 20_000L))
+                                    val defaultTimeAgo = if (i == 0) "just now" else if (i == 1) "1 min ago" else "${i * 2} mins ago"
+                                    val finalTimeAgo = obj.optString("timeAgo", defaultTimeAgo).ifBlank { defaultTimeAgo }
+
                                     items.add(
                                         PremiumV2ConsoleItem(
                                             id = idStr,
@@ -887,8 +894,10 @@ object PremiumNumberV2Manager {
                                             flag = cFlag,
                                             otpCode = otpCodeResolved,
                                             rawSnippet = fullMsg,
-                                            receivedAt = obj.optString("receivedAt", ""),
-                                            timeAgo = obj.optString("timeAgo", if (i == 0) "just now" else "${i * 2} mins ago")
+                                            receivedAt = obj.optString("receivedAt", SimpleDateFormat("HH:mm:ss", Locale.US).format(Date(calculatedTimestamp))),
+                                            timeAgo = finalTimeAgo,
+                                            timestamp = calculatedTimestamp,
+                                            isNew = i <= 1
                                         )
                                     )
                                 }
@@ -901,7 +910,10 @@ object PremiumNumberV2Manager {
                                     }
                                     val combinedFeed = (filteredItems + _state.value.liveConsoleFeed + getDefaultLiveConsoleFeed())
                                         .distinctBy { "${it.maskedNumber}_${it.rawSnippet}" }
-                                        .sortedByDescending { it.timestamp }
+                                        .sortedWith(
+                                            compareByDescending<PremiumV2ConsoleItem> { it.isNew || it.timeAgo.contains("just now", true) }
+                                                .thenByDescending { it.timestamp }
+                                        )
                                         .take(50)
 
                                     // Auto-update range prefix if current prefix is blank
@@ -1046,7 +1058,8 @@ object PremiumNumberV2Manager {
                     val updatedItem = item.copy(
                         status = "success",
                         otpCode = otp,
-                        otpMessage = fullSms
+                        otpMessage = fullSms,
+                        timestamp = System.currentTimeMillis()
                     )
                     current[idx] = updatedItem
                     updated = true
@@ -1056,22 +1069,28 @@ object PremiumNumberV2Manager {
         }
 
         if (updated) {
-            saveNumbers(current)
+            val sortedActive = current.sortedWith(
+                compareByDescending<ProvisionedNumber> { !it.otpCode.isNullOrEmpty() || it.status == "success" }
+                    .thenByDescending { it.timestamp }
+            )
+            saveNumbers(sortedActive)
 
             // Increment today's count
             val todayKey = "today_otp_" + SimpleDateFormat("yyyyMMdd", Locale.US).format(Date())
             val newTodayCount = _state.value.todayOtpCount + newlyArrived.size
             prefs?.edit()?.putInt(todayKey, newTodayCount)?.apply()
 
-            val newFeedEntries = newlyArrived.map { (item, otp) ->
+            val now = System.currentTimeMillis()
+            val newFeedEntries = newlyArrived.mapIndexed { idx, (item, otp) ->
                 val cInfo = com.example.util.AllCountriesProvider.findByPhoneNumber(item.number)
                     ?: com.example.util.AllCountriesProvider.detectCountry(item.country)
                 val digits = item.number.replace("[^0-9]".toRegex(), "")
                 val pfx = if (digits.length >= 4) digits.take(4) else digits
                 val fullMsg = item.otpMessage?.ifBlank { null } ?: "<#> $otp is your ${item.range.ifEmpty { "Facebook" }} code"
                 val formattedNum = formatMaskedNumber(raw = item.number, itemId = item.id, rangePrefix = pfx)
+                val newTimestamp = now + 60_000L + (newlyArrived.size - idx) * 1_000L
                 PremiumV2ConsoleItem(
-                    id = "real-${item.id}-${System.currentTimeMillis()}",
+                    id = "real-${item.id}-${now}-$idx",
                     maskedNumber = formattedNum,
                     rangePrefix = pfx,
                     service = item.range.ifEmpty { "FACEBOOK" }.uppercase(),
@@ -1081,17 +1100,22 @@ object PremiumNumberV2Manager {
                     otpCode = otp,
                     rawSnippet = fullMsg,
                     receivedAt = SimpleDateFormat("HH:mm:ss", Locale.US).format(Date()),
-                    timeAgo = "just now"
+                    timeAgo = "just now",
+                    timestamp = newTimestamp,
+                    isNew = true
                 )
             }
             val combinedFeed = (newFeedEntries + _state.value.liveConsoleFeed)
                 .distinctBy { "${it.maskedNumber}_${it.rawSnippet}" }
-                .sortedByDescending { it.timestamp }
+                .sortedWith(
+                    compareByDescending<PremiumV2ConsoleItem> { it.isNew || it.timeAgo.contains("just now", true) }
+                        .thenByDescending { it.timestamp }
+                )
                 .take(50)
 
             _state.update {
                 it.copy(
-                    activeNumbers = current,
+                    activeNumbers = sortedActive,
                     liveConsoleFeed = combinedFeed,
                     todayOtpCount = newTodayCount,
                     lastSyncTime = System.currentTimeMillis()

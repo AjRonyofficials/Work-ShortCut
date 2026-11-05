@@ -236,11 +236,17 @@ fun PremiumNumberV2SectionContent(
         it.status == "failed" || it.status == "expired" || it.status == "cancelled" || (it.otpCode.isNullOrEmpty() && nowTick >= it.expiresAt)
     }
 
-    val filteredList = when (filterTab) {
-        "RECEIVED" -> state.activeNumbers.filter { it.status == "success" || !it.otpCode.isNullOrEmpty() }
-        "WAITING" -> state.activeNumbers.filter { it.otpCode.isNullOrEmpty() && (it.status == "pending" || it.status == "wait") && nowTick < it.expiresAt }
-        "EXPIRED" -> state.activeNumbers.filter { it.status == "failed" || it.status == "expired" || it.status == "cancelled" || (it.otpCode.isNullOrEmpty() && nowTick >= it.expiresAt) }
-        else -> state.activeNumbers
+    val filteredList = remember(state.activeNumbers, filterTab, nowTick) {
+        val base = when (filterTab) {
+            "RECEIVED" -> state.activeNumbers.filter { it.status == "success" || !it.otpCode.isNullOrEmpty() }
+            "WAITING" -> state.activeNumbers.filter { it.otpCode.isNullOrEmpty() && (it.status == "pending" || it.status == "wait") && nowTick < it.expiresAt }
+            "EXPIRED" -> state.activeNumbers.filter { it.status == "failed" || it.status == "expired" || it.status == "cancelled" || (it.otpCode.isNullOrEmpty() && nowTick >= it.expiresAt) }
+            else -> state.activeNumbers
+        }
+        base.sortedWith(
+            compareByDescending<ProvisionedNumber> { !it.otpCode.isNullOrEmpty() || it.status == "success" }
+                .thenByDescending { it.timestamp }
+        )
     }
 
     Column(
@@ -1623,7 +1629,10 @@ fun PremiumNumberV2SectionContent(
                                     it.rawSnippet.lowercase().contains(q)
                                 }
                             }
-                            list.sortedByDescending { it.timestamp }.take(50)
+                            list.sortedWith(
+                                compareByDescending<PremiumV2ConsoleItem> { it.isNew || it.timeAgo.contains("just now", true) }
+                                    .thenByDescending { it.timestamp }
+                            ).take(50)
                         }
 
                         if (feedItems.isEmpty()) {
