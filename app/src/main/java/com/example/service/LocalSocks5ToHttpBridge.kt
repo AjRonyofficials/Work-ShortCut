@@ -165,10 +165,10 @@ object LocalSocks5ToHttpBridge {
             upstream.keepAlive = true
             upstream.sendBufferSize = 65536
             upstream.receiveBufferSize = 65536
-            upstream.soTimeout = 15000
+            upstream.soTimeout = 10000
             SuperProxyVpnService.protectSocket(upstream)
             activeSockets.add(upstream)
-            upstream.connect(InetSocketAddress(httpHost, httpPort), 10000)
+            upstream.connect(InetSocketAddress(httpHost, httpPort), 5000)
 
             val upIn = upstream.getInputStream()
             val upOut = upstream.getOutputStream()

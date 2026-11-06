@@ -1381,8 +1381,8 @@ object OverlayStateManager {
             val locLabel = if (city.isNotEmpty()) "$city, $country" else country
             val activeProtocol = result.workingProtocol ?: proxy.protocol
 
-            // If the verified handshake protocol differs from user selection, seamlessly re-launch with working protocol
-            if (result.workingProtocol != null && !result.workingProtocol.equals(proxy.protocol, ignoreCase = true)) {
+            // Only re-launch if user did not specify protocol and a working protocol was discovered
+            if (proxy.protocol.isBlank() && result.workingProtocol != null) {
                 context?.let { ctx ->
                     SuperProxyVpnService.start(
                         context = ctx,
