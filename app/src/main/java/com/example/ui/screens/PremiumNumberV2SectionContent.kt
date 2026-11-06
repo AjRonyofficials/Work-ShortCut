@@ -1700,14 +1700,21 @@ fun PremiumV2NumberCard(
     val secs = (msRemaining % 60000L) / 1000L
     val timeLabel = String.format(Locale.US, "%02d:%02d", mins, secs)
 
+    val isFresh = item.fbTagType == com.example.service.PhoneItem.TagType.FRESH
+    val isTaken = item.fbTagType == com.example.service.PhoneItem.TagType.TAKEN
+
     val cardBorder = when {
         hasOtp -> BorderStroke(1.2.dp, Color(0xFF00E676))
+        isFresh -> BorderStroke(1.2.dp, Color(0xFF00E676))
+        isTaken -> BorderStroke(1.2.dp, Color(0xFFFF5252))
         isExpired || isCancelled -> BorderStroke(1.dp, Color(0xFFEF4444).copy(alpha = 0.5f))
         else -> BorderStroke(1.dp, Color(0xFF00E5FF).copy(alpha = 0.6f))
     }
 
     val cardBg = when {
         hasOtp -> Color(0xFF062319)
+        isFresh -> Color(0xFF0A2E19)
+        isTaken -> Color(0xFF2E0E0E)
         isExpired || isCancelled -> Color(0xFF1E1417)
         else -> Color(0xFF0B1726)
     }

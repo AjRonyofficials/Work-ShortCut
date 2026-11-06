@@ -1940,91 +1940,63 @@ fun VirtualNumbersOverlaySection(
                             verticalArrangement = Arrangement.spacedBy(3.dp)
                         ) {
                             numbers.forEach { item ->
+                                val fbTag = item.fbTagType
+                                val isSuccess = item.status == "success" || item.otpCode != null
+                                val isFresh = fbTag == com.example.service.PhoneItem.TagType.FRESH
+                                val isTaken = fbTag == com.example.service.PhoneItem.TagType.TAKEN
+
+                                val boxColor = when {
+                                    isSuccess -> Color(0xFF00E676).copy(alpha = 0.22f)
+                                    isFresh -> Color(0xFF0D331A) // Full vibrant green box
+                                    isTaken -> Color(0xFF381010) // Full vibrant red box
+                                    else -> Color(0xFF07101B)
+                                }
+
+                                val boxBorder = when {
+                                    isSuccess -> androidx.compose.foundation.BorderStroke(1.2.dp, Color(0xFF00E676))
+                                    isFresh -> androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF00E676)) // Crisp solid green outline
+                                    isTaken -> androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFFF5252)) // Crisp solid red outline
+                                    fbTag == com.example.service.PhoneItem.TagType.PENDING -> androidx.compose.foundation.BorderStroke(0.8.dp, Color(0xFF38BDF8))
+                                    else -> androidx.compose.foundation.BorderStroke(0.8.dp, Color(0xFF1E3A56))
+                                }
+
                                 Surface(
                                     shape = RoundedCornerShape(5.dp),
-                                    color = if (item.status == "success") Color(0xFF00E676).copy(alpha = 0.15f) else Color(0xFF07101B),
-                                    border = androidx.compose.foundation.BorderStroke(
-                                        0.8.dp,
-                                        if (item.status == "success") Color(0xFF00E676).copy(alpha = 0.6f) else Color(0xFF1E3A56)
-                                    ),
+                                    color = boxColor,
+                                    border = boxBorder,
                                     modifier = Modifier.fillMaxWidth()
                                 ) {
                                     Row(
                                         modifier = Modifier
                                             .fillMaxWidth()
-                                            .padding(horizontal = 4.dp, vertical = 3.dp),
+                                            .padding(horizontal = 6.dp, vertical = 3.5.dp),
                                         horizontalArrangement = Arrangement.SpaceBetween,
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
                                         Text(
                                             text = item.number.replace("+", ""),
-                                            color = Color.White,
-                                            fontSize = 9.sp,
+                                            color = when {
+                                                isFresh -> Color(0xFFE8F5E9)
+                                                isTaken -> Color(0xFFFFEBEE)
+                                                else -> Color.White
+                                            },
+                                            fontSize = 9.5.sp,
                                             fontFamily = FontFamily.Monospace,
                                             fontWeight = FontWeight.Bold,
                                             maxLines = 1,
                                             softWrap = false,
-                                            modifier = Modifier.clickable {
-                                                ClipboardHelper.copyToClipboard(context, item.number, "Phone")
-                                                Toast.makeText(context, "নম্বর কপি হয়েছে!", Toast.LENGTH_SHORT).show()
-                                            }
+                                            modifier = Modifier
+                                                .weight(1f, fill = false)
+                                                .clickable {
+                                                    ClipboardHelper.copyToClipboard(context, item.number, "Phone")
+                                                    Toast.makeText(context, "নম্বর কপি হয়েছে!", Toast.LENGTH_SHORT).show()
+                                                }
                                         )
 
                                         Row(
                                             verticalAlignment = Alignment.CenterVertically,
-                                            horizontalArrangement = Arrangement.spacedBy(2.5.dp)
+                                            horizontalArrangement = Arrangement.spacedBy(4.dp)
                                         ) {
-                                            val fbTag = item.fbTagType
-                                            if (fbTag == com.example.service.PhoneItem.TagType.FRESH) {
-                                                Surface(
-                                                    color = Color(0xFF0F3B20),
-                                                    shape = RoundedCornerShape(3.dp),
-                                                    border = androidx.compose.foundation.BorderStroke(0.5.dp, Color(0xFF00E676))
-                                                ) {
-                                                    Text(
-                                                        text = "FRESH",
-                                                        color = Color(0xFF00E676),
-                                                        fontSize = 7.sp,
-                                                        fontWeight = FontWeight.Bold,
-                                                        maxLines = 1,
-                                                        softWrap = false,
-                                                        modifier = Modifier.padding(horizontal = 3.dp, vertical = 0.8.dp)
-                                                    )
-                                                }
-                                            } else if (fbTag == com.example.service.PhoneItem.TagType.TAKEN) {
-                                                Surface(
-                                                    color = Color(0xFF381515),
-                                                    shape = RoundedCornerShape(3.dp),
-                                                    border = androidx.compose.foundation.BorderStroke(0.5.dp, Color(0xFFFF5252))
-                                                ) {
-                                                    Text(
-                                                        text = "TAKEN",
-                                                        color = Color(0xFFFF5252),
-                                                        fontSize = 7.sp,
-                                                        fontWeight = FontWeight.Bold,
-                                                        maxLines = 1,
-                                                        softWrap = false,
-                                                        modifier = Modifier.padding(horizontal = 3.dp, vertical = 0.8.dp)
-                                                    )
-                                                }
-                                            } else if (fbTag == com.example.service.PhoneItem.TagType.PENDING) {
-                                                Surface(
-                                                    color = Color(0xFF1E293B),
-                                                    shape = RoundedCornerShape(3.dp),
-                                                    border = androidx.compose.foundation.BorderStroke(0.5.dp, Color(0xFF38BDF8))
-                                                ) {
-                                                    Text(
-                                                        text = "CHK...",
-                                                        color = Color(0xFF38BDF8),
-                                                        fontSize = 7.sp,
-                                                        fontWeight = FontWeight.Bold,
-                                                        maxLines = 1,
-                                                        softWrap = false,
-                                                        modifier = Modifier.padding(horizontal = 3.dp, vertical = 0.8.dp)
-                                                    )
-                                                }
-                                            }
-
                                             if (selectedPanel == 3 && item.status != "success") {
                                                 Surface(
                                                     color = Color(0xFFEF4444).copy(alpha = 0.2f),
@@ -2037,11 +2009,11 @@ fun VirtualNumbersOverlaySection(
                                                     Text(
                                                         text = "ফেরত",
                                                         color = Color(0xFFF87171),
-                                                        fontSize = 7.sp,
+                                                        fontSize = 7.5.sp,
                                                         fontWeight = FontWeight.Bold,
                                                         maxLines = 1,
                                                         softWrap = false,
-                                                        modifier = Modifier.padding(horizontal = 3.dp, vertical = 0.8.dp)
+                                                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
                                                     )
                                                 }
                                             }
@@ -2062,7 +2034,7 @@ fun VirtualNumbersOverlaySection(
                                                         fontWeight = FontWeight.Black,
                                                         maxLines = 1,
                                                         softWrap = false,
-                                                        modifier = Modifier.padding(horizontal = 3.dp, vertical = 0.8.dp)
+                                                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
                                                     )
                                                 }
                                             } else {

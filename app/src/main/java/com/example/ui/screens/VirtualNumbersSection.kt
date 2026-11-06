@@ -1662,14 +1662,21 @@ private fun ProvisionedNumberCard(
     now: Long,
     context: Context
 ) {
-    val cardContainerColor = when (item.status) {
-        "success" -> Color(0xFF0A2E1F)
+    val isFresh = item.fbTagType == PhoneItem.TagType.FRESH
+    val isTaken = item.fbTagType == PhoneItem.TagType.TAKEN
+
+    val cardContainerColor = when {
+        item.status == "success" -> Color(0xFF0A2E1F)
+        isFresh -> Color(0xFF0A2E19)
+        isTaken -> Color(0xFF2E0E0E)
         else -> Color(0xFF111D2A)
     }
 
-    val cardBorderColor = when (item.status) {
-        "success" -> Color(0xFF00E676).copy(alpha = 0.6f)
-        "failed" -> Color(0xFFFF5252).copy(alpha = 0.4f)
+    val cardBorderColor = when {
+        item.status == "success" -> Color(0xFF00E676).copy(alpha = 0.6f)
+        isFresh -> Color(0xFF00E676)
+        isTaken -> Color(0xFFFF5252)
+        item.status == "failed" -> Color(0xFFFF5252).copy(alpha = 0.4f)
         else -> Color(0xFF1E3A56)
     }
 
