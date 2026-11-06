@@ -409,7 +409,7 @@ object UnixSmsManager {
                         otpMessage = if (o.has("otpMessage")) o.optString("otpMessage") else null,
                         range = o.optString("range", ""),
                         timestamp = o.optLong("timestamp", System.currentTimeMillis()),
-                        expiresAt = o.optLong("expiresAt", System.currentTimeMillis() + 1_200_000L),
+                        expiresAt = o.optLong("expiresAt", System.currentTimeMillis() + 15 * 60 * 1000L),
                         gateway = o.optString("gateway", "LAMIX"),
                         rate = o.optDouble("rate", 0.50),
                         fbStatus = o.optString("fbStatus").ifEmpty { null },
@@ -917,7 +917,7 @@ object UnixSmsManager {
                 status = "pending",
                 range = item.service,
                 timestamp = now,
-                expiresAt = now + 24 * 60 * 60 * 1000L, // 24-hour persistence, never back prematurely
+                expiresAt = now + 15 * 60 * 1000L, // 15-minute standard expiration
                 gateway = gw,
                 rate = r,
                 userEmail = effectiveEmail,

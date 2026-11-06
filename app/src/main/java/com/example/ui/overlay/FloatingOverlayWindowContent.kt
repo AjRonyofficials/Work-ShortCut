@@ -2046,9 +2046,19 @@ fun VirtualNumbersOverlaySection(
                                             }
                                         }
 
+                                        // Panel-specific duration: Kop Engine = 20 min, Kop Engine 2 = 15 min, Premium V2 = 15 min, Unix = 15 min
+                                        val panelDurationMs = when (selectedPanel) {
+                                            1 -> 20 * 60 * 1000f // Kop Engine (Zenex): 20 min
+                                            2 -> 15 * 60 * 1000f // Kop Engine 2: 15 min
+                                            3 -> (14 * 60 + 40) * 1000f // Premium Number V2: 14 min 40 sec auto-return
+                                            0 -> 15 * 60 * 1000f // Premium Number (Unix SMS): 15 min
+                                            else -> 15 * 60 * 1000f
+                                        }
+
                                         // Horizontal countdown line at bottom (finishes when number expires)
                                         OverlayCountdownLine(
                                             expiresAt = item.expiresAt,
+                                            totalDurationMs = panelDurationMs,
                                             isFresh = isFresh,
                                             isTaken = isTaken,
                                             isSuccess = isSuccess
@@ -2066,11 +2076,12 @@ fun VirtualNumbersOverlaySection(
 
 /**
  * Long horizontal countdown line along the bottom of the number box.
- * Progressively shrinks as the 15-minute window expires.
+ * Progressively shrinks as the panel's validity window (20m for Kop Engine, 15m for Kop 2, V2, Unix) expires.
  */
 @Composable
 private fun OverlayCountdownLine(
     expiresAt: Long,
+    totalDurationMs: Float,
     isFresh: Boolean,
     isTaken: Boolean,
     isSuccess: Boolean
@@ -2083,7 +2094,6 @@ private fun OverlayCountdownLine(
         }
     }
     val remainingMs = (expiresAt - now).coerceAtLeast(0L)
-    val totalDurationMs = 15 * 60 * 1000f // 15 mins total lifespan
     val progress = (remainingMs.toFloat() / totalDurationMs).coerceIn(0f, 1f)
     val isExpired = remainingMs <= 0L
 

@@ -101,7 +101,7 @@ data class PremiumNumberV2UiState(
 object PremiumNumberV2Manager {
 
     const val DEFAULT_API_KEY = "sl_live_17852e6050e9559278b5e8a69a2cc7429f9346f83f8cb667"
-    const val AUTO_RETURN_TIMEOUT_MS = (14 * 60 + 40) * 1000L // 14 min 40 sec (880,000 ms)
+    const val AUTO_RETURN_TIMEOUT_MS = (14 * 60 + 40) * 1000L // 14 min 40 sec auto return (880,000 ms)
     private const val BASE_URL = "https://slvirtualnumber.com/api/v1/developer"
 
     private val scope = CoroutineScope(Dispatchers.IO + Job())
