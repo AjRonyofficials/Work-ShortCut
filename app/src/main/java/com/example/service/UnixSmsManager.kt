@@ -242,54 +242,33 @@ object UnixSmsManager {
             }
         }
         if (cloudList.isEmpty()) {
-            // Never wipe local uploaded numbers if cloud array is empty!
+            // Cloud has 0 numbers -> clean wipe of numbers pool
+            _state.update { it.copy(uploadedNumbers = emptyList()) }
+            saveUploadedNumbers(emptyList())
             return
         }
         val current = _state.value.uploadedNumbers
         val activeNumbers = _state.value.activeNumbers
 
-        // Compound key: digits + numberType + service to safely preserve all platform tags
-        val allNumbersMap = linkedMapOf<String, UploadedNumberItem>()
-
-        // 1. Keep all existing local numbers (authoritative)
-        for (localItem in current) {
-            val cleanDigits = localItem.number.replace("[^0-9]".toRegex(), "")
-            val key = "${cleanDigits}_${localItem.numberType}_${localItem.service.lowercase()}"
-            allNumbersMap[key] = localItem
-        }
-
-        // 2. Safely merge cloud list
-        for (cloudItem in cloudList) {
+        // The cloud database list is the single source of truth for existing numbers!
+        // We preserve local runtime state (isUsed on this device, received OTP on this device)
+        val localMap = current.associateBy { it.number.replace("[^0-9]".toRegex(), "") }
+        val merged = cloudList.map { cloudItem ->
             val cleanDigits = cloudItem.number.replace("[^0-9]".toRegex(), "")
-            val key = "${cleanDigits}_${cloudItem.numberType}_${cloudItem.service.lowercase()}"
-            val local = allNumbersMap[key]
-
+            val local = localMap[cleanDigits]
             val isActiveOnDevice = activeNumbers.any { isPhoneNumberMatch(it.number, cleanDigits) }
-            val isUsed = if (isActiveOnDevice || local?.isUsed == true) {
-                true
-            } else {
-                cloudItem.isUsed
-            }
-
+            val isUsed = isActiveOnDevice || (local?.isUsed == true) || cloudItem.isUsed
             if (isUsed && cleanDigits.length >= 7) {
                 permanentlyUsedDigits.add(cleanDigits)
             }
-
-            if (local == null) {
-                allNumbersMap[key] = cloudItem.copy(isUsed = isUsed)
-            } else {
-                allNumbersMap[key] = cloudItem.copy(
-                    id = local.id.ifEmpty { cloudItem.id },
-                    isUsed = isUsed,
-                    otpCode = cloudItem.otpCode ?: local.otpCode,
-                    otpMessage = cloudItem.otpMessage ?: local.otpMessage
-                )
-            }
+            cloudItem.copy(
+                id = local?.id?.ifEmpty { cloudItem.id } ?: cloudItem.id,
+                isUsed = isUsed,
+                otpCode = cloudItem.otpCode ?: local?.otpCode,
+                otpMessage = cloudItem.otpMessage ?: local?.otpMessage
+            )
         }
         savePermanentlyUsedDigits()
-
-        val merged = allNumbersMap.values.toList()
-        // Never wipe or touch activeNumbers during cloud pool sync
         _state.update { it.copy(uploadedNumbers = merged) }
         saveUploadedNumbers(merged)
     }
@@ -697,6 +676,49 @@ object UnixSmsManager {
         saveUploadedNumbers(updated)
         saveActiveNumbers(updatedActive)
         // Push globally so deletion reflects everywhere instantly
+        GlobalCloudSyncService.pushToCloud(
+            uploadedNumbers = updated,
+            unixRate = _state.value.otpRatePerSms,
+            zenexRate = VirtualNumberManager.zenexOtpRate.value,
+            countryRates = _state.value.countryRates,
+            onComplete = onComplete
+        )
+    }
+
+    /**
+     * Admin: Edit an existing uploaded number.
+     * Updates locally and directly syncs the edit immediately to Supabase PostgreSQL cloud database.
+     */
+    fun updateUploadedNumber(
+        updatedItem: UploadedNumberItem,
+        onComplete: ((Boolean) -> Unit)? = null
+    ) {
+        val current = _state.value.uploadedNumbers
+        val index = current.indexOfFirst { it.id == updatedItem.id }
+        val updated = if (index >= 0) {
+            current.toMutableList().apply { set(index, updatedItem) }
+        } else {
+            val cleanTarget = updatedItem.number.replace("[^0-9]".toRegex(), "")
+            val byNumIndex = current.indexOfFirst { it.number.replace("[^0-9]".toRegex(), "") == cleanTarget }
+            if (byNumIndex >= 0) {
+                current.toMutableList().apply { set(byNumIndex, updatedItem) }
+            } else {
+                current + updatedItem
+            }
+        }
+
+        val cleanDigits = updatedItem.number.replace("[^0-9]".toRegex(), "")
+        if (!updatedItem.isUsed) {
+            permanentlyUsedDigits.remove(cleanDigits)
+        } else {
+            permanentlyUsedDigits.add(cleanDigits)
+        }
+        savePermanentlyUsedDigits()
+
+        _state.update { it.copy(uploadedNumbers = updated) }
+        saveUploadedNumbers(updated)
+
+        // Directly push the edit to Supabase PostgreSQL so every user sees the updated number immediately
         GlobalCloudSyncService.pushToCloud(
             uploadedNumbers = updated,
             unixRate = _state.value.otpRatePerSms,

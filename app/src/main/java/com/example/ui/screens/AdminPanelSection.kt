@@ -11,6 +11,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -583,6 +584,7 @@ fun AdminUnixSmsCard(
     var filterQuery by remember { mutableStateOf("") }
     var selectedUploadedCountryFilter by remember { mutableStateOf("ALL") }
     var statusFilter by remember { mutableStateOf("ALL") } // "ALL", "AVAILABLE", "USED", "OTP_RCV"
+    var editingNumberItem by remember { mutableStateOf<UploadedNumberItem?>(null) }
 
     // File picker launcher
     val filePickerLauncher = rememberLauncherForActivityResult(
@@ -3343,6 +3345,9 @@ fun AdminUnixSmsCard(
                             UploadedNumberRowItem(
                                 item = item,
                                 canDelete = canDeleteNumbers,
+                                onEdit = {
+                                    editingNumberItem = item
+                                },
                                 onDelete = {
                                     UnixSmsManager.deleteSingleNumber(item.id) { success ->
                                         Toast.makeText(
@@ -3379,6 +3384,25 @@ fun AdminUnixSmsCard(
             }
         }
     }
+
+    if (editingNumberItem != null) {
+        EditUploadedNumberDialog(
+            item = editingNumberItem!!,
+            context = context,
+            onDismiss = { editingNumberItem = null },
+            onSave = { updated ->
+                UnixSmsManager.updateUploadedNumber(updated) { success ->
+                    Toast.makeText(
+                        context,
+                        if (success) "✓ ডাটাবেসে সফলভাবে এডিট হয়েছে (Supabase Cloud Synced)!"
+                        else "✓ লোকাল এডিট সম্পন্ন হয়েছে!",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                }
+                editingNumberItem = null
+            }
+        )
+    }
 }
 
 @Composable
@@ -3392,6 +3416,7 @@ fun AdminDataMaintenanceCard(
 ) {
     var showConfirmOtpPurge by remember { mutableStateOf(false) }
     var showConfirmWithdrawPurge by remember { mutableStateOf(false) }
+    var showConfirmWipeNumbers by remember { mutableStateOf(false) }
 
     Card(
         colors = CardDefaults.cardColors(containerColor = Color(0xFF0F172A)),
@@ -3550,6 +3575,21 @@ fun AdminDataMaintenanceCard(
                 }
             }
 
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // 3. Wipe All Numbers & Cloud Database (Clean Database - Keep Prime Admin)
+            Button(
+                onClick = { showConfirmWipeNumbers = true },
+                enabled = canManage,
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFDC2626)),
+                shape = RoundedCornerShape(10.dp),
+                modifier = Modifier.fillMaxWidth().height(42.dp)
+            ) {
+                Icon(Icons.Default.DeleteSweep, contentDescription = null, modifier = Modifier.size(16.dp))
+                Spacer(modifier = Modifier.width(6.dp))
+                Text("🧹 ক্লাউড ডাটাবেস ও নম্বর রিসেট (Wipe Numbers - Prime Admin Safe)", fontWeight = FontWeight.Bold, fontSize = 11.5.sp)
+            }
+
             // Confirm Dialogs
             if (showConfirmOtpPurge) {
                 AlertDialog(
@@ -3588,6 +3628,39 @@ fun AdminDataMaintenanceCard(
                     dismissButton = { OutlinedButton(onClick = { showConfirmWithdrawPurge = false }) { Text("বাতিল") } }
                 )
             }
+
+            if (showConfirmWipeNumbers) {
+                AlertDialog(
+                    onDismissRequest = { showConfirmWipeNumbers = false },
+                    title = { Text("⚠️ সম্পূর্ণ ক্লাউড ডাটাবেস রিসেট", color = Color.White, fontWeight = FontWeight.Bold) },
+                    text = {
+                        Text(
+                            "আপনি কি নিশ্চিত যে ক্লাউড ডাটাবেস (Supabase PostgreSQL) এবং লোকাল অ্যাপের সমস্ত আপলোড করা নম্বর সম্পূর্ণ মুছে ডাটাবেস ফ্রেশ করতে চান?\n\n👑 দ্রষ্টব্য: প্রাইম এডমিন একাউন্ট ও পারমিশন সম্পূর্ণ সুরক্ষিত থাকবে।",
+                            color = Color(0xFFCBD5E1),
+                            fontSize = 12.sp
+                        )
+                    },
+                    confirmButton = {
+                        Button(
+                            onClick = {
+                                UnixSmsManager.clearAllUploadedNumbers { ok ->
+                                    showConfirmWipeNumbers = false
+                                    Toast.makeText(
+                                        context,
+                                        if (ok) "✓ ক্লাউড ডাটাবেস (Supabase) ও লোকাল সব নম্বর মুছে ফ্রেশ করা হয়েছে!"
+                                        else "✓ নম্বর মুছে ফেলা হয়েছে!",
+                                        Toast.LENGTH_LONG
+                                    ).show()
+                                }
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFDC2626))
+                        ) { Text("হ্যাঁ, সব মুছুন") }
+                    },
+                    dismissButton = {
+                        OutlinedButton(onClick = { showConfirmWipeNumbers = false }) { Text("বাতিল", color = Color.White) }
+                    }
+                )
+            }
         }
     }
 }
@@ -3596,6 +3669,7 @@ fun AdminDataMaintenanceCard(
 fun UploadedNumberRowItem(
     item: UploadedNumberItem,
     canDelete: Boolean = true,
+    onEdit: () -> Unit,
     onDelete: () -> Unit,
     onCopy: () -> Unit,
     onCopyOtp: () -> Unit
@@ -3744,6 +3818,9 @@ fun UploadedNumberRowItem(
                             Icon(Icons.Default.Bolt, contentDescription = "Copy OTP", tint = Color(0xFFFACC15), modifier = Modifier.size(16.dp))
                         }
                     }
+                    IconButton(onClick = onEdit, modifier = Modifier.size(28.dp)) {
+                        Icon(Icons.Default.Edit, contentDescription = "Edit in Database", tint = Color(0xFF38BDF8), modifier = Modifier.size(15.dp))
+                    }
                     IconButton(onClick = onCopy, modifier = Modifier.size(28.dp)) {
                         Icon(Icons.Default.ContentCopy, contentDescription = "Copy", tint = Color(0xFF38BDF8), modifier = Modifier.size(14.dp))
                     }
@@ -3796,6 +3873,223 @@ fun UploadedNumberRowItem(
             }
         }
     }
+}
+
+@Composable
+fun EditUploadedNumberDialog(
+    item: UploadedNumberItem,
+    context: Context,
+    onDismiss: () -> Unit,
+    onSave: (UploadedNumberItem) -> Unit
+) {
+    var phoneNumber by remember { mutableStateOf(item.number) }
+    var service by remember { mutableStateOf(item.service) }
+    var countryCode by remember { mutableStateOf(item.countryCode) }
+    var countryName by remember { mutableStateOf(item.countryName) }
+    var flag by remember { mutableStateOf(item.flag) }
+    var gateway by remember { mutableStateOf(item.gateway) }
+    var numberType by remember { mutableStateOf(item.numberType) }
+    var customRateStr by remember { mutableStateOf(item.customRate?.let { String.format(Locale.US, "%.2f", it) } ?: "") }
+    var isUsed by remember { mutableStateOf(item.isUsed) }
+    var otpCode by remember { mutableStateOf(item.otpCode ?: "") }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = Color(0xFF0F172A),
+        shape = RoundedCornerShape(16.dp),
+        title = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Default.Edit, contentDescription = null, tint = Color(0xFF38BDF8), modifier = Modifier.size(20.dp))
+                Spacer(modifier = Modifier.width(8.dp))
+                Column {
+                    Text("এডিট নাম্বার (Edit in Database)", color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+                    Text("Supabase Cloud Database-এ সরাসরি সেভ হবে", color = Color(0xFF94A3B8), fontSize = 10.sp)
+                }
+            }
+        },
+        text = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                OutlinedTextField(
+                    value = phoneNumber,
+                    onValueChange = { phoneNumber = it },
+                    label = { Text("ফোন নম্বর", color = Color(0xFF94A3B8), fontSize = 11.sp) },
+                    singleLine = true,
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = Color.White,
+                        unfocusedTextColor = Color.White,
+                        focusedBorderColor = Color(0xFF38BDF8),
+                        unfocusedBorderColor = Color(0xFF334155)
+                    ),
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(
+                        value = service,
+                        onValueChange = { service = it },
+                        label = { Text("সার্ভিস", color = Color(0xFF94A3B8), fontSize = 11.sp) },
+                        singleLine = true,
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = Color.White,
+                            unfocusedTextColor = Color.White,
+                            focusedBorderColor = Color(0xFF38BDF8),
+                            unfocusedBorderColor = Color(0xFF334155)
+                        ),
+                        modifier = Modifier.weight(1f)
+                    )
+                    OutlinedTextField(
+                        value = gateway,
+                        onValueChange = { gateway = it.uppercase() },
+                        label = { Text("গেটওয়ে (LAMIX/UNIX)", color = Color(0xFF94A3B8), fontSize = 11.sp) },
+                        singleLine = true,
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = Color.White,
+                            unfocusedTextColor = Color.White,
+                            focusedBorderColor = Color(0xFF38BDF8),
+                            unfocusedBorderColor = Color(0xFF334155)
+                        ),
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(
+                        value = countryCode,
+                        onValueChange = { countryCode = it.uppercase() },
+                        label = { Text("Country Code", color = Color(0xFF94A3B8), fontSize = 11.sp) },
+                        singleLine = true,
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = Color.White,
+                            unfocusedTextColor = Color.White,
+                            focusedBorderColor = Color(0xFF38BDF8),
+                            unfocusedBorderColor = Color(0xFF334155)
+                        ),
+                        modifier = Modifier.weight(1f)
+                    )
+                    OutlinedTextField(
+                        value = flag,
+                        onValueChange = { flag = it },
+                        label = { Text("Flag", color = Color(0xFF94A3B8), fontSize = 11.sp) },
+                        singleLine = true,
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = Color.White,
+                            unfocusedTextColor = Color.White,
+                            focusedBorderColor = Color(0xFF38BDF8),
+                            unfocusedBorderColor = Color(0xFF334155)
+                        ),
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(
+                        value = customRateStr,
+                        onValueChange = { customRateStr = it },
+                        label = { Text("কাস্টম রেট (৳)", color = Color(0xFF94A3B8), fontSize = 11.sp) },
+                        singleLine = true,
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = Color.White,
+                            unfocusedTextColor = Color.White,
+                            focusedBorderColor = Color(0xFF38BDF8),
+                            unfocusedBorderColor = Color(0xFF334155)
+                        ),
+                        modifier = Modifier.weight(1f)
+                    )
+                    OutlinedTextField(
+                        value = numberType,
+                        onValueChange = { numberType = it },
+                        label = { Text("টাইপ (Fresh/Old)", color = Color(0xFF94A3B8), fontSize = 11.sp) },
+                        singleLine = true,
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = Color.White,
+                            unfocusedTextColor = Color.White,
+                            focusedBorderColor = Color(0xFF38BDF8),
+                            unfocusedBorderColor = Color(0xFF334155)
+                        ),
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(Color(0xFF1E293B), RoundedCornerShape(8.dp))
+                        .padding(horizontal = 12.dp, vertical = 6.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = if (isUsed) "🔴 স্ট্যাটাস: USED (ব্যবহৃত)" else "🟢 স্ট্যাটাস: AVAILABLE (সচল)",
+                        color = if (isUsed) Color(0xFFF87171) else Color(0xFF34D399),
+                        fontSize = 11.5.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Switch(
+                        checked = !isUsed,
+                        onCheckedChange = { isUsed = !it }
+                    )
+                }
+
+                OutlinedTextField(
+                    value = otpCode,
+                    onValueChange = { otpCode = it },
+                    label = { Text("OTP Code (ঐচ্ছিক)", color = Color(0xFF94A3B8), fontSize = 11.sp) },
+                    singleLine = true,
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = Color(0xFFFDE047),
+                        unfocusedTextColor = Color(0xFFFDE047),
+                        focusedBorderColor = Color(0xFFEAB308),
+                        unfocusedBorderColor = Color(0xFF334155)
+                    ),
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    val cleanNum = phoneNumber.trim()
+                    if (cleanNum.isEmpty()) {
+                        Toast.makeText(context, "ফোন নম্বর দিন", Toast.LENGTH_SHORT).show()
+                        return@Button
+                    }
+                    val parsedRate = customRateStr.toDoubleOrNull()
+                    val cleanOtp = otpCode.trim().ifEmpty { null }
+                    val updated = item.copy(
+                        number = cleanNum,
+                        service = service.trim().ifEmpty { "Facebook" },
+                        gateway = gateway.trim().uppercase().ifEmpty { "LAMIX" },
+                        countryCode = countryCode.trim().uppercase().ifEmpty { "US" },
+                        countryName = countryName.trim().ifEmpty { "United States" },
+                        flag = flag.trim().ifEmpty { "🇺🇸" },
+                        customRate = parsedRate,
+                        numberType = numberType.trim().ifEmpty { "Fresh" },
+                        isUsed = isUsed,
+                        otpCode = cleanOtp,
+                        otpMessage = if (cleanOtp != null) (item.otpMessage ?: "Your OTP is $cleanOtp") else null
+                    )
+                    onSave(updated)
+                },
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0284C7)),
+                shape = RoundedCornerShape(8.dp)
+            ) {
+                Text("💾 ডাটাবেসে সেভ করুন", color = Color.White, fontWeight = FontWeight.Bold)
+            }
+        },
+        dismissButton = {
+            OutlinedButton(
+                onClick = onDismiss,
+                shape = RoundedCornerShape(8.dp)
+            ) {
+                Text("বাতিল", color = Color.White)
+            }
+        }
+    )
 }
 
 /**

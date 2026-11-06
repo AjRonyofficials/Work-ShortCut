@@ -101,23 +101,26 @@ object GlobalCloudSyncService {
                 val data = arr.getJSONObject(0)
 
                 val cloudTimestamp = data.optLong("updated_at", 0L)
-                // If local just pushed within 8 seconds, avoid race overwrite
-                if (System.currentTimeMillis() - lastLocalPushTimestamp < 8000L) {
+                // If local just pushed within 3 seconds, avoid immediate race overwrite
+                if (System.currentTimeMillis() - lastLocalPushTimestamp < 3000L) {
                     return
                 }
 
-                // If nothing changed on server and local already has the numbers, skip re-parsing
-                if (cloudTimestamp != 0L && cloudTimestamp == lastObservedServerTimestamp && UnixSmsManager.state.value.uploadedNumbers.isNotEmpty()) {
+                // If timestamp didn't change and we have already processed it, skip re-parsing
+                if (cloudTimestamp != 0L && cloudTimestamp == lastObservedServerTimestamp) {
                     return
                 }
                 lastObservedServerTimestamp = cloudTimestamp
 
-                // 1. Sync Uploaded Numbers
-                val numbersJson = data.optString("numbers_json", "")
-                if (numbersJson.isNotEmpty() && numbersJson != "[]") {
+                // 1. Sync Uploaded Numbers directly with Supabase Cloud DB
+                val numbersJson = data.optString("numbers_json", "[]").trim()
+                if (numbersJson.isEmpty() || numbersJson == "[]") {
+                    // Cloud numbers pool is explicitly empty in Supabase DB -> clear local list
+                    UnixSmsManager.applyCloudNumbers(emptyList(), context)
+                } else {
                     try {
                         val numArr = JSONArray(numbersJson)
-                        val cloudNumbers = mutableListOf<UploadedNumberItem>()
+                        val cloudNumbers = ArrayList<UploadedNumberItem>(numArr.length())
                         for (i in 0 until numArr.length()) {
                             val o = numArr.getJSONObject(i)
                             cloudNumbers.add(
@@ -140,7 +143,9 @@ object GlobalCloudSyncService {
                         }
                         // Authoritative apply to UnixSmsManager for all users
                         UnixSmsManager.applyCloudNumbers(cloudNumbers, context)
-                    } catch (_: Exception) {}
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Error parsing cloud numbers: ${e.message}")
+                    }
                 }
 
                 // 2. Sync OTP Rates
@@ -340,5 +345,23 @@ object GlobalCloudSyncService {
 
     fun pushRateUpdate(rateKey: String, rate: Double) {
         pushRateSettingsOnly()
+    }
+
+    /**
+     * Forces an immediate real-time sync with Supabase PostgreSQL cloud database
+     */
+    fun forceSync(context: Context, onComplete: ((Boolean) -> Unit)? = null) {
+        scope.launch {
+            try {
+                pullFromCloud(context)
+                kotlinx.coroutines.withContext(Dispatchers.Main) {
+                    onComplete?.invoke(true)
+                }
+            } catch (e: Exception) {
+                kotlinx.coroutines.withContext(Dispatchers.Main) {
+                    onComplete?.invoke(false)
+                }
+            }
+        }
     }
 }

@@ -25,9 +25,11 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.ContentPaste
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Security
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -78,6 +80,7 @@ fun TwoFactorSection(
     var inputKey by remember(state.twoFactorKey) { mutableStateOf(state.twoFactorKey) }
     var accountTitle by remember { mutableStateOf("") }
     var searchQuery by remember { mutableStateOf("") }
+    var editingKey by remember { mutableStateOf<TwoFactorKeyEntity?>(null) }
     val totp = state.totpResult
 
     LazyColumn(
@@ -499,6 +502,16 @@ fun TwoFactorSection(
                             }
 
                             IconButton(onClick = {
+                                editingKey = itemKey
+                            }) {
+                                Icon(
+                                    imageVector = Icons.Default.Edit,
+                                    contentDescription = "Edit 2FA Key in Database",
+                                    tint = BrandGreen
+                                )
+                            }
+
+                            IconButton(onClick = {
                                 scope.launch { repository?.deleteTwoFactorKey(itemKey) }
                             }) {
                                 Icon(
@@ -512,5 +525,67 @@ fun TwoFactorSection(
                 }
             }
         }
+    }
+
+    if (editingKey != null) {
+        val target = editingKey!!
+        var editTitle by remember(target) { mutableStateOf(target.title) }
+        var editSecret by remember(target) { mutableStateOf(target.secretKey) }
+
+        AlertDialog(
+            onDismissRequest = { editingKey = null },
+            title = {
+                Text(
+                    text = "এডিট 2FA কি (Edit in Database)",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 16.sp
+                )
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    OutlinedTextField(
+                        value = editTitle,
+                        onValueChange = { editTitle = it },
+                        label = { Text("একাউন্ট টাইটেল (Title)") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    OutlinedTextField(
+                        value = editSecret,
+                        onValueChange = { editSecret = it },
+                        label = { Text("সিক্রেট কি (Secret Key)") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val cleanSecret = editSecret.trim()
+                        val cleanTitle = editTitle.trim().ifEmpty { "2FA Key" }
+                        if (cleanSecret.isNotEmpty()) {
+                            scope.launch {
+                                repository?.updateTwoFactorKey(
+                                    target.copy(
+                                        title = cleanTitle,
+                                        secretKey = cleanSecret
+                                    )
+                                )
+                            }
+                        }
+                        editingKey = null
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = BrandAmber)
+                ) {
+                    Text("সেভ করুন (Save)", color = Color.Black, fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                OutlinedButton(onClick = { editingKey = null }) {
+                    Text("বাতিল")
+                }
+            }
+        )
     }
 }
