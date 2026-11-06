@@ -365,6 +365,31 @@ object OtpHistoryManager {
         }
     }
 
+    fun wipeAllCloudOtpRecords(onComplete: ((Boolean) -> Unit)? = null) {
+        wipeAllHistory()
+        scope.launch {
+            try {
+                val req = Request.Builder()
+                    .url("$SUPABASE_BASE_URL/otp_history?id=gt.0")
+                    .header("apikey", SUPABASE_KEY)
+                    .header("Authorization", "Bearer $SUPABASE_KEY")
+                    .header("Prefer", "return=minimal")
+                    .delete()
+                    .build()
+                val resp = httpClient.newCall(req).execute()
+                val ok = resp.isSuccessful
+                resp.close()
+                kotlinx.coroutines.withContext(Dispatchers.Main) {
+                    onComplete?.invoke(ok)
+                }
+            } catch (_: Exception) {
+                kotlinx.coroutines.withContext(Dispatchers.Main) {
+                    onComplete?.invoke(false)
+                }
+            }
+        }
+    }
+
     private fun loadHistory() {
         val currentEmail = AuthManager.currentEmail.value.trim().lowercase()
         loadHistoryForUser(currentEmail)

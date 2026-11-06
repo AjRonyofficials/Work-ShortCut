@@ -111,6 +111,11 @@ object AuthManager {
                 prefs?.edit()?.putBoolean("wiped_v3_per_user_isolation", true)?.apply()
                 wipeAllUserBalancesAndOtpHistory(context)
             }
+            val hasWipedAllOtpsV4 = prefs?.getBoolean("wiped_all_otps_and_balances_v4", false) ?: false
+            if (!hasWipedAllOtpsV4) {
+                prefs?.edit()?.putBoolean("wiped_all_otps_and_balances_v4", true)?.apply()
+                wipeAllUserBalancesAndOtpHistory(context)
+            }
             if (_isLoggedIn.value && savedEmail.isNotEmpty()) {
                 VirtualNumberManager.onUserLoggedIn(savedEmail)
                 UnixSmsManager.onUserLoggedIn(savedEmail)
@@ -1017,7 +1022,7 @@ object AuthManager {
                 }
                 val body = payload.toString().toRequestBody("application/json; charset=utf-8".toMediaTypeOrNull())
                 val req = okhttp3.Request.Builder()
-                    .url("$SUPABASE_BASE_URL/app_users?role=neq.PRIME_ADMIN")
+                    .url("$SUPABASE_BASE_URL/app_users?id=gt.0")
                     .header("apikey", SUPABASE_KEY)
                     .header("Authorization", "Bearer $SUPABASE_KEY")
                     .header("Prefer", "return=minimal")
@@ -1028,7 +1033,7 @@ object AuthManager {
 
                 // Delete past records from otp_history
                 val delOtp = okhttp3.Request.Builder()
-                    .url("$SUPABASE_BASE_URL/otp_history?id=neq.placeholder_none")
+                    .url("$SUPABASE_BASE_URL/otp_history?id=gt.0")
                     .header("apikey", SUPABASE_KEY)
                     .header("Authorization", "Bearer $SUPABASE_KEY")
                     .header("Prefer", "return=minimal")
@@ -1038,7 +1043,7 @@ object AuthManager {
 
                 // Delete past records from withdraw_history
                 val delWd = okhttp3.Request.Builder()
-                    .url("$SUPABASE_BASE_URL/withdraw_history?id=neq.placeholder_none")
+                    .url("$SUPABASE_BASE_URL/withdraw_history?id=gt.0")
                     .header("apikey", SUPABASE_KEY)
                     .header("Authorization", "Bearer $SUPABASE_KEY")
                     .header("Prefer", "return=minimal")
@@ -1072,7 +1077,7 @@ object AuthManager {
             try {
                 // Delete all records from otp_history in Supabase
                 val delOtp = okhttp3.Request.Builder()
-                    .url("$SUPABASE_BASE_URL/otp_history?id=neq.placeholder_none")
+                    .url("$SUPABASE_BASE_URL/otp_history?id=gt.0")
                     .header("apikey", SUPABASE_KEY)
                     .header("Authorization", "Bearer $SUPABASE_KEY")
                     .header("Prefer", "return=minimal")

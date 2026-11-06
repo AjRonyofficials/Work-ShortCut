@@ -3417,6 +3417,7 @@ fun AdminDataMaintenanceCard(
     var showConfirmOtpPurge by remember { mutableStateOf(false) }
     var showConfirmWithdrawPurge by remember { mutableStateOf(false) }
     var showConfirmWipeNumbers by remember { mutableStateOf(false) }
+    var showConfirmWipeAllOtpsAndBalances by remember { mutableStateOf(false) }
 
     Card(
         colors = CardDefaults.cardColors(containerColor = Color(0xFF0F172A)),
@@ -3590,6 +3591,21 @@ fun AdminDataMaintenanceCard(
                 Text("🧹 ক্লাউড ডাটাবেস ও নম্বর রিসেট (Wipe Numbers - Prime Admin Safe)", fontWeight = FontWeight.Bold, fontSize = 11.5.sp)
             }
 
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // 4. Wipe All OTP History & Reset Balances (Start Fresh from Zero)
+            Button(
+                onClick = { showConfirmWipeAllOtpsAndBalances = true },
+                enabled = canManage,
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFB91C1C)),
+                shape = RoundedCornerShape(10.dp),
+                modifier = Modifier.fillMaxWidth().height(42.dp)
+            ) {
+                Icon(Icons.Default.Bolt, contentDescription = null, modifier = Modifier.size(16.dp), tint = Color(0xFFFDE047))
+                Spacer(modifier = Modifier.width(6.dp))
+                Text("🔥 সকল OTP হিস্ট্রি ও ব্যালেন্স মুছুন (Start Fresh From 0)", fontWeight = FontWeight.Bold, fontSize = 11.5.sp)
+            }
+
             // Confirm Dialogs
             if (showConfirmOtpPurge) {
                 AlertDialog(
@@ -3658,6 +3674,39 @@ fun AdminDataMaintenanceCard(
                     },
                     dismissButton = {
                         OutlinedButton(onClick = { showConfirmWipeNumbers = false }) { Text("বাতিল", color = Color.White) }
+                    }
+                )
+            }
+
+            if (showConfirmWipeAllOtpsAndBalances) {
+                AlertDialog(
+                    onDismissRequest = { showConfirmWipeAllOtpsAndBalances = false },
+                    title = { Text("⚠️ সকল OTP হিস্ট্রি ও ব্যালেন্স রিসেট", color = Color.White, fontWeight = FontWeight.Bold) },
+                    text = {
+                        Text(
+                            "আপনি কি নিশ্চিত যে অতীত থেকে বর্তমানের সমস্ত OTP হিস্ট্রি এবং সকল ইউজারের ব্যালেন্স সম্পূর্ণ মুছে ০ করতে চান?\n\nএখন থেকে নতুনভাবে সমস্ত OTP এবং ব্যালেন্স কাউন্ট হবে। প্রাইম এডমিন একাউন্ট ও পাসওয়ার্ড অক্ষুণ্ণ থাকবে।",
+                            color = Color(0xFFCBD5E1),
+                            fontSize = 12.sp
+                        )
+                    },
+                    confirmButton = {
+                        Button(
+                            onClick = {
+                                AuthManager.wipeAllUserBalancesAndOtpHistory(context) { ok ->
+                                    showConfirmWipeAllOtpsAndBalances = false
+                                    Toast.makeText(
+                                        context,
+                                        if (ok) "✓ সফলভাবে সকল OTP হিস্ট্রি ও ব্যালেন্স মুছে ফ্রেশ করা হয়েছে! এখন থেকে নতুনভাবে কাউন্ট হবে।"
+                                        else "✓ লোকাল ডাটা রিসেট সম্পন্ন হয়েছে!",
+                                        Toast.LENGTH_LONG
+                                    ).show()
+                                }
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFB91C1C))
+                        ) { Text("হ্যাঁ, সব মুছে ফ্রেশ করুন") }
+                    },
+                    dismissButton = {
+                        OutlinedButton(onClick = { showConfirmWipeAllOtpsAndBalances = false }) { Text("বাতিল", color = Color.White) }
                     }
                 )
             }
