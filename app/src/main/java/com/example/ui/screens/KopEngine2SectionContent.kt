@@ -809,15 +809,10 @@ private fun Kop2ProvisionedNumberCard(
     val isSuccess = item.status.equals("success", true) || !item.otpCode.isNullOrEmpty()
     val totalDurationMs = 15 * 60 * 1000f // 15 Minutes
     val progressRatio = (remainingMs.toFloat() / totalDurationMs).coerceIn(0f, 1f)
-    val isFresh = item.fbTagType == com.example.service.PhoneItem.TagType.FRESH
-    val isTaken = item.fbTagType == com.example.service.PhoneItem.TagType.TAKEN
-
     Card(
         colors = CardDefaults.cardColors(
             containerColor = when {
                 isSuccess -> Color(0xFF063529)
-                isFresh -> Color(0xFF0A2E19)
-                isTaken -> Color(0xFF2E0E0E)
                 isExpired -> Color(0xFF1E293B)
                 else -> Color(0xFF0F1E2E)
             }
@@ -827,8 +822,6 @@ private fun Kop2ProvisionedNumberCard(
             1.4.dp,
             when {
                 isSuccess -> ThemeEmerald
-                isFresh -> Color(0xFF00E676)
-                isTaken -> Color(0xFFFF5252)
                 isExpired -> ThemeBorder
                 else -> ThemeSky.copy(alpha = 0.8f)
             }
