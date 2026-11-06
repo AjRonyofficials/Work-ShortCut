@@ -334,6 +334,7 @@ object OverlayStateManager {
                     uploadNumberTxtLocked = p.getBoolean("upload_number_txt_locked", true),
                     overlayScale = p.getFloat("overlay_scale_factor", 1.0f).coerceIn(0.20f, 2.00f),
                     customAppTitle = p.getString("custom_app_title", "Work ShortCut") ?: "Work ShortCut",
+                    isOverlayActive = p.getBoolean("overlay_persistent_enabled", false),
                     proxyState = it.proxyState.copy(
                         profileName = profileName,
                         host = proxyHost,
@@ -519,8 +520,15 @@ object OverlayStateManager {
         }
     }
 
-    fun setOverlayActive(active: Boolean) {
+    fun setOverlayActive(active: Boolean, userInitiated: Boolean = false) {
         _uiState.update { it.copy(isOverlayActive = active) }
+        if (userInitiated) {
+            prefs?.edit()?.putBoolean("overlay_persistent_enabled", active)?.apply()
+        }
+    }
+
+    fun isOverlayPersistentEnabled(): Boolean {
+        return prefs?.getBoolean("overlay_persistent_enabled", false) ?: false
     }
 
     fun setOverlayExpanded(expanded: Boolean) {

@@ -261,7 +261,22 @@ fun MainScreen(
                         // Quick Toggle for Floating Bubble Overlay
                         IconButton(
                             onClick = {
-                                OverlayStateManager.toggleOverlayExpanded()
+                                if (!state.isOverlayActive) {
+                                    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M &&
+                                        !android.provider.Settings.canDrawOverlays(context)
+                                    ) {
+                                        val intent = android.content.Intent(
+                                            android.provider.Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                                            android.net.Uri.parse("package:${context.packageName}")
+                                        )
+                                        context.startActivity(intent)
+                                    } else {
+                                        OverlayStateManager.setOverlayActive(true, userInitiated = true)
+                                        com.example.service.FloatingOverlayService.startService(context)
+                                    }
+                                } else {
+                                    OverlayStateManager.toggleOverlayExpanded()
+                                }
                             },
                             modifier = Modifier
                                 .size(36.dp)
@@ -585,7 +600,25 @@ fun MainScreen(
             onSelectTab = { selectedTab = it },
             onDismiss = { sectionsMenuExpanded = false },
             isOverlayActive = state.isOverlayActive,
-            onToggleOverlay = { OverlayStateManager.toggleOverlayExpanded() }
+            onToggleOverlay = {
+                if (!state.isOverlayActive) {
+                    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M &&
+                        !android.provider.Settings.canDrawOverlays(context)
+                    ) {
+                        val intent = android.content.Intent(
+                            android.provider.Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                            android.net.Uri.parse("package:${context.packageName}")
+                        )
+                        context.startActivity(intent)
+                    } else {
+                        OverlayStateManager.setOverlayActive(true, userInitiated = true)
+                        com.example.service.FloatingOverlayService.startService(context)
+                    }
+                } else {
+                    OverlayStateManager.setOverlayActive(false, userInitiated = true)
+                    com.example.service.FloatingOverlayService.stopService(context)
+                }
+            }
         )
     }
 }

@@ -292,6 +292,7 @@ fun SettingsSection(
                     Switch(
                         checked = state.isOverlayActive,
                         onCheckedChange = { enable ->
+                            OverlayStateManager.setOverlayActive(enable, userInitiated = true)
                             if (enable) {
                                 if (hasOverlayPermission) {
                                     FloatingOverlayService.startService(context)
@@ -347,6 +348,77 @@ fun SettingsSection(
                                 colors = ButtonDefaults.buttonColors(containerColor = BrandAmber)
                             ) {
                                 Text("Grant", fontSize = 11.sp, color = Color.Black, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
+                }
+
+                // Battery Saver Exemption Card (Prevents Xiaomi/Infinix/Android OS from killing overlay automatically)
+                val powerManager = context.getSystemService(android.content.Context.POWER_SERVICE) as? android.os.PowerManager
+                val isIgnoringBattery = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                    powerManager?.isIgnoringBatteryOptimizations(context.packageName) ?: false
+                } else true
+
+                Spacer(modifier = Modifier.height(10.dp))
+                Surface(
+                    shape = RoundedCornerShape(10.dp),
+                    color = if (isIgnoringBattery) Color(0xFF00E676).copy(alpha = 0.1f) else BrandAmber.copy(alpha = 0.12f),
+                    border = androidx.compose.foundation.BorderStroke(
+                        1.dp,
+                        if (isIgnoringBattery) Color(0xFF00E676).copy(alpha = 0.4f) else BrandAmber.copy(alpha = 0.5f)
+                    ),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.padding(10.dp)) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Icon(
+                                imageVector = if (isIgnoringBattery) Icons.Default.Check else Icons.Default.BatteryChargingFull,
+                                contentDescription = null,
+                                tint = if (isIgnoringBattery) Color(0xFF00E676) else BrandAmber,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = if (isIgnoringBattery) "অটো-অফ প্রোটেকশন: সক্রিয় (Always Alive)" else "অটো-অফ প্রতিরোধ (Battery Saver Exemption)",
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (isIgnoringBattery) Color(0xFF00E676) else Color.White
+                                )
+                                Text(
+                                    text = if (isIgnoringBattery) "ডিভাইসের ব্যাকগ্রাউন্ড কিলার ওভারলে বন্ধ করবে না।" else "Xiaomi বা Infinix ফোনে ব্যাকগ্রাউন্ডে ওভারলে বন্ধ হওয়া রোধ করতে ব্যাটারি অপটিমাইজেশন বন্ধ রাখুন।",
+                                    fontSize = 10.5.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+
+                        if (!isIgnoringBattery) {
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Button(
+                                onClick = {
+                                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                                        try {
+                                            val intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
+                                                data = Uri.parse("package:${context.packageName}")
+                                            }
+                                            context.startActivity(intent)
+                                        } catch (_: Exception) {
+                                            try {
+                                                val intent = Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
+                                                context.startActivity(intent)
+                                            } catch (_: Exception) {}
+                                        }
+                                    }
+                                },
+                                shape = RoundedCornerShape(8.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = BrandAmber),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text("⚡ ব্যাটারি অপটিমাইজেশন অফ করুন (Keep Overlay Active)", color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 11.sp)
                             }
                         }
                     }

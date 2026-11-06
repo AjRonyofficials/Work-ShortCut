@@ -12,12 +12,11 @@ import android.os.Build
 import android.os.IBinder
 import android.provider.Settings
 import android.view.Gravity
-import android.view.MotionEvent
-import android.view.View
 import android.view.WindowManager
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.platform.ComposeView
+import androidx.compose.ui.platform.ViewCompositionStrategy
 import androidx.core.app.NotificationCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleOwner
@@ -60,6 +59,23 @@ class FloatingOverlayService : Service(), LifecycleOwner, ViewModelStoreOwner, S
         setupOverlayWindow()
     }
 
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        startForegroundWithNotification()
+        if (overlayComposeView == null) {
+            setupOverlayWindow()
+        }
+        // START_STICKY ensures Android OS restarts the service automatically if killed under memory pressure
+        return START_STICKY
+    }
+
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        super.onTaskRemoved(rootIntent)
+        // Keep the floating overlay bubble active even when user closes/swipes app from Recent Apps
+        if (OverlayStateManager.isOverlayPersistentEnabled()) {
+            startForegroundWithNotification()
+        }
+    }
+
     private fun startForegroundWithNotification() {
         val channelId = "work_shortcut_overlay_channel"
         val channelName = "Work Shortcut Overlay"
@@ -70,7 +86,7 @@ class FloatingOverlayService : Service(), LifecycleOwner, ViewModelStoreOwner, S
                 channelName,
                 NotificationManager.IMPORTANCE_LOW
             ).apply {
-                description = "Keeps the floating shortcut bubble active"
+                description = "Keeps the floating shortcut bubble active over other apps"
                 setShowBadge(false)
             }
             val manager = getSystemService(NotificationManager::class.java)
@@ -89,11 +105,12 @@ class FloatingOverlayService : Service(), LifecycleOwner, ViewModelStoreOwner, S
 
         val notification: Notification = NotificationCompat.Builder(this, channelId)
             .setContentTitle("Work Shortcut Active")
-            .setContentText("Tap overlay bubble to access 4 tools anywhere")
+            .setContentText("ওভারলে সচল রয়েছে - যেকোনো অ্যাপে শর্টকাট ব্যবহার করুন")
             .setSmallIcon(android.R.drawable.ic_dialog_info)
             .setContentIntent(pendingIntent)
             .setOngoing(true)
             .setPriority(NotificationCompat.PRIORITY_LOW)
+            .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
             .build()
 
         try {
@@ -102,16 +119,30 @@ class FloatingOverlayService : Service(), LifecycleOwner, ViewModelStoreOwner, S
             } else {
                 startForeground(101, notification)
             }
-        } catch (_: Exception) {}
+        } catch (e: Exception) {
+            try {
+                startForeground(101, notification)
+            } catch (_: Exception) {}
+        }
     }
 
     private fun setupOverlayWindow() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !Settings.canDrawOverlays(this)) {
+            OverlayStateManager.setOverlayActive(false, userInitiated = false)
             stopSelf()
             return
         }
 
         windowManager = getSystemService(Context.WINDOW_SERVICE) as? WindowManager
+        if (windowManager == null) return
+
+        // Clean up previous view instance if any to prevent "View already has a parent" IllegalStateException
+        overlayComposeView?.let { oldView ->
+            try {
+                windowManager?.removeView(oldView)
+            } catch (_: Exception) {}
+        }
+        overlayComposeView = null
 
         val layoutType = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
@@ -140,6 +171,10 @@ class FloatingOverlayService : Service(), LifecycleOwner, ViewModelStoreOwner, S
         var lastLayoutUpdateTime = 0L
 
         overlayComposeView = ComposeView(this).apply {
+            // CRITICAL: Prevent Compose from disposing UI tree when window is detached (screen lock / app switch)
+            setViewCompositionStrategy(
+                ViewCompositionStrategy.DisposeOnLifecycleDestroyed(this@FloatingOverlayService)
+            )
             setViewTreeLifecycleOwner(this@FloatingOverlayService)
             setViewTreeSavedStateRegistryOwner(this@FloatingOverlayService)
             setViewTreeViewModelStoreOwner(this@FloatingOverlayService)
@@ -169,11 +204,16 @@ class FloatingOverlayService : Service(), LifecycleOwner, ViewModelStoreOwner, S
                                     val stepY = dragAccumulatorY.toInt()
                                     if (stepX != 0 || stepY != 0) {
                                         p.gravity = Gravity.TOP or Gravity.START
-                                        p.x = (p.x + stepX).coerceAtLeast(0)
-                                        p.y = (p.y + stepY).coerceAtLeast(40)
+                                        val dm = resources.displayMetrics
+                                        val maxX = (dm.widthPixels - 60).coerceAtLeast(100)
+                                        val maxY = (dm.heightPixels - 100).coerceAtLeast(100)
+                                        p.x = (p.x + stepX).coerceIn(0, maxX)
+                                        p.y = (p.y + stepY).coerceIn(30, maxY)
                                         dragAccumulatorX -= stepX
                                         dragAccumulatorY -= stepY
-                                        windowManager?.updateViewLayout(this@apply, p)
+                                        try {
+                                            windowManager?.updateViewLayout(this@apply, p)
+                                        } catch (_: Exception) {}
                                         lastLayoutUpdateTime = now
                                     }
                                 }
@@ -183,6 +223,7 @@ class FloatingOverlayService : Service(), LifecycleOwner, ViewModelStoreOwner, S
                             OverlayStateManager.toggleEdgeBarMinimized()
                         },
                         onCloseOverlay = {
+                            OverlayStateManager.setOverlayActive(false, userInitiated = true)
                             stopSelf()
                         }
                     )
@@ -192,10 +233,8 @@ class FloatingOverlayService : Service(), LifecycleOwner, ViewModelStoreOwner, S
 
         try {
             windowManager?.addView(overlayComposeView, params)
-            OverlayStateManager.setOverlayActive(true)
-        } catch (_: Exception) {
-            stopSelf()
-        }
+            OverlayStateManager.setOverlayActive(true, userInitiated = false)
+        } catch (_: Exception) {}
     }
 
     private fun updateOverlayLayoutParams(isEdgeBarMinimized: Boolean) {
@@ -207,21 +246,19 @@ class FloatingOverlayService : Service(), LifecycleOwner, ViewModelStoreOwner, S
                     WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED
             try {
                 windowManager?.updateViewLayout(overlayComposeView, p)
-            } catch (_: Exception) {
-            }
+            } catch (_: Exception) {}
         }
     }
 
     override fun onDestroy() {
         super.onDestroy()
-        OverlayStateManager.setOverlayActive(false)
+        OverlayStateManager.setOverlayActive(false, userInitiated = false)
         OverlayStateManager.setOverlayExpanded(false)
 
         overlayComposeView?.let {
             try {
                 windowManager?.removeView(it)
-            } catch (_: Exception) {
-            }
+            } catch (_: Exception) {}
         }
         overlayComposeView = null
 
@@ -235,17 +272,21 @@ class FloatingOverlayService : Service(), LifecycleOwner, ViewModelStoreOwner, S
 
     companion object {
         fun startService(context: Context) {
-            val intent = Intent(context, FloatingOverlayService::class.java)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                context.startForegroundService(intent)
-            } else {
-                context.startService(intent)
-            }
+            try {
+                val intent = Intent(context, FloatingOverlayService::class.java)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    context.startForegroundService(intent)
+                } else {
+                    context.startService(intent)
+                }
+            } catch (_: Exception) {}
         }
 
         fun stopService(context: Context) {
-            val intent = Intent(context, FloatingOverlayService::class.java)
-            context.stopService(intent)
+            try {
+                val intent = Intent(context, FloatingOverlayService::class.java)
+                context.stopService(intent)
+            } catch (_: Exception) {}
         }
     }
 }

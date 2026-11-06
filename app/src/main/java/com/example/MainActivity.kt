@@ -148,6 +148,14 @@ class MainActivity : ComponentActivity() {
         try { com.example.service.VirtualNumberManager.init(this); com.example.service.VirtualNumberManager.fetchActiveRanges() } catch (_: Throwable) {}
         try { com.example.service.KopEngine2Manager.init(this); com.example.service.KopEngine2Manager.fetchActiveRanges() } catch (_: Throwable) {}
         try { com.example.service.PremiumNumberV2Manager.init(this); com.example.service.PremiumNumberV2Manager.refreshLiveConsole() } catch (_: Throwable) {}
+        try {
+            if (OverlayStateManager.isOverlayPersistentEnabled() &&
+                android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M &&
+                android.provider.Settings.canDrawOverlays(this)
+            ) {
+                com.example.service.FloatingOverlayService.startService(this)
+            }
+        } catch (_: Throwable) {}
     }
 
     override fun onStop() {
