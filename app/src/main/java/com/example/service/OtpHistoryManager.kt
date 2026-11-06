@@ -184,7 +184,14 @@ object OtpHistoryManager {
                 if (!resp.isSuccessful) return
                 val bodyStr = resp.body?.string() ?: return
                 val arr = JSONArray(bodyStr)
-                if (arr.length() == 0) return
+                if (arr.length() == 0) {
+                    if (_state.value.recentRecords.isNotEmpty() || _state.value.totalOtpsAllTime > 0) {
+                        saveRecords(emptyList(), 0)
+                        recalculateSummaries(emptyList(), 0)
+                        WithdrawalManager.wipeAllBalances(context)
+                    }
+                    return
+                }
                 val cloudList = mutableListOf<OtpHistoryRecord>()
                 for (i in 0 until arr.length()) {
                     val o = arr.getJSONObject(i)
@@ -238,6 +245,10 @@ object OtpHistoryManager {
                     recalculateSummaries(combined, total, cycleStart)
                     saveRecords(combined, total)
                     WithdrawalManager.refreshBalances()
+                } else {
+                    saveRecords(emptyList(), 0)
+                    recalculateSummaries(emptyList(), 0)
+                    WithdrawalManager.wipeAllBalances(context)
                 }
             }
         } catch (_: Exception) {}
