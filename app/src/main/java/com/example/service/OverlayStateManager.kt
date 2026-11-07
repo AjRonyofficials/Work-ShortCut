@@ -1383,7 +1383,7 @@ object OverlayStateManager {
                 protocol = effectiveProtocol,
                 username = proxy.username,
                 password = proxy.password,
-                timeoutMs = 2000
+                timeoutMs = 1500
             )
 
             // Successfully detected real egress IP & Country or fallback directly to proxy.host

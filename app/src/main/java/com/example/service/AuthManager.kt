@@ -300,9 +300,8 @@ object AuthManager {
                     val existingUser = _managedUsers.value.firstOrNull { it.email.equals(obj.getString("email"), ignoreCase = true) }
                     val devSessions = existingUser?.deviceSessions ?: emptyList()
                     val disabledSecs = try {
-                        val secStr = obj.optString("disabled_sections_json", "")
-                        if (secStr.isNotBlank() && secStr != "null") {
-                            val sArr = JSONArray(secStr)
+                        val sArr = permObj.optJSONArray("disabledSections")
+                        if (sArr != null) {
                             val sList = mutableListOf<String>()
                             for (si in 0 until sArr.length()) {
                                 val s = sArr.optString(si)
@@ -355,10 +354,18 @@ object AuthManager {
                     )
                 }
 
-                // Cloud users from Supabase are the source of truth
-                _managedUsers.value = cloudUsers
-                saveUsersLocallyOnly(cloudUsers)
-                return cloudUsers.size
+                // Cloud users from Supabase are the source of truth,
+                // BUT merge any locally created users that are pending sync so they are never lost
+                val mergedUsers = cloudUsers.toMutableList()
+                val currentLocal = _managedUsers.value
+                for (local in currentLocal) {
+                    if (mergedUsers.none { it.email.equals(local.email, ignoreCase = true) }) {
+                        mergedUsers.add(local)
+                    }
+                }
+                _managedUsers.value = mergedUsers
+                saveUsersLocallyOnly(mergedUsers)
+                return mergedUsers.size
             }
         } catch (_: Exception) {}
         return _managedUsers.value.size
@@ -522,11 +529,21 @@ object AuthManager {
     }
 
     fun patchUserDisabledSections(email: String, sections: List<String>) {
-        val sArr = JSONArray()
-        sections.forEach { sArr.put(it) }
-        patchUserField(email, JSONObject().apply {
-            put("disabled_sections_json", sArr.toString())
-        })
+        val target = email.trim().lowercase()
+        val user = _managedUsers.value.firstOrNull { it.email.lowercase() == target }
+        val perms = user?.permissions ?: SubAdminPermissions()
+        val permObj = JSONObject().apply {
+            put("canUploadNumbers", perms.canUploadNumbers)
+            put("canDeleteNumbers", perms.canDeleteNumbers)
+            put("canUpdateOtpRate", perms.canUpdateOtpRate)
+            put("canManageWithdrawals", perms.canManageWithdrawals)
+            put("canViewLiveCdr", perms.canViewLiveCdr)
+            put("canBroadcastNotify", perms.canBroadcastNotify)
+            val sArr = JSONArray()
+            sections.forEach { sArr.put(it) }
+            put("disabledSections", sArr)
+        }
+        patchUserField(target, JSONObject().put("permissions_json", permObj.toString()))
     }
 
     private fun saveUsers(list: List<AuthUser>) {
@@ -684,11 +701,9 @@ object AuthManager {
                 if (isFirstBinding) {
                     authScope.launch {
                         val bindPayload = JSONObject().apply {
-                            put("bound_device_id", myDeviceId)
-                            put("bound_device_model", deviceName)
-                            put("bound_at", nowTime)
                             put("device_id", myDeviceId)
                             put("device_model", deviceName)
+                            put("last_active", nowTime)
                         }
                         patchUserField(user.email, bindPayload)
                     }
@@ -886,18 +901,25 @@ object AuthManager {
                     put("otp_today", 0)
                     put("otp_7days", 0)
                     put("otp_30days", 0)
-                    put("disabled_sections_json", "[]")
                     put("permissions_json", "{}")
+                    put("is_active", true)
+                    put("is_banned", false)
                 }
                 val body = JSONArray().put(obj).toString().toRequestBody("application/json; charset=utf-8".toMediaTypeOrNull())
                 val req = okhttp3.Request.Builder()
                     .url("$SUPABASE_BASE_URL/app_users?on_conflict=email")
                     .header("apikey", SUPABASE_KEY)
+                    .header("Authorization", "Bearer $SUPABASE_KEY")
                     .header("Content-Type", "application/json")
                     .header("Prefer", "resolution=merge-duplicates,return=minimal")
                     .post(body)
                     .build()
-                httpClient.newCall(req).execute()
+                val resp = httpClient.newCall(req).execute()
+                val ok = resp.isSuccessful
+                resp.close()
+                if (ok) {
+                    syncFromCloud()
+                }
             } catch (_: Exception) {}
         }
         return Pair(true, "নতুন ইউজার সফলভাবে তৈরি হয়েছে!")
@@ -914,9 +936,12 @@ object AuthManager {
                 val req = okhttp3.Request.Builder()
                     .url("$SUPABASE_BASE_URL/app_users?email=eq.$targetEmail")
                     .header("apikey", SUPABASE_KEY)
+                    .header("Authorization", "Bearer $SUPABASE_KEY")
+                    .header("Prefer", "return=minimal")
                     .delete()
                     .build()
-                httpClient.newCall(req).execute()
+                val resp = httpClient.newCall(req).execute()
+                resp.close()
             } catch (_: Exception) {}
         }
     }
@@ -999,7 +1024,7 @@ object AuthManager {
         }
         _managedUsers.value = newList
         saveUsersLocallyOnly(newList)
-        patchUserField(target, JSONObject().put("loginCount", 0))
+        patchUserField(target, JSONObject().put("device_id", "").put("device_model", ""))
     }
 
     fun changeUserPassword(email: String, newPass: String): Boolean {
