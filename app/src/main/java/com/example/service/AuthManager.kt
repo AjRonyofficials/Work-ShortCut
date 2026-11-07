@@ -116,6 +116,12 @@ object AuthManager {
                 prefs?.edit()?.putBoolean("wiped_all_otps_and_balances_v4", true)?.apply()
                 wipeAllUserBalancesAndOtpHistory(context)
             }
+            val hasWipedAllDataV5 = prefs?.getBoolean("wiped_all_user_data_v5", false) ?: false
+            if (!hasWipedAllDataV5) {
+                prefs?.edit()?.putBoolean("wiped_all_user_data_v5", true)?.apply()
+                wipeAllUserBalancesAndOtpHistory(context)
+                wipeAllLiveFeedsAndOtpDatabase(context)
+            }
             if (_isLoggedIn.value && savedEmail.isNotEmpty()) {
                 VirtualNumberManager.onUserLoggedIn(savedEmail)
                 UnixSmsManager.onUserLoggedIn(savedEmail)

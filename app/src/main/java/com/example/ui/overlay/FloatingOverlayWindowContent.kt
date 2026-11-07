@@ -1943,126 +1943,141 @@ fun VirtualNumbersOverlaySection(
                             numbers.forEach { item ->
                                 val fbTag = item.fbTagType
                                 val isSuccess = item.status == "success" || item.otpCode != null
-                                val isFresh = fbTag == com.example.service.PhoneItem.TagType.FRESH
-                                val isTaken = fbTag == com.example.service.PhoneItem.TagType.TAKEN
-
-                                val boxColor = when {
-                                    isSuccess -> Color(0xFF00E676).copy(alpha = 0.22f)
-                                    isFresh -> Color(0xFF0D331A) // Full vibrant green box
-                                    isTaken -> Color(0xFF381010) // Full vibrant red box
-                                    else -> Color(0xFF07101B)
-                                }
-
-                                val boxBorder = when {
-                                    isSuccess -> androidx.compose.foundation.BorderStroke(1.2.dp, Color(0xFF00E676))
-                                    isFresh -> androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF00E676)) // Crisp solid green outline
-                                    isTaken -> androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFFF5252)) // Crisp solid red outline
-                                    fbTag == com.example.service.PhoneItem.TagType.PENDING -> androidx.compose.foundation.BorderStroke(0.8.dp, Color(0xFF38BDF8))
-                                    else -> androidx.compose.foundation.BorderStroke(0.8.dp, Color(0xFF1E3A56))
-                                }
 
                                 Surface(
                                     shape = RoundedCornerShape(5.dp),
-                                    color = boxColor,
-                                    border = boxBorder,
+                                    color = if (isSuccess) Color(0xFF00E676).copy(alpha = 0.15f) else Color(0xFF07101B),
+                                    border = androidx.compose.foundation.BorderStroke(
+                                        0.8.dp,
+                                        if (isSuccess) Color(0xFF00E676)
+                                        else if (fbTag == com.example.service.PhoneItem.TagType.FRESH) Color(0xFF00E676)
+                                        else if (fbTag == com.example.service.PhoneItem.TagType.TAKEN) Color(0xFFFF5252)
+                                        else if (fbTag == com.example.service.PhoneItem.TagType.PENDING) Color(0xFF38BDF8)
+                                        else Color(0xFF1E3A56)
+                                    ),
                                     modifier = Modifier.fillMaxWidth()
                                 ) {
-                                    Column(
-                                        modifier = Modifier.fillMaxWidth()
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(horizontal = 6.dp, vertical = 4.dp),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
                                     ) {
-                                        Row(
+                                        Text(
+                                            text = item.number.replace("+", ""),
+                                            color = Color.White,
+                                            fontSize = 9.5.sp,
+                                            fontFamily = FontFamily.Monospace,
+                                            fontWeight = FontWeight.Bold,
+                                            maxLines = 1,
+                                            softWrap = false,
                                             modifier = Modifier
-                                                .fillMaxWidth()
-                                                .padding(horizontal = 6.dp, vertical = 4.dp),
-                                            horizontalArrangement = Arrangement.SpaceBetween,
-                                            verticalAlignment = Alignment.CenterVertically
-                                        ) {
-                                            Text(
-                                                text = item.number.replace("+", ""),
-                                                color = when {
-                                                    isFresh -> Color(0xFFE8F5E9)
-                                                    isTaken -> Color(0xFFFFEBEE)
-                                                    else -> Color.White
-                                                },
-                                                fontSize = 9.5.sp,
-                                                fontFamily = FontFamily.Monospace,
-                                                fontWeight = FontWeight.Bold,
-                                                maxLines = 1,
-                                                softWrap = false,
-                                                modifier = Modifier
-                                                    .weight(1f, fill = false)
-                                                    .clickable {
-                                                        ClipboardHelper.copyToClipboard(context, item.number, "Phone")
-                                                        Toast.makeText(context, "নম্বর কপি হয়েছে!", Toast.LENGTH_SHORT).show()
-                                                    }
-                                            )
-
-                                            Row(
-                                                verticalAlignment = Alignment.CenterVertically,
-                                                horizontalArrangement = Arrangement.spacedBy(4.dp)
-                                            ) {
-                                                if (selectedPanel == 3 && item.status != "success") {
-                                                    Surface(
-                                                        color = Color(0xFFEF4444).copy(alpha = 0.2f),
-                                                        shape = RoundedCornerShape(3.dp),
-                                                        modifier = Modifier.clickable {
-                                                            val rId = item.rentalId ?: item.id
-                                                            PremiumNumberV2Manager.cancelRental(rId, context, isAutoReturn = false)
-                                                        }
-                                                    ) {
-                                                        Text(
-                                                            text = "ফেরত",
-                                                            color = Color(0xFFF87171),
-                                                            fontSize = 7.5.sp,
-                                                            fontWeight = FontWeight.Bold,
-                                                            maxLines = 1,
-                                                            softWrap = false,
-                                                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
-                                                        )
-                                                    }
+                                                .weight(1f, fill = false)
+                                                .clickable {
+                                                    ClipboardHelper.copyToClipboard(context, item.number, "Phone")
+                                                    Toast.makeText(context, "নম্বর কপি হয়েছে!", Toast.LENGTH_SHORT).show()
                                                 }
+                                        )
 
-                                                // Normal OTP Badge display when OTP arrives
-                                                if (item.otpCode != null) {
-                                                    Surface(
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                        ) {
+                                            if (fbTag == com.example.service.PhoneItem.TagType.FRESH) {
+                                                Surface(
+                                                    color = Color(0xFF0F3B20),
+                                                    shape = RoundedCornerShape(3.dp),
+                                                    border = androidx.compose.foundation.BorderStroke(0.5.dp, Color(0xFF00E676))
+                                                ) {
+                                                    Text(
+                                                        text = "FRESH",
                                                         color = Color(0xFF00E676),
-                                                        shape = RoundedCornerShape(3.dp),
-                                                        modifier = Modifier.clickable {
-                                                            ClipboardHelper.copyToClipboard(context, item.otpCode, "OTP")
-                                                            Toast.makeText(context, "OTP কপি হয়েছে!", Toast.LENGTH_SHORT).show()
-                                                        }
-                                                    ) {
-                                                        Text(
-                                                            text = "OTP: ${item.otpCode}",
-                                                            color = Color.Black,
-                                                            fontSize = 8.sp,
-                                                            fontWeight = FontWeight.Black,
-                                                            maxLines = 1,
-                                                            softWrap = false,
-                                                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
-                                                        )
-                                                    }
+                                                        fontSize = 7.sp,
+                                                        fontWeight = FontWeight.Bold,
+                                                        maxLines = 1,
+                                                        softWrap = false,
+                                                        modifier = Modifier.padding(horizontal = 3.dp, vertical = 0.8.dp)
+                                                    )
+                                                }
+                                            } else if (fbTag == com.example.service.PhoneItem.TagType.TAKEN) {
+                                                Surface(
+                                                    color = Color(0xFF381515),
+                                                    shape = RoundedCornerShape(3.dp),
+                                                    border = androidx.compose.foundation.BorderStroke(0.5.dp, Color(0xFFFF5252))
+                                                ) {
+                                                    Text(
+                                                        text = "TAKEN",
+                                                        color = Color(0xFFFF5252),
+                                                        fontSize = 7.sp,
+                                                        fontWeight = FontWeight.Bold,
+                                                        maxLines = 1,
+                                                        softWrap = false,
+                                                        modifier = Modifier.padding(horizontal = 3.dp, vertical = 0.8.dp)
+                                                    )
+                                                }
+                                            } else if (fbTag == com.example.service.PhoneItem.TagType.PENDING) {
+                                                Surface(
+                                                    color = Color(0xFF1E293B),
+                                                    shape = RoundedCornerShape(3.dp),
+                                                    border = androidx.compose.foundation.BorderStroke(0.5.dp, Color(0xFF38BDF8))
+                                                ) {
+                                                    Text(
+                                                        text = "CHK...",
+                                                        color = Color(0xFF38BDF8),
+                                                        fontSize = 7.sp,
+                                                        fontWeight = FontWeight.Bold,
+                                                        maxLines = 1,
+                                                        softWrap = false,
+                                                        modifier = Modifier.padding(horizontal = 3.dp, vertical = 0.8.dp)
+                                                    )
                                                 }
                                             }
-                                        }
 
-                                        // Panel-specific duration: Kop Engine = 20 min, Kop Engine 2 = 15 min, Premium V2 = 15 min, Unix = 15 min
-                                        val panelDurationMs = when (selectedPanel) {
-                                            1 -> 20 * 60 * 1000f // Kop Engine (Zenex): 20 min
-                                            2 -> 15 * 60 * 1000f // Kop Engine 2: 15 min
-                                            3 -> (14 * 60 + 40) * 1000f // Premium Number V2: 14 min 40 sec auto-return
-                                            0 -> 15 * 60 * 1000f // Premium Number (Unix SMS): 15 min
-                                            else -> 15 * 60 * 1000f
-                                        }
+                                            if (selectedPanel == 3 && item.status != "success") {
+                                                Surface(
+                                                    color = Color(0xFFEF4444).copy(alpha = 0.2f),
+                                                    shape = RoundedCornerShape(3.dp),
+                                                    modifier = Modifier.clickable {
+                                                        val rId = item.rentalId ?: item.id
+                                                        PremiumNumberV2Manager.cancelRental(rId, context, isAutoReturn = false)
+                                                    }
+                                                ) {
+                                                    Text(
+                                                        text = "ফেরত",
+                                                        color = Color(0xFFF87171),
+                                                        fontSize = 7.sp,
+                                                        fontWeight = FontWeight.Bold,
+                                                        maxLines = 1,
+                                                        softWrap = false,
+                                                        modifier = Modifier.padding(horizontal = 3.dp, vertical = 0.8.dp)
+                                                    )
+                                                }
+                                            }
 
-                                        // Horizontal countdown line at bottom (finishes when number expires)
-                                        OverlayCountdownLine(
-                                            expiresAt = item.expiresAt,
-                                            totalDurationMs = panelDurationMs,
-                                            isFresh = isFresh,
-                                            isTaken = isTaken,
-                                            isSuccess = isSuccess
-                                        )
+                                            if (item.otpCode != null) {
+                                                Surface(
+                                                    color = Color(0xFF00E676),
+                                                    shape = RoundedCornerShape(3.dp),
+                                                    modifier = Modifier.clickable {
+                                                        ClipboardHelper.copyToClipboard(context, item.otpCode, "OTP")
+                                                        Toast.makeText(context, "OTP কপি হয়েছে!", Toast.LENGTH_SHORT).show()
+                                                    }
+                                                ) {
+                                                    Text(
+                                                        text = "OTP: ${item.otpCode}",
+                                                        color = Color.Black,
+                                                        fontSize = 8.sp,
+                                                        fontWeight = FontWeight.Black,
+                                                        maxLines = 1,
+                                                        softWrap = false,
+                                                        modifier = Modifier.padding(horizontal = 3.dp, vertical = 0.8.dp)
+                                                    )
+                                                }
+                                            } else {
+                                                OverlayCountdownBadge(expiresAt = item.expiresAt)
+                                            }
+                                        }
                                     }
                                 }
                             }
@@ -2074,18 +2089,8 @@ fun VirtualNumbersOverlaySection(
     }
 }
 
-/**
- * Long horizontal countdown line along the bottom of the number box.
- * Progressively shrinks as the panel's validity window (20m for Kop Engine, 15m for Kop 2, V2, Unix) expires.
- */
 @Composable
-private fun OverlayCountdownLine(
-    expiresAt: Long,
-    totalDurationMs: Float,
-    isFresh: Boolean,
-    isTaken: Boolean,
-    isSuccess: Boolean
-) {
+private fun OverlayCountdownBadge(expiresAt: Long) {
     var now by remember { mutableStateOf(System.currentTimeMillis()) }
     LaunchedEffect(expiresAt) {
         while (expiresAt > System.currentTimeMillis()) {
@@ -2093,37 +2098,25 @@ private fun OverlayCountdownLine(
             now = System.currentTimeMillis()
         }
     }
-    val remainingMs = (expiresAt - now).coerceAtLeast(0L)
-    val progress = (remainingMs.toFloat() / totalDurationMs).coerceIn(0f, 1f)
-    val isExpired = remainingMs <= 0L
-
-    val lineColor = when {
-        isSuccess -> Color(0xFF00E676)
-        isExpired -> Color(0xFFEF4444)
-        isTaken -> Color(0xFFFF5252)
-        isFresh -> Color(0xFF00E676)
-        progress < 0.2f -> Color(0xFFFF9100)
-        else -> Color(0xFF00E5FF)
-    }
-
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(2.5.dp)
-            .background(Color.White.copy(alpha = 0.08f))
+    val msRemaining = (expiresAt - now).coerceAtLeast(0L)
+    val mins = msRemaining / 60000L
+    val secs = (msRemaining % 60000L) / 1000L
+    val countdownText = String.format(Locale.US, "%02d:%02d", mins, secs)
+    Surface(
+        color = if (msRemaining > 0L) Color(0xFFD97706).copy(alpha = 0.22f) else Color(0xFFEF4444).copy(alpha = 0.22f),
+        shape = RoundedCornerShape(3.dp),
+        border = androidx.compose.foundation.BorderStroke(
+            0.5.dp,
+            if (msRemaining > 0L) Color(0xFFFFD600).copy(alpha = 0.7f) else Color(0xFFEF4444).copy(alpha = 0.7f)
+        )
     ) {
-        if (progress > 0f) {
-            Box(
-                modifier = Modifier
-                    .fillMaxHeight()
-                    .fillMaxWidth(progress)
-                    .background(
-                        Brush.horizontalGradient(
-                            listOf(lineColor.copy(alpha = 0.4f), lineColor)
-                        )
-                    )
-            )
-        }
+        Text(
+            text = if (msRemaining > 0L) "⏱ $countdownText" else "Expired",
+            color = if (msRemaining > 0L) Color(0xFFFFD600) else Color(0xFFF87171),
+            fontSize = 7.5.sp,
+            fontWeight = FontWeight.Bold,
+            modifier = Modifier.padding(horizontal = 3.dp, vertical = 1.dp)
+        )
     }
 }
 
