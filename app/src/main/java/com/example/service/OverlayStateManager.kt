@@ -76,6 +76,7 @@ data class OverlayUiState(
     val isOverlayActive: Boolean = false,
     val isOverlayExpanded: Boolean = false,
     val bubbleSize: BubbleSize = BubbleSize.MEDIUM,
+    val bubbleSizeDp: Int = 56,
     val appTheme: AppThemeMode = AppThemeMode.DARK,
     val selectedCountry: String = "BD",
     val selectedGender: Gender = Gender.ANY,
@@ -195,6 +196,9 @@ object OverlayStateManager {
             val colCount = p.getInt("column_count", 6)
             val savedRowIndex = p.getInt("current_sheet_row_index", 1)
             val bubbleSizeName = p.getString("bubble_size", BubbleSize.MEDIUM.name) ?: BubbleSize.MEDIUM.name
+            val savedBubbleDp = p.getInt("floating_bubble_size_dp", if (p.contains("bubble_size")) {
+                try { BubbleSize.valueOf(bubbleSizeName).dpSize } catch (_: Exception) { 56 }
+            } else 56).coerceIn(16, 100)
             val themeName = p.getString("app_theme", AppThemeMode.DARK.name) ?: AppThemeMode.DARK.name
             val lowPower = p.getBoolean("low_power", false)
             val pingOpt = p.getBoolean("ping_opt", true)
@@ -306,6 +310,7 @@ object OverlayStateManager {
                     columnRowMap = colRowMap,
                     currentSheetRowIndex = savedRowIndex,
                     bubbleSize = try { BubbleSize.valueOf(bubbleSizeName) } catch (_: Exception) { BubbleSize.MEDIUM },
+                    bubbleSizeDp = savedBubbleDp,
                     appTheme = try { AppThemeMode.valueOf(themeName) } catch (_: Exception) { AppThemeMode.DARK },
                     lowPowerMode = lowPower,
                     pingOptimization = pingOpt,
@@ -550,8 +555,18 @@ object OverlayStateManager {
     }
 
     fun setBubbleSize(size: BubbleSize) {
-        _uiState.update { it.copy(bubbleSize = size) }
-        prefs?.edit()?.putString("bubble_size", size.name)?.apply()
+        setBubbleSizeDp(size.dpSize)
+    }
+
+    fun setBubbleSizeDp(sizeDp: Int) {
+        val clamped = sizeDp.coerceIn(16, 100)
+        val matchingEnum = when {
+            clamped <= 48 -> BubbleSize.SMALL
+            clamped <= 62 -> BubbleSize.MEDIUM
+            else -> BubbleSize.LARGE
+        }
+        _uiState.update { it.copy(bubbleSizeDp = clamped, bubbleSize = matchingEnum) }
+        prefs?.edit()?.putInt("floating_bubble_size_dp", clamped)?.putString("bubble_size", matchingEnum.name)?.apply()
     }
 
     fun setAppTheme(theme: AppThemeMode) {

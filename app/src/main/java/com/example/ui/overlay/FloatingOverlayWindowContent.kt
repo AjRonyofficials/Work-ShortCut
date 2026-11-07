@@ -166,6 +166,12 @@ fun FloatingOverlayWindowContent(
             .testTag("floating_overlay_root")
     ) {
         if (state.isEdgeBarMinimized) {
+            val bubbleDp = state.bubbleSizeDp.coerceIn(16, 100)
+            val outerSize = bubbleDp.dp
+            val innerSize = (bubbleDp * 0.82f).dp
+            val iconSize = (bubbleDp * 0.50f).dp
+            val strokeWidth = (bubbleDp * 0.027f).coerceAtLeast(1.2f).dp
+
             // Main Floating Bubble with Proxy Info directly underneath (Messenger style!)
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
@@ -174,7 +180,7 @@ fun FloatingOverlayWindowContent(
                 Box(
                     contentAlignment = Alignment.Center,
                     modifier = Modifier
-                        .size(56.dp)
+                        .size(outerSize)
                         .clip(CircleShape)
                         .background(
                             Brush.radialGradient(
@@ -182,7 +188,7 @@ fun FloatingOverlayWindowContent(
                             )
                         )
                         .border(
-                            1.5.dp,
+                            strokeWidth,
                             Brush.verticalGradient(
                                 listOf(Color(0xFF80D8FF), Color(0xFF0091EA))
                             ),
@@ -199,7 +205,7 @@ fun FloatingOverlayWindowContent(
                     Box(
                         contentAlignment = Alignment.Center,
                         modifier = Modifier
-                            .size(46.dp)
+                            .size(innerSize)
                             .clip(CircleShape)
                             .background(
                                 Brush.linearGradient(
@@ -211,7 +217,7 @@ fun FloatingOverlayWindowContent(
                             imageVector = Icons.Default.Bolt,
                             contentDescription = "Work Shortcut",
                             tint = Color.White,
-                            modifier = Modifier.size(28.dp)
+                            modifier = Modifier.size(iconSize)
                         )
                     }
                 }

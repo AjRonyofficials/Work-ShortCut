@@ -427,35 +427,124 @@ fun SettingsSection(
         }
 
         // Bubble Icon Size Selector
+        // Floating Bubble Size Customization (0 - 100 dp)
         Card(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(16.dp),
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-            border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.25f))
+            border = androidx.compose.foundation.BorderStroke(1.5.dp, BrandSky.copy(alpha = 0.5f))
         ) {
             Column(modifier = Modifier.padding(16.dp)) {
-                Text(
-                    text = "Floating Bubble Size",
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.Bold
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Box(
+                            modifier = Modifier
+                                .size(32.dp)
+                                .clip(CircleShape)
+                                .background(BrandSky.copy(alpha = 0.15f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Bolt,
+                                contentDescription = null,
+                                tint = BrandSky,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Column {
+                            Text(
+                                text = "Floating Bubble Size (0 - 100 dp)",
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                text = "ফ্লোটিং বাবলের সাইজ ০ থেকে ১০০ ডিপি পর্যন্ত এডজাস্ট করুন",
+                                fontSize = 11.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+
+                    Surface(
+                        color = BrandSky.copy(alpha = 0.2f),
+                        shape = RoundedCornerShape(8.dp),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, BrandSky.copy(alpha = 0.6f))
+                    ) {
+                        Text(
+                            text = "${state.bubbleSizeDp} dp",
+                            color = BrandSky,
+                            fontWeight = FontWeight.ExtraBold,
+                            fontSize = 12.sp,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                Slider(
+                    value = state.bubbleSizeDp.toFloat().coerceIn(16f, 100f),
+                    onValueChange = { OverlayStateManager.setBubbleSizeDp(it.toInt()) },
+                    valueRange = 16f..100f,
+                    steps = 83,
+                    colors = SliderDefaults.colors(
+                        thumbColor = BrandSky,
+                        activeTrackColor = BrandSky,
+                        inactiveTrackColor = BrandSky.copy(alpha = 0.2f)
+                    ),
+                    modifier = Modifier.fillMaxWidth()
                 )
-                Spacer(modifier = Modifier.height(10.dp))
 
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    BubbleSize.entries.forEach { size ->
-                        val isSelected = state.bubbleSize == size
-                        FilterChip(
-                            selected = isSelected,
-                            onClick = { OverlayStateManager.setBubbleSize(size) },
-                            label = { Text(size.title, fontSize = 11.sp) },
-                            leadingIcon = if (isSelected) {
-                                { Icon(imageVector = Icons.Default.Check, contentDescription = null, modifier = Modifier.size(14.dp)) }
-                            } else null,
-                            modifier = Modifier.weight(1f)
-                        )
+                    Text("0-20 dp (Mini)", fontSize = 9.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("56 dp (Normal)", fontSize = 9.sp, color = BrandSky, fontWeight = FontWeight.Bold)
+                    Text("100 dp (Max)", fontSize = 9.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                // Quick Presets: 32dp, 44dp, 56dp, 75dp, 100dp
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    val presets = listOf(
+                        32 to "32dp",
+                        44 to "44dp",
+                        56 to "56dp",
+                        75 to "75dp",
+                        100 to "100dp"
+                    )
+                    presets.forEach { (dpVal, label) ->
+                        val isSel = state.bubbleSizeDp == dpVal
+                        Surface(
+                            color = if (isSel) BrandSky else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                            shape = RoundedCornerShape(6.dp),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, if (isSel) BrandSky else MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)),
+                            modifier = Modifier
+                                .weight(1f)
+                                .clickable { OverlayStateManager.setBubbleSizeDp(dpVal) }
+                        ) {
+                            Box(
+                                modifier = Modifier.padding(vertical = 6.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = label,
+                                    fontSize = 11.sp,
+                                    fontWeight = if (isSel) FontWeight.Bold else FontWeight.Medium,
+                                    color = if (isSel) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface
+                                )
+                            }
+                        }
                     }
                 }
             }
