@@ -202,9 +202,9 @@ object LocalSocks5ToHttpBridge {
             clientOut.write(byteArrayOf(5, 0, 0, 1, 0, 0, 0, 0, 0, 0))
             clientOut.flush()
 
-            // 7. Stable keep-alive with 120s idle timeout (prevents orphaned dead connections while allowing long polling)
-            client.soTimeout = 120000
-            upstream.soTimeout = 120000
+            // 7. Stable keep-alive with 30s idle timeout (prevents orphaned dead connections while allowing fast polling)
+            client.soTimeout = 30000
+            upstream.soTimeout = 30000
             client.keepAlive = true
             upstream.keepAlive = true
 
@@ -236,8 +236,8 @@ object LocalSocks5ToHttpBridge {
                 }
             } catch (_: Exception) {
             } finally {
-                // Signal half-close to upstream: client finished sending request
-                try { s2.shutdownOutput() } catch (_: Exception) {}
+                // When client finishes or disconnects, immediately close upstream to unblock job2
+                try { s2.close() } catch (_: Exception) {}
             }
         }
 
@@ -252,8 +252,8 @@ object LocalSocks5ToHttpBridge {
                 }
             } catch (_: Exception) {
             } finally {
-                // Signal half-close to client: upstream finished sending response
-                try { s1.shutdownOutput() } catch (_: Exception) {}
+                // When upstream finishes or disconnects, immediately close client to unblock job1
+                try { s1.close() } catch (_: Exception) {}
             }
         }
 

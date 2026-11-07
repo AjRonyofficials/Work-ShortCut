@@ -63,7 +63,9 @@ class SuperProxyVpnService : VpnService() {
         val allowedApps = intent?.getStringArrayListExtra(EXTRA_ALLOWED_APPS) ?: arrayListOf<String>()
 
         startForegroundNotification(profileName, server, port)
-        startVpn(profileName, server, port, protocol, user, pass, allowedApps)
+        serviceScope.launch {
+            startVpn(profileName, server, port, protocol, user, pass, allowedApps)
+        }
 
         return START_STICKY
     }
@@ -96,9 +98,13 @@ class SuperProxyVpnService : VpnService() {
                 .addAddress("198.18.0.1", 24) // Subnet /24 makes 198.18.0.2 (MapDNS) directly on-link for instant DNS
                 .addRoute("0.0.0.0", 0)       // Capture all IPv4 traffic into tun0
                 .addRoute("240.0.0.0", 4)     // Explicit route for Fake IP mapping pool so Android kernel never drops fake IPs
-                .addDnsServer("198.18.0.2")   // MapDNS internal DNS resolver (<1ms Fake-IP translation)
-                .addDnsServer("8.8.8.8")      // High-speed fallback DNS
-                .addDnsServer("1.1.1.1")      // High-speed fallback DNS
+                .addDnsServer("198.18.0.2")   // MapDNS internal DNS resolver (<1ms Fake-IP translation, zero DNS freeze)
+
+            // Trap IPv6 inside tun0 to prevent cellular Happy Eyeballs 5s stalls and carrier DNS leaks
+            try {
+                builder.addAddress("fd00::1", 64)
+                builder.addRoute("::", 0)
+            } catch (_: Exception) {}
 
             // Strict Anti-Leak: No bypass allowed so Facebook, WhatsApp, Instagram cannot leak carrier IP/DNS
 
@@ -176,6 +182,7 @@ class SuperProxyVpnService : VpnService() {
             sb.append("  name: tun0\n")
             sb.append("  mtu: 1400\n")
             sb.append("  ipv4: 198.18.0.1\n")
+            sb.append("  ipv6: 'fd00::1'\n")
             sb.append("  icmp: 'reply'\n")
             sb.append("\n")
             sb.append("socks5:\n")
@@ -200,8 +207,7 @@ class SuperProxyVpnService : VpnService() {
             sb.append("  task-stack-size: 81920\n")
             sb.append("  tcp-buffer-size: 131072\n")
             sb.append("  connect-timeout: 5000\n")
-            sb.append("  tcp-read-write-timeout: 30000\n")
-            sb.append("  udp-read-write-timeout: 10000\n")
+            sb.append("  read-write-timeout: 30000\n")
             sb.append("  limit-nofile: 65535\n")
 
             FileOutputStream(configFile).use { it.write(sb.toString().toByteArray()) }
