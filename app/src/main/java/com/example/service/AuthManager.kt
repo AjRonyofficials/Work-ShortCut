@@ -122,6 +122,30 @@ object AuthManager {
                 wipeAllUserBalancesAndOtpHistory(context)
                 wipeAllLiveFeedsAndOtpDatabase(context)
             }
+            val hasWipedNonAdminV6 = prefs?.getBoolean("wiped_all_non_admin_users_v6", false) ?: false
+            if (!hasWipedNonAdminV6) {
+                prefs?.edit()?.putBoolean("wiped_all_non_admin_users_v6", true)?.apply()
+                // Force logout any non-admin logged-in session immediately
+                if (savedEmail.isNotEmpty() && savedEmail != ADMIN_EMAIL.lowercase()) {
+                    _isLoggedIn.value = false
+                    _currentEmail.value = ""
+                    _currentUserRole.value = "USER"
+                    prefs?.edit()
+                        ?.putBoolean(KEY_IS_LOGGED_IN, false)
+                        ?.putString(KEY_LOGGED_IN_EMAIL, "")
+                        ?.putString(KEY_LOGGED_IN_ROLE, "USER")
+                        ?.apply()
+                }
+                // Wipe local managed users list
+                _managedUsers.value = emptyList()
+                saveUsersLocallyOnly(emptyList())
+                // Wipe balances, OTPs, feeds, and records
+                wipeAllUserBalancesAndOtpHistory(context)
+                wipeAllLiveFeedsAndOtpDatabase(context)
+                // Clear all uploaded numbers pool
+                UnixSmsManager.clearAllUploadedNumbers()
+                PremiumNumberV2Manager.clearAllNumbers()
+            }
             if (_isLoggedIn.value && savedEmail.isNotEmpty()) {
                 VirtualNumberManager.onUserLoggedIn(savedEmail)
                 UnixSmsManager.onUserLoggedIn(savedEmail)
@@ -894,6 +918,44 @@ object AuthManager {
                     .build()
                 httpClient.newCall(req).execute()
             } catch (_: Exception) {}
+        }
+    }
+
+    /**
+     * Wipes and permanently deletes all users EXCEPT the Prime Admin (mdronyinfohelp@gmail.com).
+     * Clears all non-admin credentials, balances, OTP records, withdrawal history, and uploaded numbers.
+     */
+    fun deleteAllNonAdminUsers(context: Context? = null, onComplete: ((Boolean) -> Unit)? = null) {
+        if (!isAdmin()) {
+            onComplete?.invoke(false)
+            return
+        }
+        _managedUsers.value = emptyList()
+        saveUsersLocallyOnly(emptyList())
+        wipeAllUserBalancesAndOtpHistory(context)
+        wipeAllLiveFeedsAndOtpDatabase(context)
+        UnixSmsManager.clearAllUploadedNumbers()
+        PremiumNumberV2Manager.clearAllNumbers()
+
+        authScope.launch {
+            try {
+                val req = okhttp3.Request.Builder()
+                    .url("$SUPABASE_BASE_URL/app_users?email=neq.$ADMIN_EMAIL")
+                    .header("apikey", SUPABASE_KEY)
+                    .header("Authorization", "Bearer $SUPABASE_KEY")
+                    .header("Prefer", "return=minimal")
+                    .delete()
+                    .build()
+                httpClient.newCall(req).execute().close()
+
+                withContext(Dispatchers.Main) {
+                    onComplete?.invoke(true)
+                }
+            } catch (_: Exception) {
+                withContext(Dispatchers.Main) {
+                    onComplete?.invoke(false)
+                }
+            }
         }
     }
 

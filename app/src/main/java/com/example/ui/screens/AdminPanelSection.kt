@@ -5115,6 +5115,62 @@ fun AdminUserManagerCard(
                     Text("⚡ CLEAR LIVE DR, RADAR & CONSOLE (ডাটাবেস ও সকল লাইভ OTP মুছুন)", fontSize = 10.5.sp, color = Color(0xFFF59E0B), fontWeight = FontWeight.Bold)
                 }
 
+                Spacer(modifier = Modifier.height(8.dp))
+
+                var showWipeNonAdminUsersDialog by remember { mutableStateOf(false) }
+
+                if (showWipeNonAdminUsersDialog) {
+                    androidx.compose.material3.AlertDialog(
+                        onDismissRequest = { showWipeNonAdminUsersDialog = false },
+                        title = { Text("প্রাইম এডমিন বাদে সকল ইউজার ডিলিট", fontWeight = FontWeight.Bold, color = Color(0xFFEF4444)) },
+                        text = {
+                            Text(
+                                "আপনি কি নিশ্চিত যে প্রাইম এডমিন (mdronyinfohelp@gmail.com) ব্যতীত সকল ইউজারের একাউন্ট, ইমেইল, পাসওয়ার্ড, ব্যালেন্স, ওটিপি হিস্টোরি ও সেভ থাকা নম্বর সম্পূর্ণ ডাটাবেস ও অ্যাপ থেকে চিরতরে ডিলিট করতে চান?",
+                                fontSize = 12.sp,
+                                color = Color(0xFFCBD5E1)
+                            )
+                        },
+                        confirmButton = {
+                            Button(
+                                onClick = {
+                                    showWipeNonAdminUsersDialog = false
+                                    AuthManager.deleteAllNonAdminUsers(context) { ok ->
+                                        if (ok) {
+                                            Toast.makeText(context, "✓ প্রাইম এডমিন ব্যতীত সকল ইউজার ও ডাটা সফলভাবে মুছে ফেলা হয়েছে!", Toast.LENGTH_LONG).show()
+                                        } else {
+                                            Toast.makeText(context, "✓ লোকাল ইউজার ও ডাটা পরিষ্কার হয়েছে!", Toast.LENGTH_SHORT).show()
+                                        }
+                                    }
+                                    com.example.util.VibrationHelper.vibrateSuccess(context)
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFDC2626))
+                            ) {
+                                Text("হ্যাঁ, সকল ইউজার ডিলিট করুন", color = Color.White)
+                            }
+                        },
+                        dismissButton = {
+                            OutlinedButton(onClick = { showWipeNonAdminUsersDialog = false }) {
+                                Text("বাতিল", color = Color.White)
+                            }
+                        },
+                        containerColor = Color(0xFF0F1A2B),
+                        shape = RoundedCornerShape(14.dp)
+                    )
+                }
+
+                Button(
+                    onClick = { showWipeNonAdminUsersDialog = true },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFDC2626).copy(alpha = 0.25f)),
+                    border = BorderStroke(1.dp, Color(0xFFEF4444)),
+                    shape = RoundedCornerShape(8.dp),
+                    modifier = Modifier.fillMaxWidth(),
+                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp)
+                ) {
+                    Icon(Icons.Default.Delete, contentDescription = null, tint = Color(0xFFEF4444), modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("🗑️ প্রাইম এডমিন বাদে সকল ইউজার ও ডাটা ডিলিট করুন", fontSize = 11.sp, color = Color(0xFFEF4444), fontWeight = FontWeight.Bold)
+                }
+
                 Spacer(modifier = Modifier.height(10.dp))
 
                 var userFilterTab by remember { mutableStateOf("ALL") } // "ALL", "ACTIVE", "INACTIVE", "BANNED"
