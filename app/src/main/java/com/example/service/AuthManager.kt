@@ -349,7 +349,7 @@ object AuthManager {
                             boundDeviceId = boundDevId,
                             boundDeviceModel = boundDevModel,
                             boundAt = boundAt,
-                            isPinResetRequested = obj.optBoolean("pin_reset_requested", false)
+                            isPinResetRequested = permObj.optBoolean("pinResetRequested", obj.optBoolean("pin_reset_requested", false))
                         )
                     )
                 }
@@ -444,23 +444,21 @@ object AuthManager {
             list.map { if (it.email.equals(clean, ignoreCase = true)) it.copy(isPinResetRequested = true) else it }
         }
         saveUsersLocallyOnly(_managedUsers.value)
-        authScope.launch {
-            try {
-                val encEmail = java.net.URLEncoder.encode(clean, "UTF-8")
-                val payload = JSONObject().apply {
-                    put("pin_reset_requested", true)
-                }
-                val body = payload.toString().toRequestBody("application/json; charset=utf-8".toMediaTypeOrNull())
-                val req = okhttp3.Request.Builder()
-                    .url("$SUPABASE_BASE_URL/app_users?email=eq.$encEmail")
-                    .header("apikey", SUPABASE_KEY)
-                    .header("Authorization", "Bearer $SUPABASE_KEY")
-                    .header("Prefer", "return=minimal")
-                    .patch(body)
-                    .build()
-                httpClient.newCall(req).execute()
-            } catch (_: Exception) {}
+        val user = _managedUsers.value.firstOrNull { it.email.lowercase() == clean }
+        val perms = user?.permissions ?: SubAdminPermissions()
+        val permObj = JSONObject().apply {
+            put("canUploadNumbers", perms.canUploadNumbers)
+            put("canDeleteNumbers", perms.canDeleteNumbers)
+            put("canUpdateOtpRate", perms.canUpdateOtpRate)
+            put("canManageWithdrawals", perms.canManageWithdrawals)
+            put("canViewLiveCdr", perms.canViewLiveCdr)
+            put("canBroadcastNotify", perms.canBroadcastNotify)
+            val sArr = JSONArray()
+            (user?.disabledSections ?: emptyList()).forEach { sArr.put(it) }
+            put("disabledSections", sArr)
+            put("pinResetRequested", true)
         }
+        patchUserField(clean, JSONObject().put("permissions_json", permObj.toString()))
     }
 
     fun resetUserPin(userEmail: String, onComplete: ((Boolean) -> Unit)? = null) {
@@ -471,30 +469,21 @@ object AuthManager {
             list.map { if (it.email.equals(clean, ignoreCase = true)) it.copy(isPinResetRequested = false) else it }
         }
         saveUsersLocallyOnly(_managedUsers.value)
-        authScope.launch {
-            try {
-                val encEmail = java.net.URLEncoder.encode(clean, "UTF-8")
-                val payload = JSONObject().apply {
-                    put("pin_reset_requested", false)
-                }
-                val body = payload.toString().toRequestBody("application/json; charset=utf-8".toMediaTypeOrNull())
-                val req = okhttp3.Request.Builder()
-                    .url("$SUPABASE_BASE_URL/app_users?email=eq.$encEmail")
-                    .header("apikey", SUPABASE_KEY)
-                    .header("Authorization", "Bearer $SUPABASE_KEY")
-                    .header("Prefer", "return=minimal")
-                    .patch(body)
-                    .build()
-                val resp = httpClient.newCall(req).execute()
-                withContext(Dispatchers.Main) {
-                    onComplete?.invoke(resp.isSuccessful)
-                }
-            } catch (_: Exception) {
-                withContext(Dispatchers.Main) {
-                    onComplete?.invoke(false)
-                }
-            }
+        val user = _managedUsers.value.firstOrNull { it.email.lowercase() == clean }
+        val perms = user?.permissions ?: SubAdminPermissions()
+        val permObj = JSONObject().apply {
+            put("canUploadNumbers", perms.canUploadNumbers)
+            put("canDeleteNumbers", perms.canDeleteNumbers)
+            put("canUpdateOtpRate", perms.canUpdateOtpRate)
+            put("canManageWithdrawals", perms.canManageWithdrawals)
+            put("canViewLiveCdr", perms.canViewLiveCdr)
+            put("canBroadcastNotify", perms.canBroadcastNotify)
+            val sArr = JSONArray()
+            (user?.disabledSections ?: emptyList()).forEach { sArr.put(it) }
+            put("disabledSections", sArr)
+            put("pinResetRequested", false)
         }
+        patchUserField(clean, JSONObject().put("permissions_json", permObj.toString()), onComplete)
     }
 
     fun patchUserField(email: String, fields: JSONObject, onComplete: ((Boolean) -> Unit)? = null) {
@@ -1225,10 +1214,13 @@ object AuthManager {
                 val req = okhttp3.Request.Builder()
                     .url("$SUPABASE_BASE_URL/app_users?email=eq.$email")
                     .header("apikey", SUPABASE_KEY)
+                    .header("Authorization", "Bearer $SUPABASE_KEY")
                     .header("Content-Type", "application/json")
+                    .header("Prefer", "return=minimal")
                     .patch(body)
                     .build()
-                httpClient.newCall(req).execute()
+                val resp = httpClient.newCall(req).execute()
+                resp.close()
             } catch (_: Exception) {}
         }
     }
@@ -1347,21 +1339,23 @@ object AuthManager {
             var success = false
             try {
                 val payload = JSONObject().apply {
-                    put("bound_device_id", "")
-                    put("bound_device_model", "")
-                    put("bound_at", 0L)
                     put("device_id", "")
+                    put("device_model", "")
+                    put("last_active", 0L)
                     put("status", "ACTIVE")
                 }
                 val body = payload.toString().toRequestBody("application/json; charset=utf-8".toMediaTypeOrNull())
                 val req = okhttp3.Request.Builder()
                     .url("$SUPABASE_BASE_URL/app_users?email=eq.$target")
                     .header("apikey", SUPABASE_KEY)
+                    .header("Authorization", "Bearer $SUPABASE_KEY")
                     .header("Content-Type", "application/json")
+                    .header("Prefer", "return=minimal")
                     .patch(body)
                     .build()
                 val resp = httpClient.newCall(req).execute()
                 success = resp.isSuccessful
+                resp.close()
             } catch (_: Exception) {}
 
             // Update in-memory user list
