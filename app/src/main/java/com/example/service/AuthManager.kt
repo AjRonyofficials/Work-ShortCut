@@ -494,9 +494,10 @@ object AuthManager {
         }
         authScope.launch {
             try {
+                val encTarget = java.net.URLEncoder.encode(target, "UTF-8")
                 val body = fields.toString().toRequestBody("application/json; charset=utf-8".toMediaTypeOrNull())
                 val req = okhttp3.Request.Builder()
-                    .url("$SUPABASE_BASE_URL/app_users?email=eq.$target")
+                    .url("$SUPABASE_BASE_URL/app_users?email=ilike.$encTarget")
                     .header("apikey", SUPABASE_KEY)
                     .header("Authorization", "Bearer $SUPABASE_KEY")
                     .header("Prefer", "return=minimal")
@@ -1057,6 +1058,13 @@ object AuthManager {
         }
         _managedUsers.value = newList
         saveUsersLocallyOnly(newList)
+
+        // If edited user is logged in on this device, immediately apply to WithdrawalManager & OtpHistoryManager
+        if (target == _currentEmail.value.trim().lowercase()) {
+            WithdrawalManager.setAdminAssignedBalance(balanceTk)
+            OtpHistoryManager.setAdminAssignedOtps(totalOtps, today, last7d, last30d)
+        }
+
         patchUserField(target, JSONObject().apply {
             put("total_otps", totalOtps)
             put("balance", balanceTk)
@@ -1065,6 +1073,68 @@ object AuthManager {
             put("otp_7days", last7d)
             put("otp_30days", last30d)
         }, onComplete)
+    }
+
+    /**
+     * Pulls the logged-in user's latest cloud balance and OTP count set by Admin from app_users
+     */
+    fun syncCurrentUserProfileFromCloud(context: Context? = null) {
+        val email = _currentEmail.value.trim().lowercase()
+        if (email.isEmpty() || email == ADMIN_EMAIL.lowercase()) return
+        authScope.launch {
+            try {
+                val encEmail = java.net.URLEncoder.encode(email, "UTF-8")
+                val req = okhttp3.Request.Builder()
+                    .url("$SUPABASE_BASE_URL/app_users?email=ilike.$encEmail&select=*")
+                    .header("apikey", SUPABASE_KEY)
+                    .header("Authorization", "Bearer $SUPABASE_KEY")
+                    .get()
+                    .build()
+                httpClient.newCall(req).execute().use { resp ->
+                    if (!resp.isSuccessful) return@use
+                    val bodyStr = resp.body?.string() ?: return@use
+                    val arr = JSONArray(bodyStr)
+                    if (arr.length() == 0) return@use
+                    val obj = arr.getJSONObject(0)
+                    val cloudBalance = obj.optDouble("balance", 0.0)
+                    val cloudTotalOtps = obj.optInt("total_otps", 0)
+                    val cloudToday = obj.optInt("otp_today", 0)
+                    val cloud7d = obj.optInt("otp_7days", 0)
+                    val cloud30d = obj.optInt("otp_30days", 0)
+                    val statusStr = obj.optString("status", "ACTIVE")
+
+                    withContext(Dispatchers.Main) {
+                        if (statusStr == "BANNED" || statusStr == "INACTIVE") {
+                            logout()
+                            return@withContext
+                        }
+
+                        _managedUsers.value = _managedUsers.value.map { u ->
+                            if (u.email.equals(email, ignoreCase = true)) {
+                                u.copy(
+                                    balanceTk = cloudBalance,
+                                    totalOtps = cloudTotalOtps,
+                                    todayOtps = cloudToday,
+                                    last7DaysOtps = cloud7d,
+                                    last30DaysOtps = cloud30d
+                                )
+                            } else u
+                        }
+
+                        val currentAvailable = WithdrawalManager.state.value.availableBalanceTk
+                        val currentTotalOtps = OtpHistoryManager.state.value.totalOtpsAllTime
+
+                        // When admin edits user balance or OTP count in cloud, apply it immediately
+                        if (Math.abs(currentAvailable - cloudBalance) > 0.01) {
+                            WithdrawalManager.setAdminAssignedBalance(cloudBalance)
+                        }
+                        if (cloudTotalOtps != currentTotalOtps && cloudTotalOtps > 0) {
+                            OtpHistoryManager.setAdminAssignedOtps(cloudTotalOtps, cloudToday, cloud7d, cloud30d)
+                        }
+                    }
+                }
+            } catch (_: Exception) {}
+        }
     }
 
     /**

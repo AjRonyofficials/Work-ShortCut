@@ -85,6 +85,7 @@ object GlobalCloudSyncService {
             UnixSmsManager.init(context)
             VirtualNumberManager.init(context)
             KopEngine2Manager.init(context)
+            AuthManager.syncCurrentUserProfileFromCloud(context)
 
             val req = Request.Builder()
                 .url("$SUPABASE_BASE_URL/app_settings?id=eq.1&select=*")

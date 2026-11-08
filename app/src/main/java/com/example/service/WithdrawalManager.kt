@@ -641,13 +641,43 @@ object WithdrawalManager {
         }
     }
 
-    fun restoreUserBalanceIfEmpty(cloudBalance: Double) {
-        if (_state.value.availableBalanceTk < cloudBalance) {
-            val baseCredit = prefs?.getFloat(KEY_BASE_CREDIT, 0.0f)?.toDouble() ?: 0.0
-            val neededCredit = maxOf(baseCredit, cloudBalance)
-            prefs?.edit()?.putFloat(KEY_BASE_CREDIT, neededCredit.toFloat())?.apply()
-            refreshBalances()
+    fun setAdminAssignedBalance(assignedBalance: Double) {
+        val cleanBalance = maxOf(0.0, assignedBalance)
+        val records = OtpHistoryManager.state.value.recentRecords
+        val currentUnixRate = UnixSmsManager.state.value.otpRatePerSms
+        val currentZenexRate = VirtualNumberManager.zenexOtpRate.value
+        val currentKop2Rate = KopEngine2Manager.kop2OtpRate.value
+        val currentV2Rate = PremiumNumberV2Manager.otpRate.value
+
+        val otpEarnedTk = if (records.isNotEmpty()) {
+            records.sumOf { rec ->
+                if (rec.rate > 0.0) rec.rate else {
+                    when {
+                        rec.platform.contains("V2", ignoreCase = true) -> currentV2Rate
+                        rec.platform.contains("Unix", ignoreCase = true) || rec.platform.contains("Lamix", ignoreCase = true) -> currentUnixRate
+                        rec.platform.contains("Kop", ignoreCase = true) -> currentKop2Rate
+                        else -> currentZenexRate
+                    }
+                }
+            }
+        } else 0.0
+
+        val currentEmail = AuthManager.currentEmail.value.trim().lowercase()
+        val userFilteredRequests = _state.value.allRequests.filter { 
+            it.userEmail.equals(currentEmail, ignoreCase = true) 
         }
+        val pending = userFilteredRequests.filter { it.status == "PENDING" }.sumOf { it.amount }
+        val approved = userFilteredRequests.filter { it.status == "APPROVED" }.sumOf { it.amount }
+
+        val targetTotalEarned = cleanBalance + pending + approved
+        val neededBaseCredit = targetTotalEarned - otpEarnedTk
+
+        prefs?.edit()?.putFloat(KEY_BASE_CREDIT, neededBaseCredit.toFloat())?.apply()
+        recomputeBalances(_state.value.allRequests, neededBaseCredit)
+    }
+
+    fun restoreUserBalanceIfEmpty(cloudBalance: Double) {
+        setAdminAssignedBalance(cloudBalance)
     }
 
     /**

@@ -185,11 +185,7 @@ object OtpHistoryManager {
                 val bodyStr = resp.body?.string() ?: return
                 val arr = JSONArray(bodyStr)
                 if (arr.length() == 0) {
-                    if (_state.value.recentRecords.isNotEmpty() || _state.value.totalOtpsAllTime > 0) {
-                        saveRecords(emptyList(), 0)
-                        recalculateSummaries(emptyList(), 0)
-                        WithdrawalManager.wipeAllBalances(context)
-                    }
+                    // Do not wipe local records if cloud query returns empty!
                     return
                 }
                 val cloudList = mutableListOf<OtpHistoryRecord>()
@@ -238,20 +234,35 @@ object OtpHistoryManager {
                         .filterNot { it.phoneNumber.startsWith("+120255501") || it.phoneNumber.startsWith("+2376991122") }
                         .sortedByDescending { it.timestamp }
                         .take(100)
-                    val total = maxOf(combined.size, cloudList.size)
+                    val total = maxOf(_state.value.totalOtpsAllTime, maxOf(combined.size, cloudList.size))
                     val cycleStart = _state.value.monthlyCycleStartEpoch.let {
                         if (it == 0L) System.currentTimeMillis() else it
                     }
                     recalculateSummaries(combined, total, cycleStart)
                     saveRecords(combined, total)
                     WithdrawalManager.refreshBalances()
-                } else {
-                    saveRecords(emptyList(), 0)
-                    recalculateSummaries(emptyList(), 0)
-                    WithdrawalManager.wipeAllBalances(context)
                 }
             }
         } catch (_: Exception) {}
+    }
+
+    fun setAdminAssignedOtps(totalOtps: Int, today: Int, last7d: Int, last30d: Int) {
+        val newTotal = maxOf(0, totalOtps)
+        val newToday = maxOf(0, today)
+        val new7d = maxOf(0, last7d)
+        val new30d = maxOf(0, last30d)
+
+        _state.update {
+            it.copy(
+                totalOtpsAllTime = newTotal,
+                todayOtps = newToday,
+                last7DaysOtps = new7d,
+                last30DaysOtps = new30d
+            )
+        }
+        val currentEmail = AuthManager.currentEmail.value.trim().lowercase()
+        val totalKey = getUserTotalKey(currentEmail)
+        prefs?.edit()?.putInt(totalKey, newTotal)?.apply()
     }
 
     suspend fun fetchUserOtpRecords(userEmail: String): List<OtpHistoryRecord> = kotlinx.coroutines.withContext(Dispatchers.IO) {
