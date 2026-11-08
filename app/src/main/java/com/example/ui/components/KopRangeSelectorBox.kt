@@ -140,22 +140,7 @@ fun KopRangeSelectorBox(
                         else -> "👥 FB"
                     }
                 } else {
-                    // Kop Engine 2 & other engines: No fake FB tags, just clean Facebook or actual service
-                    val rawTag = act.tag.trim()
-                    val rawService = act.service.trim()
-                    when {
-                        rawTag.contains("FB", true) || rawTag.contains("Face", true) || rawTag.contains("Clone", true) || rawTag.contains("New", true) -> "Facebook"
-                        rawTag.contains("WhatsApp", true) || rawTag.contains("WA", true) || rawTag.contains("WP", true) -> "💬 WhatsApp"
-                        rawTag.contains("Insta", true) || rawTag.contains("IG", true) -> "📸 Instagram"
-                        rawTag.contains("OTP", true) -> "🔥 OTP Work"
-                        rawTag.isNotBlank() && !rawTag.equals("General", true) && !rawTag.equals("Premium", true) -> rawTag
-                        rawService.contains("FB", true) || rawService.contains("Face", true) || rawService.contains("Clone", true) || rawService.contains("New", true) -> "Facebook"
-                        rawService.contains("WhatsApp", true) || rawService.contains("WA", true) || rawService.contains("WP", true) -> "💬 WhatsApp"
-                        rawService.contains("Insta", true) || rawService.contains("IG", true) -> "📸 Instagram"
-                        rawService.contains("OTP", true) -> "🔥 OTP Work"
-                        rawService.isNotBlank() && !rawService.equals("General", true) -> rawService
-                        else -> "Facebook"
-                    }
+                    ""
                 }
 
                 list.add(
@@ -200,14 +185,7 @@ fun KopRangeSelectorBox(
                         else -> "👥 FB"
                     }
                 } else {
-                    val op = feedItem.operator.ifBlank { feedItem.service.ifBlank { "Facebook" } }
-                    when {
-                        op.contains("FB", true) || op.contains("Face", true) || op.contains("Clone", true) || op.contains("New", true) -> "Facebook"
-                        op.contains("WhatsApp", true) || op.contains("WA", true) -> "💬 WhatsApp"
-                        op.contains("Insta", true) || op.contains("IG", true) -> "📸 Instagram"
-                        op.contains("OTP", true) -> "🔥 OTP Work"
-                        else -> op
-                    }
+                    ""
                 }
 
                 list.add(

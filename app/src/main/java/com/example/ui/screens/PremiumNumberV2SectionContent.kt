@@ -128,22 +128,21 @@ data class V2CountryPreset(
     val name: String,
     val flag: String,
     val dialCode: String,
-    val rateText: String,
-    val platformTag: String = "Facebook"
+    val rateText: String
 )
 
 val ALLOCATION_COUNTRIES = listOf(
-    V2CountryPreset("IT", "Italy", "🇮🇹", "+39", "$0.001", "Facebook"),
-    V2CountryPreset("ET", "Ethiopia", "🇪🇹", "+251", "$0.003", "Facebook"),
-    V2CountryPreset("HT", "Haiti", "🇭🇹", "+509", "$0.005", "Facebook"),
-    V2CountryPreset("SD", "Sudan", "🇸🇩", "+249", "$0.005", "Facebook"),
-    V2CountryPreset("NP", "Nepal", "🇳🇵", "+977", "$0.003", "Facebook"),
-    V2CountryPreset("ZM", "Zambia", "🇿🇲", "+260", "$0.005", "Facebook"),
-    V2CountryPreset("SY", "Syria", "🇸🇾", "+963", "$0.005", "Facebook"),
-    V2CountryPreset("KH", "Cambodia", "🇰🇭", "+855", "$0.005", "Facebook"),
-    V2CountryPreset("TZ", "Tanzania", "🇹🇿", "+255", "$0.005", "Facebook"),
-    V2CountryPreset("ZW", "Zimbabwe", "🇿🇼", "+263", "$0.005", "Facebook"),
-    V2CountryPreset("ANY", "ANY (All Live Pool)", "🌐", "", "POOL", "🔥 All Pools")
+    V2CountryPreset("IT", "Italy", "🇮🇹", "+39", "$0.001"),
+    V2CountryPreset("ET", "Ethiopia", "🇪🇹", "+251", "$0.003"),
+    V2CountryPreset("HT", "Haiti", "🇭🇹", "+509", "$0.005"),
+    V2CountryPreset("SD", "Sudan", "🇸🇩", "+249", "$0.005"),
+    V2CountryPreset("NP", "Nepal", "🇳🇵", "+977", "$0.003"),
+    V2CountryPreset("ZM", "Zambia", "🇿🇲", "+260", "$0.005"),
+    V2CountryPreset("SY", "Syria", "🇸🇾", "+963", "$0.005"),
+    V2CountryPreset("KH", "Cambodia", "🇰🇭", "+855", "$0.005"),
+    V2CountryPreset("TZ", "Tanzania", "🇹🇿", "+255", "$0.005"),
+    V2CountryPreset("ZW", "Zimbabwe", "🇿🇼", "+263", "$0.005"),
+    V2CountryPreset("ANY", "ANY (All Live Pool)", "🌐", "", "POOL")
 )
 
 @OptIn(ExperimentalLayoutApi::class)
@@ -171,23 +170,20 @@ fun PremiumNumberV2SectionContent(
     val livePoolCountries = remember(state.liveConsoleFeed, state.activeApiCountries) {
         val list = mutableListOf<V2CountryPreset>()
         val seen = mutableSetOf<String>()
-        list.add(V2CountryPreset("ANY", "ANY (All Live Pool)", "🌐", "", "POOL", "🔥 All Pools"))
-        val tags = listOf("Facebook", "💬 WhatsApp", "📸 Instagram", "🔥 OTP Work")
+        list.add(V2CountryPreset("ANY", "ANY (All Live Pool)", "🌐", "", "POOL"))
 
         // 1. Add active countries fetched directly from slvirtualnumber developer API
         for (c in state.activeApiCountries) {
             val iso = c.code.uppercase()
             if (!seen.contains(iso)) {
                 seen.add(iso)
-                val tag = tags[seen.size % tags.size]
                 list.add(
                     V2CountryPreset(
                         code = iso,
                         name = c.name,
                         flag = c.flag,
                         dialCode = if (c.prefix.isNotBlank()) "+${c.prefix}" else "",
-                        rateText = "$${String.format(Locale.US, "%.3f", c.rateUsd)}",
-                        platformTag = tag
+                        rateText = "$${String.format(Locale.US, "%.3f", c.rateUsd)}"
                     )
                 )
             }
@@ -197,7 +193,6 @@ fun PremiumNumberV2SectionContent(
         for (item in state.liveConsoleFeed) {
             val iso = item.iso.uppercase()
             if (iso.isNotBlank() && !seen.contains(iso)) {
-                val tag = tags[seen.size % tags.size]
                 seen.add(iso)
                 val info = com.example.util.AllCountriesProvider.findByCode(iso)
                     ?: com.example.util.AllCountriesProvider.findByNameOrCode(item.country)
@@ -208,8 +203,7 @@ fun PremiumNumberV2SectionContent(
                         name = item.country.ifBlank { info?.name ?: iso },
                         flag = item.flag.ifBlank { info?.flag ?: "🌐" },
                         dialCode = dial,
-                        rateText = "LIVE",
-                        platformTag = tag
+                        rateText = "LIVE"
                     )
                 )
             }
@@ -655,20 +649,6 @@ fun PremiumNumberV2SectionContent(
                                                             Spacer(modifier = Modifier.width(4.dp))
                                                             Text(text = cp.dialCode, color = Color(0xFF64748B), fontSize = 9.5.sp)
                                                         }
-                                                        Spacer(modifier = Modifier.width(4.dp))
-                                                        Surface(
-                                                            color = Color(0xFF1E293B),
-                                                            shape = RoundedCornerShape(3.dp),
-                                                            border = BorderStroke(0.6.dp, Color(0xFF00E5FF).copy(alpha = 0.4f))
-                                                        ) {
-                                                            Text(
-                                                                text = cp.platformTag,
-                                                                color = Color(0xFF38BDF8),
-                                                                fontSize = 7.5.sp,
-                                                                fontWeight = FontWeight.Bold,
-                                                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
-                                                            )
-                                                        }
                                                     }
                                                     Surface(
                                                         color = Color(0xFF0284C7).copy(alpha = 0.2f),
@@ -887,7 +867,7 @@ fun PremiumNumberV2SectionContent(
                                                     border = BorderStroke(0.5.dp, Color(0xFF00E5FF).copy(alpha = 0.3f))
                                                 ) {
                                                     Text(
-                                                        text = c.platformTag,
+                                                        text = "",
                                                         color = Color(0xFF38BDF8),
                                                         fontSize = 7.sp,
                                                         fontWeight = FontWeight.Bold,

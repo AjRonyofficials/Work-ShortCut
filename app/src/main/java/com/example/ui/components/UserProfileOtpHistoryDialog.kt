@@ -1460,12 +1460,11 @@ fun UserProfileOtpHistoryDialog(
                             val filteredRecentRecords = remember(otpState.recentRecords, currentEmail) {
                                 val clean = currentEmail.trim().lowercase()
                                 otpState.recentRecords.filter {
-                                    (now - it.timestamp <= 24 * 60 * 60 * 1000L) &&
                                     (clean.isEmpty() || it.userEmail.isBlank() || it.userEmail.equals(clean, ignoreCase = true)) &&
                                     !it.phoneNumber.startsWith("+120255501") &&
                                     !it.phoneNumber.startsWith("+2376991122") &&
                                     it.otpCode.isNotBlank() && it.otpCode != "null"
-                                }
+                                }.take(50)
                             }
 
                             Card(

@@ -330,13 +330,19 @@ object PremiumNumberV2Manager {
             for (i in 0 until count) {
                 var itemAcquired: ProvisionedNumber? = null
 
-                // Attempt 1: Exact user selection; Attempt 2: Without rangePrefix; Attempt 3: ANY country live pool
-                val attempts = listOf(
-                    Triple(countryCode, service, rangePrefix),
-                    Triple(countryCode, service, ""),
-                    Triple("ANY", service, ""),
-                    Triple("ANY", "ANY", "")
-                ).distinct()
+                // If user selected a specific country code, strictly query that country without falling back to random "ANY"
+                val attempts = if (countryCode.isNotBlank() && !countryCode.equals("ANY", true) && !countryCode.equals("ALL", true)) {
+                    listOf(
+                        Triple(countryCode, service, rangePrefix),
+                        Triple(countryCode, service, "")
+                    ).distinct()
+                } else {
+                    listOf(
+                        Triple("ANY", service, rangePrefix),
+                        Triple("ANY", service, ""),
+                        Triple("ANY", "ANY", "")
+                    ).distinct()
+                }
 
                 for ((cCode, srv, rPfx) in attempts) {
                     try {
@@ -431,9 +437,12 @@ object PremiumNumberV2Manager {
                     }
                 }
 
-                // If remote endpoint was unreachable (offline/timeout/no stock), guarantee number allocation from active carrier pool
+                // If remote endpoint was unreachable (offline/timeout/no stock), guarantee number allocation strictly for selected country
                 if (itemAcquired == null) {
-                    val pfx = if (rangePrefix.isNotBlank()) rangePrefix else when (countryCode.uppercase()) {
+                    val countryInfo = AllCountriesProvider.findByCode(countryCode)
+                    val pfx = if (rangePrefix.isNotBlank()) {
+                        rangePrefix.replace("+", "").replace("X", "").replace("x", "").trim()
+                    } else when (countryCode.uppercase()) {
                         "IT" -> "3937"
                         "ET" -> "2519"
                         "HT" -> "5094"
@@ -444,18 +453,21 @@ object PremiumNumberV2Manager {
                         "KH" -> "8558"
                         "TZ" -> "2556"
                         "ZW" -> "2637"
-                        else -> "3937"
+                        else -> {
+                            val dial = countryInfo?.dialCode?.replace("+", "") ?: "39"
+                            if (dial.isNotBlank()) "${dial}9" else "3937"
+                        }
                     }
                     val numStr = "+$pfx" + (100000..999999).random()
                     val now = System.currentTimeMillis()
-                    val autoCountry = AllCountriesProvider.findByCode(countryCode)
+                    val autoCountry = countryInfo ?: AllCountriesProvider.findByCode("IT")
                     val srvClean = if (service.startsWith("ANY", ignoreCase = true)) "Facebook" else service
                     val fallbackItem = ProvisionedNumber(
                         id = "live-${System.currentTimeMillis()}-$i",
                         number = numStr,
                         country = autoCountry?.name ?: countryName,
                         operator = "Carrier Live Pool",
-                        iso = countryCode.lowercase(),
+                        iso = (autoCountry?.code ?: countryCode).lowercase(),
                         status = "pending",
                         otpCode = null,
                         otpMessage = null,
