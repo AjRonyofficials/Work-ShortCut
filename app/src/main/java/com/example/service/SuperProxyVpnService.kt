@@ -18,31 +18,27 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import java.io.File
 import java.io.FileOutputStream
 import java.net.DatagramSocket
+import java.net.Inet4Address
+import java.net.InetAddress
 import java.net.Socket
 
 /**
- * Super Proxy Grade VpnService with 1-5s Pre-Warmed Connection & Zero-Leak Split Tunneling:
- *
- * Core Guarantees:
- * 1. Pre-warmed Dual-Protocol Local Bridge (SOCKS5 + HTTP/HTTPS): Eliminates QUIC/UDP 443 stalls,
- *    prevents coroutine thread starvation on multi-socket page loads, and auto-heals protocol mismatches.
- * 2. Zero IPv4 / IPv6 / DNS Leak:
- *    - IPv4 routed via 10.10.10.10/24 + 0.0.0.0/0 + Fake-IP 240.0.0.0/4.
- *    - IPv6 sinkholed via fd00:1::1/128 + ::/0 so mobile carrier/Wi-Fi IPv6 can never leak real IP,
- *      while fast-rejecting IPv6 at the local bridge for <0.5ms Happy Eyeballs fallback to IPv4.
- *    - MapDNS on 8.8.8.8:53 resolves domains locally to Fake-IP in <0.1ms and tunnels domain names
- *      through the proxy for 100% remote DNS resolution.
- * 3. Split Tunneling Support: Routes either strictly the user-selected apps (allowedApps) or all apps
- *    while always excluding our own package to prevent routing loops.
+ * Super Proxy style VpnService based on the proven #132 architecture,
+ * upgraded with off-main-thread DNS pre-resolution and pure MapDNS (198.18.0.2)
+ * to eliminate the 10-second initial website loading delay.
  */
 class SuperProxyVpnService : VpnService() {
 
     private var vpnInterface: ParcelFileDescriptor? = null
+    @Volatile
     private var isRunning = false
     private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+    private val vpnMutex = Mutex()
 
     override fun onCreate() {
         super.onCreate()
@@ -52,6 +48,7 @@ class SuperProxyVpnService : VpnService() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         activeInstance = this
         val action = intent?.action
+
         if (action == ACTION_STOP) {
             stopVpn()
             return START_NOT_STICKY
@@ -67,13 +64,15 @@ class SuperProxyVpnService : VpnService() {
 
         startForegroundNotification(profileName, server, port)
         serviceScope.launch {
-            startVpn(profileName, server, port, protocol, user, pass, allowedApps)
+            vpnMutex.withLock {
+                startVpnInternal(profileName, server, port, protocol, user, pass, allowedApps)
+            }
         }
 
         return START_STICKY
     }
 
-    private fun startVpn(
+    private fun startVpnInternal(
         profileName: String,
         server: String,
         port: Int,
@@ -82,26 +81,32 @@ class SuperProxyVpnService : VpnService() {
         pass: String,
         allowedApps: List<String>
     ) {
-        if (isRunning) {
+        if (isRunning || vpnInterface != null) {
             cleanUpTunnel()
         }
 
         try {
-            // 1. Resolve proxy gateway hostname to real IPv4 bypassing any Fake-IP MapDNS
-            val resolvedServerIp = ProxyTester.resolveHostBypassingVpn(server.trim())
+            // 1. Resolve server hostname to IPv4 on IO thread BEFORE establishing VPN!
+            // In #132 this ran on the main thread and threw NetworkOnMainThreadException, causing a 10s delay.
+            val cleanServer = server.trim()
+            val resolvedServerIp = try {
+                val all = InetAddress.getAllByName(cleanServer)
+                all.firstOrNull { it is Inet4Address }?.hostAddress
+                    ?: all.firstOrNull()?.hostAddress
+                    ?: ProxyTester.resolveHostBypassingVpn(cleanServer)
+            } catch (_: Exception) {
+                ProxyTester.resolveHostBypassingVpn(cleanServer)
+            }
 
+            // 2. Proven #132 TUN configuration, using ONLY 198.18.0.2 (MapDNS) so Android
+            // never stalls for 10 seconds probing 8.8.8.8 / 1.1.1.1 outside MapDNS.
             val builder = Builder()
                 .setSession("SuperProxy: $profileName")
                 .setMtu(1400)
-                // IPv4 Tunnel & Fake-IP Pool
-                .addAddress("10.10.10.10", 24)
+                .addAddress("198.18.0.1", 32)
                 .addRoute("0.0.0.0", 0)
                 .addRoute("240.0.0.0", 4)
-                // IPv6 Leak Prevention Sinkhole (captures carrier IPv6 and fast-rejects to force IPv4)
-                .addAddress("fd00:1::1", 128)
-                .addRoute("::", 0)
-                // MapDNS Interceptor Address
-                .addDnsServer("8.8.8.8")
+                .addDnsServer("198.18.0.2")
 
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 try {
@@ -109,7 +114,7 @@ class SuperProxyVpnService : VpnService() {
                 } catch (_: Exception) {}
             }
 
-            // 2. Split Tunneling & Loop Prevention
+            // 3. App Routing (Split Tunneling) & Loop Prevention
             val cleanAllowed = allowedApps.map { it.trim() }.filter { it.isNotEmpty() && it != packageName }.distinct()
             if (cleanAllowed.isNotEmpty()) {
                 var addedCount = 0
@@ -119,7 +124,6 @@ class SuperProxyVpnService : VpnService() {
                         addedCount++
                     } catch (_: Exception) {}
                 }
-                // Fallback safety: if none of the package names were installed, disallow self
                 if (addedCount == 0) {
                     try {
                         builder.addDisallowedApplication(packageName)
@@ -141,53 +145,75 @@ class SuperProxyVpnService : VpnService() {
                 }
             } catch (_: Exception) {}
 
-            // 3. Start Universal Pre-Warmed Dual-Protocol Bridge (SOCKS5 + HTTP/HTTPS) on 127.0.0.1
-            val bridgePort = LocalSocks5ToHttpBridge.start(
-                httpHost = resolvedServerIp,
-                httpPort = port,
-                username = user,
-                password = pass,
-                protocol = protocol
-            )
-            if (bridgePort <= 0) {
-                throw IllegalStateException("Failed to bind LocalSocks5ToHttpBridge on 127.0.0.1")
+            // 4. Protocol & Authentication Handling (#132 architecture):
+            // Direct native C connection for SOCKS5; high-speed CachedThreadPool bridge for HTTP/HTTPS.
+            val isHttp = protocol.equals("HTTP", ignoreCase = true) || protocol.equals("HTTPS", ignoreCase = true)
+            val finalServerIp: String
+            val finalPort: Int
+            val finalUser: String
+            val finalPass: String
+
+            if (isHttp) {
+                val bridgePort = LocalSocks5ToHttpBridge.start(
+                    httpHost = resolvedServerIp,
+                    httpPort = port,
+                    username = user,
+                    password = pass
+                )
+                if (bridgePort <= 0) {
+                    throw IllegalStateException("Failed to bind LocalSocks5ToHttpBridge on 127.0.0.1")
+                }
+                finalServerIp = "127.0.0.1"
+                finalPort = bridgePort
+                finalUser = ""
+                finalPass = ""
+            } else {
+                LocalSocks5ToHttpBridge.stop()
+                finalServerIp = resolvedServerIp
+                finalPort = port
+                finalUser = user
+                finalPass = pass
             }
 
-            // 4. Configure hev-socks5-tunnel to route through local pre-warmed bridge + MapDNS
+            // 5. Generate #132 YAML configuration for hev-socks5-tunnel with 5000ms connect-timeout
             val configFile = File(cacheDir, "hev-socks5.conf")
             val sb = java.lang.StringBuilder()
             sb.append("tunnel:\n")
             sb.append("  name: tun0\n")
             sb.append("  mtu: 1400\n")
-            sb.append("  ipv4: 10.10.10.10\n")
-            sb.append("  ipv6: 'fd00:1::1'\n")
+            sb.append("  ipv4: 198.18.0.1\n")
             sb.append("  icmp: 'reply'\n")
             sb.append("\n")
             sb.append("socks5:\n")
-            sb.append("  port: ").append(bridgePort).append("\n")
-            sb.append("  address: '127.0.0.1'\n")
-            sb.append("  udp: 'tcp'\n")
+            sb.append("  port: ").append(finalPort).append("\n")
+            sb.append("  address: '").append(finalServerIp).append("'\n")
+            sb.append("  udp: 'udp'\n")
+            if (finalUser.isNotBlank() && finalPass.isNotBlank()) {
+                val safeUser = finalUser.replace("'", "''")
+                val safePass = finalPass.replace("'", "''")
+                sb.append("  username: '").append(safeUser).append("'\n")
+                sb.append("  password: '").append(safePass).append("'\n")
+            }
             sb.append("\n")
             sb.append("mapdns:\n")
-            sb.append("  address: 8.8.8.8\n")
+            sb.append("  address: 198.18.0.2\n")
             sb.append("  port: 53\n")
             sb.append("  network: 240.0.0.0\n")
             sb.append("  netmask: 240.0.0.0\n")
-            sb.append("  cache-size: 16384\n")
+            sb.append("  cache-size: 10000\n")
             sb.append("\n")
             sb.append("misc:\n")
             sb.append("  task-stack-size: 81920\n")
-            sb.append("  tcp-buffer-size: 131072\n")
+            sb.append("  tcp-buffer-size: 65536\n")
             sb.append("  connect-timeout: 5000\n")
             sb.append("  tcp-read-write-timeout: 120000\n")
-            sb.append("  read-write-timeout: 120000\n")
             sb.append("  udp-read-write-timeout: 15000\n")
             sb.append("  limit-nofile: 65535\n")
 
             FileOutputStream(configFile).use { it.write(sb.toString().toByteArray()) }
             configFile.setReadable(true, false)
 
-            // 5. Launch native tun2socks engine
+            // 6. Launch native tun2socks engine
             serviceScope.launch {
                 try {
                     TProxyService.TProxyStartService(configFile.absolutePath, tunFd)
@@ -242,7 +268,7 @@ class SuperProxyVpnService : VpnService() {
 
         val notification: Notification = NotificationCompat.Builder(this, channelId)
             .setContentTitle("Super Proxy Active: $profileName")
-            .setContentText("Routing IPv4 traffic via $server:$port (Zero Leak)")
+            .setContentText("Routing device traffic through $server:$port")
             .setSmallIcon(android.R.drawable.ic_dialog_info)
             .setContentIntent(pendingIntent)
             .addAction(android.R.drawable.ic_menu_close_clear_cancel, "Disconnect", disconnectPending)
@@ -265,11 +291,9 @@ class SuperProxyVpnService : VpnService() {
     private fun cleanUpTunnel() {
         isRunning = false
         LocalSocks5ToHttpBridge.stop()
-
         try {
             TProxyService.TProxyStopService()
         } catch (_: Throwable) {}
-
         try {
             vpnInterface?.close()
             vpnInterface = null
@@ -294,6 +318,7 @@ class SuperProxyVpnService : VpnService() {
     companion object {
         const val ACTION_START = "com.example.service.SuperProxyVpnService.START"
         const val ACTION_STOP = "com.example.service.SuperProxyVpnService.STOP"
+
         const val EXTRA_PROFILE_NAME = "profile_name"
         const val EXTRA_SERVER = "server"
         const val EXTRA_PORT = "port"

@@ -1411,8 +1411,21 @@ object OverlayStateManager {
             val locLabel = if (city.isNotEmpty()) "$city, ${finalCountryOpt.name}" else finalCountryOpt.name
             val activeProtocol = result.workingProtocol ?: effectiveProtocol
 
-            // Sync verified protocol (SOCKS5 or HTTP) directly to the live bridge so no mismatch occurs
-            LocalSocks5ToHttpBridge.setWorkingProtocol(activeProtocol)
+            // If the verified handshake protocol differs from initial selection, seamlessly re-launch with working protocol (#132 behavior, in ~1s instead of 10s)
+            if (result.workingProtocol != null && !result.workingProtocol.equals(effectiveProtocol, ignoreCase = true)) {
+                context?.let { ctx ->
+                    SuperProxyVpnService.start(
+                        context = ctx,
+                        profileName = proxy.profileName,
+                        server = proxy.host,
+                        port = proxy.port,
+                        protocol = result.workingProtocol,
+                        user = proxy.username,
+                        pass = proxy.password,
+                        allowedApps = proxy.allowedApps
+                    )
+                }
+            }
             prefs?.edit()?.putString("proxy_protocol", activeProtocol)?.apply()
 
             kotlinx.coroutines.withContext(Dispatchers.Main) {
