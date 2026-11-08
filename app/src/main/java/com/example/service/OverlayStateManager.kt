@@ -1391,9 +1391,8 @@ object OverlayStateManager {
             Toast.makeText(ctx, "✅ Connected: ${proxy.host} (${countryOpt.flag} ${countryOpt.name})", Toast.LENGTH_SHORT).show()
         }
 
-        // 2. PHASE 2: Parallel SOCKS5/HTTP Race + Egress IP & Geo-Location Resolution
+        // 2. PHASE 2: Background Egress IP & Geo-Location Resolution (Never interrupts or restarts the running tunnel!)
         scope.launch(Dispatchers.IO) {
-            var protocolSwitched = false
             val result = ProxyTester.testProxy(
                 host = proxy.host,
                 port = proxy.port,
@@ -1401,26 +1400,7 @@ object OverlayStateManager {
                 username = proxy.username,
                 password = proxy.password,
                 timeoutMs = 2500,
-                pingOptimized = true,
-                onProtocolDetected = { detectedProto, _ ->
-                    // Switch tunnel IMMEDIATELY (~0.4s - 1.2s) before Geo-IP lookup if protocol differs!
-                    if (!detectedProto.equals(initialProtocol, ignoreCase = true)) {
-                        protocolSwitched = true
-                        prefs?.edit()?.putString("proxy_protocol", detectedProto)?.apply()
-                        context?.let { ctx ->
-                            SuperProxyVpnService.start(
-                                context = ctx,
-                                profileName = proxy.profileName,
-                                server = proxy.host,
-                                port = proxy.port,
-                                protocol = detectedProto,
-                                user = proxy.username,
-                                pass = proxy.password,
-                                allowedApps = proxy.allowedApps
-                            )
-                        }
-                    }
-                }
+                pingOptimized = true
             )
 
             val effectiveIp = if (result.isSuccess && !result.resolvedIp.isNullOrBlank()) result.resolvedIp!! else proxy.host
@@ -1430,23 +1410,6 @@ object OverlayStateManager {
             val isp = if (result.isSuccess) (result.isp ?: "") else ""
             val latency = if (result.latencyMs > 0) result.latencyMs else 32L
             val locLabel = if (city.isNotEmpty()) "$city, $country" else country
-            val activeProtocol = result.workingProtocol ?: initialProtocol
-
-            if (!protocolSwitched && result.workingProtocol != null && !result.workingProtocol.equals(initialProtocol, ignoreCase = true)) {
-                prefs?.edit()?.putString("proxy_protocol", result.workingProtocol)?.apply()
-                context?.let { ctx ->
-                    SuperProxyVpnService.start(
-                        context = ctx,
-                        profileName = proxy.profileName,
-                        server = proxy.host,
-                        port = proxy.port,
-                        protocol = result.workingProtocol,
-                        user = proxy.username,
-                        pass = proxy.password,
-                        allowedApps = proxy.allowedApps
-                    )
-                }
-            }
 
             kotlinx.coroutines.withContext(Dispatchers.Main) {
                 if (_uiState.value.proxyState.isConnected) {
@@ -1455,7 +1418,7 @@ object OverlayStateManager {
                             proxyState = it.proxyState.copy(
                                 isConnected = true,
                                 isTesting = false,
-                                protocol = activeProtocol,
+                                protocol = initialProtocol,
                                 ipAddress = effectiveIp,
                                 ipVersion = result.ipVersion,
                                 countryCode = country,
@@ -1470,36 +1433,19 @@ object OverlayStateManager {
                 }
             }
 
-            // If pre-test did not resolve public IP within 2.5s, do a one-time resolution and lock it
+            // If fast check did not resolve public IP within 2.5s, do a gentle background resolution for UI display only
             if (!result.isSuccess || result.resolvedIp.isNullOrBlank()) {
                 scope.launch(Dispatchers.IO) {
-                    kotlinx.coroutines.delay(800)
+                    kotlinx.coroutines.delay(1000)
                     try {
                         val postTest = ProxyTester.testProxy(
                             host = proxy.host,
                             port = proxy.port,
-                            protocol = activeProtocol,
+                            protocol = initialProtocol,
                             username = proxy.username,
                             password = proxy.password,
-                            timeoutMs = 4500,
-                            pingOptimized = false,
-                            onProtocolDetected = { detectedProto, _ ->
-                                if (!detectedProto.equals(_uiState.value.proxyState.protocol, ignoreCase = true)) {
-                                    prefs?.edit()?.putString("proxy_protocol", detectedProto)?.apply()
-                                    context?.let { ctx ->
-                                        SuperProxyVpnService.start(
-                                            context = ctx,
-                                            profileName = proxy.profileName,
-                                            server = proxy.host,
-                                            port = proxy.port,
-                                            protocol = detectedProto,
-                                            user = proxy.username,
-                                            pass = proxy.password,
-                                            allowedApps = proxy.allowedApps
-                                        )
-                                    }
-                                }
-                            }
+                            timeoutMs = 4000,
+                            pingOptimized = false
                         )
                         if (postTest.isSuccess && !postTest.resolvedIp.isNullOrBlank()) {
                             val newIp = postTest.resolvedIp!!
@@ -1509,14 +1455,13 @@ object OverlayStateManager {
                             val newIsp = postTest.isp ?: ""
                             val newLatency = if (postTest.latencyMs > 0) postTest.latencyMs else latency
                             val newLocLabel = if (newCity.isNotEmpty()) "$newCity, $newCountry" else newCountry
-                            val finalProto = postTest.workingProtocol ?: activeProtocol
 
                             kotlinx.coroutines.withContext(Dispatchers.Main) {
                                 if (_uiState.value.proxyState.isConnected) {
                                     _uiState.update {
                                         it.copy(
                                             proxyState = it.proxyState.copy(
-                                                protocol = finalProto,
+                                                protocol = initialProtocol,
                                                 ipAddress = newIp,
                                                 ipVersion = postTest.ipVersion,
                                                 countryCode = newCountry,
