@@ -116,7 +116,8 @@ jobs:
         run: |
           export JAVA_TOOL_OPTIONS="-Djava.awt.headless=true -Dfile.encoding=UTF-8 -Dsun.awt.noerasebackground=true"
           echo "Building with ./gradlew assembleDebug..."
-          ./gradlew assembleDebug --no-daemon --no-configuration-cache --no-parallel -Djava.awt.headless=true -Dksp.incremental=false
+          ./gradlew assembleDebug --no-daemon --no-configuration-cache --no-parallel -Djava.awt.headless=true -Dksp.incremental=false || (command -v gradle >/dev/null 2>&1 && gradle assembleDebug --no-daemon --no-configuration-cache --no-parallel -Djava.awt.headless=true -Dksp.incremental=false)
+
 
       - name: Verify Generated APK
         run: |
