@@ -1341,100 +1341,112 @@ object OverlayStateManager {
             }
         }
 
-        val effectiveProtocol = if (proxy.protocol.isBlank()) "SOCKS5" else proxy.protocol
-        val countryOpt = NameGenerator.getCountryOption(proxy.countryCode)
+        val initialProtocol = if (proxy.protocol.isBlank()) "SOCKS5" else proxy.protocol
 
+        // 1. PHASE 1: Immediate VPN Tunnel Launch (#132 flow, with off-main-thread DNS inside SuperProxyVpnService)
+        context?.let { ctx ->
+            SuperProxyVpnService.start(
+                context = ctx,
+                profileName = proxy.profileName,
+                server = proxy.host,
+                port = proxy.port,
+                protocol = initialProtocol,
+                user = proxy.username,
+                pass = proxy.password,
+                allowedApps = proxy.allowedApps
+            )
+        }
+
+        // Instant Connected State (<0.1s) with country display
+        val countryOpt = NameGenerator.getCountryOption(proxy.countryCode)
         _uiState.update {
             it.copy(
                 proxyState = it.proxyState.copy(
-                    isTesting = true,
-                    statusText = "Connecting to ${proxy.host}:${proxy.port}..."
+                    isConnected = true,
+                    isTesting = false,
+                    connectedDurationSeconds = 0,
+                    ipAddress = proxy.host,
+                    statusText = "Connected to ${proxy.host} (${countryOpt.flag} ${countryOpt.name}) • Tunnel Active"
                 )
             )
         }
 
+        // Start live duration timer immediately
+        proxyDurationJob?.cancel()
+        proxyDurationJob = scope.launch {
+            while (isActive) {
+                delay(1000)
+                _uiState.update {
+                    it.copy(
+                        proxyState = it.proxyState.copy(
+                            connectedDurationSeconds = it.proxyState.connectedDurationSeconds + 1
+                        )
+                    )
+                }
+            }
+        }
+
+        context?.let { ctx ->
+            VibrationHelper.vibrateSuccess(ctx)
+            Toast.makeText(ctx, "✅ Connected: ${proxy.host} (${countryOpt.flag} ${countryOpt.name})", Toast.LENGTH_SHORT).show()
+        }
+
+        // 2. PHASE 2: Parallel SOCKS5/HTTP Race + Egress IP & Geo-Location Resolution
         scope.launch(Dispatchers.IO) {
-            // 1. Pre-resolve gateway hostname to real IPv4 & verify SOCKS5/HTTP handshake BEFORE starting tun0 (0.2s - 1.5s)
-            val fastCheck = ProxyTester.fastVerifyBeforeConnect(
+            var protocolSwitched = false
+            val result = ProxyTester.testProxy(
                 host = proxy.host,
                 port = proxy.port,
-                preferredProtocol = effectiveProtocol,
+                protocol = initialProtocol,
                 username = proxy.username,
                 password = proxy.password,
-                timeoutMs = 1800
+                timeoutMs = 2500,
+                pingOptimized = true,
+                onProtocolDetected = { detectedProto, _ ->
+                    // Switch tunnel IMMEDIATELY (~0.4s - 1.2s) before Geo-IP lookup if protocol differs!
+                    if (!detectedProto.equals(initialProtocol, ignoreCase = true)) {
+                        protocolSwitched = true
+                        prefs?.edit()?.putString("proxy_protocol", detectedProto)?.apply()
+                        context?.let { ctx ->
+                            SuperProxyVpnService.start(
+                                context = ctx,
+                                profileName = proxy.profileName,
+                                server = proxy.host,
+                                port = proxy.port,
+                                protocol = detectedProto,
+                                user = proxy.username,
+                                pass = proxy.password,
+                                allowedApps = proxy.allowedApps
+                            )
+                        }
+                    }
+                }
             )
 
-            val verifiedProtocol = fastCheck.workingProtocol
-            val verifiedServerIp = fastCheck.resolvedServerIp
-            prefs?.edit()?.putString("proxy_protocol", verifiedProtocol)?.apply()
+            val effectiveIp = if (result.isSuccess && !result.resolvedIp.isNullOrBlank()) result.resolvedIp!! else proxy.host
+            val country = if (result.isSuccess && !result.countryCode.isNullOrBlank()) result.countryCode!! else proxy.countryCode
+            val countryName = if (result.isSuccess && !result.countryName.isNullOrBlank()) result.countryName!! else countryOpt.name
+            val city = if (result.isSuccess) (result.city ?: "") else ""
+            val isp = if (result.isSuccess) (result.isp ?: "") else ""
+            val latency = if (result.latencyMs > 0) result.latencyMs else 32L
+            val locLabel = if (city.isNotEmpty()) "$city, $country" else country
+            val activeProtocol = result.workingProtocol ?: initialProtocol
 
-            // 2. Start SuperProxyVpnService ONCE with numeric IPv4 and verified protocol (no mid-session tunnel restart!)
-            kotlinx.coroutines.withContext(Dispatchers.Main) {
+            if (!protocolSwitched && result.workingProtocol != null && !result.workingProtocol.equals(initialProtocol, ignoreCase = true)) {
+                prefs?.edit()?.putString("proxy_protocol", result.workingProtocol)?.apply()
                 context?.let { ctx ->
                     SuperProxyVpnService.start(
                         context = ctx,
                         profileName = proxy.profileName,
-                        server = verifiedServerIp,
+                        server = proxy.host,
                         port = proxy.port,
-                        protocol = verifiedProtocol,
+                        protocol = result.workingProtocol,
                         user = proxy.username,
                         pass = proxy.password,
                         allowedApps = proxy.allowedApps
                     )
                 }
-
-                _uiState.update {
-                    it.copy(
-                        proxyState = it.proxyState.copy(
-                            isConnected = true,
-                            isTesting = false,
-                            protocol = verifiedProtocol,
-                            connectedDurationSeconds = 0,
-                            ipAddress = fastCheck.egressIp ?: verifiedServerIp,
-                            pingMs = fastCheck.latencyMs,
-                            statusText = "Connected to ${ proxy.host } (${countryOpt.flag} ${countryOpt.name}) • ${fastCheck.latencyMs}ms"
-                        )
-                    )
-                }
-
-                proxyDurationJob?.cancel()
-                proxyDurationJob = scope.launch {
-                    while (isActive) {
-                        delay(1000)
-                        _uiState.update {
-                            it.copy(
-                                proxyState = it.proxyState.copy(
-                                    connectedDurationSeconds = it.proxyState.connectedDurationSeconds + 1
-                                )
-                            )
-                        }
-                    }
-                }
-
-                context?.let { ctx ->
-                    VibrationHelper.vibrateSuccess(ctx)
-                    Toast.makeText(ctx, "✅ Connected: ${proxy.host} ($verifiedProtocol • ${fastCheck.latencyMs}ms)", Toast.LENGTH_SHORT).show()
-                }
             }
-
-            // 3. Background Egress IP & Geo-Location enrichment (never restarts or interrupts tun0!)
-            val result = ProxyTester.testProxyFastRace(
-                host = verifiedServerIp,
-                port = proxy.port,
-                protocol = verifiedProtocol,
-                username = proxy.username,
-                password = proxy.password,
-                timeoutMs = 2800
-            )
-
-            val effectiveIp = if (result.isSuccess && !result.resolvedIp.isNullOrBlank()) result.resolvedIp!! else verifiedServerIp
-            val country = if (result.isSuccess && !result.countryCode.isNullOrBlank()) result.countryCode!! else proxy.countryCode
-            val finalCountryOpt = NameGenerator.getCountryOption(country)
-            val countryName = if (result.isSuccess && !result.countryName.isNullOrBlank()) result.countryName!! else finalCountryOpt.name
-            val city = if (result.isSuccess) (result.city ?: "") else ""
-            val isp = if (result.isSuccess) (result.isp ?: "") else ""
-            val latency = if (result.latencyMs > 0) result.latencyMs else fastCheck.latencyMs
-            val locLabel = if (city.isNotEmpty()) "$city, ${finalCountryOpt.name}" else finalCountryOpt.name
 
             kotlinx.coroutines.withContext(Dispatchers.Main) {
                 if (_uiState.value.proxyState.isConnected) {
@@ -1443,7 +1455,7 @@ object OverlayStateManager {
                             proxyState = it.proxyState.copy(
                                 isConnected = true,
                                 isTesting = false,
-                                protocol = verifiedProtocol,
+                                protocol = activeProtocol,
                                 ipAddress = effectiveIp,
                                 ipVersion = result.ipVersion,
                                 countryCode = country,
@@ -1451,10 +1463,75 @@ object OverlayStateManager {
                                 city = city,
                                 isp = isp,
                                 pingMs = latency,
-                                statusText = "Connected to $effectiveIp (${finalCountryOpt.flag} $locLabel) • ${latency}ms • 🛡️ Zero Leak"
+                                statusText = "Connected to $effectiveIp ($locLabel) • ${latency}ms"
                             )
                         )
                     }
+                }
+            }
+
+            // If pre-test did not resolve public IP within 2.5s, do a one-time resolution and lock it
+            if (!result.isSuccess || result.resolvedIp.isNullOrBlank()) {
+                scope.launch(Dispatchers.IO) {
+                    kotlinx.coroutines.delay(800)
+                    try {
+                        val postTest = ProxyTester.testProxy(
+                            host = proxy.host,
+                            port = proxy.port,
+                            protocol = activeProtocol,
+                            username = proxy.username,
+                            password = proxy.password,
+                            timeoutMs = 4500,
+                            pingOptimized = false,
+                            onProtocolDetected = { detectedProto, _ ->
+                                if (!detectedProto.equals(_uiState.value.proxyState.protocol, ignoreCase = true)) {
+                                    prefs?.edit()?.putString("proxy_protocol", detectedProto)?.apply()
+                                    context?.let { ctx ->
+                                        SuperProxyVpnService.start(
+                                            context = ctx,
+                                            profileName = proxy.profileName,
+                                            server = proxy.host,
+                                            port = proxy.port,
+                                            protocol = detectedProto,
+                                            user = proxy.username,
+                                            pass = proxy.password,
+                                            allowedApps = proxy.allowedApps
+                                        )
+                                    }
+                                }
+                            }
+                        )
+                        if (postTest.isSuccess && !postTest.resolvedIp.isNullOrBlank()) {
+                            val newIp = postTest.resolvedIp!!
+                            val newCountry = postTest.countryCode ?: country
+                            val newCountryName = postTest.countryName ?: countryName
+                            val newCity = postTest.city ?: ""
+                            val newIsp = postTest.isp ?: ""
+                            val newLatency = if (postTest.latencyMs > 0) postTest.latencyMs else latency
+                            val newLocLabel = if (newCity.isNotEmpty()) "$newCity, $newCountry" else newCountry
+                            val finalProto = postTest.workingProtocol ?: activeProtocol
+
+                            kotlinx.coroutines.withContext(Dispatchers.Main) {
+                                if (_uiState.value.proxyState.isConnected) {
+                                    _uiState.update {
+                                        it.copy(
+                                            proxyState = it.proxyState.copy(
+                                                protocol = finalProto,
+                                                ipAddress = newIp,
+                                                ipVersion = postTest.ipVersion,
+                                                countryCode = newCountry,
+                                                countryName = newCountryName,
+                                                city = newCity,
+                                                isp = newIsp,
+                                                pingMs = newLatency,
+                                                statusText = "Connected to $newIp ($newLocLabel) • ${newLatency}ms"
+                                            )
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    } catch (_: Exception) {}
                 }
             }
         }

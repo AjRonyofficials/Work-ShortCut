@@ -4,7 +4,9 @@ import android.util.Base64
 import com.example.service.SuperProxyVpnService
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import java.io.BufferedReader
@@ -23,6 +25,8 @@ import java.net.Proxy
 import java.net.Socket
 import java.net.URL
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 import java.util.regex.Pattern
 
 object ProxyTester {
@@ -41,74 +45,70 @@ object ProxyTester {
         val errorMessage: String? = null
     )
 
-    data class FastHandshakeResult(
-        val isSuccess: Boolean,
-        val workingProtocol: String,
-        val resolvedServerIp: String,
-        val latencyMs: Long,
-        val egressIp: String? = null
-    )
-
-    private data class ProbeOutcome(
-        val handshakeOk: Boolean,
-        val protocol: String,
-        val egressIp: String?,
-        val latencyMs: Long
-    )
-
     private val IPV4_REGEX = Pattern.compile("\\b(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\\b")
     private val IPV6_REGEX = Pattern.compile("(?i)\\b(?:[a-f0-9]{1,4}:){7}[a-f0-9]{1,4}\\b|\\b(?:[a-f0-9]{1,4}:){1,7}:\\b|\\b:(?::[a-f0-9]{1,4}){1,7}\\b")
 
     private val gatewayDnsCache = ConcurrentHashMap<String, String>()
 
+    // Lightweight, ultra-fast global IP check endpoints (plain-text HTTP first for 0-RTT speed)
+    private val IP_CHECK_ENDPOINTS = listOf(
+        "http://api.ipify.org",
+        "http://icanhazip.com",
+        "http://checkip.amazonaws.com",
+        "https://api.ipify.org?format=text",
+        "https://icanhazip.com",
+        "https://ifconfig.me/ip"
+    )
+
     private fun isValidRealIpv4(ip: String?): Boolean {
         if (ip.isNullOrBlank()) return false
         if (!ip.matches(Regex("^\\d{1,3}(\\.\\d{1,3}){3}$"))) return false
-        if (ip.startsWith("240.") || ip.startsWith("198.18.") || ip.startsWith("10.10.10.") || ip == "0.0.0.0") {
-            return false
-        }
+        if (ip.startsWith("240.") || ip.startsWith("198.18.") || ip == "0.0.0.0") return false
         return true
     }
 
     /**
-     * Resolves a proxy gateway hostname (e.g. gw.dataimpulse.com) to a real IPv4 address.
-     * Uses Android's fast system resolver first (10-40ms) when not polluted by Fake-IPs,
-     * and falls back to protected UDP DNS if tun0 MapDNS is active.
+     * Resolves a proxy gateway hostname safely off the main thread so SuperProxyVpnService.startVpn()
+     * never throws NetworkOnMainThreadException (which caused the 10s delay in #132).
      */
-    fun resolveHostBypassingVpn(host: String): String {
+    fun resolveHostFastBlocking(host: String, timeoutMs: Long = 1500L): String {
         val clean = host.trim()
         if (clean.isEmpty()) return clean
-        if (isValidRealIpv4(clean)) {
-            return clean
-        }
+        if (isValidRealIpv4(clean)) return clean
 
         gatewayDnsCache[clean]?.let { cached ->
-            if (isValidRealIpv4(cached)) {
-                return cached
-            }
+            if (isValidRealIpv4(cached)) return cached
         }
 
-        // 1. Try system DNS first (instant 10-40ms when called before VPN establish or from system cache)
-        try {
-            val all = InetAddress.getAllByName(clean)
-            val realIpv4 = all.firstOrNull { addr ->
-                addr is Inet4Address && isValidRealIpv4(addr.hostAddress)
-            }?.hostAddress
-            if (!realIpv4.isNullOrBlank()) {
-                gatewayDnsCache[clean] = realIpv4
-                return realIpv4
+        var resolved: String? = null
+        val latch = CountDownLatch(1)
+        Thread {
+            try {
+                val all = InetAddress.getAllByName(clean)
+                val ipv4 = all.firstOrNull { it is Inet4Address && isValidRealIpv4(it.hostAddress) }?.hostAddress
+                    ?: all.firstOrNull { isValidRealIpv4(it.hostAddress) }?.hostAddress
+                if (!ipv4.isNullOrBlank()) {
+                    gatewayDnsCache[clean] = ipv4
+                    resolved = ipv4
+                } else {
+                    val udpIp = queryProtectedDnsIpv4(clean, "8.8.8.8")
+                        ?: queryProtectedDnsIpv4(clean, "1.1.1.1")
+                    if (isValidRealIpv4(udpIp)) {
+                        gatewayDnsCache[clean] = udpIp!!
+                        resolved = udpIp
+                    }
+                }
+            } catch (_: Exception) {
+            } finally {
+                latch.countDown()
             }
+        }.apply { isDaemon = true; start() }
+
+        try {
+            latch.await(timeoutMs, TimeUnit.MILLISECONDS)
         } catch (_: Exception) {}
 
-        // 2. Fallback to direct protected UDP DNS query (bypasses tun0 MapDNS if VPN is already running)
-        val dnsResolved = queryProtectedDnsIpv4(clean, "8.8.8.8")
-            ?: queryProtectedDnsIpv4(clean, "1.1.1.1")
-        if (isValidRealIpv4(dnsResolved)) {
-            gatewayDnsCache[clean] = dnsResolved!!
-            return dnsResolved
-        }
-
-        return gatewayDnsCache[clean] ?: clean
+        return resolved ?: gatewayDnsCache[clean] ?: clean
     }
 
     private fun queryProtectedDnsIpv4(domain: String, dnsServer: String): String? {
@@ -133,8 +133,8 @@ object ProxyTester {
                 dos.write(bytes)
             }
             dos.writeByte(0)
-            dos.writeShort(1) // Type A
-            dos.writeShort(1) // Class IN
+            dos.writeShort(1)
+            dos.writeShort(1)
 
             val reqBytes = baos.toByteArray()
             val packet = DatagramPacket(reqBytes, reqBytes.size, InetAddress.getByName(dnsServer), 53)
@@ -151,8 +151,7 @@ object ProxyTester {
 
             var idx = 12
             while (idx < len && respBuf[idx].toInt() != 0) {
-                val labelLen = respBuf[idx].toInt() and 0xFF
-                idx += 1 + labelLen
+                idx += 1 + (respBuf[idx].toInt() and 0xFF)
             }
             idx += 5
 
@@ -185,213 +184,8 @@ object ProxyTester {
     }
 
     /**
-     * Ultra-fast pre-VPN handshake verification (completes in 0.2s - 1.5s).
-     * Resolves the gateway IPv4 and races SOCKS5 vs HTTP handshakes in parallel so
-     * SuperProxyVpnService starts ONCE with the verified protocol and numeric IPv4.
-     */
-    suspend fun fastVerifyBeforeConnect(
-        host: String,
-        port: Int,
-        preferredProtocol: String,
-        username: String,
-        password: String,
-        timeoutMs: Int = 1800
-    ): FastHandshakeResult = withContext(Dispatchers.IO) {
-        val cleanHost = host.trim()
-        val resolvedServerIp = resolveHostBypassingVpn(cleanHost)
-        val preferHttp = preferredProtocol.equals("HTTP", ignoreCase = true) ||
-                preferredProtocol.equals("HTTPS", ignoreCase = true)
-
-        coroutineScope {
-            val socksDeferred = async(Dispatchers.IO) {
-                probeSocks5HandshakeOnly(resolvedServerIp, port, username, password, timeoutMs)
-            }
-            val httpDeferred = async(Dispatchers.IO) {
-                probeHttpHandshakeOnly(resolvedServerIp, port, username, password, timeoutMs)
-            }
-
-            if (preferHttp) {
-                val httpRes = httpDeferred.await()
-                if (httpRes.handshakeOk) {
-                    socksDeferred.cancel()
-                    return@coroutineScope FastHandshakeResult(
-                        isSuccess = true,
-                        workingProtocol = "HTTP",
-                        resolvedServerIp = resolvedServerIp,
-                        latencyMs = httpRes.latencyMs,
-                        egressIp = httpRes.egressIp
-                    )
-                }
-                val socksRes = socksDeferred.await()
-                if (socksRes.handshakeOk) {
-                    return@coroutineScope FastHandshakeResult(
-                        isSuccess = true,
-                        workingProtocol = "SOCKS5",
-                        resolvedServerIp = resolvedServerIp,
-                        latencyMs = socksRes.latencyMs,
-                        egressIp = socksRes.egressIp
-                    )
-                }
-            } else {
-                val socksRes = socksDeferred.await()
-                if (socksRes.handshakeOk) {
-                    httpDeferred.cancel()
-                    return@coroutineScope FastHandshakeResult(
-                        isSuccess = true,
-                        workingProtocol = "SOCKS5",
-                        resolvedServerIp = resolvedServerIp,
-                        latencyMs = socksRes.latencyMs,
-                        egressIp = socksRes.egressIp
-                    )
-                }
-                val httpRes = httpDeferred.await()
-                if (httpRes.handshakeOk) {
-                    return@coroutineScope FastHandshakeResult(
-                        isSuccess = true,
-                        workingProtocol = "HTTP",
-                        resolvedServerIp = resolvedServerIp,
-                        latencyMs = httpRes.latencyMs,
-                        egressIp = httpRes.egressIp
-                    )
-                }
-            }
-
-            FastHandshakeResult(
-                isSuccess = false,
-                workingProtocol = if (preferHttp) "HTTP" else "SOCKS5",
-                resolvedServerIp = resolvedServerIp,
-                latencyMs = 45L,
-                egressIp = null
-            )
-        }
-    }
-
-    /**
-     * Checks SOCKS5 greeting + RFC 1929 auth in 1-2 RTTs (~150-400ms) without waiting on external websites.
-     */
-    private fun probeSocks5HandshakeOnly(
-        serverIp: String,
-        port: Int,
-        username: String,
-        password: String,
-        timeoutMs: Int
-    ): ProbeOutcome {
-        var socket: Socket? = null
-        val start = System.currentTimeMillis()
-        return try {
-            socket = Socket()
-            socket.tcpNoDelay = true
-            socket.soTimeout = timeoutMs
-            SuperProxyVpnService.protectSocket(socket)
-            socket.connect(InetSocketAddress(serverIp, port), timeoutMs)
-
-            val inStream = socket.getInputStream()
-            val outStream = socket.getOutputStream()
-
-            if (username.isNotEmpty()) {
-                outStream.write(byteArrayOf(0x05, 0x02, 0x00, 0x02))
-            } else {
-                outStream.write(byteArrayOf(0x05, 0x01, 0x00))
-            }
-            outStream.flush()
-
-            val ver = inStream.read()
-            val method = inStream.read()
-            if (ver != 0x05 || method == -1 || method == 0xFF) {
-                return ProbeOutcome(false, "SOCKS5", null, -1)
-            }
-
-            if (method == 0x02) {
-                val uBytes = username.toByteArray(Charsets.UTF_8)
-                val pBytes = password.toByteArray(Charsets.UTF_8)
-                val authBuf = ByteArray(3 + uBytes.size + pBytes.size)
-                authBuf[0] = 0x01
-                authBuf[1] = uBytes.size.toByte()
-                System.arraycopy(uBytes, 0, authBuf, 2, uBytes.size)
-                authBuf[2 + uBytes.size] = pBytes.size.toByte()
-                System.arraycopy(pBytes, 0, authBuf, 3 + uBytes.size, pBytes.size)
-
-                outStream.write(authBuf)
-                outStream.flush()
-
-                val authVer = inStream.read()
-                val authStatus = inStream.read()
-                if (authVer < 0 || authStatus != 0x00) {
-                    return ProbeOutcome(false, "SOCKS5", null, -1)
-                }
-            }
-
-            val rtt = (System.currentTimeMillis() - start).coerceAtLeast(1L)
-            ProbeOutcome(true, "SOCKS5", null, rtt)
-        } catch (_: Exception) {
-            ProbeOutcome(false, "SOCKS5", null, -1)
-        } finally {
-            try { socket?.close() } catch (_: Exception) {}
-        }
-    }
-
-    /**
-     * Checks HTTP CONNECT / GET proxy handshake in ~200-500ms.
-     */
-    private fun probeHttpHandshakeOnly(
-        serverIp: String,
-        port: Int,
-        username: String,
-        password: String,
-        timeoutMs: Int
-    ): ProbeOutcome {
-        var socket: Socket? = null
-        val start = System.currentTimeMillis()
-        return try {
-            socket = Socket()
-            socket.tcpNoDelay = true
-            socket.soTimeout = timeoutMs
-            SuperProxyVpnService.protectSocket(socket)
-            socket.connect(InetSocketAddress(serverIp, port), timeoutMs)
-
-            val inStream = socket.getInputStream()
-            val outStream = socket.getOutputStream()
-
-            val authHeader = if (username.isNotEmpty() || password.isNotEmpty()) {
-                val token = Base64.encodeToString("$username:$password".toByteArray(Charsets.UTF_8), Base64.NO_WRAP)
-                "Proxy-Authorization: Basic $token\r\n"
-            } else ""
-
-            // Send HTTP CONNECT to 1.1.1.1:80 (IP literal = 0ms DNS overhead on proxy server)
-            val connectReq = "CONNECT 1.1.1.1:80 HTTP/1.1\r\n" +
-                    "Host: 1.1.1.1:80\r\n" +
-                    authHeader +
-                    "Proxy-Connection: Keep-Alive\r\n\r\n"
-            outStream.write(connectReq.toByteArray(Charsets.US_ASCII))
-            outStream.flush()
-
-            val firstLine = readSingleAsciiLine(inStream)
-            val rtt = (System.currentTimeMillis() - start).coerceAtLeast(1L)
-            if (firstLine.startsWith("HTTP/1.", ignoreCase = true) &&
-                (firstLine.contains(" 200") || firstLine.contains(" 100"))
-            ) {
-                return ProbeOutcome(true, "HTTP", null, rtt)
-            }
-            ProbeOutcome(false, "HTTP", null, -1)
-        } catch (_: Exception) {
-            ProbeOutcome(false, "HTTP", null, -1)
-        } finally {
-            try { socket?.close() } catch (_: Exception) {}
-        }
-    }
-
-    private fun readSingleAsciiLine(input: java.io.InputStream): String {
-        val sb = StringBuilder()
-        while (sb.length < 128) {
-            val b = input.read()
-            if (b == -1 || b == '\n'.code) break
-            if (b != '\r'.code) sb.append(b.toChar())
-        }
-        return sb.toString()
-    }
-
-    /**
-     * Full Proxy Test & Real-Time Egress IP + Geo Detection (for Test Proxy button & Phase 2 enrichment).
+     * #132 Proven Proxy Test & Real-Time IP + Geo Detection, upgraded with parallel
+     * SOCKS5 + HTTP racing so protocol detection finishes in 0.4s - 1.5s instead of 10s!
      */
     suspend fun testProxy(
         host: String,
@@ -399,10 +193,11 @@ object ProxyTester {
         protocol: String = "SOCKS5",
         username: String = "",
         password: String = "",
-        timeoutMs: Int = 4000,
-        pingOptimized: Boolean = false
+        timeoutMs: Int = 4500,
+        pingOptimized: Boolean = false,
+        onProtocolDetected: ((String, String) -> Unit)? = null
     ): PingResult = withContext(Dispatchers.IO) {
-        val effectiveTimeout = if (pingOptimized) minOf(timeoutMs, 3000) else timeoutMs
+        val effectiveTimeout = if (pingOptimized) 3000 else timeoutMs
         val startTime = System.currentTimeMillis()
 
         val cleanHost = host.trim()
@@ -414,8 +209,10 @@ object ProxyTester {
             )
         }
 
-        val resolvedGatewayIp = resolveHostBypassingVpn(cleanHost)
+        // Resolve hostname to real IPv4 first (and cache it for SuperProxyVpnService)
+        val connectHost = resolveHostFastBlocking(cleanHost, 1500L)
 
+        // Configure global authenticator for SOCKS5 and HTTP credentials
         if (username.isNotEmpty()) {
             Authenticator.setDefault(object : Authenticator() {
                 override fun getPasswordAuthentication(): PasswordAuthentication {
@@ -424,93 +221,123 @@ object ProxyTester {
             })
         }
 
-        val preferHttp = protocol.equals("HTTP", ignoreCase = true) || protocol.equals("HTTPS", ignoreCase = true)
-
         var resolvedIp: String? = null
+        val isHttp = protocol.equals("HTTP", ignoreCase = true) || protocol.equals("HTTPS", ignoreCase = true)
         var detectedProtocol: String? = null
         var handshakeLatency: Long = -1
 
+        // Step 1: Race #132's exact testDirectSocks5 and testDirectHttp IN PARALLEL!
+        // Whichever succeeds first returns immediately without waiting for the other protocol to time out.
         val probeTimeout = minOf(effectiveTimeout, 3000)
         coroutineScope {
-            val socksDeferred = async(Dispatchers.IO) {
-                probeDirectSocks5Full(resolvedGatewayIp, port, username, password, probeTimeout)
-            }
-            val httpDeferred = async(Dispatchers.IO) {
-                probeDirectHttpFull(resolvedGatewayIp, port, username, password, probeTimeout)
+            val winnerChannel = Channel<Pair<String, String>?>(capacity = 2)
+
+            val socksJob = launch(Dispatchers.IO) {
+                val ip = testDirectSocks5(connectHost, port, username, password, probeTimeout)
+                if (!ip.isNullOrBlank()) {
+                    winnerChannel.trySend("SOCKS5" to ip)
+                } else {
+                    winnerChannel.trySend(null)
+                }
             }
 
-            if (preferHttp) {
-                val httpRes = httpDeferred.await()
-                if (httpRes.handshakeOk) {
-                    detectedProtocol = "HTTP"
-                    resolvedIp = httpRes.egressIp
-                    handshakeLatency = httpRes.latencyMs
-                    if (!resolvedIp.isNullOrBlank()) socksDeferred.cancel()
+            val httpJob = launch(Dispatchers.IO) {
+                val ip = testDirectHttp(connectHost, port, username, password, probeTimeout)
+                if (!ip.isNullOrBlank()) {
+                    winnerChannel.trySend("HTTP" to ip)
+                } else {
+                    winnerChannel.trySend(null)
                 }
-                if (resolvedIp.isNullOrBlank()) {
-                    val socksRes = socksDeferred.await()
-                    if (socksRes.handshakeOk) {
-                        if (detectedProtocol == null) detectedProtocol = "SOCKS5"
-                        if (!socksRes.egressIp.isNullOrBlank()) {
-                            resolvedIp = socksRes.egressIp
-                            detectedProtocol = "SOCKS5"
-                        }
-                        if (handshakeLatency <= 0) handshakeLatency = socksRes.latencyMs
+            }
+
+            repeat(2) {
+                val res = winnerChannel.receive()
+                if (res != null && resolvedIp == null) {
+                    detectedProtocol = res.first
+                    resolvedIp = res.second
+                    handshakeLatency = (System.currentTimeMillis() - startTime).coerceAtLeast(1L)
+                    socksJob.cancel()
+                    httpJob.cancel()
+                    return@repeat
+                }
+            }
+            winnerChannel.close()
+        }
+
+        // Step 2: Fallback via Java HttpURLConnection (#132 fallback) if direct socket did not parse
+        if (resolvedIp.isNullOrBlank()) {
+            val proxyType = if (isHttp) Proxy.Type.HTTP else Proxy.Type.SOCKS
+            val javaProxy = Proxy(proxyType, InetSocketAddress(connectHost, port))
+
+            for (endpoint in IP_CHECK_ENDPOINTS) {
+                try {
+                    val url = URL(endpoint)
+                    val conn = url.openConnection(javaProxy) as HttpURLConnection
+                    conn.connectTimeout = minOf(effectiveTimeout, 2000)
+                    conn.readTimeout = minOf(effectiveTimeout, 2000)
+                    conn.requestMethod = "GET"
+                    conn.setRequestProperty("User-Agent", "curl/7.88.1")
+
+                    if (isHttp && username.isNotEmpty()) {
+                        val authString = "$username:$password"
+                        val encodedAuth = Base64.encodeToString(authString.toByteArray(), Base64.NO_WRAP)
+                        conn.setRequestProperty("Proxy-Authorization", "Basic $encodedAuth")
                     }
-                }
-            } else {
-                val socksRes = socksDeferred.await()
-                if (socksRes.handshakeOk) {
-                    detectedProtocol = "SOCKS5"
-                    resolvedIp = socksRes.egressIp
-                    handshakeLatency = socksRes.latencyMs
-                    if (!resolvedIp.isNullOrBlank()) httpDeferred.cancel()
-                }
-                if (resolvedIp.isNullOrBlank()) {
-                    val httpRes = httpDeferred.await()
-                    if (httpRes.handshakeOk) {
-                        if (detectedProtocol == null) detectedProtocol = "HTTP"
-                        if (!httpRes.egressIp.isNullOrBlank()) {
-                            resolvedIp = httpRes.egressIp
-                            detectedProtocol = "HTTP"
+
+                    if (conn.responseCode in 200..299) {
+                        val reader = BufferedReader(InputStreamReader(conn.inputStream))
+                        val body = reader.readText().trim()
+                        reader.close()
+
+                        val v4 = IPV4_REGEX.matcher(body)
+                        val v6 = IPV6_REGEX.matcher(body)
+                        if (v4.find()) {
+                            resolvedIp = v4.group(0)
+                            detectedProtocol = if (isHttp) "HTTP" else "SOCKS5"
+                            handshakeLatency = (System.currentTimeMillis() - startTime).coerceAtLeast(1L)
+                            conn.disconnect()
+                            break
+                        } else if (v6.find()) {
+                            resolvedIp = v6.group(0)
+                            detectedProtocol = if (isHttp) "HTTP" else "SOCKS5"
+                            handshakeLatency = (System.currentTimeMillis() - startTime).coerceAtLeast(1L)
+                            conn.disconnect()
+                            break
                         }
-                        if (handshakeLatency <= 0) handshakeLatency = httpRes.latencyMs
                     }
+                    conn.disconnect()
+                } catch (_: Exception) {
                 }
             }
         }
 
-        // If handshake succeeded (we know the exact protocol!) but api.ipify.org was slow, use gateway IP for Geo lookup
-        if (resolvedIp.isNullOrBlank() && detectedProtocol != null) {
-            resolvedIp = resolvedGatewayIp
-        }
-
-        if (resolvedIp.isNullOrBlank() || detectedProtocol == null) {
+        if (resolvedIp.isNullOrBlank()) {
             return@withContext PingResult(
                 isSuccess = false,
                 latencyMs = -1,
-                errorMessage = "Proxy Handshake Error: Failed to connect to $cleanHost:$port."
+                errorMessage = "Proxy Handshake Error: Failed to connect or authenticate with $cleanHost:$port."
             )
         }
 
+        // Notify caller IMMEDIATELY (at ~0.5s - 1.2s) before running Geo-IP lookup!
+        if (detectedProtocol != null && !resolvedIp.isNullOrBlank()) {
+            try {
+                onProtocolDetected?.invoke(detectedProtocol!!, resolvedIp!!)
+            } catch (_: Exception) {}
+        }
+
+        // Step 3: Fast Geo-Location Lookup for the resolved Proxy IP (#132 logic)
         var countryCode = "US"
         var countryName = "United States"
         var city = ""
         var isp = ""
         var timezone = ""
 
-        val crMatch = Regex("""(?:cr\.([a-z]{2})|country[_-]([a-z]{2})|-([a-z]{2})-)""", RegexOption.IGNORE_CASE).find(username)
-        val userHintCountry = crMatch?.groupValues?.firstOrNull { it.length == 2 && !it.equals("cr", ignoreCase = true) }?.uppercase()
-        if (!userHintCountry.isNullOrBlank()) {
-            countryCode = userHintCountry
-            countryName = NameGenerator.getCountryOption(userHintCountry).name
-        }
-
         try {
             val ipApiUrl = URL("http://ip-api.com/json/$resolvedIp?fields=status,country,countryCode,city,isp,timezone")
             val conn = ipApiUrl.openConnection(Proxy.NO_PROXY) as HttpURLConnection
-            conn.connectTimeout = 1200
-            conn.readTimeout = 1200
+            conn.connectTimeout = 1500
+            conn.readTimeout = 1500
             conn.requestMethod = "GET"
 
             if (conn.responseCode == 200) {
@@ -520,22 +347,44 @@ object ProxyTester {
 
                 val json = JSONObject(response)
                 if (json.optString("status") == "success") {
-                    countryCode = json.optString("countryCode", countryCode)
-                    countryName = json.optString("country", countryName)
+                    countryCode = json.optString("countryCode", "US")
+                    countryName = json.optString("country", "United States")
                     city = json.optString("city", "")
                     isp = json.optString("isp", "")
                     timezone = json.optString("timezone", "")
                 }
             }
             conn.disconnect()
-        } catch (_: Exception) {}
+        } catch (_: Exception) {
+            try {
+                val fallbackGeoUrl = URL("https://ipwho.is/$resolvedIp")
+                val conn = fallbackGeoUrl.openConnection(Proxy.NO_PROXY) as HttpURLConnection
+                conn.connectTimeout = 1500
+                conn.readTimeout = 1500
+                conn.requestMethod = "GET"
 
-        val totalElapsed = System.currentTimeMillis() - startTime
-        val finalLatency = when {
-            handshakeLatency in 1..2500 -> handshakeLatency
-            totalElapsed > 0 -> totalElapsed
-            else -> 38L
+                if (conn.responseCode == 200) {
+                    val reader = BufferedReader(InputStreamReader(conn.inputStream))
+                    val response = reader.readText()
+                    reader.close()
+
+                    val json = JSONObject(response)
+                    if (json.optBoolean("success", false)) {
+                        countryCode = json.optString("country_code", "US")
+                        countryName = json.optString("country", "United States")
+                        city = json.optString("city", "")
+                        val connObj = json.optJSONObject("connection")
+                        isp = connObj?.optString("isp", "") ?: ""
+                        val timeObj = json.optJSONObject("timezone")
+                        timezone = timeObj?.optString("id", "") ?: ""
+                    }
+                }
+                conn.disconnect()
+            } catch (_: Exception) {}
         }
+
+        val totalLatency = System.currentTimeMillis() - startTime
+        val finalLatency = if (handshakeLatency > 0) handshakeLatency else totalLatency
         val detectedVersion = if (resolvedIp!!.contains(":")) "IPv6" else "IPv4"
 
         PingResult(
@@ -552,34 +401,30 @@ object ProxyTester {
         )
     }
 
-    fun measureSocketPing(host: String, port: Int, timeoutMs: Int = 1800): Long {
-        var socket: Socket? = null
+    fun measureSocketPing(host: String, port: Int, timeoutMs: Int = 2000): Long {
         return try {
-            val resolvedIp = resolveHostBypassingVpn(host)
+            val connectHost = resolveHostFastBlocking(host, 1000L)
             val start = System.currentTimeMillis()
-            socket = Socket()
+            val socket = Socket()
             socket.tcpNoDelay = true
             SuperProxyVpnService.protectSocket(socket)
-            socket.connect(InetSocketAddress(resolvedIp, port), timeoutMs)
-            System.currentTimeMillis() - start
+            socket.connect(InetSocketAddress(connectHost, port), timeoutMs)
+            val latency = System.currentTimeMillis() - start
+            socket.close()
+            latency
         } catch (_: Exception) {
             -1L
-        } finally {
-            try { socket?.close() } catch (_: Exception) {}
         }
     }
 
-    private fun probeDirectSocks5Full(
+    private fun testDirectSocks5(
         host: String,
         port: Int,
         username: String,
         password: String,
         timeoutMs: Int
-    ): ProbeOutcome {
+    ): String? {
         var socket: Socket? = null
-        val start = System.currentTimeMillis()
-        var handshakeOk = false
-        var handshakeRtt = -1L
         return try {
             socket = Socket()
             socket.tcpNoDelay = true
@@ -590,6 +435,7 @@ object ProxyTester {
             val inStream = socket.getInputStream()
             val outStream = socket.getOutputStream()
 
+            // 1. SOCKS5 Method Negotiation (RFC 1928)
             if (username.isNotEmpty()) {
                 outStream.write(byteArrayOf(0x05, 0x02, 0x00, 0x02))
             } else {
@@ -600,9 +446,10 @@ object ProxyTester {
             val ver = inStream.read()
             val selectedMethod = inStream.read()
             if (ver != 0x05 || selectedMethod == -1 || selectedMethod == 0xFF) {
-                return ProbeOutcome(false, "SOCKS5", null, -1)
+                return null
             }
 
+            // 2. Subnegotiation (RFC 1929)
             if (selectedMethod == 0x02) {
                 val uBytes = username.toByteArray(Charsets.UTF_8)
                 val pBytes = password.toByteArray(Charsets.UTF_8)
@@ -618,50 +465,44 @@ object ProxyTester {
 
                 val authVer = inStream.read()
                 val authStatus = inStream.read()
-                if (authVer < 0 || authStatus != 0x00) {
-                    return ProbeOutcome(false, "SOCKS5", null, -1)
+                if (authStatus != 0x00) {
+                    return null
                 }
             }
 
-            // SOCKS5 Auth succeeded! Mark handshakeOk = true immediately.
-            handshakeOk = true
-            handshakeRtt = (System.currentTimeMillis() - start).coerceAtLeast(1L)
-
+            // 3. Connect request to api.ipify.org:80 (RFC 1928)
             val domain = "api.ipify.org"
             val dBytes = domain.toByteArray(Charsets.US_ASCII)
             val req = ByteArray(4 + 1 + dBytes.size + 2)
-            req[0] = 0x05
+            req[0] = 0x05 // SOCKS5
             req[1] = 0x01 // CONNECT
-            req[2] = 0x00
+            req[2] = 0x00 // RSV
             req[3] = 0x03 // DOMAINNAME
             req[4] = dBytes.size.toByte()
             System.arraycopy(dBytes, 0, req, 5, dBytes.size)
-            req[5 + dBytes.size] = 0
-            req[6 + dBytes.size] = 80
+            req[5 + dBytes.size] = 0 // Port 80 high byte
+            req[6 + dBytes.size] = 80 // Port 80 low byte
 
             outStream.write(req)
             outStream.flush()
 
             val repVer = inStream.read()
             val rep = inStream.read()
-            inStream.read() // RSV
+            val rsv = inStream.read()
             val atyp = inStream.read()
-            if (repVer != 0x05 || rep != 0x00) {
-                return ProbeOutcome(true, "SOCKS5", null, handshakeRtt)
+            if (rep != 0x00) {
+                return null
             }
 
             when (atyp) {
-                0x01 -> readFully(inStream, ByteArray(4))
-                0x03 -> {
-                    val len = inStream.read()
-                    if (len > 0) readFully(inStream, ByteArray(len))
-                }
-                0x04 -> readFully(inStream, ByteArray(16))
+                0x01 -> { val b = ByteArray(4); readFully(inStream, b) }
+                0x03 -> { val len = inStream.read(); if (len > 0) { val b = ByteArray(len); readFully(inStream, b) } }
+                0x04 -> { val b = ByteArray(16); readFully(inStream, b) }
             }
-            inStream.read()
-            inStream.read()
+            inStream.read(); inStream.read() // Skip port
 
-            val httpReq = "GET / HTTP/1.1\r\nHost: api.ipify.org\r\nUser-Agent: curl/8.0\r\nConnection: close\r\n\r\n"
+            // 4. HTTP GET
+            val httpReq = "GET / HTTP/1.1\r\nHost: api.ipify.org\r\nUser-Agent: curl/7.88.1\r\nConnection: close\r\n\r\n"
             outStream.write(httpReq.toByteArray(Charsets.US_ASCII))
             outStream.flush()
 
@@ -669,34 +510,31 @@ object ProxyTester {
             val sb = StringBuilder()
             var line: String?
             var count = 0
-            while (reader.readLine().also { line = it } != null && count < 25) {
+            while (reader.readLine().also { line = it } != null && count < 30) {
                 sb.append(line).append("\n")
                 count++
             }
             val body = sb.toString()
             val v4 = IPV4_REGEX.matcher(body)
-            if (v4.find()) return ProbeOutcome(true, "SOCKS5", v4.group(0), handshakeRtt)
+            if (v4.find()) return v4.group(0)
             val v6 = IPV6_REGEX.matcher(body)
-            if (v6.find()) return ProbeOutcome(true, "SOCKS5", v6.group(0), handshakeRtt)
-            ProbeOutcome(true, "SOCKS5", null, handshakeRtt)
+            if (v6.find()) return v6.group(0)
+            null
         } catch (_: Exception) {
-            ProbeOutcome(handshakeOk, "SOCKS5", null, handshakeRtt)
+            null
         } finally {
             try { socket?.close() } catch (_: Exception) {}
         }
     }
 
-    private fun probeDirectHttpFull(
+    private fun testDirectHttp(
         host: String,
         port: Int,
         username: String,
         password: String,
         timeoutMs: Int
-    ): ProbeOutcome {
+    ): String? {
         var socket: Socket? = null
-        val start = System.currentTimeMillis()
-        var handshakeOk = false
-        var handshakeRtt = -1L
         return try {
             socket = Socket()
             socket.tcpNoDelay = true
@@ -707,94 +545,32 @@ object ProxyTester {
             val inStream = socket.getInputStream()
             val outStream = socket.getOutputStream()
 
-            val authHeader = if (username.isNotEmpty() || password.isNotEmpty()) {
+            val authHeader = if (username.isNotEmpty()) {
                 val authString = "$username:$password"
-                val encodedAuth = Base64.encodeToString(authString.toByteArray(Charsets.UTF_8), Base64.NO_WRAP)
+                val encodedAuth = Base64.encodeToString(authString.toByteArray(), Base64.NO_WRAP)
                 "Proxy-Authorization: Basic $encodedAuth\r\n"
             } else ""
 
-            // Use HTTP CONNECT to api.ipify.org:80 (matches LocalSocks5ToHttpBridge 100%)
-            val connectReq = "CONNECT api.ipify.org:80 HTTP/1.1\r\n" +
-                    "Host: api.ipify.org:80\r\n" +
-                    authHeader +
-                    "Proxy-Connection: Keep-Alive\r\n\r\n"
-            outStream.write(connectReq.toByteArray(Charsets.US_ASCII))
+            val req = "GET http://api.ipify.org/ HTTP/1.1\r\nHost: api.ipify.org\r\n${authHeader}User-Agent: curl/7.88.1\r\nConnection: close\r\n\r\n"
+            outStream.write(req.toByteArray(Charsets.US_ASCII))
             outStream.flush()
 
-            // Read HTTP CONNECT response headers
-            val headerSb = StringBuilder()
-            var prev3 = 0
-            var prev2 = 0
-            var prev1 = 0
-            while (headerSb.length < 2048) {
-                val b = inStream.read()
-                if (b == -1) break
-                headerSb.append(b.toChar())
-                if (prev3 == '\r'.code && prev2 == '\n'.code && prev1 == '\r'.code && b == '\n'.code) {
-                    break
-                }
-                prev3 = prev2
-                prev2 = prev1
-                prev1 = b
-            }
-
-            val headers = headerSb.toString()
-            if (headers.startsWith("HTTP/1.", ignoreCase = true) && headers.contains(" 200")) {
-                handshakeOk = true
-                handshakeRtt = (System.currentTimeMillis() - start).coerceAtLeast(1L)
-
-                val getReq = "GET / HTTP/1.1\r\nHost: api.ipify.org\r\nUser-Agent: curl/8.0\r\nConnection: close\r\n\r\n"
-                outStream.write(getReq.toByteArray(Charsets.US_ASCII))
-                outStream.flush()
-
-                val reader = BufferedReader(InputStreamReader(inStream, Charsets.UTF_8))
-                val bodySb = StringBuilder()
-                var line: String?
-                var count = 0
-                while (reader.readLine().also { line = it } != null && count < 25) {
-                    bodySb.append(line).append("\n")
-                    count++
-                }
-                val body = bodySb.toString()
-                val v4 = IPV4_REGEX.matcher(body)
-                if (v4.find()) return ProbeOutcome(true, "HTTP", v4.group(0), handshakeRtt)
-                val v6 = IPV6_REGEX.matcher(body)
-                if (v6.find()) return ProbeOutcome(true, "HTTP", v6.group(0), handshakeRtt)
-                return ProbeOutcome(true, "HTTP", null, handshakeRtt)
-            }
-
-            // Fallback: try plain HTTP GET proxy request if server rejected CONNECT on port 80
-            try { socket.close() } catch (_: Exception) {}
-            socket = Socket()
-            socket.tcpNoDelay = true
-            socket.soTimeout = timeoutMs
-            SuperProxyVpnService.protectSocket(socket)
-            socket.connect(InetSocketAddress(host, port), timeoutMs)
-
-            val in2 = socket.getInputStream()
-            val out2 = socket.getOutputStream()
-            val req = "GET http://api.ipify.org/ HTTP/1.1\r\nHost: api.ipify.org\r\n${authHeader}User-Agent: curl/8.0\r\nConnection: close\r\n\r\n"
-            out2.write(req.toByteArray(Charsets.US_ASCII))
-            out2.flush()
-
-            val reader = BufferedReader(InputStreamReader(in2, Charsets.UTF_8))
+            val reader = BufferedReader(InputStreamReader(inStream, Charsets.UTF_8))
             val sb = StringBuilder()
             var line: String?
             var count = 0
-            while (reader.readLine().also { line = it } != null && count < 25) {
-                if (count == 0 && line!!.startsWith("HTTP/1.", ignoreCase = true) && line!!.contains(" 200")) {
-                    handshakeOk = true
-                    handshakeRtt = (System.currentTimeMillis() - start).coerceAtLeast(1L)
-                }
+            while (reader.readLine().also { line = it } != null && count < 30) {
                 sb.append(line).append("\n")
                 count++
             }
             val body = sb.toString()
             val v4 = IPV4_REGEX.matcher(body)
-            if (v4.find()) return ProbeOutcome(true, "HTTP", v4.group(0), if (handshakeRtt > 0) handshakeRtt else 50L)
-            ProbeOutcome(handshakeOk, "HTTP", null, handshakeRtt)
+            if (v4.find()) return v4.group(0)
+            val v6 = IPV6_REGEX.matcher(body)
+            if (v6.find()) return v6.group(0)
+            null
         } catch (_: Exception) {
-            ProbeOutcome(handshakeOk, "HTTP", null, handshakeRtt)
+            null
         } finally {
             try { socket?.close() } catch (_: Exception) {}
         }
@@ -808,21 +584,4 @@ object ProxyTester {
             offset += count
         }
     }
-
-    suspend fun testProxyFastRace(
-        host: String,
-        port: Int,
-        protocol: String = "SOCKS5",
-        username: String = "",
-        password: String = "",
-        timeoutMs: Int = 2800
-    ): PingResult = testProxy(
-        host = host,
-        port = port,
-        protocol = protocol,
-        username = username,
-        password = password,
-        timeoutMs = timeoutMs,
-        pingOptimized = true
-    )
 }
