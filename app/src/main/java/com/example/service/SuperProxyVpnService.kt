@@ -23,14 +23,13 @@ import kotlinx.coroutines.sync.withLock
 import java.io.File
 import java.io.FileOutputStream
 import java.net.DatagramSocket
-import java.net.Inet4Address
-import java.net.InetAddress
 import java.net.Socket
+import java.util.concurrent.atomic.AtomicInteger
 
 /**
- * Super Proxy style VpnService based on the proven #132 architecture,
- * upgraded with off-main-thread DNS pre-resolution and pure MapDNS (198.18.0.2)
- * to eliminate the 10-second initial website loading delay.
+ * Super Proxy style VpnService built on the proven #132 native hev-socks5-tunnel architecture,
+ * with synchronous JNI lifecycle serialization (no tunFd race), Fake-IP-safe gateway resolution,
+ * and per-session MapDNS subnet isolation inside 240.0.0.0/4.
  */
 class SuperProxyVpnService : VpnService() {
 
@@ -50,7 +49,11 @@ class SuperProxyVpnService : VpnService() {
         val action = intent?.action
 
         if (action == ACTION_STOP) {
-            stopVpn()
+            serviceScope.launch {
+                vpnMutex.withLock {
+                    stopVpnInternal()
+                }
+            }
             return START_NOT_STICKY
         }
 
@@ -81,25 +84,17 @@ class SuperProxyVpnService : VpnService() {
         pass: String,
         allowedApps: List<String>
     ) {
+        // 1. Cleanly stop any previous tunnel synchronously BEFORE resolving DNS or creating a new tunFd
         if (isRunning || vpnInterface != null) {
             cleanUpTunnel()
         }
 
         try {
-            // 1. Resolve server hostname to IPv4 on IO thread BEFORE establishing VPN!
-            // In #132 this ran on the main thread and threw NetworkOnMainThreadException, causing a 10s delay.
+            // 2. Resolve server hostname to real IPv4 on IO thread while tun0 is down (never accepts 240.x.x.x Fake-IPs)
             val cleanServer = server.trim()
-            val resolvedServerIp = try {
-                val all = InetAddress.getAllByName(cleanServer)
-                all.firstOrNull { it is Inet4Address }?.hostAddress
-                    ?: all.firstOrNull()?.hostAddress
-                    ?: ProxyTester.resolveHostBypassingVpn(cleanServer)
-            } catch (_: Exception) {
-                ProxyTester.resolveHostBypassingVpn(cleanServer)
-            }
+            val resolvedServerIp = ProxyTester.resolveHostBypassingVpn(cleanServer)
 
-            // 2. Proven #132 TUN configuration, using ONLY 198.18.0.2 (MapDNS) so Android
-            // never stalls for 10 seconds probing 8.8.8.8 / 1.1.1.1 outside MapDNS.
+            // 3. Configure TUN interface with pure 198.18.0.2 MapDNS so Android never stalls 10s on 8.8.8.8 UDP
             val builder = Builder()
                 .setSession("SuperProxy: $profileName")
                 .setMtu(1400)
@@ -114,7 +109,7 @@ class SuperProxyVpnService : VpnService() {
                 } catch (_: Exception) {}
             }
 
-            // 3. App Routing (Split Tunneling) & Loop Prevention
+            // 4. App Routing (Split Tunneling) & Loop Prevention
             val cleanAllowed = allowedApps.map { it.trim() }.filter { it.isNotEmpty() && it != packageName }.distinct()
             if (cleanAllowed.isNotEmpty()) {
                 var addedCount = 0
@@ -145,8 +140,7 @@ class SuperProxyVpnService : VpnService() {
                 }
             } catch (_: Exception) {}
 
-            // 4. Protocol & Authentication Handling (#132 architecture):
-            // Direct native C connection for SOCKS5; high-speed CachedThreadPool bridge for HTTP/HTTPS.
+            // 5. Protocol & Authentication Handling (#132 architecture)
             val isHttp = protocol.equals("HTTP", ignoreCase = true) || protocol.equals("HTTPS", ignoreCase = true)
             val finalServerIp: String
             val finalPort: Int
@@ -175,7 +169,10 @@ class SuperProxyVpnService : VpnService() {
                 finalPass = pass
             }
 
-            // 5. Generate #132 YAML configuration for hev-socks5-tunnel with 5000ms connect-timeout
+            // Rotate /16 subnet inside 240.0.0.0/4 per session so Chrome never reuses stale Fake-IPs across reconnects
+            val sessionOctet = (sessionCounter.incrementAndGet() % 250) + 1
+
+            // 6. Generate YAML configuration for hev-socks5-tunnel
             val configFile = File(cacheDir, "hev-socks5.conf")
             val sb = java.lang.StringBuilder()
             sb.append("tunnel:\n")
@@ -198,34 +195,29 @@ class SuperProxyVpnService : VpnService() {
             sb.append("mapdns:\n")
             sb.append("  address: 198.18.0.2\n")
             sb.append("  port: 53\n")
-            sb.append("  network: 240.0.0.0\n")
-            sb.append("  netmask: 240.0.0.0\n")
+            sb.append("  network: 240.").append(sessionOctet).append(".0.0\n")
+            sb.append("  netmask: 255.255.0.0\n")
             sb.append("  cache-size: 10000\n")
             sb.append("\n")
             sb.append("misc:\n")
             sb.append("  task-stack-size: 81920\n")
             sb.append("  tcp-buffer-size: 65536\n")
             sb.append("  connect-timeout: 5000\n")
-            sb.append("  tcp-read-write-timeout: 120000\n")
+            sb.append("  tcp-read-write-timeout: 60000\n")
             sb.append("  udp-read-write-timeout: 15000\n")
             sb.append("  limit-nofile: 65535\n")
 
             FileOutputStream(configFile).use { it.write(sb.toString().toByteArray()) }
             configFile.setReadable(true, false)
 
-            // 6. Launch native tun2socks engine
-            serviceScope.launch {
-                try {
-                    TProxyService.TProxyStartService(configFile.absolutePath, tunFd)
-                } catch (t: Throwable) {
-                    t.printStackTrace()
-                }
-            }
-
+            // 7. Call TProxyStartService SYNCHRONOUSLY inside vpnMutex!
+            // In hev-jni.c, TProxyStartService spawns its own native pthread and returns immediately.
+            // Calling it synchronously inside vpnMutex prevents any race with TProxyStopService / tunFd close.
+            TProxyService.TProxyStartService(configFile.absolutePath, tunFd)
             isRunning = true
         } catch (e: Exception) {
             e.printStackTrace()
-            stopVpn()
+            stopVpnInternal()
         }
     }
 
@@ -300,7 +292,7 @@ class SuperProxyVpnService : VpnService() {
         } catch (_: Exception) {}
     }
 
-    private fun stopVpn() {
+    private fun stopVpnInternal() {
         if (!isRunning && vpnInterface == null) return
         cleanUpTunnel()
         stopForeground(STOP_FOREGROUND_REMOVE)
@@ -312,7 +304,7 @@ class SuperProxyVpnService : VpnService() {
             activeInstance = null
         }
         super.onDestroy()
-        stopVpn()
+        cleanUpTunnel()
     }
 
     companion object {
@@ -326,6 +318,8 @@ class SuperProxyVpnService : VpnService() {
         const val EXTRA_USER = "user"
         const val EXTRA_PASS = "pass"
         const val EXTRA_ALLOWED_APPS = "allowed_apps"
+
+        private val sessionCounter = AtomicInteger(1)
 
         @Volatile
         private var activeInstance: SuperProxyVpnService? = null

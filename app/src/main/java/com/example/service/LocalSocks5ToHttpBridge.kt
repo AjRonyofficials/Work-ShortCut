@@ -1,6 +1,7 @@
 package com.example.service
 
 import android.util.Base64
+import com.example.util.ProxyTester
 import java.io.EOFException
 import java.io.InputStream
 import java.net.InetAddress
@@ -15,9 +16,9 @@ import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 
 /**
- * High-speed Local SOCKS5-to-HTTP CONNECT Bridge based on the working #132 implementation,
- * upgraded with an unbounded CachedThreadPool (instead of Dispatchers.IO's 64-thread cap)
- * and fresh on-demand sockets (no stale pre-warmed sockets that upstream proxies close).
+ * High-speed Local SOCKS5-to-HTTP CONNECT Bridge based on the working #132 architecture,
+ * upgraded with an unbounded CachedThreadPool and instant idle-EOF teardown so clicking
+ * "Continue" after 5+ seconds opens a fresh connection immediately with zero freeze.
  */
 object LocalSocks5ToHttpBridge {
 
@@ -54,7 +55,7 @@ object LocalSocks5ToHttpBridge {
     ): Int {
         stop()
 
-        this.httpHost = httpHost.trim()
+        this.httpHost = ProxyTester.resolveHostBypassingVpn(httpHost.trim())
         this.httpPort = httpPort
         this.user = username
         this.pass = password
@@ -70,7 +71,7 @@ object LocalSocks5ToHttpBridge {
             val localPort = server.localPort
 
             ioExecutor.execute {
-                while (isRunning.get()) {
+                while (isRunning.get() && !server.isClosed) {
                     try {
                         val client = server.accept() ?: break
                         client.tcpNoDelay = true
@@ -95,7 +96,7 @@ object LocalSocks5ToHttpBridge {
     private fun handleClient(client: Socket) {
         var upstream: Socket? = null
         try {
-            client.soTimeout = 10000
+            client.soTimeout = 12000
             val clientIn = client.getInputStream()
             val clientOut = client.getOutputStream()
 
@@ -156,8 +157,8 @@ object LocalSocks5ToHttpBridge {
             val p2 = clientIn.read()
             val targetPort = ((p1 and 0xFF) shl 8) or (p2 and 0xFF)
 
-            // Fast-fail DNS-over-TLS (port 853) so browsers immediately use port 53 (mapdns)
-            if (targetPort == 853) {
+            // Fast-fail DNS-over-TLS (port 853) or unmapped Fake-IPs (240.x.x.x)
+            if (targetPort == 853 || targetHost.startsWith("240.")) {
                 clientOut.write(byteArrayOf(5, 5, 0, 1, 0, 0, 0, 0, 0, 0))
                 clientOut.flush()
                 client.close()
@@ -172,16 +173,17 @@ object LocalSocks5ToHttpBridge {
             }
 
             // 3. Connect fresh socket to upstream HTTP proxy (Protected from VPN tunnel)
+            val resolvedProxyIp = ProxyTester.resolveHostBypassingVpn(httpHost)
             upstream = Socket()
             upstream.tcpNoDelay = true
             upstream.keepAlive = true
             upstream.sendBufferSize = 65536
             upstream.receiveBufferSize = 65536
-            upstream.soTimeout = 10000
+            upstream.soTimeout = 12000
 
             SuperProxyVpnService.protectSocket(upstream)
             activeSockets.add(upstream)
-            upstream.connect(InetSocketAddress(httpHost, httpPort), 6000)
+            upstream.connect(InetSocketAddress(resolvedProxyIp, httpPort), 8000)
 
             val upIn = upstream.getInputStream()
             val upOut = upstream.getOutputStream()
@@ -215,9 +217,9 @@ object LocalSocks5ToHttpBridge {
             clientOut.write(byteArrayOf(5, 0, 0, 1, 0, 0, 0, 0, 0, 0))
             clientOut.flush()
 
-            // 7. Stable keep-alive with 120s idle timeout
-            client.soTimeout = 120000
-            upstream.soTimeout = 120000
+            // 7. Stable keep-alive with 60s timeout
+            client.soTimeout = 60000
+            upstream.soTimeout = 60000
             client.keepAlive = true
             upstream.keepAlive = true
 
@@ -239,7 +241,7 @@ object LocalSocks5ToHttpBridge {
         val in2 = s2.getInputStream()
         val out2 = s2.getOutputStream()
 
-        // Spawn 1 thread on CachedThreadPool for upstream -> client
+        // Spawn 1 thread on CachedThreadPool for upstream -> client (s2 -> s1)
         val reverseFuture = ioExecutor.submit {
             val buffer = ByteArray(32768)
             try {
@@ -251,11 +253,15 @@ object LocalSocks5ToHttpBridge {
                 }
             } catch (_: Exception) {
             } finally {
+                // Once upstream closes its response stream (or drops an idle socket after 5s),
+                // close both sockets so hev-socks5-tunnel & Chrome immediately open a fresh socket on "Continue".
                 try { s1.shutdownOutput() } catch (_: Exception) {}
+                try { s1.close() } catch (_: Exception) {}
+                try { s2.close() } catch (_: Exception) {}
             }
         }
 
-        // Current thread handles client -> upstream
+        // Current thread handles client -> upstream (s1 -> s2)
         val buffer = ByteArray(32768)
         try {
             while (true) {
