@@ -36,8 +36,6 @@ jobs:
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
         continue-on-error: true
-        with:
-          cache-disabled: true
 
       - name: Prepare Environment Files
         run: |
@@ -91,6 +89,36 @@ jobs:
             sudo ln -sf /opt/gradle/gradle-9.3.1/bin/gradle /usr/local/bin/gradle
             gradle --version || true
           fi
+
+      - name: Pre-populate Kotlin Compiler Artifacts from Maven Central
+        run: |
+          echo "Pre-populating Kotlin 2.2.10 compiler artifacts from Maven Central to bypass flaky GitHub releases mirrors..."
+          CACHE_BASE="$HOME/.gradle/caches/modules-2/files-2.1/org.jetbrains.kotlin"
+          
+          fetch_artifact() {
+            local group_name="$1"
+            local ver="$2"
+            local sha="$3"
+            local file="$4"
+            local target_dir="$CACHE_BASE/$group_name/$ver/$sha"
+            mkdir -p "$target_dir"
+            if [ ! -f "$target_dir/$file" ] || [ ! -s "$target_dir/$file" ]; then
+              echo "Fetching $file from Maven Central..."
+              curl -sSL --retry 5 --retry-delay 2 "https://repo1.maven.org/maven2/org/jetbrains/kotlin/$group_name/$ver/$file" -o "$target_dir/$file"
+            fi
+            echo "Cached $file ($(wc -c < "$target_dir/$file") bytes)"
+          }
+
+          fetch_artifact "kotlin-compiler-embeddable" "2.2.10" "6882d39ef03b18879c1a5d2a83c2212361bed5fe" "kotlin-compiler-embeddable-2.2.10.jar"
+          fetch_artifact "kotlin-compiler-embeddable" "2.2.10" "4e933584f8590460b4d080da5eb891ac0cb03679" "kotlin-compiler-embeddable-2.2.10.pom"
+          fetch_artifact "kotlin-compose-compiler-plugin-embeddable" "2.2.10" "fd3cd12d4e9702cfcd731120564af86814cf95b7" "kotlin-compose-compiler-plugin-embeddable-2.2.10.jar"
+          fetch_artifact "kotlin-compose-compiler-plugin-embeddable" "2.2.10" "9b1f452dd51d8a7274c799fa234d5d7b24ba22e5" "kotlin-compose-compiler-plugin-embeddable-2.2.10.pom"
+          fetch_artifact "kotlin-daemon-embeddable" "2.2.10" "212fd3c2c6e4e5d0f4db3c4191233e2b622380cc" "kotlin-daemon-embeddable-2.2.10.jar"
+          fetch_artifact "kotlin-daemon-embeddable" "2.2.10" "3487e8adfd32eccf389ce9077acaab7b168a1f86" "kotlin-daemon-embeddable-2.2.10.pom"
+          fetch_artifact "kotlin-scripting-compiler-embeddable" "2.2.10" "25d0e9a886551d4a46ae85d4d5d0088829ef9" "kotlin-scripting-compiler-embeddable-2.2.10.jar"
+          fetch_artifact "kotlin-scripting-compiler-embeddable" "2.2.10" "5b2289ae77495985523c987f4b5623102e0f8c7" "kotlin-scripting-compiler-embeddable-2.2.10.pom"
+          fetch_artifact "kotlin-scripting-compiler-impl-embeddable" "2.2.10" "3f1bcab651be1ab86e8d240b797b1a05dd8b0027" "kotlin-scripting-compiler-impl-embeddable-2.2.10.jar"
+          fetch_artifact "kotlin-scripting-compiler-impl-embeddable" "2.2.10" "4471dfcfdb09eea2767c0e67764df8a851d3299e" "kotlin-scripting-compiler-impl-embeddable-2.2.10.pom"
 
       - name: Build Debug APK
         run: |
