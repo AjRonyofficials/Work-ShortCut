@@ -35,8 +35,8 @@ jobs:
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
+        continue-on-error: true
         with:
-          gradle-version: '9.3.1'
           cache-disabled: true
 
       - name: Prepare Environment Files
@@ -79,26 +79,33 @@ jobs:
 
       - name: Ensure Gradle Wrapper and Executable Permissions
         run: |
-          if [ ! -f "gradlew" ] || [ ! -f "gradle/wrapper/gradle-wrapper.jar" ]; then
-            echo "Generating Gradle wrapper with Gradle 9.3.1..."
-            gradle wrapper --gradle-version 9.3.1 || true
-          fi
           if [ -f "gradlew" ]; then
             chmod +x gradlew
             echo "gradlew found and marked executable."
-          else
-            echo "gradlew not present, will use installed Gradle 9.3.1 CLI directly."
+          fi
+          # Test if wrapper works; if not, download Gradle 9.3.1 directly from GitHub releases mirror
+          if [ ! -f "gradlew" ] || ! ./gradlew --version >/dev/null 2>&1; then
+            echo "Gradle wrapper test failed or gradlew missing. Downloading Gradle 9.3.1 binary from GitHub releases CDN..."
+            curl -sSL --retry 3 --retry-delay 2 "https://github.com/gradle/gradle-distributions/releases/download/v9.3.1/gradle-9.3.1-bin.zip" -o /tmp/gradle-9.3.1-bin.zip
+            sudo unzip -q -o /tmp/gradle-9.3.1-bin.zip -d /opt/gradle
+            sudo ln -sf /opt/gradle/gradle-9.3.1/bin/gradle /usr/local/bin/gradle
+            gradle --version || true
           fi
 
       - name: Build Debug APK
         run: |
           export JAVA_TOOL_OPTIONS="-Djava.awt.headless=true -Dfile.encoding=UTF-8 -Dsun.awt.noerasebackground=true"
-          if [ -f "./gradlew" ] && [ -f "gradle/wrapper/gradle-wrapper.jar" ]; then
+          if [ -f "./gradlew" ] && ./gradlew --version >/dev/null 2>&1; then
             echo "Building with ./gradlew (Gradle 9.3.1)..."
-            ./gradlew assembleDebug --no-daemon --no-configuration-cache --no-parallel -Djava.awt.headless=true -Dksp.incremental=false || gradle assembleDebug --no-daemon --no-configuration-cache --no-parallel -Djava.awt.headless=true -Dksp.incremental=false
-          else
-            echo "Building directly with gradle CLI (Gradle 9.3.1)..."
+            ./gradlew assembleDebug --no-daemon --no-configuration-cache --no-parallel -Djava.awt.headless=true -Dksp.incremental=false
+          elif command -v gradle >/dev/null 2>&1; then
+            echo "Building directly with gradle CLI..."
             gradle assembleDebug --no-daemon --no-configuration-cache --no-parallel -Djava.awt.headless=true -Dksp.incremental=false
+          else
+            echo "Neither gradlew nor gradle CLI found, downloading Gradle 9.3.1 binary from GitHub..."
+            curl -sSL --retry 3 "https://github.com/gradle/gradle-distributions/releases/download/v9.3.1/gradle-9.3.1-bin.zip" -o /tmp/gradle.zip
+            sudo unzip -q -o /tmp/gradle.zip -d /opt/gradle
+            /opt/gradle/gradle-9.3.1/bin/gradle assembleDebug --no-daemon --no-configuration-cache --no-parallel -Djava.awt.headless=true -Dksp.incremental=false
           fi
 
       - name: Verify Generated APK
