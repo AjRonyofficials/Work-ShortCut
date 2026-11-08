@@ -165,10 +165,10 @@ object LocalSocks5ToHttpBridge {
             upstream.keepAlive = true
             upstream.sendBufferSize = 65536
             upstream.receiveBufferSize = 65536
-            upstream.soTimeout = 15000
+            upstream.soTimeout = 10000
             SuperProxyVpnService.protectSocket(upstream)
             activeSockets.add(upstream)
-            upstream.connect(InetSocketAddress(httpHost, httpPort), 8000)
+            upstream.connect(InetSocketAddress(httpHost, httpPort), 5000)
 
             val upIn = upstream.getInputStream()
             val upOut = upstream.getOutputStream()
@@ -203,9 +203,9 @@ object LocalSocks5ToHttpBridge {
             clientOut.write(byteArrayOf(5, 0, 0, 1, 0, 0, 0, 0, 0, 0))
             clientOut.flush()
 
-            // 7. Stable keep-alive with 60s idle timeout (prevents cutting off multi-asset web pages)
-            client.soTimeout = 60000
-            upstream.soTimeout = 60000
+            // 7. Stable keep-alive with 30s idle timeout (prevents orphaned dead connections while allowing fast polling)
+            client.soTimeout = 30000
+            upstream.soTimeout = 30000
             client.keepAlive = true
             upstream.keepAlive = true
 
@@ -237,15 +237,8 @@ object LocalSocks5ToHttpBridge {
                 }
             } catch (_: Exception) {
             } finally {
-                // When client finishes sending, shutdown output on upstream to signal EOF
-                // while letting upstream finish sending remaining response data to client
-                try {
-                    if (!s2.isClosed && !s2.isOutputShutdown) {
-                        s2.shutdownOutput()
-                    }
-                } catch (_: Exception) {
-                    try { s2.close() } catch (_: Exception) {}
-                }
+                // When client finishes or disconnects, immediately close upstream to unblock job2
+                try { s2.close() } catch (_: Exception) {}
             }
         }
 
@@ -260,14 +253,8 @@ object LocalSocks5ToHttpBridge {
                 }
             } catch (_: Exception) {
             } finally {
-                // When upstream finishes sending, cleanly shutdown client output
-                try {
-                    if (!s1.isClosed && !s1.isOutputShutdown) {
-                        s1.shutdownOutput()
-                    }
-                } catch (_: Exception) {
-                    try { s1.close() } catch (_: Exception) {}
-                }
+                // When upstream finishes or disconnects, immediately close client to unblock job1
+                try { s1.close() } catch (_: Exception) {}
             }
         }
 

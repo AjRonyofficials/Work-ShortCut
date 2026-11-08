@@ -1386,14 +1386,14 @@ object OverlayStateManager {
                 timeoutMs = 1500
             )
 
-            // Successfully detected real egress IP & Country or fallback directly to proxy.host
             val effectiveIp = if (result.isSuccess && !result.resolvedIp.isNullOrBlank()) result.resolvedIp!! else proxy.host
             val country = if (result.isSuccess && !result.countryCode.isNullOrBlank()) result.countryCode!! else proxy.countryCode
-            val countryName = if (result.isSuccess && !result.countryName.isNullOrBlank()) result.countryName!! else countryOpt.name
+            val finalCountryOpt = NameGenerator.getCountryOption(country)
+            val countryName = if (result.isSuccess && !result.countryName.isNullOrBlank()) result.countryName!! else finalCountryOpt.name
             val city = if (result.isSuccess) (result.city ?: "") else ""
             val isp = if (result.isSuccess) (result.isp ?: "") else ""
             val latency = if (result.latencyMs > 0) result.latencyMs else 32L
-            val locLabel = if (city.isNotEmpty()) "$city, $country" else country
+            val locLabel = if (city.isNotEmpty()) "$city, ${finalCountryOpt.name}" else finalCountryOpt.name
             val activeProtocol = result.workingProtocol ?: effectiveProtocol
 
             kotlinx.coroutines.withContext(Dispatchers.Main) {
@@ -1410,7 +1410,7 @@ object OverlayStateManager {
                             city = city,
                             isp = isp,
                             pingMs = latency,
-                            statusText = "Connected to $effectiveIp ($locLabel) • ${latency}ms • 🛡️ Zero Leak"
+                            statusText = "Connected to $effectiveIp (${finalCountryOpt.flag} $locLabel) • ${latency}ms • 🛡️ Zero Leak"
                         )
                     )
                 }

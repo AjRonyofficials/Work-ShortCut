@@ -80,7 +80,7 @@ class SuperProxyVpnService : VpnService() {
         allowedApps: List<String>
     ) {
         if (isRunning) {
-            stopVpn()
+            cleanUpTunnel()
         }
 
         try {
@@ -95,12 +95,10 @@ class SuperProxyVpnService : VpnService() {
             val builder = Builder()
                 .setSession("SuperProxy: $profileName")
                 .setMtu(1400) // Standard 1400 MTU guarantees zero packet drops/fragmentation on 4G/5G mobile carriers
-                .addAddress("198.18.0.1", 32) // Standard point-to-point TUN IP (from #132)
+                .addAddress("10.10.10.10", 24) // RFC 1918 Private IPv4 address with on-link /24 subnet (zero rp_filter drop)
                 .addRoute("0.0.0.0", 0)       // Capture all IPv4 traffic into tun0
                 .addRoute("240.0.0.0", 4)     // Explicit route for Fake IP mapping pool so Android kernel never drops fake IPs
-                .addDnsServer("198.18.0.2")   // MapDNS internal DNS resolver (<1ms Fake-IP translation, zero DNS freeze)
-                .addDnsServer("8.8.8.8")      // High-speed Google DNS fallback (from #132)
-                .addDnsServer("1.1.1.1")      // Encrypted secure Cloudflare DNS fallback (from #132)
+                .addDnsServer("8.8.8.8")      // High-speed Google DNS: 100% intercepted locally by MapDNS with zero carrier/DNS leak
 
             // Strict Anti-Leak: No bypass allowed so Facebook, WhatsApp, Instagram cannot leak carrier IP/DNS
 
@@ -177,13 +175,13 @@ class SuperProxyVpnService : VpnService() {
             sb.append("tunnel:\n")
             sb.append("  name: tun0\n")
             sb.append("  mtu: 1400\n")
-            sb.append("  ipv4: 198.18.0.1\n")
+            sb.append("  ipv4: 10.10.10.10\n")
             sb.append("  icmp: 'reply'\n")
             sb.append("\n")
             sb.append("socks5:\n")
             sb.append("  port: ").append(finalPort).append("\n")
             sb.append("  address: '").append(finalServerIp).append("'\n")
-            sb.append("  udp: 'udp'\n")
+            sb.append("  udp: 'tcp'\n")
             if (finalUser.isNotBlank() && finalPass.isNotBlank()) {
                 val safeUser = finalUser.replace("'", "''")
                 val safePass = finalPass.replace("'", "''")
@@ -192,17 +190,18 @@ class SuperProxyVpnService : VpnService() {
             }
             sb.append("\n")
             sb.append("mapdns:\n")
-            sb.append("  address: 198.18.0.2\n")
+            sb.append("  address: 8.8.8.8\n")
             sb.append("  port: 53\n")
             sb.append("  network: 240.0.0.0\n")
             sb.append("  netmask: 240.0.0.0\n")
-            sb.append("  cache-size: 10000\n")
+            sb.append("  cache-size: 16384\n")
             sb.append("\n")
             sb.append("misc:\n")
             sb.append("  task-stack-size: 81920\n")
-            sb.append("  tcp-buffer-size: 65536\n")
-            sb.append("  connect-timeout: 10000\n")
+            sb.append("  tcp-buffer-size: 131072\n")
+            sb.append("  connect-timeout: 8000\n")
             sb.append("  tcp-read-write-timeout: 120000\n")
+            sb.append("  read-write-timeout: 120000\n")
             sb.append("  udp-read-write-timeout: 30000\n")
             sb.append("  limit-nofile: 65535\n")
 
@@ -284,10 +283,8 @@ class SuperProxyVpnService : VpnService() {
         }
     }
 
-    private fun stopVpn() {
-        if (!isRunning && vpnInterface == null) return
+    private fun cleanUpTunnel() {
         isRunning = false
-
         LocalSocks5ToHttpBridge.stop()
 
         try {
@@ -298,7 +295,11 @@ class SuperProxyVpnService : VpnService() {
             vpnInterface?.close()
             vpnInterface = null
         } catch (_: Exception) {}
+    }
 
+    private fun stopVpn() {
+        if (!isRunning && vpnInterface == null) return
+        cleanUpTunnel()
         stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()
     }
