@@ -171,14 +171,21 @@ fun ProxySection(
         try {
             val pm = context.packageManager
             pm.getInstalledApplications(PackageManager.GET_META_DATA)
-                .filter { (it.flags and ApplicationInfo.FLAG_SYSTEM) == 0 || it.packageName.contains("chrome") }
+                .filter { appInfo ->
+                    appInfo.packageName != context.packageName && (
+                        (appInfo.flags and ApplicationInfo.FLAG_SYSTEM) == 0 ||
+                            (appInfo.flags and ApplicationInfo.FLAG_UPDATED_SYSTEM_APP) != 0 ||
+                            pm.getLaunchIntentForPackage(appInfo.packageName) != null
+                        )
+                }
                 .map { appInfo ->
                     SimpleInstalledApp(
                         name = pm.getApplicationLabel(appInfo).toString(),
                         packageName = appInfo.packageName
                     )
                 }
-                .sortedBy { it.name }
+                .distinctBy { it.packageName }
+                .sortedBy { it.name.lowercase() }
         } catch (_: Exception) {
             emptyList()
         }
@@ -1356,7 +1363,7 @@ fun ProxySection(
                             if (proxy.allowedApps.isNotEmpty()) {
                                 OutlinedButton(
                                     onClick = {
-                                        OverlayStateManager.setProxyAllowedApps(emptyList())
+                                        OverlayStateManager.setProxyAllowedApps(emptyList(), context)
                                         Toast.makeText(context, "Reset to route All Apps by default", Toast.LENGTH_SHORT).show()
                                     },
                                     shape = RoundedCornerShape(8.dp),
@@ -1383,7 +1390,7 @@ fun ProxySection(
                         OutlinedTextField(
                             value = appSearchQuery,
                             onValueChange = { appSearchQuery = it },
-                            placeholder = { Text("Search installed apps (Via, Chrome, FB)...") },
+                            placeholder = { Text("Search installed apps (Via, Chrome, FB, IG, WhatsApp)...") },
                             leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
                             modifier = Modifier.fillMaxWidth(),
                             singleLine = true,
@@ -1395,14 +1402,17 @@ fun ProxySection(
                         val filtered = installedApps.filter {
                             it.name.contains(appSearchQuery, ignoreCase = true) ||
                                     it.packageName.contains(appSearchQuery, ignoreCase = true)
-                        }
+                        }.sortedWith(
+                            compareByDescending<SimpleInstalledApp> { proxy.allowedApps.contains(it.packageName) }
+                                .thenBy { it.name.lowercase() }
+                        )
 
                         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                            filtered.take(30).forEach { app ->
+                            filtered.take(50).forEach { app ->
                                 val isChecked = proxy.allowedApps.contains(app.packageName)
                                 Surface(
                                     onClick = {
-                                        OverlayStateManager.toggleProxyAllowedApp(app.packageName, !isChecked)
+                                        OverlayStateManager.toggleProxyAllowedApp(app.packageName, !isChecked, context)
                                     },
                                     shape = RoundedCornerShape(8.dp),
                                     color = if (isChecked) BrandBlue.copy(alpha = 0.1f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
@@ -1425,7 +1435,7 @@ fun ProxySection(
                                         Checkbox(
                                             checked = isChecked,
                                             onCheckedChange = { checked ->
-                                                OverlayStateManager.toggleProxyAllowedApp(app.packageName, checked)
+                                                OverlayStateManager.toggleProxyAllowedApp(app.packageName, checked, context)
                                             },
                                             colors = CheckboxDefaults.colors(checkedColor = BrandBlue)
                                         )

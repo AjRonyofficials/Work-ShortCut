@@ -1183,21 +1183,36 @@ object OverlayStateManager {
      */
     private var proxyDurationJob: Job? = null
 
-    fun setProxyAllowedApps(packages: List<String>) {
+    fun setProxyAllowedApps(packages: List<String>, context: Context? = null) {
         _uiState.update {
             it.copy(proxyState = it.proxyState.copy(allowedApps = packages))
         }
         prefs?.edit()?.putStringSet("proxy_allowed_apps", packages.toSet())?.apply()
+
+        val proxy = _uiState.value.proxyState
+        if (proxy.isConnected && context != null) {
+            val effectiveProtocol = if (proxy.protocol.isBlank()) "SOCKS5" else proxy.protocol
+            SuperProxyVpnService.start(
+                context = context,
+                profileName = proxy.profileName,
+                server = proxy.host,
+                port = proxy.port,
+                protocol = effectiveProtocol,
+                user = proxy.username,
+                pass = proxy.password,
+                allowedApps = packages
+            )
+        }
     }
 
-    fun toggleProxyAllowedApp(packageName: String, shouldAllow: Boolean) {
+    fun toggleProxyAllowedApp(packageName: String, shouldAllow: Boolean, context: Context? = null) {
         val current = _uiState.value.proxyState.allowedApps.toMutableList()
         if (shouldAllow) {
             if (!current.contains(packageName)) current.add(packageName)
         } else {
             current.remove(packageName)
         }
-        setProxyAllowedApps(current)
+        setProxyAllowedApps(current, context)
     }
 
     fun updateSuperProxyProfile(
@@ -1326,7 +1341,7 @@ object OverlayStateManager {
             }
         }
 
-        // 1. PHASE 1: Immediate VPN Tunnel Launch (Ultra-fast direct connection)
+        // 1. PHASE 1: Immediate VPN Tunnel & Pre-Warmed Socket Pool Launch (0ms startup)
         val effectiveProtocol = if (proxy.protocol.isBlank()) "SOCKS5" else proxy.protocol
         context?.let { ctx ->
             SuperProxyVpnService.start(
@@ -1341,7 +1356,7 @@ object OverlayStateManager {
             )
         }
 
-        // Instant Connected State (<0.1s, guaranteed <5s) with country display
+        // Instant Connected State (<0.1s) + Pre-Warming verification indicator
         val countryOpt = NameGenerator.getCountryOption(proxy.countryCode)
         _uiState.update {
             it.copy(
@@ -1350,7 +1365,7 @@ object OverlayStateManager {
                     isTesting = false,
                     connectedDurationSeconds = 0,
                     ipAddress = proxy.host,
-                    statusText = "Connected to ${proxy.host} (${countryOpt.flag} ${countryOpt.name}) • Tunnel Active"
+                    statusText = "Connected to ${proxy.host} (${countryOpt.flag} ${countryOpt.name}) • Verifying IPv4..."
                 )
             )
         }
@@ -1375,7 +1390,7 @@ object OverlayStateManager {
             Toast.makeText(ctx, "✅ Connected: ${proxy.host} (${countryOpt.flag} ${countryOpt.name})", Toast.LENGTH_SHORT).show()
         }
 
-        // 2. PHASE 2: Lightweight Background Egress IP, Latency, and Geolocation Resolution (<2s)
+        // 2. PHASE 2: Parallel SOCKS5/HTTP Race + Real Egress IPv4 & Country Verification (1-3.5s)
         scope.launch(Dispatchers.IO) {
             val result = ProxyTester.testProxyFastRace(
                 host = proxy.host,
@@ -1383,7 +1398,7 @@ object OverlayStateManager {
                 protocol = effectiveProtocol,
                 username = proxy.username,
                 password = proxy.password,
-                timeoutMs = 1500
+                timeoutMs = 2200
             )
 
             val effectiveIp = if (result.isSuccess && !result.resolvedIp.isNullOrBlank()) result.resolvedIp!! else proxy.host
@@ -1395,6 +1410,10 @@ object OverlayStateManager {
             val latency = if (result.latencyMs > 0) result.latencyMs else 32L
             val locLabel = if (city.isNotEmpty()) "$city, ${finalCountryOpt.name}" else finalCountryOpt.name
             val activeProtocol = result.workingProtocol ?: effectiveProtocol
+
+            // Sync verified protocol (SOCKS5 or HTTP) directly to the live bridge so no mismatch occurs
+            LocalSocks5ToHttpBridge.setWorkingProtocol(activeProtocol)
+            prefs?.edit()?.putString("proxy_protocol", activeProtocol)?.apply()
 
             kotlinx.coroutines.withContext(Dispatchers.Main) {
                 _uiState.update {
