@@ -1,5 +1,6 @@
 pluginManagement {
   repositories {
+    mavenLocal()
     mavenCentral()
     google {
       content {
@@ -17,6 +18,7 @@ plugins { id("org.gradle.toolchains.foojay-resolver-convention") version "1.0.0"
 dependencyResolutionManagement {
   repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
   repositories {
+    mavenLocal()
     mavenCentral()
     google {
       content {
@@ -28,6 +30,6 @@ dependencyResolutionManagement {
   }
 }
 
-rootProject.name = "My Application"
+rootProject.name = "Work ShortCut"
 
 include(":app")
