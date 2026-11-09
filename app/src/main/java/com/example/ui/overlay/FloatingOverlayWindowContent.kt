@@ -229,7 +229,7 @@ fun FloatingOverlayWindowContent(
             }
         } else {
             // Elegant Frosted Dark Glass Dock Chassis / Container (Fixed Proportions - NEVER Squashed)
-            val chassisWidth = if (state.isVirtualNumbersOverlayExpanded) 260.dp else 94.dp
+            val chassisWidth = if (state.isVirtualNumbersOverlayExpanded) 195.dp else 90.dp
             Surface(
                 shape = dockChassisShape,
                 color = Color.Transparent,
@@ -261,62 +261,127 @@ fun FloatingOverlayWindowContent(
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 6.dp, vertical = 6.dp)
+                        .padding(horizontal = 4.dp, vertical = 4.dp)
                 ) {
-                    // Pinned Top Header: Drag Handle + Quick Side Switch (⇄) & Close (✕)
+                    // Pinned Top Header: Drag Handle + Scale Adjustment Stepper + Side Switch (⇄) & Close (✕)
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(bottom = 4.dp),
+                            .padding(bottom = 3.dp),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Box(
                             modifier = Modifier
-                                .width(26.dp)
-                                .height(4.dp)
+                                .width(18.dp)
+                                .height(3.dp)
                                 .clip(RoundedCornerShape(2.dp))
                                 .background(Color.White.copy(alpha = 0.4f))
                         )
 
                         Row(
-                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                            horizontalArrangement = Arrangement.spacedBy(2.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
+                            // Scale Decrement (-)
                             Surface(
-                                shape = RoundedCornerShape(5.dp),
-                                color = Color(0xFF37474F).copy(alpha = 0.85f),
-                                border = androidx.compose.foundation.BorderStroke(0.6.dp, Color(0xFF90A4AE)),
+                                shape = RoundedCornerShape(4.dp),
+                                color = Color(0xFF1E293B),
+                                border = androidx.compose.foundation.BorderStroke(0.5.dp, Color(0xFF38BDF8)),
                                 modifier = Modifier
-                                    .size(20.dp)
-                                    .clickable { OverlayStateManager.toggleDockSide() }
+                                    .size(17.dp)
+                                    .clickable {
+                                        val newScale = (state.overlayScale - 0.05f).coerceAtLeast(0.40f)
+                                        OverlayStateManager.setOverlayScale(newScale)
+                                    }
                             ) {
                                 Box(contentAlignment = Alignment.Center) {
-                                    Text("⇄", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                    Text("-", color = Color(0xFF38BDF8), fontSize = 10.sp, fontWeight = FontWeight.Black)
                                 }
                             }
 
+                            // Scale Percentage Indicator - Click to cycle presets
                             Surface(
-                                shape = RoundedCornerShape(5.dp),
-                                color = Color(0xFFD32F2F).copy(alpha = 0.9f),
-                                border = androidx.compose.foundation.BorderStroke(0.6.dp, Color(0xFFFF5252)),
+                                shape = RoundedCornerShape(4.dp),
+                                color = Color(0xFF0F172A),
+                                border = androidx.compose.foundation.BorderStroke(0.5.dp, Color(0xFF00E5FF).copy(alpha = 0.6f)),
                                 modifier = Modifier
-                                    .size(20.dp)
+                                    .height(17.dp)
+                                    .clickable {
+                                        val nextScale = when {
+                                            state.overlayScale >= 1.10f -> 0.70f
+                                            state.overlayScale >= 0.95f -> 1.15f
+                                            state.overlayScale >= 0.80f -> 1.00f
+                                            else -> 0.85f
+                                        }
+                                        OverlayStateManager.setOverlayScale(nextScale)
+                                    }
+                            ) {
+                                Box(modifier = Modifier.padding(horizontal = 2.dp), contentAlignment = Alignment.Center) {
+                                    Text(
+                                        text = "${(state.overlayScale * 100).toInt()}%",
+                                        color = Color(0xFF00E5FF),
+                                        fontSize = 7.5.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                            }
+
+                            // Scale Increment (+)
+                            Surface(
+                                shape = RoundedCornerShape(4.dp),
+                                color = Color(0xFF1E293B),
+                                border = androidx.compose.foundation.BorderStroke(0.5.dp, Color(0xFF38BDF8)),
+                                modifier = Modifier
+                                    .size(17.dp)
+                                    .clickable {
+                                        val newScale = (state.overlayScale + 0.05f).coerceAtMost(1.60f)
+                                        OverlayStateManager.setOverlayScale(newScale)
+                                    }
+                            ) {
+                                Box(contentAlignment = Alignment.Center) {
+                                    Text("+", color = Color(0xFF38BDF8), fontSize = 10.sp, fontWeight = FontWeight.Black)
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.width(1.dp))
+
+                            // Dock Side Switch (⇄)
+                            Surface(
+                                shape = RoundedCornerShape(4.dp),
+                                color = Color(0xFF37474F).copy(alpha = 0.85f),
+                                border = androidx.compose.foundation.BorderStroke(0.5.dp, Color(0xFF90A4AE)),
+                                modifier = Modifier
+                                    .size(17.dp)
+                                    .clickable { OverlayStateManager.toggleDockSide() }
+                            ) {
+                                Box(contentAlignment = Alignment.Center) {
+                                    Text("⇄", color = Color.White, fontSize = 9.5.sp, fontWeight = FontWeight.Bold)
+                                }
+                            }
+
+                            // Close / Minimize (✕)
+                            Surface(
+                                shape = RoundedCornerShape(4.dp),
+                                color = Color(0xFFD32F2F).copy(alpha = 0.9f),
+                                border = androidx.compose.foundation.BorderStroke(0.5.dp, Color(0xFFFF5252)),
+                                modifier = Modifier
+                                    .size(17.dp)
                                     .clickable { OverlayStateManager.toggleEdgeBarMinimized() }
                             ) {
                                 Box(contentAlignment = Alignment.Center) {
-                                    Text("✕", color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                    Text("✕", color = Color.White, fontSize = 9.sp, fontWeight = FontWeight.Bold)
                                 }
                             }
                         }
                     }
 
                     Column(
-                        verticalArrangement = Arrangement.spacedBy(5.dp),
+                        verticalArrangement = Arrangement.spacedBy(3.dp),
                         horizontalAlignment = Alignment.CenterHorizontally,
                         modifier = Modifier
                             .fillMaxWidth()
-                            .heightIn(max = 480.dp)
+                            .heightIn(max = 440.dp)
                             .verticalScroll(rememberScrollState())
                             .testTag("floating_edge_tabs_column")
                     ) {
@@ -657,15 +722,15 @@ fun GlossyTactileButton(
     onLongClick: (() -> Unit)? = null,
     icon: ImageVector? = null,
     iconLabel: String? = null,
-    fontSize: androidx.compose.ui.unit.TextUnit = 12.sp,
-    horizontalPadding: androidx.compose.ui.unit.Dp = 9.dp,
+    fontSize: androidx.compose.ui.unit.TextUnit = 10.5.sp,
+    horizontalPadding: androidx.compose.ui.unit.Dp = 6.dp,
     modifier: Modifier = Modifier,
     testTag: String = ""
 ) {
     Box(
         modifier = modifier
-            .height(34.dp)
-            .widthIn(min = 36.dp, max = 120.dp)
+            .height(27.dp)
+            .widthIn(min = 32.dp, max = 110.dp)
             .shadow(4.dp, shape = shape)
             .clip(shape)
             .background(brush)
@@ -1942,19 +2007,19 @@ fun VirtualNumbersOverlaySection(
                         Column(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .heightIn(max = 145.dp)
+                                .heightIn(max = 160.dp)
                                 .verticalScroll(rememberScrollState()),
-                            verticalArrangement = Arrangement.spacedBy(3.dp)
+                            verticalArrangement = Arrangement.spacedBy(2.dp)
                         ) {
                             numbers.forEach { item ->
                                 val fbTag = item.fbTagType
                                 val isSuccess = item.status == "success" || item.otpCode != null
 
                                 Surface(
-                                    shape = RoundedCornerShape(5.dp),
+                                    shape = RoundedCornerShape(4.dp),
                                     color = if (isSuccess) Color(0xFF00E676).copy(alpha = 0.15f) else Color(0xFF07101B),
                                     border = androidx.compose.foundation.BorderStroke(
-                                        0.8.dp,
+                                        0.7.dp,
                                         if (isSuccess) Color(0xFF00E676)
                                         else if (fbTag == com.example.service.PhoneItem.TagType.FRESH) Color(0xFF00E676)
                                         else if (fbTag == com.example.service.PhoneItem.TagType.TAKEN) Color(0xFFFF5252)
@@ -1966,7 +2031,7 @@ fun VirtualNumbersOverlaySection(
                                     Row(
                                         modifier = Modifier
                                             .fillMaxWidth()
-                                            .padding(horizontal = 6.dp, vertical = 4.dp),
+                                            .padding(horizontal = 4.dp, vertical = 2.dp),
                                         horizontalArrangement = Arrangement.SpaceBetween,
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
