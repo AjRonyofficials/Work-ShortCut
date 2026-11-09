@@ -381,7 +381,7 @@ fun FloatingOverlayWindowContent(
                         horizontalAlignment = Alignment.CenterHorizontally,
                         modifier = Modifier
                             .fillMaxWidth()
-                            .heightIn(max = 440.dp)
+                            .heightIn(max = state.overlayMaxHeightDp.dp)
                             .verticalScroll(rememberScrollState())
                             .testTag("floating_edge_tabs_column")
                     ) {
@@ -1984,12 +1984,12 @@ fun VirtualNumbersOverlaySection(
                         }
                     }
 
-                    // Numbers & Live OTP List (Unix, Zenex, Kop Engine 2, or Premium V2)
+                    // Numbers & Live OTP List (Unix, Zenex, Kop Engine 2, or Premium V2) - strictly newest first
                     val numbers = when (selectedPanel) {
-                        0 -> unixState.activeNumbers
-                        1 -> vnState.provisionedNumbers
-                        2 -> kop2State.provisionedNumbers
-                        else -> v2State.activeNumbers
+                        0 -> unixState.activeNumbers.sortedByDescending { it.timestamp }
+                        1 -> vnState.provisionedNumbers.sortedByDescending { it.timestamp }
+                        2 -> kop2State.provisionedNumbers.sortedByDescending { it.timestamp }
+                        else -> v2State.activeNumbers.sortedByDescending { it.timestamp }
                     }
                     if (numbers.isEmpty()) {
                         Text(
@@ -2007,7 +2007,7 @@ fun VirtualNumbersOverlaySection(
                         Column(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .heightIn(max = 160.dp)
+                                .heightIn(max = 300.dp)
                                 .verticalScroll(rememberScrollState()),
                             verticalArrangement = Arrangement.spacedBy(2.dp)
                         ) {

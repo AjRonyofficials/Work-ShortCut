@@ -167,29 +167,31 @@ fun PremiumNumberV2SectionContent(
     var liveFeedSearchQuery by remember { mutableStateOf("") }
 
     // Dynamically derive ONLY real active countries from API & Live Pool
-    val livePoolCountries = remember(state.liveConsoleFeed, state.activeApiCountries) {
+    val livePoolCountries = remember(state.liveConsoleFeed, state.activeApiCountries, state.countryRates) {
         val list = mutableListOf<V2CountryPreset>()
         val seen = mutableSetOf<String>()
-        list.add(V2CountryPreset("ANY", "ANY (All Live Pool)", "🌐", "", "POOL"))
+        val baseRate = PremiumNumberV2Manager.getRateForCountry("ANY")
+        list.add(V2CountryPreset("ANY", "ANY (All Live Pool)", "🌐", "", String.format(Locale.US, "%.2f৳", baseRate)))
 
-        // 1. Add active countries fetched directly from slvirtualnumber developer API
+        // 1. Add active countries with Admin Panel configured rates in BDT
         for (c in state.activeApiCountries) {
             val iso = c.code.uppercase()
             if (!seen.contains(iso)) {
                 seen.add(iso)
+                val cRate = PremiumNumberV2Manager.getRateForCountry(iso)
                 list.add(
                     V2CountryPreset(
                         code = iso,
                         name = c.name,
                         flag = c.flag,
                         dialCode = if (c.prefix.isNotBlank()) "+${c.prefix}" else "",
-                        rateText = "$${String.format(Locale.US, "%.3f", c.rateUsd)}"
+                        rateText = String.format(Locale.US, "%.2f৳", cRate)
                     )
                 )
             }
         }
 
-        // 2. Also incorporate active countries from the live console feed
+        // 2. Also incorporate active countries from the live console feed with Admin Panel rates in BDT
         for (item in state.liveConsoleFeed) {
             val iso = item.iso.uppercase()
             if (iso.isNotBlank() && !seen.contains(iso)) {
@@ -197,13 +199,14 @@ fun PremiumNumberV2SectionContent(
                 val info = com.example.util.AllCountriesProvider.findByCode(iso)
                     ?: com.example.util.AllCountriesProvider.findByNameOrCode(item.country)
                 val dial = info?.dialCode ?: if (item.rangePrefix.isNotBlank()) "+${item.rangePrefix}" else ""
+                val cRate = PremiumNumberV2Manager.getRateForCountry(iso)
                 list.add(
                     V2CountryPreset(
                         code = iso,
                         name = item.country.ifBlank { info?.name ?: iso },
                         flag = item.flag.ifBlank { info?.flag ?: "🌐" },
                         dialCode = dial,
-                        rateText = "LIVE"
+                        rateText = String.format(Locale.US, "%.2f৳", cRate)
                     )
                 )
             }
@@ -259,10 +262,7 @@ fun PremiumNumberV2SectionContent(
             "EXPIRED" -> state.activeNumbers.filter { it.status == "failed" || it.status == "expired" || it.status == "cancelled" || (it.otpCode.isNullOrEmpty() && nowTick >= it.expiresAt) }
             else -> state.activeNumbers
         }
-        base.sortedWith(
-            compareByDescending<ProvisionedNumber> { !it.otpCode.isNullOrEmpty() || it.status == "success" }
-                .thenByDescending { it.timestamp }
-        )
+        base.sortedByDescending { it.timestamp }
     }
 
     Column(
@@ -490,40 +490,6 @@ fun PremiumNumberV2SectionContent(
                         }
                     }
 
-                    // QUICK PLATFORM SELECTOR PILLS
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .horizontalScroll(rememberScrollState()),
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        val quickPlatforms = listOf(
-                            "Facebook" to Color(0xFF1877F2),
-                            "💬 WhatsApp" to Color(0xFF25D366),
-                            "📸 Instagram" to Color(0xFFE1306C),
-                            "🔥 OTP Work" to Color(0xFFF59E0B)
-                        )
-                        quickPlatforms.forEach { (tag, color) ->
-                            val isSel = state.selectedService.equals(tag, ignoreCase = true) || (tag == "Facebook" && (state.selectedService.contains("FB", true) || state.selectedService.contains("Face", true)))
-                            Surface(
-                                color = if (isSel) color.copy(alpha = 0.25f) else Color(0xFF0B1624),
-                                shape = RoundedCornerShape(14.dp),
-                                border = BorderStroke(1.dp, if (isSel) color else Color(0xFF1E3A56)),
-                                modifier = Modifier.clickable {
-                                    PremiumNumberV2Manager.setSelectedService(tag)
-                                }
-                            ) {
-                                Text(
-                                    text = tag,
-                                    color = if (isSel) Color.White else Color(0xFF94A3B8),
-                                    fontSize = 10.sp,
-                                    fontWeight = if (isSel) FontWeight.Bold else FontWeight.Medium,
-                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                                )
-                            }
-                        }
-                    }
 
                     // SERVICE, COUNTRY (LIVE POOL ONLY), COMPACT QTY, & GET NUMBER ROW
                     Row(
@@ -766,233 +732,143 @@ fun PremiumNumberV2SectionContent(
                             }
                         }
                     }
-                }
-            }
 
-            // ACTIVE LIVE POOL COUNTRIES & PANEL-CONFIGURED OTP RATES
-            Card(
-                colors = CardDefaults.cardColors(containerColor = Color(0xFF09121D)),
-                shape = RoundedCornerShape(14.dp),
-                border = BorderStroke(1.2.dp, Color(0xFF162D42)),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Surface(
-                        color = Color(0xFF070E18),
-                        shape = RoundedCornerShape(10.dp),
-                        border = BorderStroke(1.dp, Color(0xFF162D42)),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Text("🌐", fontSize = 13.sp)
-                                    Spacer(modifier = Modifier.width(6.dp))
-                                    Column {
-                                        Text(
-                                            text = "LIVE POOL COUNTRIES & RATES",
-                                            color = Color(0xFF38BDF8),
-                                            fontSize = 11.sp,
-                                            fontWeight = FontWeight.Bold
-                                        )
-                                        Text(
-                                            text = "লাইভ পুলের সক্রিয় দেশসমূহ ও ওটিপি রেট",
-                                            color = Color(0xFF64748B),
-                                            fontSize = 9.sp
-                                        )
-                                    }
-                                }
+                    Spacer(modifier = Modifier.height(4.dp))
+                    HorizontalDivider(color = Color(0xFF162D42), thickness = 0.8.dp)
 
-                                Surface(
-                                    color = Color(0xFF0284C7).copy(alpha = 0.2f),
-                                    shape = RoundedCornerShape(6.dp),
-                                    border = BorderStroke(1.dp, Color(0xFF38BDF8).copy(alpha = 0.5f))
-                                ) {
-                                    Text(
-                                        text = "${livePoolCountries.size} Countries",
-                                        color = Color(0xFF38BDF8),
-                                        fontSize = 9.5.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                                    )
-                                }
-                            }
-
-                            // Horizontal scroll of active Live Pool Countries with their OTP rates
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .horizontalScroll(rememberScrollState()),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                livePoolCountries.forEach { c ->
-                                    val isSelected = state.selectedCountryCode.equals(c.code, ignoreCase = true)
-                                    val cRate = PremiumNumberV2Manager.getRateForCountry(c.code)
-                                    Surface(
-                                        color = if (isSelected) Color(0xFF0C2A44) else Color(0xFF0B1626),
-                                        shape = RoundedCornerShape(8.dp),
-                                        border = BorderStroke(
-                                            if (isSelected) 1.5.dp else 0.8.dp,
-                                            if (isSelected) Color(0xFF00E5FF) else Color(0xFF1B314B)
-                                        ),
-                                        modifier = Modifier.clickable {
-                                            PremiumNumberV2Manager.setSelectedCountry(c.code)
-                                            if (c.dialCode.isNotBlank()) {
-                                                PremiumNumberV2Manager.setRangePrefix(c.dialCode.replace("+", ""))
-                                            }
-                                        }
-                                    ) {
-                                        Column(
-                                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp),
-                                            horizontalAlignment = Alignment.CenterHorizontally
-                                        ) {
-                                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                                Text(c.flag, fontSize = 14.sp)
-                                                Spacer(modifier = Modifier.width(4.dp))
-                                                Text(
-                                                    text = c.name.take(10),
-                                                    color = if (isSelected) Color.White else Color(0xFFCBD5E1),
-                                                    fontSize = 10.5.sp,
-                                                    fontWeight = if (isSelected) FontWeight.ExtraBold else FontWeight.Bold
-                                                )
-                                                Spacer(modifier = Modifier.width(3.dp))
-                                                Surface(
-                                                    color = Color(0xFF1E293B),
-                                                    shape = RoundedCornerShape(3.dp),
-                                                    border = BorderStroke(0.5.dp, Color(0xFF00E5FF).copy(alpha = 0.3f))
-                                                ) {
-                                                    Text(
-                                                        text = "",
-                                                        color = Color(0xFF38BDF8),
-                                                        fontSize = 7.sp,
-                                                        fontWeight = FontWeight.Bold,
-                                                        modifier = Modifier.padding(horizontal = 3.dp, vertical = 0.5.dp)
-                                                    )
-                                                }
-                                            }
-
-                                            Spacer(modifier = Modifier.height(3.dp))
-
-                                            Row(
-                                                verticalAlignment = Alignment.CenterVertically,
-                                                horizontalArrangement = Arrangement.spacedBy(4.dp)
-                                            ) {
-                                                if (c.dialCode.isNotBlank()) {
-                                                    Surface(
-                                                        color = Color(0xFF1E293B),
-                                                        shape = RoundedCornerShape(3.dp)
-                                                    ) {
-                                                        Text(
-                                                            text = c.dialCode,
-                                                            color = Color(0xFF94A3B8),
-                                                            fontSize = 9.sp,
-                                                            fontWeight = FontWeight.SemiBold,
-                                                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
-                                                        )
-                                                    }
-                                                }
-
-                                                Surface(
-                                                    color = Color(0xFF00E676).copy(alpha = 0.15f),
-                                                    shape = RoundedCornerShape(3.dp),
-                                                    border = BorderStroke(0.6.dp, Color(0xFF00E676).copy(alpha = 0.5f))
-                                                ) {
-                                                    Text(
-                                                        text = "${String.format(Locale.US, "%.2f", cRate)}৳",
-                                                        color = Color(0xFF00E676),
-                                                        fontSize = 9.5.sp,
-                                                        fontWeight = FontWeight.ExtraBold,
-                                                        modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp)
-                                                    )
-                                                }
-                                            }
-
-                                            if (isSelected) {
-                                                Spacer(modifier = Modifier.height(3.dp))
-                                                Text(
-                                                    text = "✓ SELECTED",
-                                                    color = Color(0xFF00E5FF),
-                                                    fontSize = 8.sp,
-                                                    fontWeight = FontWeight.Black
-                                                )
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-
-                            // Optional manual prefix fine-tuning input
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text(
-                                    text = if (state.rangePrefix.isNotBlank()) "Prefix: +${state.rangePrefix}" else "Auto Prefix active",
-                                    color = Color(0xFF94A3B8),
-                                    fontSize = 9.sp,
-                                    fontWeight = FontWeight.Medium
-                                )
-                                if (state.rangePrefix.isNotBlank()) {
-                                    Text(
-                                        text = "Reset Prefix ✕",
-                                        color = Color(0xFFEF4444),
-                                        fontSize = 9.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        modifier = Modifier.clickable { PremiumNumberV2Manager.setRangePrefix("") }
-                                    )
-                                }
-                            }
-                        }
-                    }
-
-                    // INDICATORS ROW (Screenshot 1: 15-min hold, Live polling 3s, Auto-copied, National Format)
+                    // LIVE POOL ACTIVE COUNTRIES & ADMIN RATES (INTEGRATED DIRECTLY IN DESK)
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Row(
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text("🕒", fontSize = 10.sp)
-                                Spacer(modifier = Modifier.width(3.dp))
-                                Text("15-min exclusive hold", color = Color(0xFF94A3B8), fontSize = 9.sp)
-                            }
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text("((o))", fontSize = 9.sp, color = Color(0xFF00E5FF))
-                                Spacer(modifier = Modifier.width(3.dp))
-                                Text("Live polling 3s", color = Color(0xFF94A3B8), fontSize = 9.sp)
-                            }
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text("⚡", fontSize = 10.sp)
-                                Spacer(modifier = Modifier.width(3.dp))
-                                Text("Auto-copied", color = Color(0xFF94A3B8), fontSize = 9.sp)
-                            }
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("🌐", fontSize = 11.sp)
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                text = "লাইভ পুল ও অ্যাডমিন রেট (BDT):",
+                                color = Color(0xFF94A3B8),
+                                fontSize = 9.5.sp,
+                                fontWeight = FontWeight.SemiBold
+                            )
                         }
 
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text("🌐 National:", color = Color(0xFF64748B), fontSize = 9.sp)
-                            Spacer(modifier = Modifier.width(3.dp))
+                        // Selected country rate badge
+                        val currentRate = PremiumNumberV2Manager.getRateForCountry(state.selectedCountryCode)
+                        Surface(
+                            color = Color(0xFF00E676).copy(alpha = 0.15f),
+                            shape = RoundedCornerShape(4.dp),
+                            border = BorderStroke(0.8.dp, Color(0xFF00E676).copy(alpha = 0.5f))
+                        ) {
+                            Text(
+                                text = "রেট: ${state.selectedCountryFlag} ${String.format(Locale.US, "%.2f৳", currentRate)} (BDT)",
+                                color = Color(0xFF00E676),
+                                fontSize = 9.sp,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                            )
+                        }
+                    }
+
+                    // Horizontal chips row for live pool countries with their Admin Panel set rate in BDT
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        livePoolCountries.forEach { c ->
+                            val isSelected = state.selectedCountryCode.equals(c.code, ignoreCase = true)
+                            val cRate = PremiumNumberV2Manager.getRateForCountry(c.code)
                             Surface(
-                                color = if (state.nationalFormat) Color(0xFF00E5FF) else Color(0xFF1E293B),
-                                shape = RoundedCornerShape(4.dp),
-                                modifier = Modifier.clickable { PremiumNumberV2Manager.setNationalFormat(!state.nationalFormat) }
+                                color = if (isSelected) Color(0xFF0C2A44) else Color(0xFF0B1626),
+                                shape = RoundedCornerShape(7.dp),
+                                border = BorderStroke(
+                                    if (isSelected) 1.2.dp else 0.8.dp,
+                                    if (isSelected) Color(0xFF00E5FF) else Color(0xFF1B314B)
+                                ),
+                                modifier = Modifier.clickable {
+                                    PremiumNumberV2Manager.setSelectedCountry(c.code)
+                                    if (c.dialCode.isNotBlank()) {
+                                        PremiumNumberV2Manager.setRangePrefix(c.dialCode.replace("+", ""))
+                                    }
+                                }
                             ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 7.dp, vertical = 4.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(c.flag, fontSize = 11.sp)
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text(
+                                        text = c.name.take(9),
+                                        color = if (isSelected) Color.White else Color(0xFFCBD5E1),
+                                        fontSize = 9.5.sp,
+                                        fontWeight = if (isSelected) FontWeight.ExtraBold else FontWeight.Bold
+                                    )
+                                    if (c.dialCode.isNotBlank()) {
+                                        Spacer(modifier = Modifier.width(3.dp))
+                                        Text(text = c.dialCode, color = Color(0xFF64748B), fontSize = 8.sp)
+                                    }
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Surface(
+                                        color = if (isSelected) Color(0xFF00E676).copy(alpha = 0.25f) else Color(0xFF071422),
+                                        shape = RoundedCornerShape(3.dp),
+                                        border = BorderStroke(0.5.dp, if (isSelected) Color(0xFF00E676) else Color(0xFF162D42))
+                                    ) {
+                                        Text(
+                                            text = String.format(Locale.US, "%.2f৳", cRate),
+                                            color = if (isSelected) Color(0xFF00E676) else Color(0xFF38BDF8),
+                                            fontSize = 8.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            modifier = Modifier.padding(horizontal = 3.dp, vertical = 1.dp)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // Metadata footer: 14m 40s hold, live polling, prefix reset & national format
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Text("⏳ ১৪ মি ৪০ সে মেয়াদ", color = Color(0xFF94A3B8), fontSize = 8.5.sp)
+                            Text("•", color = Color(0xFF475569), fontSize = 8.sp)
+                            Text("⚡ অটো-কপি", color = Color(0xFF38BDF8), fontSize = 8.5.sp)
+                        }
+
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            if (state.rangePrefix.isNotBlank()) {
                                 Text(
-                                    text = if (state.nationalFormat) "ON" else "OFF",
-                                    color = if (state.nationalFormat) Color.Black else Color(0xFF94A3B8),
+                                    text = "Reset Prefix (${state.rangePrefix}) ✕",
+                                    color = Color(0xFFEF4444),
                                     fontSize = 8.5.sp,
                                     fontWeight = FontWeight.Bold,
-                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
+                                    modifier = Modifier.clickable { PremiumNumberV2Manager.setRangePrefix("") }
                                 )
+                            }
+
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text("National:", color = Color(0xFF64748B), fontSize = 8.5.sp)
+                                Spacer(modifier = Modifier.width(3.dp))
+                                Surface(
+                                    color = if (state.nationalFormat) Color(0xFF00E5FF) else Color(0xFF1E293B),
+                                    shape = RoundedCornerShape(3.dp),
+                                    modifier = Modifier.clickable { PremiumNumberV2Manager.setNationalFormat(!state.nationalFormat) }
+                                ) {
+                                    Text(
+                                        text = if (state.nationalFormat) "ON" else "OFF",
+                                        color = if (state.nationalFormat) Color.Black else Color(0xFF94A3B8),
+                                        fontSize = 8.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.5.dp)
+                                    )
+                                }
                             }
                         }
                     }
@@ -1982,166 +1858,231 @@ fun LiveOtpStreamCard(
 ) {
     val context = LocalContext.current
     val fullSnippet = item.rawSnippet.ifBlank { "<#> ***** is your Facebook code\nH29Q+Fsn4Sr" }
+    val extractedOtp = remember(fullSnippet, item.otpCode) {
+        val clean = com.example.util.OtpExtractionHelper.extractOtp(fullSnippet) ?: item.otpCode
+        if (clean != null && clean.isNotBlank() && clean != "******") clean else null
+    }
+
+    val cInfo = com.example.util.AllCountriesProvider.detectCountry(item.country)
+        ?: com.example.util.AllCountriesProvider.detectCountry(item.iso)
+        ?: com.example.util.AllCountriesProvider.detectCountry(item.rangePrefix)
+    val effectiveFlag = cInfo?.flag ?: item.flag.ifEmpty { "🌐" }
+    val effectiveName = cInfo?.name ?: item.country.ifEmpty { "Global" }
+    val effectiveIso = (cInfo?.code ?: item.iso).uppercase()
+    val displayRange = if (item.rangePrefix.isNotBlank()) "${item.rangePrefix}XXX" else if (item.maskedNumber.length >= 7) "${item.maskedNumber.take(6)}XXX" else item.maskedNumber
 
     Card(
         colors = CardDefaults.cardColors(containerColor = Color(0xFF09121D)),
-        shape = RoundedCornerShape(16.dp),
+        shape = RoundedCornerShape(14.dp),
         border = BorderStroke(1.2.dp, Color(0xFF132F42)),
         modifier = Modifier.fillMaxWidth()
     ) {
         Column(
-            modifier = Modifier.padding(14.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
+            modifier = Modifier.padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            // Row 1: [ 🇮🇹 IT ]   [ ● FACEBOOK ]       +3932••••4885
+            // Line 1: [ Range Pill ❐ ] on left, [ Service Tag ] [ Country Flag + Name ISO ] on right
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
+                // Range Pill with 1-click copy
+                Surface(
+                    color = Color(0xFF0284C7).copy(alpha = 0.2f),
+                    shape = RoundedCornerShape(8.dp),
+                    border = BorderStroke(1.dp, Color(0xFF00E5FF).copy(alpha = 0.5f)),
+                    modifier = Modifier.clickable {
+                        ClipboardHelper.copyToClipboard(context, item.rangePrefix.ifBlank { displayRange }, "Range")
+                        Toast.makeText(context, "Range কপি হয়েছে: ${item.rangePrefix.ifBlank { displayRange }}", Toast.LENGTH_SHORT).show()
+                    }
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = displayRange,
+                            color = Color(0xFF00E5FF),
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            fontFamily = FontFamily.Monospace
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Icon(
+                            imageVector = Icons.Default.ContentCopy,
+                            contentDescription = "Copy Range",
+                            tint = Color(0xFF00E5FF),
+                            modifier = Modifier.size(11.dp)
+                        )
+                    }
+                }
+
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    horizontalArrangement = Arrangement.spacedBy(5.dp)
                 ) {
-                    // Country / ISO Pill [ 🇲🇬 Madagascar MG ]
-                    val cInfo = com.example.util.AllCountriesProvider.detectCountry(item.country)
-                        ?: com.example.util.AllCountriesProvider.detectCountry(item.iso)
-                        ?: com.example.util.AllCountriesProvider.detectCountry(item.rangePrefix)
-                    val effectiveFlag = cInfo?.flag ?: item.flag.ifEmpty { "🌐" }
-                    val effectiveName = cInfo?.name ?: item.country.ifEmpty { "Global" }
-                    val effectiveIso = (cInfo?.code ?: item.iso).uppercase()
-
-                    Surface(
-                        color = Color(0xFF111C28),
-                        shape = RoundedCornerShape(12.dp),
-                        border = BorderStroke(0.8.dp, Color(0xFF1E2D40))
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(horizontal = 9.dp, vertical = 5.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(text = effectiveFlag, fontSize = 13.sp)
-                            Spacer(modifier = Modifier.width(5.dp))
-                            Text(
-                                text = if (effectiveIso.isNotBlank()) "$effectiveName $effectiveIso" else effectiveName,
-                                color = Color.White,
-                                fontSize = 11.5.sp,
-                                fontWeight = FontWeight.ExtraBold
-                            )
-                        }
+                    // Service Chip with distinct colors
+                    val (srvBg, srvFg, srvBorder, srvLabel) = when {
+                        item.service.contains("facebook", ignoreCase = true) || item.service.contains("fb", ignoreCase = true) ->
+                            listOf(Color(0xFF1877F2).copy(alpha = 0.2f), Color(0xFF60A5FA), Color(0xFF3B82F6), "Facebook")
+                        item.service.contains("whatsapp", ignoreCase = true) || item.service.contains("wa", ignoreCase = true) ->
+                            listOf(Color(0xFF059669).copy(alpha = 0.2f), Color(0xFF34D399), Color(0xFF10B981), "WhatsApp")
+                        item.service.contains("instagram", ignoreCase = true) || item.service.contains("ig", ignoreCase = true) ->
+                            listOf(Color(0xFFDB2777).copy(alpha = 0.2f), Color(0xFFF472B6), Color(0xFFEC4899), "Instagram")
+                        else ->
+                            listOf(Color(0xFFF59E0B).copy(alpha = 0.2f), Color(0xFFFCD34D), Color(0xFFF59E0B), item.service.uppercase())
                     }
 
-                    // Service Pill [ ● FACEBOOK ]
+                    Surface(
+                        color = srvBg as Color,
+                        shape = RoundedCornerShape(6.dp),
+                        border = BorderStroke(0.8.dp, srvBorder as Color)
+                    ) {
+                        Text(
+                            text = srvLabel as String,
+                            color = srvFg as Color,
+                            fontSize = 9.5.sp,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.5.dp)
+                        )
+                    }
+
+                    // Country Pill [ 🇪🇹 Ethiopia ET ]
                     Surface(
                         color = Color(0xFF111C28),
-                        shape = RoundedCornerShape(12.dp),
-                        border = BorderStroke(0.8.dp, Color(0xFF1E2D40))
+                        shape = RoundedCornerShape(6.dp),
+                        border = BorderStroke(0.8.dp, Color(0xFF1E3A56))
                     ) {
                         Row(
-                            modifier = Modifier.padding(horizontal = 9.dp, vertical = 5.dp),
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.5.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Box(
-                                modifier = Modifier
-                                    .size(7.dp)
-                                    .clip(CircleShape)
-                                    .background(Color(0xFF2563EB))
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            val srvText = when {
-                                item.service.contains("facebook", ignoreCase = true) || item.service.contains("fb", ignoreCase = true) -> "FACEBOOK"
-                                item.service.contains("whatsapp", ignoreCase = true) || item.service.contains("wa", ignoreCase = true) -> "WHATSAPP"
-                                item.service.contains("instagram", ignoreCase = true) || item.service.contains("ig", ignoreCase = true) -> "INSTAGRAM"
-                                else -> item.service.uppercase()
-                            }
+                            Text(text = effectiveFlag, fontSize = 11.sp)
+                            Spacer(modifier = Modifier.width(3.dp))
                             Text(
-                                text = srvText,
-                                color = Color.White,
-                                fontSize = 11.5.sp,
+                                text = if (effectiveIso.isNotBlank()) "$effectiveName $effectiveIso" else effectiveName,
+                                color = Color(0xFF2DD4BF),
+                                fontSize = 9.5.sp,
                                 fontWeight = FontWeight.Bold
                             )
                         }
                     }
                 }
-
-                // Masked Number (+3932••••4885)
-                Text(
-                    text = item.maskedNumber,
-                    color = Color.White,
-                    fontSize = 13.5.sp,
-                    fontWeight = FontWeight.Bold,
-                    fontFamily = FontFamily.Monospace,
-                    modifier = Modifier.clickable {
-                        ClipboardHelper.copyToClipboard(context, item.maskedNumber, "Phone Number")
-                        Toast.makeText(context, "নম্বর কপি হয়েছে: ${item.maskedNumber}", Toast.LENGTH_SHORT).show()
-                    }
-                )
             }
 
-            // Row 2: Live status and relative time (no GET NUMBER button)
+            // Line 2: Prominent Glowing OTP Badge + Phone Number & Relative Time
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .size(6.dp)
-                            .clip(CircleShape)
-                            .background(Color(0xFF00E676))
-                    )
-                    Text(
-                        text = "LIVE OTP",
-                        color = Color(0xFF00E676),
-                        fontSize = 10.5.sp,
-                        fontWeight = FontWeight.Bold,
-                        letterSpacing = 0.5.sp
-                    )
+                // High-visibility glowing OTP Pill
+                if (extractedOtp != null) {
+                    Surface(
+                        color = Color(0xFF00E676).copy(alpha = 0.2f),
+                        shape = RoundedCornerShape(8.dp),
+                        border = BorderStroke(1.2.dp, Color(0xFF00E676)),
+                        modifier = Modifier.clickable {
+                            ClipboardHelper.copyToClipboard(context, extractedOtp, "OTP Code")
+                            Toast.makeText(context, "✓ ওটিপি কোড কপি হয়েছে: $extractedOtp", Toast.LENGTH_SHORT).show()
+                        }
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "OTP: $extractedOtp",
+                                color = Color(0xFF00E676),
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Black,
+                                fontFamily = FontFamily.Monospace,
+                                letterSpacing = 1.sp
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Icon(
+                                Icons.Default.ContentCopy,
+                                contentDescription = "Copy OTP",
+                                tint = Color(0xFF00E676),
+                                modifier = Modifier.size(13.dp)
+                            )
+                        }
+                    }
+                } else {
+                    Surface(
+                        color = Color(0xFF1E293B),
+                        shape = RoundedCornerShape(6.dp),
+                        border = BorderStroke(0.8.dp, Color(0xFF334155))
+                    ) {
+                        Text(
+                            text = "LIVE OTP STREAM",
+                            color = Color(0xFF94A3B8),
+                            fontSize = 9.5.sp,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp)
+                        )
+                    }
                 }
 
-                // Relative time label (just now, 1 min ago)
-                Text(
-                    text = item.timeAgo,
-                    color = Color(0xFF94A3B8),
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Medium
-                )
+                Column(horizontalAlignment = Alignment.End) {
+                    // Masked Number (+3932••••4885)
+                    Text(
+                        text = item.maskedNumber,
+                        color = Color.White,
+                        fontSize = 11.5.sp,
+                        fontWeight = FontWeight.Bold,
+                        fontFamily = FontFamily.Monospace,
+                        modifier = Modifier.clickable {
+                            ClipboardHelper.copyToClipboard(context, item.maskedNumber, "Phone Number")
+                            Toast.makeText(context, "নম্বর কপি হয়েছে: ${item.maskedNumber}", Toast.LENGTH_SHORT).show()
+                        }
+                    )
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Box(
+                            modifier = Modifier
+                                .size(5.dp)
+                                .clip(CircleShape)
+                                .background(Color(0xFF00E676))
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            text = item.timeAgo,
+                            color = Color(0xFF00E676),
+                            fontSize = 9.5.sp,
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
+                }
             }
 
-            // Row 3: Speech bubble box with 💬 and Monospace full SMS
+            // Line 3: SMS body preview (click to copy full snippet)
             Surface(
                 color = Color(0xFF070E18),
-                shape = RoundedCornerShape(12.dp),
-                border = BorderStroke(1.dp, Color(0xFF132233)),
+                shape = RoundedCornerShape(8.dp),
+                border = BorderStroke(0.8.dp, Color(0xFF132233)),
                 modifier = Modifier
                     .fillMaxWidth()
                     .clickable {
-                        val cleanCode = com.example.util.OtpExtractionHelper.extractOtp(fullSnippet) ?: item.otpCode
-                        if (cleanCode.isNotBlank() && cleanCode != "******") {
-                            ClipboardHelper.copyToClipboard(context, cleanCode, "OTP Code")
-                            Toast.makeText(context, "✓ ওটিপি কোড কপি হয়েছে: $cleanCode", Toast.LENGTH_SHORT).show()
-                        } else {
-                            ClipboardHelper.copyToClipboard(context, fullSnippet, "Full SMS")
-                            Toast.makeText(context, "✓ পুরো এসএমএস কপি হয়েছে", Toast.LENGTH_SHORT).show()
-                        }
+                        ClipboardHelper.copyToClipboard(context, fullSnippet, "Full SMS")
+                        Toast.makeText(context, "✓ পুরো এসএমএস কপি হয়েছে", Toast.LENGTH_SHORT).show()
                     }
             ) {
                 Row(
-                    modifier = Modifier.padding(12.dp),
+                    modifier = Modifier.padding(8.dp),
                     verticalAlignment = Alignment.Top
                 ) {
-                    Text("💬", fontSize = 13.sp)
-                    Spacer(modifier = Modifier.width(10.dp))
+                    Text("💬", fontSize = 11.sp)
+                    Spacer(modifier = Modifier.width(6.dp))
                     Text(
                         text = fullSnippet,
-                        color = Color(0xFFE2E8F0),
-                        fontSize = 12.sp,
+                        color = Color(0xFFCBD5E1),
+                        fontSize = 10.5.sp,
                         fontFamily = FontFamily.Monospace,
-                        lineHeight = 18.sp
+                        lineHeight = 15.sp,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
                     )
                 }
             }

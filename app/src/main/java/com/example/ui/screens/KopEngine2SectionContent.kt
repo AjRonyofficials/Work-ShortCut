@@ -1494,9 +1494,42 @@ private fun MkLiveOtpFeedCard(
                 }
             }
 
-            Spacer(modifier = Modifier.height(10.dp))
+            // Body: High-visibility OTP Badge + Full SMS Container
+            val cleanOtp = remember(item.otp) { com.example.util.OtpExtractionHelper.extractOtp(item.otp) }
+            if (cleanOtp != null) {
+                Surface(
+                    color = Color(0xFF00E676).copy(alpha = 0.18f),
+                    shape = RoundedCornerShape(8.dp),
+                    border = BorderStroke(1.2.dp, Color(0xFF00E676)),
+                    modifier = Modifier.clickable {
+                        ClipboardHelper.copyToClipboard(context, cleanOtp, "OTP Code")
+                        Toast.makeText(context, "✓ ওটিপি কোড কপি হয়েছে: $cleanOtp", Toast.LENGTH_SHORT).show()
+                    }
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "OTP: $cleanOtp",
+                            color = Color(0xFF00E676),
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Black,
+                            fontFamily = FontFamily.Monospace,
+                            letterSpacing = 1.sp
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Icon(
+                            Icons.Default.ContentCopy,
+                            contentDescription = "Copy OTP",
+                            tint = Color(0xFF00E676),
+                            modifier = Modifier.size(13.dp)
+                        )
+                    }
+                }
+                Spacer(modifier = Modifier.height(6.dp))
+            }
 
-            // Body: SMS / OTP Code Box in rounded mono container (Screenshot 8)
             Surface(
                 color = ThemeBgDark,
                 shape = RoundedCornerShape(8.dp),

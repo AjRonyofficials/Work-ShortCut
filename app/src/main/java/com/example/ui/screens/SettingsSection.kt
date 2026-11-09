@@ -661,6 +661,103 @@ fun SettingsSection(
                         }
                     }
                 }
+
+                Spacer(modifier = Modifier.height(14.dp))
+                androidx.compose.material3.HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f), thickness = 0.8.dp)
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // Overlay Height / উইন্ডো উচ্চতা কন্ট্রোল (এক নজরে সম্পূর্ণ কার্ড দেখতে)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column {
+                        Text(
+                            text = "Overlay Height (উইন্ডো উচ্চতা)",
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            text = "স্ক্রোল ছাড়া ভার্চুয়াল নম্বর কার্ড এক সাথে দেখতে উচ্চতা নির্ধারণ করুন",
+                            fontSize = 10.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+
+                    Surface(
+                        color = Color(0xFF00E5FF).copy(alpha = 0.2f),
+                        shape = RoundedCornerShape(8.dp),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF00E5FF).copy(alpha = 0.6f))
+                    ) {
+                        Text(
+                            text = "${state.overlayMaxHeightDp} dp",
+                            color = Color(0xFF00E5FF),
+                            fontWeight = FontWeight.ExtraBold,
+                            fontSize = 11.5.sp,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                Slider(
+                    value = state.overlayMaxHeightDp.toFloat().coerceIn(350f, 950f),
+                    onValueChange = { OverlayStateManager.setOverlayMaxHeight(it.toInt()) },
+                    valueRange = 350f..950f,
+                    steps = 11,
+                    colors = SliderDefaults.colors(
+                        thumbColor = Color(0xFF00E5FF),
+                        activeTrackColor = Color(0xFF00E5FF),
+                        inactiveTrackColor = Color(0xFF00E5FF).copy(alpha = 0.2f)
+                    ),
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text("350dp", fontSize = 9.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("680dp (সব কার্ড একসাথে)", fontSize = 9.sp, color = Color(0xFF00E5FF), fontWeight = FontWeight.Bold)
+                    Text("950dp", fontSize = 9.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                // Quick Height Presets: 420dp, 550dp, 680dp (Fit All), 820dp
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    val heightPresets = listOf(
+                        420 to "420dp (Mini)",
+                        550 to "550dp (Mid)",
+                        680 to "680dp (Fit All)",
+                        820 to "820dp (Tall)"
+                    )
+                    heightPresets.forEach { (hVal, label) ->
+                        val isSel = Math.abs(state.overlayMaxHeightDp - hVal) < 25
+                        Surface(
+                            color = if (isSel) Color(0xFF00E5FF) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                            shape = RoundedCornerShape(6.dp),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, if (isSel) Color(0xFF00E5FF) else MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)),
+                            modifier = Modifier
+                                .weight(1f)
+                                .clickable { OverlayStateManager.setOverlayMaxHeight(hVal) }
+                        ) {
+                            Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(vertical = 5.dp)) {
+                                Text(
+                                    text = label,
+                                    fontSize = 9.sp,
+                                    fontWeight = if (isSel) FontWeight.ExtraBold else FontWeight.Medium,
+                                    color = if (isSel) Color.Black else MaterialTheme.colorScheme.onSurface
+                                )
+                            }
+                        }
+                    }
+                }
             }
         }
 

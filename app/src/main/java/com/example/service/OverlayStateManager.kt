@@ -120,6 +120,7 @@ data class OverlayUiState(
     val otpSoundVibrationEnabled: Boolean = true,
     val uploadNumberTxtLocked: Boolean = true,
     val overlayScale: Float = 1.0f,
+    val overlayMaxHeightDp: Int = 680,
     val customAppTitle: String = "Work ShortCut"
 )
 
@@ -338,6 +339,7 @@ object OverlayStateManager {
                     otpSoundVibrationEnabled = p.getBoolean("otp_sound_vibration_enabled", true),
                     uploadNumberTxtLocked = p.getBoolean("upload_number_txt_locked", true),
                     overlayScale = p.getFloat("overlay_scale_factor", 1.0f).coerceIn(0.20f, 2.00f),
+                    overlayMaxHeightDp = p.getInt("overlay_max_height_dp", 680).coerceIn(300, 1000),
                     customAppTitle = p.getString("custom_app_title", "Work ShortCut") ?: "Work ShortCut",
                     isOverlayActive = p.getBoolean("overlay_persistent_enabled", false),
                     proxyState = it.proxyState.copy(
@@ -442,6 +444,12 @@ object OverlayStateManager {
         val rounded = Math.round(clamped * 100.0f) / 100.0f
         _uiState.update { it.copy(overlayScale = rounded) }
         prefs?.edit()?.putFloat("overlay_scale_factor", rounded)?.apply()
+    }
+
+    fun setOverlayMaxHeight(heightDp: Int) {
+        val clamped = heightDp.coerceIn(300, 1000)
+        _uiState.update { it.copy(overlayMaxHeightDp = clamped) }
+        prefs?.edit()?.putInt("overlay_max_height_dp", clamped)?.apply()
     }
 
     fun setRandomPasswordMode(enabled: Boolean) {
