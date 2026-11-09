@@ -485,8 +485,8 @@ object PremiumNumberV2Manager {
             }
 
             if (newNumbers.isNotEmpty()) {
-                // Ensure newly acquired numbers strictly stay at the top
-                val updated = (newNumbers + _state.value.activeNumbers).sortedByDescending { it.timestamp }
+                // Ensure newly acquired numbers strictly stay at the top and capped at 10 (FIFO: oldest at bottom dropped)
+                val updated = (newNumbers + _state.value.activeNumbers).sortedByDescending { it.timestamp }.take(10)
                 saveNumbers(updated)
                 _state.update {
                     it.copy(
@@ -768,7 +768,7 @@ object PremiumNumberV2Manager {
                                         flag = rentFlag,
                                         userEmail = AuthManager.currentEmail.value.trim().lowercase()
                                     )
-                                    val updated = (listOf(prov) + _state.value.activeNumbers).sortedByDescending { it.timestamp }
+                                    val updated = (listOf(prov) + _state.value.activeNumbers).sortedByDescending { it.timestamp }.take(10)
                                     saveNumbers(updated)
                                     _state.update { it.copy(activeNumbers = updated, isLoading = false) }
 

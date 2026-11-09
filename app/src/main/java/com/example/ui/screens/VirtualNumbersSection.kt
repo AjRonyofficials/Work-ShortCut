@@ -2127,42 +2127,9 @@ private fun BroadcastTerminalCard(
                 }
             }
 
-            // Line 2: Prominent Glowing OTP Badge + Monospace SMS Container
+            // Line 2: Monospace SMS Container (click to copy full SMS)
             val fullSnippet = feed.otp.ifBlank { "<#> 58921 is your Facebook code\nLaz+nxCarLW" }
-            val cleanCode = remember(fullSnippet) { com.example.util.OtpExtractionHelper.extractOtp(fullSnippet) }
-            if (cleanCode != null) {
-                Surface(
-                    color = Color(0xFF00E676).copy(alpha = 0.18f),
-                    shape = RoundedCornerShape(8.dp),
-                    border = BorderStroke(1.2.dp, Color(0xFF00E676)),
-                    modifier = Modifier.clickable {
-                        ClipboardHelper.copyToClipboard(context, cleanCode, "OTP Code")
-                        Toast.makeText(context, "✓ ওটিপি কোড কপি হয়েছে: $cleanCode", Toast.LENGTH_SHORT).show()
-                    }
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = "OTP: $cleanCode",
-                            color = Color(0xFF00E676),
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.Black,
-                            fontFamily = FontFamily.Monospace,
-                            letterSpacing = 1.sp
-                        )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Icon(
-                            Icons.Default.ContentCopy,
-                            contentDescription = "Copy OTP",
-                            tint = Color(0xFF00E676),
-                            modifier = Modifier.size(13.dp)
-                        )
-                    }
-                }
-                Spacer(modifier = Modifier.height(6.dp))
-            }
+            Spacer(modifier = Modifier.height(8.dp))
 
             Surface(
                 color = Color(0xFF0D1520),
@@ -2171,13 +2138,8 @@ private fun BroadcastTerminalCard(
                 modifier = Modifier
                     .fillMaxWidth()
                     .clickable {
-                        if (cleanCode != null) {
-                            ClipboardHelper.copyToClipboard(context, cleanCode, "OTP Code")
-                            Toast.makeText(context, "✓ ওটিপি কোড কপি হয়েছে: $cleanCode", Toast.LENGTH_SHORT).show()
-                        } else {
-                            ClipboardHelper.copyToClipboard(context, fullSnippet, "SMS Body")
-                            Toast.makeText(context, "✓ পুরো এসএমএস কপি হয়েছে", Toast.LENGTH_SHORT).show()
-                        }
+                        ClipboardHelper.copyToClipboard(context, fullSnippet, "SMS Body")
+                        Toast.makeText(context, "✓ পুরো এসএমএস কপি হয়েছে", Toast.LENGTH_SHORT).show()
                     }
             ) {
                 Text(

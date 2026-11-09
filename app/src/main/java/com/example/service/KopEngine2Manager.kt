@@ -477,7 +477,7 @@ object KopEngine2Manager {
             }
 
             _state.update { current ->
-                val combined = newNumbers + current.provisionedNumbers
+                val combined = (newNumbers + current.provisionedNumbers).sortedByDescending { it.timestamp }.take(10)
                 saveUserProvisionedNumbers(combined)
                 val currentCycleStart = current.resetCycleStartTime
                 val updatedCycleStart = if (currentCycleStart <= 0L && combined.isNotEmpty()) {
@@ -827,12 +827,9 @@ object KopEngine2Manager {
                             val existing = rangeHitMap[range]
                             val newHits = (existing?.third ?: 0) + 1
                             val cleanTag = when {
-                                service.contains("Insta", ignoreCase = true) || operator.contains("Insta", ignoreCase = true) || service.contains("IG", ignoreCase = true) -> "📸 Instagram"
-                                service.contains("WhatsApp", ignoreCase = true) || operator.contains("WhatsApp", ignoreCase = true) || service.contains("WA", ignoreCase = true) || service.contains("WP", ignoreCase = true) -> "💬 WhatsApp"
-                                service.contains("OTP", ignoreCase = true) -> "🔥 OTP Work"
-                                service.contains("FB", ignoreCase = true) || service.contains("Face", ignoreCase = true) || operator.contains("Clone", ignoreCase = true) || operator.contains("New", ignoreCase = true) || operator.contains("Fresh", ignoreCase = true) -> "Facebook"
-                                operator.isNotBlank() && !operator.equals("Mobile", ignoreCase = true) -> "$operator ⚡"
-                                else -> "Facebook"
+                                operator.isNotBlank() && !operator.equals("Mobile", ignoreCase = true) -> operator
+                                service.isNotBlank() && !service.equals("MK Network", ignoreCase = true) -> service
+                                else -> ""
                             }
                             rangeHitMap[range] = Triple(service, cleanTag, newHits)
                         }

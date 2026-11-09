@@ -1858,10 +1858,6 @@ fun LiveOtpStreamCard(
 ) {
     val context = LocalContext.current
     val fullSnippet = item.rawSnippet.ifBlank { "<#> ***** is your Facebook code\nH29Q+Fsn4Sr" }
-    val extractedOtp = remember(fullSnippet, item.otpCode) {
-        val clean = com.example.util.OtpExtractionHelper.extractOtp(fullSnippet) ?: item.otpCode
-        if (clean != null && clean.isNotBlank() && clean != "******") clean else null
-    }
 
     val cInfo = com.example.util.AllCountriesProvider.detectCountry(item.country)
         ?: com.example.util.AllCountriesProvider.detectCountry(item.iso)
@@ -1971,89 +1967,57 @@ fun LiveOtpStreamCard(
                 }
             }
 
-            // Line 2: Prominent Glowing OTP Badge + Phone Number & Relative Time
+            // Line 2: Masked Phone Number & Relative Time (Clean, no redundant OTP copy badges)
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                // High-visibility glowing OTP Pill
-                if (extractedOtp != null) {
-                    Surface(
-                        color = Color(0xFF00E676).copy(alpha = 0.2f),
-                        shape = RoundedCornerShape(8.dp),
-                        border = BorderStroke(1.2.dp, Color(0xFF00E676)),
-                        modifier = Modifier.clickable {
-                            ClipboardHelper.copyToClipboard(context, extractedOtp, "OTP Code")
-                            Toast.makeText(context, "✓ ওটিপি কোড কপি হয়েছে: $extractedOtp", Toast.LENGTH_SHORT).show()
-                        }
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                text = "OTP: $extractedOtp",
-                                color = Color(0xFF00E676),
-                                fontSize = 13.sp,
-                                fontWeight = FontWeight.Black,
-                                fontFamily = FontFamily.Monospace,
-                                letterSpacing = 1.sp
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Icon(
-                                Icons.Default.ContentCopy,
-                                contentDescription = "Copy OTP",
-                                tint = Color(0xFF00E676),
-                                modifier = Modifier.size(13.dp)
-                            )
-                        }
+                // Masked Number (+3932••••4885)
+                Surface(
+                    color = Color(0xFF0F1E2E),
+                    shape = RoundedCornerShape(6.dp),
+                    border = BorderStroke(0.8.dp, Color(0xFF1E3A56)),
+                    modifier = Modifier.clickable {
+                        ClipboardHelper.copyToClipboard(context, item.maskedNumber, "Phone Number")
+                        Toast.makeText(context, "নম্বর কপি হয়েছে: ${item.maskedNumber}", Toast.LENGTH_SHORT).show()
                     }
-                } else {
-                    Surface(
-                        color = Color(0xFF1E293B),
-                        shape = RoundedCornerShape(6.dp),
-                        border = BorderStroke(0.8.dp, Color(0xFF334155))
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            text = "LIVE OTP STREAM",
-                            color = Color(0xFF94A3B8),
-                            fontSize = 9.5.sp,
+                            text = item.maskedNumber,
+                            color = Color.White,
+                            fontSize = 12.sp,
                             fontWeight = FontWeight.Bold,
-                            modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp)
+                            fontFamily = FontFamily.Monospace
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Icon(
+                            Icons.Default.ContentCopy,
+                            contentDescription = "Copy Number",
+                            tint = Color(0xFF38BDF8),
+                            modifier = Modifier.size(11.dp)
                         )
                     }
                 }
 
-                Column(horizontalAlignment = Alignment.End) {
-                    // Masked Number (+3932••••4885)
-                    Text(
-                        text = item.maskedNumber,
-                        color = Color.White,
-                        fontSize = 11.5.sp,
-                        fontWeight = FontWeight.Bold,
-                        fontFamily = FontFamily.Monospace,
-                        modifier = Modifier.clickable {
-                            ClipboardHelper.copyToClipboard(context, item.maskedNumber, "Phone Number")
-                            Toast.makeText(context, "নম্বর কপি হয়েছে: ${item.maskedNumber}", Toast.LENGTH_SHORT).show()
-                        }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        modifier = Modifier
+                            .size(5.dp)
+                            .clip(CircleShape)
+                            .background(Color(0xFF00E676))
                     )
-                    Spacer(modifier = Modifier.height(2.dp))
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Box(
-                            modifier = Modifier
-                                .size(5.dp)
-                                .clip(CircleShape)
-                                .background(Color(0xFF00E676))
-                        )
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text(
-                            text = item.timeAgo,
-                            color = Color(0xFF00E676),
-                            fontSize = 9.5.sp,
-                            fontWeight = FontWeight.Medium
-                        )
-                    }
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(
+                        text = item.timeAgo,
+                        color = Color(0xFF00E676),
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Medium
+                    )
                 }
             }
 

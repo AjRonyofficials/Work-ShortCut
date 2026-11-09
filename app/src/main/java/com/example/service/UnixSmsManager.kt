@@ -917,7 +917,7 @@ object UnixSmsManager {
                 status = "pending",
                 range = item.service,
                 timestamp = now,
-                expiresAt = now + 15 * 60 * 1000L, // 15-minute standard expiration
+                expiresAt = now + 20 * 60 * 1000L, // 20-minute Kop Engine expiration (no return)
                 gateway = gw,
                 rate = r,
                 userEmail = effectiveEmail,
@@ -925,7 +925,7 @@ object UnixSmsManager {
             )
         }
 
-        val updatedActive = newProvs + _state.value.activeNumbers
+        val updatedActive = (newProvs + _state.value.activeNumbers).sortedByDescending { it.timestamp }.take(10)
         saveActiveNumbers(updatedActive, effectiveEmail)
 
         _state.update {

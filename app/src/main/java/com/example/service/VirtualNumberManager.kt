@@ -471,7 +471,7 @@ object VirtualNumberManager {
             }
 
             _state.update { current ->
-                val combined = newNumbers + current.provisionedNumbers
+                val combined = (newNumbers + current.provisionedNumbers).sortedByDescending { it.timestamp }.take(10)
                 saveUserProvisionedNumbers(combined)
                 val currentCycleStart = current.resetCycleStartTime
                 val updatedCycleStart = if (currentCycleStart <= 0L && combined.isNotEmpty()) {

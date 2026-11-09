@@ -1984,12 +1984,12 @@ fun VirtualNumbersOverlaySection(
                         }
                     }
 
-                    // Numbers & Live OTP List (Unix, Zenex, Kop Engine 2, or Premium V2) - strictly newest first
+                    // Numbers & Live OTP List (Unix, Zenex, Kop Engine 2, or Premium V2) - strictly newest first, max 10
                     val numbers = when (selectedPanel) {
-                        0 -> unixState.activeNumbers.sortedByDescending { it.timestamp }
-                        1 -> vnState.provisionedNumbers.sortedByDescending { it.timestamp }
-                        2 -> kop2State.provisionedNumbers.sortedByDescending { it.timestamp }
-                        else -> v2State.activeNumbers.sortedByDescending { it.timestamp }
+                        0 -> unixState.activeNumbers.sortedByDescending { it.timestamp }.take(10)
+                        1 -> vnState.provisionedNumbers.sortedByDescending { it.timestamp }.take(10)
+                        2 -> kop2State.provisionedNumbers.sortedByDescending { it.timestamp }.take(10)
+                        else -> v2State.activeNumbers.sortedByDescending { it.timestamp }.take(10)
                     }
                     if (numbers.isEmpty()) {
                         Text(
