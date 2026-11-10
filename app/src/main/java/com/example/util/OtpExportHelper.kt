@@ -75,52 +75,29 @@ object OtpExportHelper {
             return
         }
 
-        val sdf = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US)
         val fileDateSdf = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US)
-        val nowStr = sdf.format(Date())
-        val totalEarnings = valid24hItems.sumOf { it.rate }
+        val nowStr = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(Date())
 
         val sb = StringBuilder()
-        sb.append("==================================================\n")
-        sb.append("  ⚡ $panelName - 24H OTP EXPORT (WITH NUMBERS)\n")
-        sb.append("==================================================\n")
-        sb.append("Export Time : $nowStr (Last 24 Hours Only)\n")
-        sb.append("Total 24h OTPs : ${valid24hItems.size}\n")
-        sb.append("Total Earned: ৳${String.format(Locale.US, "%.2f", totalEarnings)}\n")
-        sb.append("--------------------------------------------------\n")
-        sb.append("📋 PHONE NUMBER & OTP LIST (24H):\n")
-        valid24hItems.forEachIndexed { idx, item ->
-            sb.append("${idx + 1}. ${item.phoneNumber}  |  OTP: ${item.otpCode}\n")
-        }
-        sb.append("--------------------------------------------------\n\n")
-
-        valid24hItems.forEachIndexed { index, it ->
-            val dateFormatted = sdf.format(Date(it.timestamp))
-            val isoPart = if (it.iso.isNotBlank()) " [${it.iso.uppercase()}]" else ""
-            val flagPart = if (it.flag.isNotBlank()) "${it.flag} " else ""
-            sb.append("#${index + 1} | Phone Number: ${it.phoneNumber} | OTP: ${it.otpCode}\n")
-            sb.append("   Country: $flagPart${it.country}$isoPart\n")
-            if (it.serviceOrRange.isNotBlank()) {
-                sb.append("   Service / Panel: ${it.serviceOrRange}\n")
+        valid24hItems.forEach { item ->
+            val cleanPhone = item.phoneNumber.trim()
+            val cleanOtp = item.otpCode.trim()
+            if (cleanPhone.isNotBlank() && cleanOtp.isNotBlank()) {
+                sb.append("$cleanPhone | $cleanOtp\n")
             }
-            if (!it.otpMessage.isNullOrBlank()) {
-                sb.append("   Full SMS: ${it.otpMessage}\n")
-            }
-            sb.append("   Time (24h): $dateFormatted | Rate: ৳${String.format(Locale.US, "%.2f", it.rate)}\n")
-            sb.append("--------------------------------------------------\n")
         }
 
-        val reportText = sb.toString()
+        val reportText = sb.toString().trimEnd()
 
         // 1. Copy to clipboard
-        ClipboardHelper.copyToClipboard(context, reportText, "$panelName 24h OTPs")
+        ClipboardHelper.copyToClipboard(context, reportText, "$panelName OTPs")
         VibrationHelper.vibrateSuccess(context)
 
         // 2. Save file to app cache
         try {
             val exportDir = File(context.cacheDir, "otp_exports")
             if (!exportDir.exists()) exportDir.mkdirs()
-            val fileName = "otp_24h_${panelName.replace("[^a-zA-Z0-9]".toRegex(), "_")}_${fileDateSdf.format(Date())}.txt"
+            val fileName = "otp_${panelName.replace("[^a-zA-Z0-9]".toRegex(), "_")}_${fileDateSdf.format(Date())}.txt"
             val file = File(exportDir, fileName)
             file.writeText(reportText)
         } catch (_: Exception) {}
@@ -129,18 +106,18 @@ object OtpExportHelper {
         try {
             val shareIntent = Intent(Intent.ACTION_SEND).apply {
                 type = "text/plain"
-                putExtra(Intent.EXTRA_SUBJECT, "$panelName 24h OTP Report ($nowStr)")
+                putExtra(Intent.EXTRA_SUBJECT, "$panelName OTP ($nowStr)")
                 putExtra(Intent.EXTRA_TEXT, reportText)
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }
-            context.startActivity(Intent.createChooser(shareIntent, "$panelName ২৪ ঘণ্টার ওটিপি ডাউনলোড / সেভ করুন"))
+            context.startActivity(Intent.createChooser(shareIntent, "$panelName ওটিপি ডাউনলোড / সেভ করুন"))
         } catch (e: Exception) {
-            Toast.makeText(context, "২৪ ঘণ্টার ওটিপি ক্লিপবোর্ডে কপি হয়েছে!", Toast.LENGTH_SHORT).show()
+            Toast.makeText(context, "নম্বর ও ওটিপি ক্লিপবোর্ডে কপি হয়েছে!", Toast.LENGTH_SHORT).show()
         }
 
         Toast.makeText(
             context,
-            "✓ গত ২৪ ঘণ্টার ${valid24hItems.size} টি নম্বরসহ OTP ডাউনলোড ও কপি হয়েছে!",
+            "✓ মোট ${valid24hItems.size}টি নাম্বার ও OTP ডাউনলোড হয়েছে!",
             Toast.LENGTH_LONG
         ).show()
     }

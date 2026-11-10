@@ -765,43 +765,31 @@ object OtpHistoryManager {
      */
     fun exportOtpHistory(context: Context) {
         val records = _state.value.recentRecords
-        val total = _state.value.totalOtpsAllTime
-        val today = _state.value.todayOtps
-        val timeNowStr = SimpleDateFormat("dd MMM yyyy, hh:mm a", Locale.US).format(Date())
-
-        val sb = StringBuilder()
-        sb.append("=========================================\n")
-        sb.append("  WORK SHORTCUT - 30 DAYS OTP HISTORY\n")
-        sb.append("  Export Date: $timeNowStr\n")
-        sb.append("  Total OTPs: $total (Today: $today)\n")
-        sb.append("=========================================\n\n")
-
         if (records.isEmpty()) {
-            sb.append("No OTP records available yet.\n")
-        } else {
-            sb.append("DATE & TIME       | PLATFORM   | SERVICE    | NUMBER          | OTP CODE\n")
-            sb.append("-------------------------------------------------------------------------\n")
-            records.forEach { r ->
-                val timeStr = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.US).format(Date(r.timestamp))
-                val platformPadded = r.platform.padEnd(10)
-                val servicePadded = r.service.padEnd(10)
-                val numPadded = r.phoneNumber.padEnd(15)
-                sb.append("$timeStr | $platformPadded | $servicePadded | $numPadded | ${r.otpCode}\n")
-            }
-            sb.append("\nTotal Records Exported: ${records.size}\n")
-            sb.append("=========================================\n")
+            Toast.makeText(context, "কোনো ওটিপি রেকর্ড পাওয়া যায়নি", Toast.LENGTH_SHORT).show()
+            return
         }
 
-        val exportText = sb.toString()
+        val timeNowStr = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
+        val sb = StringBuilder()
+        records.forEach { r ->
+            val cleanPhone = r.phoneNumber.trim()
+            val cleanOtp = r.otpCode.trim()
+            if (cleanPhone.isNotBlank() && cleanOtp.isNotBlank()) {
+                sb.append("$cleanPhone | $cleanOtp\n")
+            }
+        }
+
+        val exportText = sb.toString().trimEnd()
 
         // 1. Copy to clipboard
-        ClipboardHelper.copyToClipboard(context, exportText, "OTP 30-Day History")
+        ClipboardHelper.copyToClipboard(context, exportText, "OTP History")
 
         // 2. Open Android Share / Save Sheet
         try {
             val sendIntent = Intent(Intent.ACTION_SEND).apply {
                 putExtra(Intent.EXTRA_TEXT, exportText)
-                putExtra(Intent.EXTRA_SUBJECT, "Work ShortCut - OTP History ($timeNowStr)")
+                putExtra(Intent.EXTRA_SUBJECT, "OTP History ($timeNowStr)")
                 type = "text/plain"
                 flags = Intent.FLAG_ACTIVITY_NEW_TASK
             }
@@ -809,10 +797,10 @@ object OtpHistoryManager {
                 flags = Intent.FLAG_ACTIVITY_NEW_TASK
             }
             context.startActivity(shareIntent)
-            Toast.makeText(context, "✓ OTP হিস্টোরি কপি ও ডাউনলোডের জন্য প্রস্তুত!", Toast.LENGTH_LONG).show()
+            Toast.makeText(context, "✓ মোট ${records.size}টি নাম্বার ও OTP ডাউনলোড হয়েছে!", Toast.LENGTH_LONG).show()
             VibrationHelper.vibrateSuccess(context)
         } catch (_: Exception) {
-            Toast.makeText(context, "✓ OTP হিস্টোরি ক্লিপবোর্ডে কপি করা হয়েছে", Toast.LENGTH_SHORT).show()
+            Toast.makeText(context, "✓ OTP ক্লিপবোর্ডে কপি করা হয়েছে", Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -883,18 +871,17 @@ object OtpHistoryManager {
         }
 
         try {
-            val sdf = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US)
             val sb = java.lang.StringBuilder()
-            sb.append("ID,Date Time,Phone Number,Service,Platform,OTP Code,Rate (Tk),User Email\n")
+            sb.append("Phone Number,OTP Code\n")
             for (r in records) {
-                val dateStr = sdf.format(Date(r.timestamp))
-                val cleanPhone = r.phoneNumber.replace(",", " ")
-                val cleanSrv = r.service.replace(",", " ")
-                val cleanPlt = r.platform.replace(",", " ")
-                sb.append("\"${r.id}\",\"$dateStr\",\"$cleanPhone\",\"$cleanSrv\",\"$cleanPlt\",\"${r.otpCode}\",${r.rate},\"${r.userEmail}\"\n")
+                val cleanPhone = r.phoneNumber.trim().replace(",", "")
+                val cleanOtp = r.otpCode.trim().replace(",", "")
+                if (cleanPhone.isNotBlank() && cleanOtp.isNotBlank()) {
+                    sb.append("\"$cleanPhone\",\"$cleanOtp\"\n")
+                }
             }
 
-            val fileName = "OTP_History_${SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())}.csv"
+            val fileName = "OTP_Numbers_${SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())}.csv"
             val cacheDir = context.cacheDir
             val file = java.io.File(cacheDir, fileName)
             file.writeText(sb.toString(), Charsets.UTF_8)
@@ -907,12 +894,12 @@ object OtpHistoryManager {
 
             val sendIntent = Intent(Intent.ACTION_SEND).apply {
                 type = "text/csv"
-                putExtra(Intent.EXTRA_SUBJECT, "OTP History Export ($fileName)")
+                putExtra(Intent.EXTRA_SUBJECT, "OTP Numbers Export ($fileName)")
                 putExtra(Intent.EXTRA_STREAM, uri)
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             }
 
-            val chooser = Intent.createChooser(sendIntent, "Export OTP History CSV")
+            val chooser = Intent.createChooser(sendIntent, "Export OTP CSV")
             chooser.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             context.startActivity(chooser)
         } catch (e: Exception) {
@@ -921,30 +908,30 @@ object OtpHistoryManager {
     }
 
     /**
-     * Copy formatted plain text summary of recent OTPs to clipboard
+     * Copy strictly phone number and OTP code to clipboard
      */
     fun copyRecentOtpsToClipboard(context: Context) {
         val currentEmail = AuthManager.currentEmail.value.trim().lowercase()
         val records = _state.value.recentRecords.filter {
             currentEmail.isEmpty() || it.userEmail.isBlank() || it.userEmail.equals(currentEmail, ignoreCase = true)
-        }.take(25)
+        }
 
         if (records.isEmpty()) {
             Toast.makeText(context, "কপি করার মতো কোনো ওটিপি রেকর্ড নেই", Toast.LENGTH_SHORT).show()
             return
         }
 
-        val sdf = SimpleDateFormat("HH:mm, dd MMM", Locale.US)
         val sb = java.lang.StringBuilder()
-        sb.append("📊 ওটিপি হিস্টোরি সামারি (মোট: ${records.size}টি)\n")
-        sb.append("━━━━━━━━━━━━━━━━━━━━\n")
-        records.forEachIndexed { idx, r ->
-            sb.append("${idx + 1}. [${r.service}] কোড: ${r.otpCode}\n")
-            sb.append("   নম্বর: ${r.phoneNumber} | ৳${String.format(Locale.US, "%.2f", r.rate)} | ${sdf.format(Date(r.timestamp))}\n")
+        records.forEach { r ->
+            val cleanPhone = r.phoneNumber.trim()
+            val cleanOtp = r.otpCode.trim()
+            if (cleanPhone.isNotBlank() && cleanOtp.isNotBlank()) {
+                sb.append("$cleanPhone | $cleanOtp\n")
+            }
         }
-        sb.append("━━━━━━━━━━━━━━━━━━━━\n")
-        ClipboardHelper.copyToClipboard(context, sb.toString(), "OTP Summary")
-        Toast.makeText(context, "✓ ওটিপি হিস্টোরি টেক্সট কপি হয়েছে", Toast.LENGTH_SHORT).show()
+        val copyText = sb.toString().trimEnd()
+        ClipboardHelper.copyToClipboard(context, copyText, "OTP Numbers")
+        Toast.makeText(context, "✓ মোট ${records.size}টি নাম্বার ও OTP কপি হয়েছে", Toast.LENGTH_SHORT).show()
     }
 
     /**

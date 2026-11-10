@@ -1498,6 +1498,21 @@ fun UserProfileOtpHistoryDialog(
                                             verticalAlignment = Alignment.CenterVertically
                                         ) {
                                             Surface(
+                                                color = Color(0xFFF59E0B).copy(alpha = 0.2f),
+                                                shape = RoundedCornerShape(6.dp),
+                                                border = BorderStroke(1.dp, Color(0xFFF59E0B).copy(alpha = 0.6f)),
+                                                modifier = Modifier.clickable { OtpHistoryManager.exportOtpHistory(context) }
+                                            ) {
+                                                Row(
+                                                    verticalAlignment = Alignment.CenterVertically,
+                                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp)
+                                                ) {
+                                                    Icon(Icons.Default.Download, contentDescription = "TXT", tint = Color(0xFFFBBF24), modifier = Modifier.size(11.dp))
+                                                    Spacer(modifier = Modifier.width(3.dp))
+                                                    Text(text = "TXT", color = Color(0xFFFBBF24), fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                                }
+                                            }
+                                            Surface(
                                                 color = Color(0xFF0284C7).copy(alpha = 0.25f),
                                                 shape = RoundedCornerShape(6.dp),
                                                 border = BorderStroke(1.dp, Color(0xFF0284C7).copy(alpha = 0.6f)),
