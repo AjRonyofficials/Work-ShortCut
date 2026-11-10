@@ -143,7 +143,7 @@ object PremiumNumberV2Manager {
             val savedService = prefs?.getString("service", "WhatsApp") ?: "WhatsApp"
             val savedCount = prefs?.getInt("request_count", 1) ?: 1
 
-            val todayKey = "today_otp_" + SimpleDateFormat("yyyyMMdd", Locale.US).format(Date())
+            val todayKey = getTodayKey()
             val todayOtps = prefs?.getInt(todayKey, 0) ?: 0
             val savedSound = prefs?.getBoolean("sound_enabled", true) ?: true
 
@@ -1118,6 +1118,10 @@ object PremiumNumberV2Manager {
 
             for (idx in current.indices) {
                 val item = current[idx]
+                val curEmail = AuthManager.currentEmail.value.trim().lowercase()
+                if (item.userEmail.isNotBlank() && curEmail.isNotEmpty() && !item.userEmail.equals(curEmail, ignoreCase = true)) {
+                    continue
+                }
                 val cleanItemPhone = item.number.replace("[^0-9+]".toRegex(), "")
                 val isMatch = (rId.isNotBlank() && item.rentalId == rId) ||
                         (cleanItemPhone.isNotEmpty() && (cleanItemPhone == phone || cleanItemPhone.endsWith(phone) || phone.endsWith(cleanItemPhone)))
@@ -1146,7 +1150,7 @@ object PremiumNumberV2Manager {
             saveNumbers(sortedActive)
 
             // Increment today's count
-            val todayKey = "today_otp_" + SimpleDateFormat("yyyyMMdd", Locale.US).format(Date())
+            val todayKey = getTodayKey()
             val newTodayCount = _state.value.todayOtpCount + newlyArrived.size
             prefs?.edit()?.putInt(todayKey, newTodayCount)?.apply()
 
@@ -1244,9 +1248,15 @@ object PremiumNumberV2Manager {
         _state.update { it.copy(activeNumbers = emptyList()) }
     }
 
+    private fun getTodayKey(email: String = AuthManager.currentEmail.value): String {
+        val datePart = SimpleDateFormat("yyyyMMdd", Locale.US).format(Date())
+        val clean = email.trim().lowercase()
+        return if (clean.isNotEmpty()) "v2_today_otp_${clean}_$datePart" else "today_otp_$datePart"
+    }
+
     fun resetTodayCycle(context: Context? = null) {
         OtpHistoryManager.markPanel24hReset("Premium Number V2")
-        val todayKey = "today_otp_" + SimpleDateFormat("yyyyMMdd", Locale.US).format(Date())
+        val todayKey = getTodayKey()
         prefs?.edit()?.putInt(todayKey, 0)?.apply()
         saveNumbers(emptyList())
         _state.update {
@@ -1337,7 +1347,8 @@ object PremiumNumberV2Manager {
 
     fun onUserLoggedIn(email: String) {
         val loaded = loadNumbers(email)
-        _state.update { it.copy(activeNumbers = loaded) }
+        val savedToday = prefs?.getInt(getTodayKey(email), 0) ?: 0
+        _state.update { it.copy(activeNumbers = loaded, todayOtpCount = savedToday) }
     }
 
     fun stopPolling() {

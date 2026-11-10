@@ -247,7 +247,7 @@ fun MainScreen(
                                 }
                                 Spacer(modifier = Modifier.width(5.dp))
                                 Text(
-                                    text = "৳ ${String.format(java.util.Locale.US, "%.1f", withdrawalState.availableBalanceTk)}",
+                                    text = "৳ ${String.format(java.util.Locale.US, "%.2f", withdrawalState.availableBalanceTk)}",
                                     fontSize = 11.sp,
                                     fontWeight = FontWeight.Black,
                                     color = NeonEmerald,

@@ -185,7 +185,9 @@ object UnixSmsManager {
             val rawHadi = prefs?.getString(KEY_HADI_API_TOKEN, DEFAULT_HADI_TOKEN) ?: DEFAULT_HADI_TOKEN
             val hadiToken = if (rawHadi.isBlank()) DEFAULT_HADI_TOKEN else rawHadi
             val gateway = prefs?.getString(KEY_SELECTED_UPLOAD_GATEWAY, "LAMIX") ?: "LAMIX"
-            val todayOtp = prefs?.getInt(KEY_TODAY_OTP, 0) ?: 0
+            val initEmail = AuthManager.currentEmail.value.trim().lowercase()
+            val todayOtpKey = if (initEmail.isNotEmpty()) "${KEY_TODAY_OTP}_$initEmail" else KEY_TODAY_OTP
+            val todayOtp = prefs?.getInt(todayOtpKey, 0) ?: 0
             val rawSavedRate = prefs?.getFloat(KEY_OTP_RATE, 0.50f)?.toDouble() ?: 0.50
             val savedRate = if (rawSavedRate < 0.1) 0.50 else rawSavedRate
 
@@ -574,7 +576,9 @@ object UnixSmsManager {
 
     fun resetTodayCycle(context: Context? = null) {
         OtpHistoryManager.markPanel24hReset("Premium Numbers")
-        prefs?.edit()?.putInt(KEY_TODAY_OTP, 0)?.apply()
+        val curEmail = AuthManager.currentEmail.value.trim().lowercase()
+        val todayOtpKey = if (curEmail.isNotEmpty()) "${KEY_TODAY_OTP}_$curEmail" else KEY_TODAY_OTP
+        prefs?.edit()?.putInt(todayOtpKey, 0)?.apply()
         saveActiveNumbers(emptyList())
         _state.update {
             it.copy(
@@ -631,8 +635,11 @@ object UnixSmsManager {
     }
 
     fun onUserLoggedIn(email: String) {
-        val loaded = loadActiveNumbers(email)
-        _state.update { it.copy(activeNumbers = loaded) }
+        val clean = email.trim().lowercase()
+        val loaded = loadActiveNumbers(clean)
+        val todayOtpKey = if (clean.isNotEmpty()) "${KEY_TODAY_OTP}_$clean" else KEY_TODAY_OTP
+        val savedToday = prefs?.getInt(todayOtpKey, 0) ?: 0
+        _state.update { it.copy(activeNumbers = loaded, todayOtpCount = savedToday) }
     }
 
     fun setApiToken(token: String) {
