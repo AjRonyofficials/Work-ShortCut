@@ -181,15 +181,41 @@ object WithdrawalManager {
                         )
                     )
                 }
-                if (cloudRequests.isNotEmpty()) {
-                    val baseCredit = prefs?.getFloat(KEY_BASE_CREDIT, 0.0f)?.toDouble() ?: 0.0
+                if (cloudRequests.isNotEmpty() || isAdmin) {
+                    val currentEmail = AuthManager.currentEmail.value.trim().lowercase()
+                    val baseCredit = getUserBaseCredit(currentEmail)
                     val existing = _state.value.allRequests
-                    val merged = (cloudRequests + existing).distinctBy { it.id }.sortedByDescending { it.requestTimestamp }
+                    val merged = if (cloudRequests.isNotEmpty()) {
+                        (cloudRequests + existing).distinctBy { it.id }.sortedByDescending { it.requestTimestamp }
+                    } else {
+                        existing
+                    }
                     recomputeBalances(merged, baseCredit)
                     saveRequests(merged)
                 }
             }
         } catch (_: Exception) {}
+    }
+
+    private fun getUserBaseCreditKey(email: String): String {
+        val clean = email.trim().lowercase()
+        return if (clean.isNotEmpty()) "${KEY_BASE_CREDIT}_$clean" else KEY_BASE_CREDIT
+    }
+
+    private fun getUserExactBalanceKey(email: String): String {
+        val clean = email.trim().lowercase()
+        return "user_exact_balance_$clean"
+    }
+
+    private fun getHasExactBalanceKey(email: String): String {
+        val clean = email.trim().lowercase()
+        return "has_exact_balance_$clean"
+    }
+
+    private fun getUserBaseCredit(email: String): Double {
+        val clean = email.trim().lowercase()
+        if (clean.isEmpty()) return 0.0
+        return prefs?.getFloat(getUserBaseCreditKey(clean), 0.0f)?.toDouble() ?: 0.0
     }
 
     fun triggerLiveCloudSync() {
@@ -228,20 +254,29 @@ object WithdrawalManager {
         val minRocket = prefs?.getFloat(KEY_MIN_ROCKET, 50.0f)?.toDouble() ?: 50.0
         _limits.value = WithdrawalLimits(minBinance, minBkash, minNagad, minRocket)
 
-        // One-time cleanup of legacy test 60 Tk credit
+        // One-time cleanup of legacy shared base credit
         val hasReset = prefs?.getBoolean(KEY_CREDIT_RESET_V2, false) ?: false
         if (!hasReset) {
             prefs?.edit()?.putFloat(KEY_BASE_CREDIT, 0.0f)?.putBoolean(KEY_CREDIT_RESET_V2, true)?.apply()
         }
 
-        val baseCredit = prefs?.getFloat(KEY_BASE_CREDIT, 0.0f)?.toDouble() ?: 0.0
+        val currentEmail = AuthManager.currentEmail.value.trim().lowercase()
+        val baseCredit = getUserBaseCredit(currentEmail)
 
         recomputeBalances(requests, baseCredit)
     }
 
     fun refreshBalances() {
-        val baseCredit = prefs?.getFloat(KEY_BASE_CREDIT, 0.0f)?.toDouble() ?: 0.0
+        val currentEmail = AuthManager.currentEmail.value.trim().lowercase()
+        val baseCredit = getUserBaseCredit(currentEmail)
         recomputeBalances(_state.value.allRequests, baseCredit)
+    }
+
+    fun onUserLoggedIn(email: String) {
+        val clean = email.trim().lowercase()
+        val baseCredit = getUserBaseCredit(clean)
+        recomputeBalances(_state.value.allRequests, baseCredit)
+        triggerLiveCloudSync()
     }
 
     fun onUserLoggedOut() {
@@ -254,14 +289,47 @@ object WithdrawalManager {
             ?.putFloat(KEY_BASE_CREDIT, 0.0f)
             ?.remove(KEY_REQUESTS_JSON)
             ?.apply()
+        prefs?.all?.keys?.filter {
+            it.startsWith(KEY_BASE_CREDIT) ||
+            it.startsWith("user_exact_balance_") ||
+            it.startsWith("has_exact_balance_")
+        }?.forEach { k ->
+            prefs?.edit()?.remove(k)?.apply()
+        }
+    }
+
+    fun creditOtpReward(rate: Double) {
+        val currentEmail = AuthManager.currentEmail.value.trim().lowercase()
+        if (currentEmail.isBlank()) return
+        val reward = if (rate < 0.05) 0.50 else rate
+        val hasExact = prefs?.getBoolean(getHasExactBalanceKey(currentEmail), false) ?: false
+        if (hasExact) {
+            val prevExact = prefs?.getFloat(getUserExactBalanceKey(currentEmail), 0.0f)?.toDouble() ?: _state.value.availableBalanceTk
+            val newExact = Math.round((maxOf(0.0, prevExact) + reward) * 100.0) / 100.0
+            prefs?.edit()?.putFloat(getUserExactBalanceKey(currentEmail), newExact.toFloat())?.apply()
+        }
+        val baseCredit = getUserBaseCredit(currentEmail)
+        recomputeBalances(_state.value.allRequests, baseCredit)
     }
 
     private fun recomputeBalances(requests: List<WithdrawalRequest>, baseCredit: Double) {
         val currentEmail = AuthManager.currentEmail.value.trim().lowercase()
-        val isAdmin = AuthManager.isAdmin()
-        // Only count records belonging to currentEmail for personal balance calculation
+        if (currentEmail.isBlank() || currentEmail == "user account") {
+            _state.update {
+                it.copy(
+                    totalEarnedTk = 0.0,
+                    availableBalanceTk = 0.0,
+                    pendingWithdrawTk = 0.0,
+                    approvedWithdrawTk = 0.0,
+                    allRequests = if (AuthManager.isAdmin()) requests else emptyList()
+                )
+            }
+            return
+        }
+
+        // Strict Per-User Isolation: Only count OTP records strictly belonging to currentEmail
         val records = OtpHistoryManager.state.value.recentRecords.filter {
-            !isAdmin || it.userEmail.equals(currentEmail, ignoreCase = true)
+            it.userEmail.equals(currentEmail, ignoreCase = true)
         }
         val currentUnixRate = UnixSmsManager.state.value.otpRatePerSms
         val currentZenexRate = VirtualNumberManager.zenexOtpRate.value
@@ -280,26 +348,26 @@ object WithdrawalManager {
                 }
                 rate
             }
-        } else if (!isAdmin) {
+        } else {
             val unixCount = OtpHistoryManager.state.value.unixTotalAllTime
             val zenexCount = OtpHistoryManager.state.value.zenexTotalAllTime
             val kop2Count = OtpHistoryManager.state.value.kop2TotalAllTime
             val v2Count = OtpHistoryManager.state.value.v2TotalAllTime
             (unixCount * currentUnixRate) + (zenexCount * currentZenexRate) + (kop2Count * currentKop2Rate) + (v2Count * currentV2Rate)
-        } else {
-            0.0
         }
 
-        val totalEarned = baseCredit + otpEarnedTk
         // Filter requests strictly for current user's balance deduction
-        val userFilteredRequests = if (currentEmail.isBlank() || currentEmail == "user account") {
-            emptyList()
-        } else {
-            requests.filter { it.userEmail.equals(currentEmail, ignoreCase = true) }
-        }
+        val userFilteredRequests = requests.filter { it.userEmail.equals(currentEmail, ignoreCase = true) }
         val pending = userFilteredRequests.filter { it.status == "PENDING" }.sumOf { it.amount }
         val approved = userFilteredRequests.filter { it.status == "APPROVED" }.sumOf { it.amount }
-        val available = maxOf(0.0, totalEarned - pending - approved)
+
+        val hasExact = prefs?.getBoolean(getHasExactBalanceKey(currentEmail), false) ?: false
+        val available = if (hasExact) {
+            maxOf(0.0, (prefs?.getFloat(getUserExactBalanceKey(currentEmail), 0.0f)?.toDouble() ?: 0.0))
+        } else {
+            maxOf(0.0, baseCredit + otpEarnedTk - pending - approved)
+        }
+        val totalEarned = maxOf(available + pending + approved, baseCredit + otpEarnedTk)
 
         _state.update {
             it.copy(
@@ -452,10 +520,28 @@ object WithdrawalManager {
             requestTimestamp = System.currentTimeMillis()
         )
 
+        val cleanUserEmail = userEmail.trim().lowercase().ifBlank { AuthManager.currentEmail.value.trim().lowercase() }
+        val newAvail = maxOf(0.0, Math.round((currentAvail - amount) * 100.0) / 100.0)
+        if (cleanUserEmail.isNotEmpty()) {
+            prefs?.edit()
+                ?.putBoolean(getHasExactBalanceKey(cleanUserEmail), true)
+                ?.putFloat(getUserExactBalanceKey(cleanUserEmail), newAvail.toFloat())
+                ?.apply()
+        }
+
         val updated = listOf(newRequest) + _state.value.allRequests
         saveRequests(updated)
-        val baseCredit = prefs?.getFloat(KEY_BASE_CREDIT, 0.0f)?.toDouble() ?: 0.0
+        val baseCredit = getUserBaseCredit(cleanUserEmail)
         recomputeBalances(updated, baseCredit)
+
+        val st = OtpHistoryManager.state.value
+        AuthManager.syncCurrentUserDataToCloud(
+            totalOtps = st.totalOtpsAllTime,
+            balanceTk = _state.value.availableBalanceTk,
+            todayOtps = st.todayOtps,
+            last7d = st.last7DaysOtps,
+            last30d = st.last30DaysOtps
+        )
 
         // Real-time Push to Supabase withdraw_history table
         scope.launch {
@@ -652,8 +738,13 @@ object WithdrawalManager {
     }
 
     fun setAdminAssignedBalance(assignedBalance: Double) {
-        val cleanBalance = maxOf(0.0, assignedBalance)
-        val records = OtpHistoryManager.state.value.recentRecords
+        val cleanBalance = maxOf(0.0, Math.round(assignedBalance * 100.0) / 100.0)
+        val currentEmail = AuthManager.currentEmail.value.trim().lowercase()
+        if (currentEmail.isBlank()) return
+
+        val records = OtpHistoryManager.state.value.recentRecords.filter {
+            it.userEmail.equals(currentEmail, ignoreCase = true)
+        }
         val currentUnixRate = UnixSmsManager.state.value.otpRatePerSms
         val currentZenexRate = VirtualNumberManager.zenexOtpRate.value
         val currentKop2Rate = KopEngine2Manager.kop2OtpRate.value
@@ -672,9 +763,8 @@ object WithdrawalManager {
             }
         } else 0.0
 
-        val currentEmail = AuthManager.currentEmail.value.trim().lowercase()
-        val userFilteredRequests = _state.value.allRequests.filter { 
-            it.userEmail.equals(currentEmail, ignoreCase = true) 
+        val userFilteredRequests = _state.value.allRequests.filter {
+            it.userEmail.equals(currentEmail, ignoreCase = true)
         }
         val pending = userFilteredRequests.filter { it.status == "PENDING" }.sumOf { it.amount }
         val approved = userFilteredRequests.filter { it.status == "APPROVED" }.sumOf { it.amount }
@@ -682,7 +772,11 @@ object WithdrawalManager {
         val targetTotalEarned = cleanBalance + pending + approved
         val neededBaseCredit = targetTotalEarned - otpEarnedTk
 
-        prefs?.edit()?.putFloat(KEY_BASE_CREDIT, neededBaseCredit.toFloat())?.apply()
+        prefs?.edit()
+            ?.putBoolean(getHasExactBalanceKey(currentEmail), true)
+            ?.putFloat(getUserExactBalanceKey(currentEmail), cleanBalance.toFloat())
+            ?.putFloat(getUserBaseCreditKey(currentEmail), neededBaseCredit.toFloat())
+            ?.apply()
         recomputeBalances(_state.value.allRequests, neededBaseCredit)
     }
 

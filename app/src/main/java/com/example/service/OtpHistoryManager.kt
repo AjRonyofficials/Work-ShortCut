@@ -111,6 +111,9 @@ object OtpHistoryManager {
     private val _state = MutableStateFlow(OtpHistoryState())
     val state: StateFlow<OtpHistoryState> = _state.asStateFlow()
 
+    private val _adminGlobalRecords = MutableStateFlow<List<OtpHistoryRecord>>(emptyList())
+    val adminGlobalRecords: StateFlow<List<OtpHistoryRecord>> = _adminGlobalRecords.asStateFlow()
+
     private val dateFormat = SimpleDateFormat("yyyy-MM-dd", Locale.US)
     private val displayFormat = SimpleDateFormat("dd MMM", Locale.US)
 
@@ -165,18 +168,65 @@ object OtpHistoryManager {
         return if (clean.isNotEmpty()) "${KEY_TOTAL_COUNT}_$clean" else KEY_TOTAL_COUNT
     }
 
+    private fun getUserCycleStartKey(email: String): String {
+        val clean = email.trim().lowercase()
+        return if (clean.isNotEmpty()) "${KEY_MONTHLY_CYCLE_START}_$clean" else KEY_MONTHLY_CYCLE_START
+    }
+
+    private fun isPhoneDigitsMatch(a: String, b: String): Boolean {
+        val da = a.replace("[^0-9]".toRegex(), "")
+        val db = b.replace("[^0-9]".toRegex(), "")
+        if (da.length < 7 || db.length < 7) return false
+        return da == db || da.endsWith(db) || db.endsWith(da)
+    }
+
+    /**
+     * Strictly verifies that the arrived OTP phone number was actually taken/claimed by [userEmail].
+     */
+    fun isNumberTakenByUser(phoneNumber: String, userEmail: String): Boolean {
+        val cleanEmail = userEmail.trim().lowercase()
+        if (cleanEmail.isBlank()) return false
+
+        // 1. Check UnixSmsManager active numbers for this user
+        val unixActiveMatch = UnixSmsManager.state.value.activeNumbers.any {
+            isPhoneDigitsMatch(it.number, phoneNumber) &&
+                (it.userEmail.isBlank() || it.userEmail.equals(cleanEmail, ignoreCase = true))
+        }
+        if (unixActiveMatch) return true
+
+        // 2. Check VirtualNumberManager (Kop 1 / Zenex) provisioned numbers for this user
+        val zenexMatch = VirtualNumberManager.state.value.provisionedNumbers.any {
+            isPhoneDigitsMatch(it.number, phoneNumber) &&
+                (it.userEmail.isBlank() || it.userEmail.equals(cleanEmail, ignoreCase = true))
+        }
+        if (zenexMatch) return true
+
+        // 3. Check KopEngine2Manager provisioned numbers for this user
+        val kop2Match = KopEngine2Manager.state.value.provisionedNumbers.any {
+            isPhoneDigitsMatch(it.number, phoneNumber) &&
+                (it.userEmail.isBlank() || it.userEmail.equals(cleanEmail, ignoreCase = true))
+        }
+        if (kop2Match) return true
+
+        // 4. Check PremiumNumberV2Manager active numbers for this user
+        val v2Match = PremiumNumberV2Manager.state.value.activeNumbers.any {
+            isPhoneDigitsMatch(it.number, phoneNumber) &&
+                (it.userEmail.isBlank() || it.userEmail.equals(cleanEmail, ignoreCase = true))
+        }
+        if (v2Match) return true
+
+        return false
+    }
+
     suspend fun syncFromCloud(context: Context? = null) {
         val currentEmail = AuthManager.currentEmail.value.trim().lowercase()
         val isAdmin = AuthManager.isAdmin()
-        if (currentEmail.isBlank() && !isAdmin) return
+        if (currentEmail.isBlank()) return
 
+        // 1. Sync strictly ONLY the logged-in user's own OTP history for their Profile & Wallet
         try {
             val encEmail = java.net.URLEncoder.encode(currentEmail, "UTF-8")
-            val url = if (isAdmin) {
-                "$SUPABASE_BASE_URL/otp_history?select=*&order=created_at.desc&limit=500"
-            } else {
-                "$SUPABASE_BASE_URL/otp_history?user_email=eq.$encEmail&order=created_at.desc&limit=100"
-            }
+            val url = "$SUPABASE_BASE_URL/otp_history?user_email=eq.$encEmail&order=created_at.desc&limit=100"
 
             val req = Request.Builder()
                 .url(url)
@@ -185,60 +235,59 @@ object OtpHistoryManager {
                 .get()
                 .build()
             httpClient.newCall(req).execute().use { resp ->
-                if (!resp.isSuccessful) return
-                val bodyStr = resp.body?.string() ?: return
-                val arr = JSONArray(bodyStr)
-                if (arr.length() == 0) {
-                    // Do not wipe local records if cloud query returns empty!
-                    return
-                }
-                val cloudList = mutableListOf<OtpHistoryRecord>()
-                for (i in 0 until arr.length()) {
-                    val o = arr.getJSONObject(i)
-                    val recUser = o.optString("user_email", "").trim().lowercase()
+                if (resp.isSuccessful) {
+                    val bodyStr = resp.body?.string() ?: "[]"
+                    val arr = JSONArray(bodyStr)
+                    val cloudList = mutableListOf<OtpHistoryRecord>()
+                    for (i in 0 until arr.length()) {
+                        val o = arr.getJSONObject(i)
+                        val recUser = o.optString("user_email", "").trim().lowercase()
 
-                    // Strict Isolation for regular users; Admin sees all users' live OTPs
-                    if (!isAdmin && recUser.isNotEmpty() && recUser != currentEmail) {
-                        continue
-                    }
+                        // Strict Per-User Isolation: Discard any record not belonging to currentEmail
+                        if (recUser != currentEmail) {
+                            continue
+                        }
 
-                    val phone = o.optString("phone_number", "").trim()
-                    val code = o.optString("otp_code", "").trim()
+                        val phone = o.optString("phone_number", "").trim()
+                        val code = o.optString("otp_code", "").trim()
 
-                    // Strict Fake / Corrupt data prevention: Never display mock/fake/empty codes
-                    if (code.isBlank() || code == "null" || code.length < 3) continue
-                    if (phone.isBlank() || phone.startsWith("+120255501") || phone.startsWith("+2376991122")) continue
+                        if (code.isBlank() || code == "null" || code.length < 3) continue
+                        if (phone.isBlank() || phone.startsWith("+120255501") || phone.startsWith("+2376991122")) continue
 
-                    val idStr = o.optString("id", java.util.UUID.randomUUID().toString())
-                    val srv = o.optString("service", "SMS")
-                    val plt = o.optString("platform", "Unix SMS")
-                    val rateVal = o.optDouble("earned_amount", 0.50)
-                    val ts = parseCreatedAt(o.optString("created_at", ""))
-                    cloudList.add(
-                        OtpHistoryRecord(
-                            id = idStr,
-                            phoneNumber = phone,
-                            otpCode = code,
-                            service = srv,
-                            platform = plt,
-                            rate = if (rateVal < 0.05) 0.50 else rateVal,
-                            timestamp = ts,
-                            dateKey = dateFormat.format(Date(ts)),
-                            userEmail = recUser.ifEmpty { currentEmail }
+                        val idStr = o.optString("id", java.util.UUID.randomUUID().toString())
+                        val srv = o.optString("service", "SMS")
+                        val plt = o.optString("platform", "Unix SMS")
+                        val rateVal = o.optDouble("earned_amount", 0.50)
+                        val ts = parseCreatedAt(o.optString("created_at", ""))
+                        cloudList.add(
+                            OtpHistoryRecord(
+                                id = idStr,
+                                phoneNumber = phone,
+                                otpCode = code,
+                                service = srv,
+                                platform = plt,
+                                rate = if (rateVal < 0.05) 0.50 else rateVal,
+                                timestamp = ts,
+                                dateKey = dateFormat.format(Date(ts)),
+                                userEmail = currentEmail
+                            )
                         )
-                    )
-                }
-
-                if (cloudList.isNotEmpty()) {
-                    val existing = _state.value.recentRecords.filter {
-                        isAdmin || it.userEmail.isBlank() || it.userEmail.equals(currentEmail, ignoreCase = true)
                     }
-                    val maxKeep = if (isAdmin) 300 else 100
-                    val combined = (cloudList + existing).distinctBy { "${it.userEmail}_${it.phoneNumber}_${it.otpCode}" }
+
+                    // Filter local records strictly for currentEmail only (discard any leaked records from other users)
+                    val existingOwn = _state.value.recentRecords.filter {
+                        it.userEmail.equals(currentEmail, ignoreCase = true)
+                    }
+                    val combined = (cloudList + existingOwn)
+                        .distinctBy { "${it.phoneNumber}_${it.otpCode}" }
                         .filterNot { it.phoneNumber.startsWith("+120255501") || it.phoneNumber.startsWith("+2376991122") }
                         .sortedByDescending { it.timestamp }
-                        .take(maxKeep)
-                    val total = maxOf(_state.value.totalOtpsAllTime, maxOf(combined.size, cloudList.size))
+                        .take(100)
+
+                    val hasAdminOverride = prefs?.getBoolean("admin_override_active_$currentEmail", false) ?: false
+                    val savedTotal = prefs?.getInt(getUserTotalKey(currentEmail), combined.size) ?: combined.size
+                    val total = if (hasAdminOverride) savedTotal else maxOf(savedTotal, combined.size)
+
                     val cycleStart = _state.value.monthlyCycleStartEpoch.let {
                         if (it == 0L) System.currentTimeMillis() else it
                     }
@@ -248,6 +297,53 @@ object OtpHistoryManager {
                 }
             }
         } catch (_: Exception) {}
+
+        // 2. If logged-in user is Admin, separately sync all users' recent OTP stream for Admin Panel ONLY
+        if (isAdmin) {
+            try {
+                val adminUrl = "$SUPABASE_BASE_URL/otp_history?select=*&order=created_at.desc&limit=300"
+                val adminReq = Request.Builder()
+                    .url(adminUrl)
+                    .header("apikey", SUPABASE_KEY)
+                    .header("Authorization", "Bearer $SUPABASE_KEY")
+                    .get()
+                    .build()
+                httpClient.newCall(adminReq).execute().use { resp ->
+                    if (resp.isSuccessful) {
+                        val bodyStr = resp.body?.string() ?: "[]"
+                        val arr = JSONArray(bodyStr)
+                        val globalList = mutableListOf<OtpHistoryRecord>()
+                        for (i in 0 until arr.length()) {
+                            val o = arr.getJSONObject(i)
+                            val recUser = o.optString("user_email", "").trim().lowercase()
+                            val phone = o.optString("phone_number", "").trim()
+                            val code = o.optString("otp_code", "").trim()
+                            if (code.isBlank() || code == "null" || code.length < 3) continue
+                            if (phone.isBlank() || phone.startsWith("+120255501") || phone.startsWith("+2376991122")) continue
+                            val idStr = o.optString("id", java.util.UUID.randomUUID().toString())
+                            val srv = o.optString("service", "SMS")
+                            val plt = o.optString("platform", "Unix SMS")
+                            val rateVal = o.optDouble("earned_amount", 0.50)
+                            val ts = parseCreatedAt(o.optString("created_at", ""))
+                            globalList.add(
+                                OtpHistoryRecord(
+                                    id = idStr,
+                                    phoneNumber = phone,
+                                    otpCode = code,
+                                    service = srv,
+                                    platform = plt,
+                                    rate = if (rateVal < 0.05) 0.50 else rateVal,
+                                    timestamp = ts,
+                                    dateKey = dateFormat.format(Date(ts)),
+                                    userEmail = recUser
+                                )
+                            )
+                        }
+                        _adminGlobalRecords.value = globalList.sortedByDescending { it.timestamp }
+                    }
+                }
+            } catch (_: Exception) {}
+        }
     }
 
     fun setAdminAssignedOtps(totalOtps: Int, today: Int, last7d: Int, last30d: Int) {
@@ -255,6 +351,18 @@ object OtpHistoryManager {
         val newToday = maxOf(0, today)
         val new7d = maxOf(0, last7d)
         val new30d = maxOf(0, last30d)
+
+        val currentEmail = AuthManager.currentEmail.value.trim().lowercase()
+        if (currentEmail.isNotEmpty()) {
+            val totalKey = getUserTotalKey(currentEmail)
+            prefs?.edit()
+                ?.putBoolean("admin_override_active_$currentEmail", true)
+                ?.putInt(totalKey, newTotal)
+                ?.putInt("admin_override_today_$currentEmail", newToday)
+                ?.putInt("admin_override_7d_$currentEmail", new7d)
+                ?.putInt("admin_override_30d_$currentEmail", new30d)
+                ?.apply()
+        }
 
         _state.update {
             it.copy(
@@ -264,9 +372,6 @@ object OtpHistoryManager {
                 last30DaysOtps = new30d
             )
         }
-        val currentEmail = AuthManager.currentEmail.value.trim().lowercase()
-        val totalKey = getUserTotalKey(currentEmail)
-        prefs?.edit()?.putInt(totalKey, newTotal)?.apply()
     }
 
     suspend fun fetchUserOtpRecords(userEmail: String): List<OtpHistoryRecord> = kotlinx.coroutines.withContext(Dispatchers.IO) {
@@ -368,6 +473,7 @@ object OtpHistoryManager {
 
     fun onUserLoggedIn(email: String, context: Context? = null) {
         val clean = email.trim().lowercase()
+        _state.value = OtpHistoryState()
         loadHistoryForUser(clean)
         scope.launch {
             syncFromCloud(context)
@@ -376,17 +482,23 @@ object OtpHistoryManager {
 
     fun onUserLoggedOut() {
         _state.value = OtpHistoryState()
+        _adminGlobalRecords.value = emptyList()
     }
 
     fun wipeAllHistory(context: Context? = null) {
         _state.value = OtpHistoryState()
+        _adminGlobalRecords.value = emptyList()
         prefs?.edit()
             ?.remove(KEY_RECORDS_JSON)
             ?.remove(KEY_TOTAL_COUNT)
             ?.remove(KEY_MONTHLY_CYCLE_START)
             ?.apply()
-        // Also remove any per-user keys that might have been stored
-        prefs?.all?.keys?.filter { it.startsWith("otp_records_json") || it.startsWith("total_otp_all_time") }?.forEach { k ->
+        prefs?.all?.keys?.filter {
+            it.startsWith("otp_records_json") ||
+            it.startsWith("total_otp_all_time") ||
+            it.startsWith("admin_override_") ||
+            it.startsWith("monthly_cycle_start_time")
+        }?.forEach { k ->
             prefs?.edit()?.remove(k)?.apply()
         }
     }
@@ -422,9 +534,14 @@ object OtpHistoryManager {
     }
 
     fun loadHistoryForUser(email: String) {
-        val isAdmin = AuthManager.isAdmin()
-        val key = getUserRecordsKey(email)
-        val totalKey = getUserTotalKey(email)
+        val cleanEmail = email.trim().lowercase()
+        if (cleanEmail.isBlank()) {
+            _state.value = OtpHistoryState()
+            return
+        }
+        val key = getUserRecordsKey(cleanEmail)
+        val totalKey = getUserTotalKey(cleanEmail)
+        val cycleKey = getUserCycleStartKey(cleanEmail)
         val json = prefs?.getString(key, "[]") ?: "[]"
         val list = mutableListOf<OtpHistoryRecord>()
         try {
@@ -432,13 +549,13 @@ object OtpHistoryManager {
             for (i in 0 until arr.length()) {
                 val o = arr.getJSONObject(i)
                 val recUser = o.optString("userEmail", "").trim().lowercase()
-                if (!isAdmin && email.isNotEmpty() && recUser.isNotEmpty() && recUser != email) {
+                // Strict per-user check: only load records explicitly belonging to cleanEmail
+                if (recUser != cleanEmail) {
                     continue
                 }
                 val phone = o.optString("phoneNumber", "").trim()
                 val code = o.optString("otpCode", "").trim()
 
-                // Filter out any fake/dummy numbers or invalid records
                 if (phone.startsWith("+120255501") || phone.startsWith("+2376991122") || code.isBlank() || code == "null") {
                     continue
                 }
@@ -453,11 +570,11 @@ object OtpHistoryManager {
                         platform = o.optString("platform", "Unix SMS"),
                         rate = let {
                             val r = o.optDouble("rate", 0.50)
-                            if (r < 0.1) 0.50 else r
+                            if (r < 0.05) 0.50 else r
                         },
                         timestamp = ts,
                         dateKey = o.optString("dateKey", dateFormat.format(Date(ts))),
-                        userEmail = recUser.ifEmpty { email }
+                        userEmail = cleanEmail
                     )
                 )
             }
@@ -465,11 +582,11 @@ object OtpHistoryManager {
 
         val total = prefs?.getInt(totalKey, list.size) ?: list.size
 
-        var cycleStart = prefs?.getLong(KEY_MONTHLY_CYCLE_START, 0L) ?: 0L
+        var cycleStart = prefs?.getLong(cycleKey, 0L) ?: 0L
         val now = System.currentTimeMillis()
         if (cycleStart == 0L || now - cycleStart >= ONE_MONTH_MS) {
             cycleStart = now
-            prefs?.edit()?.putLong(KEY_MONTHLY_CYCLE_START, cycleStart)?.apply()
+            prefs?.edit()?.putLong(cycleKey, cycleStart)?.apply()
         }
 
         val cutoff = now - ONE_MONTH_MS
@@ -480,12 +597,17 @@ object OtpHistoryManager {
 
     private fun saveRecords(list: List<OtpHistoryRecord>, totalAllTime: Int) {
         val currentEmail = AuthManager.currentEmail.value.trim().lowercase()
+        if (currentEmail.isBlank()) return
         val key = getUserRecordsKey(currentEmail)
         val totalKey = getUserTotalKey(currentEmail)
 
         val now = System.currentTimeMillis()
         val cutoff = now - ONE_MONTH_MS
-        val validRecords = list.filter { it.timestamp >= cutoff && !it.phoneNumber.startsWith("+120255501") }
+        val validRecords = list.filter {
+            it.timestamp >= cutoff &&
+            !it.phoneNumber.startsWith("+120255501") &&
+            it.userEmail.equals(currentEmail, ignoreCase = true)
+        }
         val trimmed = validRecords.take(150)
 
         val arr = JSONArray()
@@ -499,7 +621,7 @@ object OtpHistoryManager {
             o.put("rate", item.rate)
             o.put("timestamp", item.timestamp)
             o.put("dateKey", item.dateKey)
-            o.put("userEmail", item.userEmail.ifEmpty { currentEmail })
+            o.put("userEmail", currentEmail)
             arr.put(o)
         }
         prefs?.edit()
@@ -510,6 +632,7 @@ object OtpHistoryManager {
 
     /**
      * Record arrived OTP from Unix SMS, Zenex, Kop Engine 2, or Premium V2
+     * Strictly counts ONLY if the number was taken by the currently logged-in user!
      */
     fun recordOtp(
         phoneNumber: String,
@@ -522,28 +645,54 @@ object OtpHistoryManager {
         if (otpCode.isBlank() || otpCode == "null" || otpCode.length < 3) return
         if (phoneNumber.isBlank() || phoneNumber.startsWith("+120255501") || phoneNumber.startsWith("+2376991122")) return
 
+        val currentEmail = AuthManager.currentEmail.value.trim().lowercase()
+        if (currentEmail.isBlank() || currentEmail == "user" || currentEmail == "user account") return
+
+        // Strictly verify that this phone number was taken/claimed by currentEmail
+        if (!isNumberTakenByUser(phoneNumber, currentEmail)) {
+            return
+        }
+
         val now = System.currentTimeMillis()
-        val currentEmail = AuthManager.currentEmail.value.trim().lowercase().ifBlank { "user" }
 
         // Deduplication: prevent counting duplicate OTP code on same phone within 5 minutes
         val isDuplicate = _state.value.recentRecords.any {
-            it.phoneNumber == phoneNumber && it.otpCode == otpCode && Math.abs(it.timestamp - now) < 300_000L
+            isPhoneDigitsMatch(it.phoneNumber, phoneNumber) && it.otpCode == otpCode && Math.abs(it.timestamp - now) < 300_000L
         }
         if (isDuplicate) return
+
+        val effectiveRate = if (rate < 0.05) 0.50 else rate
 
         val record = OtpHistoryRecord(
             phoneNumber = phoneNumber,
             otpCode = otpCode,
             service = service,
             platform = platform,
-            rate = rate,
+            rate = effectiveRate,
             timestamp = now,
             dateKey = dateFormat.format(Date(now)),
             userEmail = currentEmail
         )
 
-        val updatedRecords = listOf(record) + _state.value.recentRecords
+        val ownExisting = _state.value.recentRecords.filter {
+            it.userEmail.equals(currentEmail, ignoreCase = true)
+        }
+        val updatedRecords = listOf(record) + ownExisting
         val newTotal = _state.value.totalOtpsAllTime + 1
+
+        // If Admin had previously overridden OTP counts for this user, increment those overrides by +1
+        val hasAdminOverride = prefs?.getBoolean("admin_override_active_$currentEmail", false) ?: false
+        if (hasAdminOverride) {
+            val prevToday = prefs?.getInt("admin_override_today_$currentEmail", _state.value.todayOtps) ?: _state.value.todayOtps
+            val prev7d = prefs?.getInt("admin_override_7d_$currentEmail", _state.value.last7DaysOtps) ?: _state.value.last7DaysOtps
+            val prev30d = prefs?.getInt("admin_override_30d_$currentEmail", _state.value.last30DaysOtps) ?: _state.value.last30DaysOtps
+            prefs?.edit()
+                ?.putInt(getUserTotalKey(currentEmail), newTotal)
+                ?.putInt("admin_override_today_$currentEmail", prevToday + 1)
+                ?.putInt("admin_override_7d_$currentEmail", prev7d + 1)
+                ?.putInt("admin_override_30d_$currentEmail", prev30d + 1)
+                ?.apply()
+        }
 
         val cycleStart = _state.value.monthlyCycleStartEpoch.let {
             if (it == 0L) now else it
@@ -551,7 +700,7 @@ object OtpHistoryManager {
 
         recalculateSummaries(updatedRecords, newTotal, cycleStart)
         saveRecords(updatedRecords, newTotal)
-        WithdrawalManager.refreshBalances()
+        WithdrawalManager.creditOtpReward(effectiveRate)
         val st = _state.value
         val bal = WithdrawalManager.state.value.availableBalanceTk
         AuthManager.syncCurrentUserDataToCloud(
@@ -569,7 +718,7 @@ object OtpHistoryManager {
                     context = ctx,
                     phoneNumber = phoneNumber,
                     otpCode = otpCode,
-                    fullMessage = "$service ওটিপি: $otpCode (৳${String.format(Locale.US, "%.2f", rate)})"
+                    fullMessage = "$service ওটিপি: $otpCode (৳${String.format(Locale.US, "%.2f", effectiveRate)})"
                 )
             } catch (_: Exception) {}
         }
@@ -583,7 +732,7 @@ object OtpHistoryManager {
                     put("otp_code", otpCode)
                     put("service", service)
                     put("platform", platform)
-                    put("earned_amount", rate)
+                    put("earned_amount", effectiveRate)
                 }
                 val body = payload.toString().toRequestBody("application/json; charset=utf-8".toMediaTypeOrNull())
                 val req = Request.Builder()
@@ -594,7 +743,7 @@ object OtpHistoryManager {
                     .header("Prefer", "return=minimal")
                     .post(body)
                     .build()
-                httpClient.newCall(req).execute()
+                httpClient.newCall(req).execute().close()
             } catch (e: Exception) {
                 android.util.Log.e("OtpHistoryManager", "Error pushing OTP to Supabase: ${e.message}")
             }
@@ -606,6 +755,13 @@ object OtpHistoryManager {
         totalAllTime: Int,
         cycleStartEpoch: Long = _state.value.monthlyCycleStartEpoch
     ) {
+        val currentEmail = AuthManager.currentEmail.value.trim().lowercase()
+        val ownRecords = if (currentEmail.isNotEmpty()) {
+            records.filter { it.userEmail.equals(currentEmail, ignoreCase = true) }
+        } else {
+            emptyList()
+        }
+
         val now = System.currentTimeMillis()
         val cal = Calendar.getInstance()
 
@@ -640,7 +796,7 @@ object OtpHistoryManager {
                 1 -> "Yesterday (${displayFormat.format(checkCal.time)})"
                 else -> displayFormat.format(checkCal.time)
             }
-            val matched = records.filter { it.dateKey == dKey }
+            val matched = ownRecords.filter { it.dateKey == dKey }
             val unixCount = matched.count { isUnix(it.platform) }
             val kop2Count = matched.count { isKop2(it.platform) }
             val v2Count = matched.count { isV2(it.platform) }
@@ -667,26 +823,32 @@ object OtpHistoryManager {
         val days7List = days30List.take(7)
 
         val todaySummary = days30List.firstOrNull()
-        val todayTotal = todaySummary?.totalCount ?: 0
+        val computedToday = todaySummary?.totalCount ?: 0
         val todayUnix = todaySummary?.unixCount ?: 0
         val todayZenex = todaySummary?.zenexCount ?: 0
         val todayKop2 = todaySummary?.kop2Count ?: 0
         val todayV2 = todaySummary?.v2Count ?: 0
 
-        val unixTotal = records.count { isUnix(it.platform) }
-        val kop2Total = records.count { isKop2(it.platform) }
-        val v2Total = records.count { isV2(it.platform) }
-        val zenexTotal = records.count { !isUnix(it.platform) && !isKop2(it.platform) && !isV2(it.platform) }
+        val unixTotal = ownRecords.count { isUnix(it.platform) }
+        val kop2Total = ownRecords.count { isKop2(it.platform) }
+        val v2Total = ownRecords.count { isV2(it.platform) }
+        val zenexTotal = ownRecords.count { !isUnix(it.platform) && !isKop2(it.platform) && !isV2(it.platform) }
 
-        val sum7Days = days7List.sumOf { it.totalCount }
-        val sum30Days = days30List.sumOf { it.totalCount }
+        val computed7Days = days7List.sumOf { it.totalCount }
+        val computed30Days = days30List.sumOf { it.totalCount }
+
+        val hasAdminOverride = currentEmail.isNotEmpty() && (prefs?.getBoolean("admin_override_active_$currentEmail", false) ?: false)
+        val finalToday = if (hasAdminOverride) (prefs?.getInt("admin_override_today_$currentEmail", computedToday) ?: computedToday) else computedToday
+        val final7Days = if (hasAdminOverride) (prefs?.getInt("admin_override_7d_$currentEmail", computed7Days) ?: computed7Days) else computed7Days
+        val final30Days = if (hasAdminOverride) (prefs?.getInt("admin_override_30d_$currentEmail", computed30Days) ?: computed30Days) else computed30Days
+        val finalTotal = if (hasAdminOverride) (prefs?.getInt(getUserTotalKey(currentEmail), totalAllTime) ?: totalAllTime) else maxOf(totalAllTime, ownRecords.size)
 
         val thirtyDaysAgo = now - (30L * 24 * 60 * 60 * 1000L)
         val sixtyDaysAgo = now - (60L * 24 * 60 * 60 * 1000L)
         val ninetyDaysAgo = now - (90L * 24 * 60 * 60 * 1000L)
 
-        val lastMonthCount = records.count { it.timestamp in (sixtyDaysAgo until thirtyDaysAgo) }
-        val twoMonthsAgoCount = records.count { it.timestamp in (ninetyDaysAgo until sixtyDaysAgo) }
+        val lastMonthCount = ownRecords.count { it.timestamp in (sixtyDaysAgo until thirtyDaysAgo) }
+        val twoMonthsAgoCount = ownRecords.count { it.timestamp in (ninetyDaysAgo until sixtyDaysAgo) }
 
         val m1Cal = Calendar.getInstance().apply { add(Calendar.MONTH, -1) }
         val m2Cal = Calendar.getInstance().apply { add(Calendar.MONTH, -2) }
@@ -696,12 +858,12 @@ object OtpHistoryManager {
 
         _state.update {
             it.copy(
-                totalOtpsAllTime = totalAllTime,
+                totalOtpsAllTime = finalTotal,
                 unixTotalAllTime = unixTotal,
                 zenexTotalAllTime = zenexTotal,
                 kop2TotalAllTime = kop2Total,
                 v2TotalAllTime = v2Total,
-                todayOtps = todayTotal,
+                todayOtps = finalToday,
                 unixTodayOtps = todayUnix,
                 zenexTodayOtps = todayZenex,
                 kop2TodayOtps = todayKop2,
@@ -712,13 +874,13 @@ object OtpHistoryManager {
                 currentV2Rate = currentV2Rate,
                 last7DaysSummaries = days7List,
                 last30DaysSummaries = days30List,
-                last7DaysOtps = sum7Days,
-                last30DaysOtps = sum30Days,
+                last7DaysOtps = final7Days,
+                last30DaysOtps = final30Days,
                 lastMonthOtps = lastMonthCount,
                 twoMonthsAgoOtps = twoMonthsAgoCount,
                 lastMonthLabel = m1Label,
                 twoMonthsAgoLabel = m2Label,
-                recentRecords = records,
+                recentRecords = ownRecords,
                 resetCountdownSeconds = secondsUntilReset,
                 resetTargetEpoch = midnightEpoch,
                 monthlyCycleStartEpoch = cycleStartEpoch,

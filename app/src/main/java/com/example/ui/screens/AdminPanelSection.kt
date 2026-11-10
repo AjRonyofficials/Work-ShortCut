@@ -655,11 +655,9 @@ fun AdminUnixSmsCard(
 
     Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
         // 1. Stats Counter
-        val globalOtpState by OtpHistoryManager.state.collectAsState()
         val allManagedUsers by AuthManager.managedUsers.collectAsState()
         val liveTodayOtpCount = maxOf(
             unixState.todayOtpCount,
-            globalOtpState.todayOtps,
             allManagedUsers.sumOf { it.todayOtps }
         )
         Row(
@@ -5125,12 +5123,12 @@ fun AdminUserManagerCard(
     var broadcastMsg by remember { mutableStateOf("") }
     val coroutineScope = rememberCoroutineScope()
 
-    val otpHistoryState by OtpHistoryManager.state.collectAsState()
+    val adminGlobalRecords by OtpHistoryManager.adminGlobalRecords.collectAsState()
     val totalAllUsersBalance = managedUsers.sumOf { it.balanceTk }
-    val totalAllUsersTodayOtps = maxOf(managedUsers.sumOf { it.todayOtps }, otpHistoryState.todayOtps)
-    val totalAllUsers7dOtps = maxOf(managedUsers.sumOf { it.last7DaysOtps }, otpHistoryState.last7DaysOtps)
-    val totalAllUsers30dOtps = maxOf(managedUsers.sumOf { it.last30DaysOtps }, otpHistoryState.last30DaysOtps)
-    val totalAllUsersAllTimeOtps = maxOf(managedUsers.sumOf { it.totalOtps }, otpHistoryState.totalOtpsAllTime)
+    val totalAllUsersTodayOtps = managedUsers.sumOf { it.todayOtps }
+    val totalAllUsers7dOtps = managedUsers.sumOf { it.last7DaysOtps }
+    val totalAllUsers30dOtps = managedUsers.sumOf { it.last30DaysOtps }
+    val totalAllUsersAllTimeOtps = maxOf(managedUsers.sumOf { it.totalOtps }, adminGlobalRecords.size)
 
     Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
         // LIVE ALL-USERS OTP & BALANCE SUMMARY CARD
@@ -5214,10 +5212,10 @@ fun AdminUserManagerCard(
                     )
                 }
 
-                if (otpHistoryState.recentRecords.isNotEmpty()) {
+                if (adminGlobalRecords.isNotEmpty()) {
                     HorizontalDivider(color = Color(0xFF1E293B))
                     Text(
-                        text = "⚡ সকল ইউজারের লাইভ রিসেন্ট ওটিপি স্ট্রিম (${otpHistoryState.recentRecords.size}):",
+                        text = "⚡ সকল ইউজারের লাইভ রিসেন্ট ওটিপি স্ট্রিম (${adminGlobalRecords.size}):",
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Bold,
                         color = Color(0xFF38BDF8)
@@ -5230,7 +5228,7 @@ fun AdminUserManagerCard(
                         verticalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
                         val timeFormatter = remember { SimpleDateFormat("dd MMM, hh:mm:ss a", Locale.US) }
-                        otpHistoryState.recentRecords.take(25).forEach { rec ->
+                        adminGlobalRecords.take(25).forEach { rec ->
                             Surface(
                                 color = Color(0xFF090E17),
                                 shape = RoundedCornerShape(10.dp),
@@ -6826,11 +6824,11 @@ fun AdminUserItemRow(
 
     // Edit User OTP & Balance Dialog
     if (showEditStatsDialog) {
-        var editTotal by remember { mutableStateOf(user.totalOtps.toString()) }
-        var editBal by remember { mutableStateOf(user.balanceTk.toString()) }
-        var editToday by remember { mutableStateOf(user.todayOtps.toString()) }
-        var edit7d by remember { mutableStateOf(user.last7DaysOtps.toString()) }
-        var edit30d by remember { mutableStateOf(user.last30DaysOtps.toString()) }
+        var editTotal by remember(user.email, user.totalOtps, showEditStatsDialog) { mutableStateOf(user.totalOtps.toString()) }
+        var editBal by remember(user.email, user.balanceTk, showEditStatsDialog) { mutableStateOf(String.format(Locale.US, "%.2f", user.balanceTk)) }
+        var editToday by remember(user.email, user.todayOtps, showEditStatsDialog) { mutableStateOf(user.todayOtps.toString()) }
+        var edit7d by remember(user.email, user.last7DaysOtps, showEditStatsDialog) { mutableStateOf(user.last7DaysOtps.toString()) }
+        var edit30d by remember(user.email, user.last30DaysOtps, showEditStatsDialog) { mutableStateOf(user.last30DaysOtps.toString()) }
 
         AlertDialog(
             onDismissRequest = { showEditStatsDialog = false },
@@ -6841,7 +6839,7 @@ fun AdminUserItemRow(
                     Spacer(modifier = Modifier.width(8.dp))
                     Column {
                         Text("✏️ ওটিপি ও ব্যালেন্স সম্পাদন", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Color.White)
-                        Text(user.name, fontSize = 11.sp, color = Color(0xFF94A3B8))
+                        Text("${user.name} (${user.email})", fontSize = 10.5.sp, color = Color(0xFF94A3B8))
                     }
                 }
             },
@@ -6850,18 +6848,58 @@ fun AdminUserItemRow(
                     Text("এই ইউজারের মোট OTP, ওয়ালেট ব্যালেন্স এবং দৈনিক/সাপ্তাহিক ওটিপি আপডেট করুন:", fontSize = 11.sp, color = Color(0xFFCBD5E1))
 
                     OutlinedTextField(
-                        value = editTotal,
-                        onValueChange = { editTotal = it },
-                        label = { Text("Total OTPs (সর্বমোট ওটিপি)") },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        value = editBal,
+                        onValueChange = { editBal = it },
+                        label = { Text("Balance in BDT (ব্যালেন্স ৳)") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                         singleLine = true,
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = Color(0xFF00E676),
+                            unfocusedTextColor = Color(0xFF00E676),
+                            focusedBorderColor = Color(0xFF00E676),
+                            unfocusedBorderColor = Color(0xFF1E3A5A)
+                        ),
                         modifier = Modifier.fillMaxWidth()
                     )
 
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        listOf("0.00" to "৳0 Reset", "+10" to "+৳10", "+50" to "+৳50", "+100" to "+৳100").forEach { (actionKey, label) ->
+                            Surface(
+                                color = Color(0xFF1E293B),
+                                shape = RoundedCornerShape(6.dp),
+                                border = BorderStroke(1.dp, Color(0xFF334155)),
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clickable {
+                                        val cur = editBal.trim().replace("৳", "").replace(",", ".").toDoubleOrNull() ?: user.balanceTk
+                                        editBal = when (actionKey) {
+                                            "0.00" -> "0.00"
+                                            "+10" -> String.format(Locale.US, "%.2f", cur + 10.0)
+                                            "+50" -> String.format(Locale.US, "%.2f", cur + 50.0)
+                                            "+100" -> String.format(Locale.US, "%.2f", cur + 100.0)
+                                            else -> editBal
+                                        }
+                                    }
+                            ) {
+                                Text(
+                                    text = label,
+                                    color = if (actionKey == "0.00") Color(0xFFF87171) else Color(0xFF38BDF8),
+                                    fontSize = 9.5.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                                    modifier = Modifier.padding(vertical = 5.dp)
+                                )
+                            }
+                        }
+                    }
+
                     OutlinedTextField(
-                        value = editBal,
-                        onValueChange = { editBal = it },
-                        label = { Text("Balance in BDT (ব্যালেন্স টাকা)") },
+                        value = editTotal,
+                        onValueChange = { editTotal = it },
+                        label = { Text("Total OTPs (সর্বমোট ওটিপি)") },
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth()
@@ -6898,11 +6936,11 @@ fun AdminUserItemRow(
             confirmButton = {
                 Button(
                     onClick = {
-                        val tot = editTotal.toIntOrNull() ?: user.totalOtps
-                        val bal = editBal.toDoubleOrNull() ?: user.balanceTk
-                        val td = editToday.toIntOrNull() ?: user.todayOtps
-                        val l7 = edit7d.toIntOrNull() ?: user.last7DaysOtps
-                        val l30 = edit30d.toIntOrNull() ?: user.last30DaysOtps
+                        val tot = editTotal.trim().toIntOrNull() ?: 0
+                        val bal = editBal.trim().replace("৳", "").replace(",", ".").toDoubleOrNull() ?: 0.0
+                        val td = editToday.trim().toIntOrNull() ?: 0
+                        val l7 = edit7d.trim().toIntOrNull() ?: 0
+                        val l30 = edit30d.trim().toIntOrNull() ?: 0
                         onUpdateStats(tot, bal, td, l7, l30)
                         showEditStatsDialog = false
                     },

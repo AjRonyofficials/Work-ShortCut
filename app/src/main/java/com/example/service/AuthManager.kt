@@ -395,6 +395,11 @@ object AuthManager {
                     val dbToday = obj.optInt("otp_today", 0)
                     val db7d = obj.optInt("otp_7days", 0)
                     val db30d = obj.optInt("otp_30days", 0)
+                    val adminEditedAt = permObj.optLong("adminEditedAt", 0L)
+
+                    val recentEditTs = recentAdminEditTimestamps[emailLower] ?: 0L
+                    val recentEditUser = recentAdminEdits[emailLower]
+                    val isRecentlyEditedByAdmin = recentEditUser != null && (now - recentEditTs) < 20_000L
 
                     val liveStats = liveOtpMap[emailLower]
                     val withdrawnTk = withdrawnByUser[emailLower] ?: 0.0
@@ -402,17 +407,41 @@ object AuthManager {
                         maxOf(0.0, Math.round((liveStats.totalEarnedTk - withdrawnTk) * 100.0) / 100.0)
                     } else 0.0
 
-                    val finalTotalOtps = maxOf(dbTotalOtps, liveStats?.totalOtps ?: 0)
-                    val finalTodayOtps = if ((liveStats?.todayOtps ?: 0) > 0) maxOf(dbToday, liveStats!!.todayOtps) else dbToday
-                    val final7dOtps = maxOf(db7d, liveStats?.last7dOtps ?: 0, finalTodayOtps)
-                    val final30dOtps = maxOf(db30d, liveStats?.last30dOtps ?: 0, final7dOtps)
-                    val finalBalanceTk = maxOf(dbBalance, liveNetBalance)
+                    // If Admin edited this user's stats/balance, or if app_users already has synced data,
+                    // app_users is authoritative so Admin balance/OTP edits (including lowering or setting to 0) stick permanently.
+                    val useLiveBackfill = !isRecentlyEditedByAdmin && adminEditedAt == 0L && dbTotalOtps == 0 && dbBalance == 0.0 && liveStats != null
 
-                    // If live OTP history shows newer/higher numbers than app_users row, sync back to app_users automatically
-                    if (liveStats != null && (finalTotalOtps > dbTotalOtps || finalTodayOtps > dbToday || finalBalanceTk > dbBalance + 0.01)) {
+                    val finalTotalOtps = when {
+                        isRecentlyEditedByAdmin -> recentEditUser!!.totalOtps
+                        useLiveBackfill -> liveStats?.totalOtps ?: 0
+                        else -> dbTotalOtps
+                    }
+                    val finalTodayOtps = when {
+                        isRecentlyEditedByAdmin -> recentEditUser!!.todayOtps
+                        useLiveBackfill -> liveStats?.todayOtps ?: 0
+                        else -> dbToday
+                    }
+                    val final7dOtps = when {
+                        isRecentlyEditedByAdmin -> recentEditUser!!.last7DaysOtps
+                        useLiveBackfill -> liveStats?.last7dOtps ?: 0
+                        else -> db7d
+                    }
+                    val final30dOtps = when {
+                        isRecentlyEditedByAdmin -> recentEditUser!!.last30DaysOtps
+                        useLiveBackfill -> liveStats?.last30dOtps ?: 0
+                        else -> db30d
+                    }
+                    val finalBalanceTk = when {
+                        isRecentlyEditedByAdmin -> recentEditUser!!.balanceTk
+                        useLiveBackfill -> liveNetBalance
+                        else -> dbBalance
+                    }
+
+                    if (useLiveBackfill && (finalTotalOtps > 0 || finalBalanceTk > 0.0)) {
                         patchUserField(emailLower, JSONObject().apply {
                             put("total_otps", finalTotalOtps)
                             put("balance", finalBalanceTk)
+                            put("total_balance", finalBalanceTk)
                             put("otp_today", finalTodayOtps)
                             put("otp_7days", final7dOtps)
                             put("otp_30days", final30dOtps)
@@ -683,6 +712,13 @@ object AuthManager {
                 ?.putString(KEY_LOGGED_IN_ROLE, "PRIME_ADMIN")
                 ?.apply()
 
+            OtpHistoryManager.onUserLoggedIn(ADMIN_EMAIL, context)
+            WithdrawalManager.onUserLoggedIn(ADMIN_EMAIL)
+            VirtualNumberManager.onUserLoggedIn(ADMIN_EMAIL)
+            UnixSmsManager.onUserLoggedIn(ADMIN_EMAIL)
+            KopEngine2Manager.onUserLoggedIn(ADMIN_EMAIL)
+            PremiumNumberV2Manager.onUserLoggedIn(ADMIN_EMAIL)
+
             return Pair(true, "👑 প্রাইম এডমিন হিসেবে সফলভাবে লগইন হয়েছে")
         }
 
@@ -805,19 +841,18 @@ object AuthManager {
                     ?.putString(KEY_LOGGED_IN_ROLE, user.role)
                     ?.apply()
                 OtpHistoryManager.onUserLoggedIn(user.email, context)
+                WithdrawalManager.onUserLoggedIn(user.email)
                 VirtualNumberManager.onUserLoggedIn(user.email)
                 UnixSmsManager.onUserLoggedIn(user.email)
                 KopEngine2Manager.onUserLoggedIn(user.email)
                 PremiumNumberV2Manager.onUserLoggedIn(user.email)
-                if (user.totalOtps > 0 || user.balanceTk > 0.0) {
-                    OtpHistoryManager.restoreUserHistoryIfEmpty(
-                        totalOtps = user.totalOtps,
-                        todayOtps = user.todayOtps,
-                        last7d = user.last7DaysOtps,
-                        last30d = user.last30DaysOtps
-                    )
-                    WithdrawalManager.restoreUserBalanceIfEmpty(user.balanceTk)
-                }
+                OtpHistoryManager.setAdminAssignedOtps(
+                    totalOtps = user.totalOtps,
+                    today = user.todayOtps,
+                    last7d = user.last7DaysOtps,
+                    last30d = user.last30DaysOtps
+                )
+                WithdrawalManager.setAdminAssignedBalance(user.balanceTk)
                 WithdrawalManager.refreshBalances()
 
                 authScope.launch {
@@ -1127,6 +1162,9 @@ object AuthManager {
         return true
     }
 
+    private val recentAdminEdits = java.util.concurrent.ConcurrentHashMap<String, AuthUser>()
+    private val recentAdminEditTimestamps = java.util.concurrent.ConcurrentHashMap<String, Long>()
+
     fun updateUserOtpAndBalance(
         email: String,
         totalOtps: Int,
@@ -1141,33 +1179,65 @@ object AuthManager {
             return
         }
         val target = email.trim().lowercase()
+        val cleanTotal = maxOf(0, totalOtps)
+        val cleanBal = maxOf(0.0, Math.round(balanceTk * 100.0) / 100.0)
+        val cleanToday = maxOf(0, today)
+        val clean7d = maxOf(0, last7d)
+        val clean30d = maxOf(0, last30d)
+        val nowTs = System.currentTimeMillis()
+
+        var updatedTargetUser: AuthUser? = null
         val newList = _managedUsers.value.map {
             if (it.email.lowercase() == target) {
-                it.copy(
-                    totalOtps = totalOtps,
-                    balanceTk = balanceTk,
-                    todayOtps = today,
-                    last7DaysOtps = last7d,
-                    last30DaysOtps = last30d
+                val u = it.copy(
+                    totalOtps = cleanTotal,
+                    balanceTk = cleanBal,
+                    todayOtps = cleanToday,
+                    last7DaysOtps = clean7d,
+                    last30DaysOtps = clean30d
                 )
+                updatedTargetUser = u
+                u
             } else it
         }
         _managedUsers.value = newList
         saveUsersLocallyOnly(newList)
 
+        if (updatedTargetUser != null) {
+            recentAdminEdits[target] = updatedTargetUser!!
+            recentAdminEditTimestamps[target] = nowTs
+        }
+
         // If edited user is logged in on this device, immediately apply to WithdrawalManager & OtpHistoryManager
         if (target == _currentEmail.value.trim().lowercase()) {
-            WithdrawalManager.setAdminAssignedBalance(balanceTk)
-            OtpHistoryManager.setAdminAssignedOtps(totalOtps, today, last7d, last30d)
+            WithdrawalManager.setAdminAssignedBalance(cleanBal)
+            OtpHistoryManager.setAdminAssignedOtps(cleanTotal, cleanToday, clean7d, clean30d)
+        }
+
+        val userForPerms = updatedTargetUser
+        val perms = userForPerms?.permissions ?: SubAdminPermissions()
+        val permObj = JSONObject().apply {
+            put("canUploadNumbers", perms.canUploadNumbers)
+            put("canDeleteNumbers", perms.canDeleteNumbers)
+            put("canUpdateOtpRate", perms.canUpdateOtpRate)
+            put("canManageWithdrawals", perms.canManageWithdrawals)
+            put("canViewLiveCdr", perms.canViewLiveCdr)
+            put("canBroadcastNotify", perms.canBroadcastNotify)
+            val sArr = JSONArray()
+            (userForPerms?.disabledSections ?: emptyList()).forEach { sArr.put(it) }
+            put("disabledSections", sArr)
+            put("pinResetRequested", userForPerms?.isPinResetRequested ?: false)
+            put("adminEditedAt", nowTs)
         }
 
         patchUserField(target, JSONObject().apply {
-            put("total_otps", totalOtps)
-            put("balance", balanceTk)
-            put("total_balance", balanceTk)
-            put("otp_today", today)
-            put("otp_7days", last7d)
-            put("otp_30days", last30d)
+            put("total_otps", cleanTotal)
+            put("balance", cleanBal)
+            put("total_balance", cleanBal)
+            put("otp_today", cleanToday)
+            put("otp_7days", clean7d)
+            put("otp_30days", clean30d)
+            put("permissions_json", permObj.toString())
         }, onComplete)
     }
 
@@ -1176,7 +1246,7 @@ object AuthManager {
      */
     fun syncCurrentUserProfileFromCloud(context: Context? = null) {
         val email = _currentEmail.value.trim().lowercase()
-        if (email.isEmpty() || email == ADMIN_EMAIL.lowercase()) return
+        if (email.isEmpty()) return
         authScope.launch {
             try {
                 val encEmail = java.net.URLEncoder.encode(email, "UTF-8")
@@ -1200,7 +1270,7 @@ object AuthManager {
                     val statusStr = obj.optString("status", "ACTIVE")
 
                     withContext(Dispatchers.Main) {
-                        if (statusStr == "BANNED" || statusStr == "INACTIVE") {
+                        if ((statusStr == "BANNED" || statusStr == "INACTIVE") && !isPrimeAdmin()) {
                             logout()
                             return@withContext
                         }
@@ -1218,13 +1288,17 @@ object AuthManager {
                         }
 
                         val currentAvailable = WithdrawalManager.state.value.availableBalanceTk
-                        val currentTotalOtps = OtpHistoryManager.state.value.totalOtpsAllTime
+                        val st = OtpHistoryManager.state.value
 
-                        // When admin edits user balance or OTP count in cloud, apply it immediately
-                        if (Math.abs(currentAvailable - cloudBalance) > 0.01) {
+                        // When admin edits user balance or OTP count in cloud (including setting to 0), apply it immediately
+                        if (Math.abs(currentAvailable - cloudBalance) > 0.005) {
                             WithdrawalManager.setAdminAssignedBalance(cloudBalance)
                         }
-                        if (cloudTotalOtps != currentTotalOtps && cloudTotalOtps > 0) {
+                        if (cloudTotalOtps != st.totalOtpsAllTime ||
+                            cloudToday != st.todayOtps ||
+                            cloud7d != st.last7DaysOtps ||
+                            cloud30d != st.last30DaysOtps
+                        ) {
                             OtpHistoryManager.setAdminAssignedOtps(cloudTotalOtps, cloudToday, cloud7d, cloud30d)
                         }
                     }

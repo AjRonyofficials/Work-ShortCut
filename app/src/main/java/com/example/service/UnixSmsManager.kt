@@ -1514,49 +1514,60 @@ object UnixSmsManager {
         rawCdrList: List<Pair<UnixSmsCdrRecord, String>>,
         gatewayLabel: String
     ) {
+        val currentEmail = AuthManager.currentEmail.value.trim().lowercase()
         val currentActive = _state.value.activeNumbers
+        val allUploaded = _state.value.uploadedNumbers
         val newlyArrivedOtps = mutableListOf<Pair<ProvisionedNumber, String>>()
 
-        val updatedActive = currentActive.map { prov ->
-            if (!prov.otpCode.isNullOrEmpty() && prov.status == "success") {
-                return@map prov
-            }
-            val cleanDigits = prov.number.replace("[^0-9]".toRegex(), "")
-            if (cleanDigits.length < 7) return@map prov
-
-            var matchedCdr: UnixSmsCdrRecord? = null
-            for ((cdr, rawPhone) in rawCdrList) {
-                if (isPhoneNumberMatch(cleanDigits, rawPhone)) {
-                    matchedCdr = cdr
-                    break
+        val updatedActive = if (currentEmail.isBlank()) {
+            currentActive
+        } else {
+            currentActive.map { prov ->
+                if (!prov.otpCode.isNullOrEmpty() && prov.status == "success") {
+                    return@map prov
                 }
-            }
+                val cleanDigits = prov.number.replace("[^0-9]".toRegex(), "")
+                if (cleanDigits.length < 7) return@map prov
 
-            if (matchedCdr != null && matchedCdr.message.isNotBlank()) {
-                val extracted = extractOtp(matchedCdr.message, cleanDigits).ifEmpty {
-                    extractOtp(matchedCdr.message, "")
+                // Ensure this active number belongs to the currently logged-in user
+                if (prov.userEmail.isNotBlank() && !prov.userEmail.equals(currentEmail, ignoreCase = true)) {
+                    return@map prov
                 }
-                // Strictly require a valid 5–8 digit OTP code before crediting balance and marking success
-                if (extracted.length in 5..8) {
-                    if (prov.otpCode != extracted || prov.status != "success") {
-                        val effectiveRate = if (prov.rate >= 0.05) prov.rate else getRateForCountry(prov.iso)
-                        val updatedProv = prov.copy(
-                            status = "success",
-                            otpCode = extracted,
-                            otpMessage = matchedCdr.message,
-                            rate = effectiveRate
-                        )
-                        newlyArrivedOtps.add(Pair(updatedProv, extracted))
-                        updatedProv
+
+                var matchedCdr: UnixSmsCdrRecord? = null
+                for ((cdr, rawPhone) in rawCdrList) {
+                    if (isPhoneNumberMatch(cleanDigits, rawPhone)) {
+                        matchedCdr = cdr
+                        break
+                    }
+                }
+
+                if (matchedCdr != null && matchedCdr.message.isNotBlank()) {
+                    val extracted = extractOtp(matchedCdr.message, cleanDigits).ifEmpty {
+                        extractOtp(matchedCdr.message, "")
+                    }
+                    // Strictly require a valid 5–8 digit OTP code before crediting balance and marking success
+                    if (extracted.length in 5..8) {
+                        if (prov.otpCode != extracted || prov.status != "success") {
+                            val effectiveRate = if (prov.rate >= 0.05) prov.rate else getRateForCountry(prov.iso)
+                            val updatedProv = prov.copy(
+                                status = "success",
+                                otpCode = extracted,
+                                otpMessage = matchedCdr.message,
+                                rate = effectiveRate
+                            )
+                            newlyArrivedOtps.add(Pair(updatedProv, extracted))
+                            updatedProv
+                        } else prov
                     } else prov
                 } else prov
-            } else prov
+            }
         }
 
         var newTodayOtpCount = _state.value.todayOtpCount
-        if (newlyArrivedOtps.isNotEmpty()) {
+        if (newlyArrivedOtps.isNotEmpty() && currentEmail.isNotBlank()) {
             newTodayOtpCount += newlyArrivedOtps.size
-            prefs?.edit()?.putInt(KEY_TODAY_OTP, newTodayOtpCount)?.apply()
+            prefs?.edit()?.putInt("${KEY_TODAY_OTP}_$currentEmail", newTodayOtpCount)?.apply()
             saveActiveNumbers(updatedActive)
 
             newlyArrivedOtps.forEach { (prov, otp) ->
