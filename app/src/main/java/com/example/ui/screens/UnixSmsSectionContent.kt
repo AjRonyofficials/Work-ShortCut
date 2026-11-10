@@ -27,6 +27,7 @@ import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.ChatBubbleOutline
 import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Phone
 import androidx.compose.material.icons.filled.Schedule
@@ -108,7 +109,49 @@ fun UnixSmsSectionContent(
     var countrySearchQuery by remember { mutableStateOf("") }
     var consoleSearchFilter by remember { mutableStateOf("") }
     var dlrGatewayFilter by remember { mutableStateOf("ALL") } // "ALL", "LAMIX", "HADI", "UNIX"
+    var showResetConfirmDialog by remember { mutableStateOf(false) }
     var nowMillis by remember { mutableLongStateOf(System.currentTimeMillis()) }
+
+    if (showResetConfirmDialog) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { showResetConfirmDialog = false },
+            containerColor = Color(0xFF0F1A2A),
+            title = {
+                Text(
+                    text = "⚠️ OTP ও নাম্বার রিসেট করবেন?",
+                    color = Color.White,
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.ExtraBold
+                )
+            },
+            text = {
+                Text(
+                    text = "আপনি কি নিশ্চিত যে Premium Numbers প্যানেলের অ্যাক্টিভ নাম্বার ও ২৪ ঘণ্টার ওটিপি রিসেট করতে চান?",
+                    color = Color(0xFFCBD5E1),
+                    fontSize = 12.5.sp
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showResetConfirmDialog = false
+                        UnixSmsManager.resetTodayCycle(context)
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFEF4444)),
+                    shape = RoundedCornerShape(8.dp)
+                ) {
+                    Text("Yes (হ্যাঁ)", color = Color.White, fontWeight = FontWeight.ExtraBold, fontSize = 12.sp)
+                }
+            },
+            dismissButton = {
+                androidx.compose.material3.TextButton(
+                    onClick = { showResetConfirmDialog = false }
+                ) {
+                    Text("No (না)", color = Color(0xFF38BDF8), fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                }
+            }
+        )
+    }
 
     LaunchedEffect(Unit) {
         UnixSmsManager.init(context)
@@ -225,9 +268,10 @@ fun UnixSmsSectionContent(
                     }
 
                     Surface(
-                        color = Color(0xFF8B5CF6).copy(alpha = 0.16f),
+                        color = Color(0xFF8B5CF6).copy(alpha = 0.22f),
                         shape = RoundedCornerShape(8.dp),
-                        border = BorderStroke(1.dp, Color(0xFF8B5CF6).copy(alpha = 0.45f))
+                        border = BorderStroke(1.dp, Color(0xFFA78BFA)),
+                        modifier = Modifier.clickable { showResetConfirmDialog = true }
                     ) {
                         Row(
                             modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
@@ -236,10 +280,10 @@ fun UnixSmsSectionContent(
                             Icon(Icons.Default.Schedule, contentDescription = null, tint = Color(0xFFA78BFA), modifier = Modifier.size(11.dp))
                             Spacer(modifier = Modifier.width(4.dp))
                             Text(
-                                text = "RESET: ${OtpHistoryManager.getFormattedDailyResetCountdown()}",
-                                color = Color(0xFFA78BFA),
+                                text = "🔄 RESET: ${OtpHistoryManager.getFormattedDailyResetCountdown()}",
+                                color = Color(0xFFE9D5FF),
                                 fontSize = 9.5.sp,
-                                fontWeight = FontWeight.Bold
+                                fontWeight = FontWeight.ExtraBold
                             )
                         }
                     }
@@ -859,53 +903,90 @@ fun UnixSmsSectionContent(
                             }
                         }
 
-                        val successfulUnixNumbers = remember(unixState.activeNumbers) {
-                            unixState.activeNumbers.filter { !it.otpCode.isNullOrEmpty() || it.status.equals("success", true) }
+                        val expiredOrFailedCount = remember(unixState.activeNumbers, nowMillis) {
+                            unixState.activeNumbers.count { prov ->
+                                val hasOtp = !prov.otpCode.isNullOrEmpty() || prov.status.equals("success", true)
+                                !hasOtp && (prov.status.equals("expired", true) || prov.status.equals("failed", true) || nowMillis >= prov.expiresAt)
+                            }
                         }
-                        Surface(
-                            color = if (successfulUnixNumbers.isNotEmpty()) Color(0xFF0284C7).copy(alpha = 0.25f) else Color(0xFF1E293B),
-                            shape = RoundedCornerShape(6.dp),
-                            border = BorderStroke(1.dp, if (successfulUnixNumbers.isNotEmpty()) Color(0xFF38BDF8) else Color(0xFF334155)),
-                            modifier = Modifier.clickable {
-                                if (successfulUnixNumbers.isEmpty()) {
-                                    Toast.makeText(context, "ডাউনলোড করার মতো কোনো সফল OTP নম্বর পাওয়া যায়নি", Toast.LENGTH_SHORT).show()
-                                } else {
-                                    val exportItems = successfulUnixNumbers.map { num ->
-                                        val cInfo = com.example.util.AllCountriesProvider.detectCountry(num.number)
-                                            ?: com.example.util.AllCountriesProvider.detectCountry(num.country)
-                                        com.example.util.ExportOtpItem(
-                                            phoneNumber = num.number,
-                                            country = cInfo?.name ?: num.country,
-                                            iso = (cInfo?.code ?: num.iso).uppercase(),
-                                            flag = cInfo?.flag ?: "🌐",
-                                            serviceOrRange = num.range.ifEmpty { "Premium Number" },
-                                            otpCode = num.otpCode ?: "",
-                                            otpMessage = num.otpMessage,
-                                            timestamp = num.timestamp,
-                                            rate = num.rate
-                                        )
-                                    }
-                                    com.example.util.OtpExportHelper.exportOtps(context, "Premium Numbers", exportItems)
+
+                        val unix24hExportItems = remember(unixState.activeNumbers, nowMillis) {
+                            val activeOtpItems = unixState.activeNumbers
+                                .filter { !it.otpCode.isNullOrEmpty() || it.status.equals("success", true) }
+                                .map { num ->
+                                    val cInfo = com.example.util.AllCountriesProvider.detectCountry(num.number)
+                                        ?: com.example.util.AllCountriesProvider.detectCountry(num.country)
+                                    com.example.util.ExportOtpItem(
+                                        phoneNumber = num.number,
+                                        country = cInfo?.name ?: num.country,
+                                        iso = (cInfo?.code ?: num.iso).uppercase(),
+                                        flag = cInfo?.flag ?: "🌐",
+                                        serviceOrRange = num.range.ifEmpty { "Premium Number" },
+                                        otpCode = num.otpCode ?: "",
+                                        otpMessage = num.otpMessage,
+                                        timestamp = num.timestamp,
+                                        rate = num.rate
+                                    )
+                                }
+                            com.example.util.OtpExportHelper.getMerged24hOtps("Premium Numbers", activeOtpItems)
+                        }
+
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            // Red Clear Failed / Expired Button (just like other panels)
+                            Surface(
+                                color = if (expiredOrFailedCount > 0) Color(0xFFEF4444).copy(alpha = 0.25f) else Color(0xFFEF4444).copy(alpha = 0.14f),
+                                shape = RoundedCornerShape(6.dp),
+                                border = BorderStroke(1.dp, Color(0xFFEF4444).copy(alpha = if (expiredOrFailedCount > 0) 0.85f else 0.45f)),
+                                modifier = Modifier.clickable {
+                                    UnixSmsManager.clearExpiredAndFailedNumbers(context)
+                                }
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 7.dp, vertical = 4.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(
+                                        Icons.Default.Delete,
+                                        contentDescription = null,
+                                        tint = Color(0xFFF87171),
+                                        modifier = Modifier.size(12.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(3.dp))
+                                    Text(
+                                        text = if (expiredOrFailedCount > 0) "Clear Failed ($expiredOrFailedCount)" else "Clear Failed",
+                                        fontSize = 9.sp,
+                                        color = Color(0xFFFCA5A5),
+                                        fontWeight = FontWeight.ExtraBold
+                                    )
                                 }
                             }
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                                verticalAlignment = Alignment.CenterVertically
+
+                            Surface(
+                                color = if (unix24hExportItems.isNotEmpty()) Color(0xFF0284C7).copy(alpha = 0.25f) else Color(0xFF1E293B),
+                                shape = RoundedCornerShape(6.dp),
+                                border = BorderStroke(1.dp, if (unix24hExportItems.isNotEmpty()) Color(0xFF38BDF8) else Color(0xFF334155)),
+                                modifier = Modifier.clickable {
+                                    com.example.util.OtpExportHelper.exportOtps(context, "Premium Numbers", unix24hExportItems)
+                                }
                             ) {
-                                Icon(
-                                    Icons.Default.Download,
-                                    contentDescription = null,
-                                    tint = if (successfulUnixNumbers.isNotEmpty()) Color(0xFF38BDF8) else Color(0xFF94A3B8),
-                                    modifier = Modifier.size(12.dp)
-                                )
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text(
-                                    text = if (successfulUnixNumbers.isNotEmpty()) "ডাউনলোড (${successfulUnixNumbers.size})" else "ডাউনলোড",
-                                    fontSize = 9.5.sp,
-                                    color = if (successfulUnixNumbers.isNotEmpty()) Color.White else Color(0xFF94A3B8),
-                                    fontWeight = FontWeight.Bold
-                                )
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(
+                                        Icons.Default.Download,
+                                        contentDescription = null,
+                                        tint = if (unix24hExportItems.isNotEmpty()) Color(0xFF38BDF8) else Color(0xFF94A3B8),
+                                        modifier = Modifier.size(12.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text(
+                                        text = if (unix24hExportItems.isNotEmpty()) "24h OTP (${unix24hExportItems.size})" else "24h OTP",
+                                        fontSize = 9.sp,
+                                        color = if (unix24hExportItems.isNotEmpty()) Color.White else Color(0xFF94A3B8),
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
                             }
                         }
                     }
@@ -1162,19 +1243,36 @@ fun UnixActiveNumberRow(
     context: Context
 ) {
     val isOtpReceived = !prov.otpCode.isNullOrEmpty()
+    val isFbClone = prov.range.contains("Clone", ignoreCase = true)
+    val isMarkedClone = isFbClone && prov.isMarked
     val remainingSec = remember(prov.expiresAt, nowMillis) {
         ((prov.expiresAt - nowMillis) / 1000L).coerceAtLeast(0L)
     }
+    val isExpiredOrFailed = !isOtpReceived && (
+        remainingSec <= 0L ||
+        prov.status.equals("expired", ignoreCase = true) ||
+        prov.status.equals("failed", ignoreCase = true)
+    )
     val mins = remainingSec / 60
     val secs = remainingSec % 60
     val timerText = String.format(Locale.US, "%02d:%02d", mins, secs)
 
     Surface(
-        color = if (isOtpReceived) Color(0xFF05291A) else Color(0xFF09131F),
+        color = when {
+            isOtpReceived -> Color(0xFF05291A)
+            isExpiredOrFailed -> Color(0xFF280C12) // Red failed/expired card background
+            isMarkedClone -> Color(0xFF2B1C06) // Warm Yellow/Orange Highlight Card Background
+            else -> Color(0xFF09131F)
+        },
         shape = RoundedCornerShape(13.dp),
         border = BorderStroke(
-            width = 1.2.dp,
-            color = if (isOtpReceived) Color(0xFF00E676).copy(alpha = 0.75f) else Color(0xFF1F3652)
+            width = if (isMarkedClone || isOtpReceived || isExpiredOrFailed) 1.5.dp else 1.2.dp,
+            color = when {
+                isOtpReceived -> Color(0xFF00E676).copy(alpha = 0.8f)
+                isExpiredOrFailed -> Color(0xFFEF4444).copy(alpha = 0.85f) // Vivid Red Border for expired/failed
+                isMarkedClone -> Color(0xFFFFB300) // Vivid Amber-Yellow/Orange Border when marked
+                else -> Color(0xFF1F3652)
+            }
         ),
         modifier = Modifier.fillMaxWidth()
     ) {
@@ -1188,7 +1286,11 @@ fun UnixActiveNumberRow(
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
                             text = prov.number,
-                            color = Color.White,
+                            color = when {
+                                isExpiredOrFailed -> Color(0xFFFCA5A5)
+                                isMarkedClone -> Color(0xFFFFE082)
+                                else -> Color.White
+                            },
                             fontSize = 14.5.sp,
                             fontWeight = FontWeight.ExtraBold,
                             fontFamily = FontFamily.Monospace
@@ -1207,6 +1309,20 @@ fun UnixActiveNumberRow(
                                     modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
                                 )
                             }
+                        } else if (isExpiredOrFailed) {
+                            Surface(
+                                color = Color(0xFFEF4444).copy(alpha = 0.25f),
+                                shape = RoundedCornerShape(5.dp),
+                                border = BorderStroke(0.8.dp, Color(0xFFEF4444))
+                            ) {
+                                Text(
+                                    text = "✕ EXPIRED",
+                                    color = Color(0xFFF87171),
+                                    fontSize = 8.5.sp,
+                                    fontWeight = FontWeight.Black,
+                                    modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
+                                )
+                            }
                         } else {
                             Surface(
                                 color = Color(0xFF0284C7).copy(alpha = 0.22f),
@@ -1219,6 +1335,31 @@ fun UnixActiveNumberRow(
                                     fontSize = 8.5.sp,
                                     fontWeight = FontWeight.ExtraBold,
                                     modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
+                                )
+                            }
+                        }
+
+                        // STRICTLY ONLY FOR FB CLONE NUMBERS: Interactive Mark / Unmark Tag (Yellow/Orange Highlight)
+                        if (isFbClone) {
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Surface(
+                                color = if (prov.isMarked) Color(0xFFFFB300) else Color(0xFFF59E0B).copy(alpha = 0.16f),
+                                shape = RoundedCornerShape(6.dp),
+                                border = BorderStroke(
+                                    1.dp,
+                                    if (prov.isMarked) Color(0xFFFFE082) else Color(0xFFF59E0B).copy(alpha = 0.7f)
+                                ),
+                                modifier = Modifier.clickable {
+                                    UnixSmsManager.toggleMarkActiveNumber(prov.id)
+                                    VibrationHelper.vibrateClick(context)
+                                }
+                            ) {
+                                Text(
+                                    text = if (prov.isMarked) "★ MARKED" else "☆ MARK",
+                                    color = if (prov.isMarked) Color.Black else Color(0xFFFFB300),
+                                    fontSize = 9.sp,
+                                    fontWeight = FontWeight.Black,
+                                    modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.5.dp)
                                 )
                             }
                         }
@@ -1298,15 +1439,30 @@ fun UnixActiveNumberRow(
                     }
                 }
 
-                IconButton(
-                    onClick = {
-                        ClipboardHelper.copyToClipboard(context, prov.number.replace("+", ""), "Phone Number")
-                        Toast.makeText(context, "নাম্বার কপি হয়েছে: ${prov.number}", Toast.LENGTH_SHORT).show()
-                        VibrationHelper.vibrateSuccess(context)
-                    },
-                    modifier = Modifier.size(34.dp)
-                ) {
-                    Icon(Icons.Default.ContentCopy, contentDescription = "Copy", tint = Color(0xFF38BDF8), modifier = Modifier.size(17.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(
+                        onClick = {
+                            ClipboardHelper.copyToClipboard(context, prov.number.replace("+", ""), "Phone Number")
+                            Toast.makeText(context, "নাম্বার কপি হয়েছে: ${prov.number}", Toast.LENGTH_SHORT).show()
+                            VibrationHelper.vibrateSuccess(context)
+                        },
+                        modifier = Modifier.size(32.dp)
+                    ) {
+                        Icon(Icons.Default.ContentCopy, contentDescription = "Copy", tint = Color(0xFF38BDF8), modifier = Modifier.size(16.dp))
+                    }
+                    IconButton(
+                        onClick = {
+                            UnixSmsManager.removeActiveNumber(prov.id)
+                        },
+                        modifier = Modifier.size(30.dp)
+                    ) {
+                        Icon(
+                            Icons.Default.Delete,
+                            contentDescription = "Remove",
+                            tint = if (isExpiredOrFailed) Color(0xFFEF4444) else Color(0xFF64748B),
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
                 }
             }
 
@@ -1367,6 +1523,42 @@ fun UnixActiveNumberRow(
                         lineHeight = 14.sp
                     )
                 }
+            } else if (isExpiredOrFailed) {
+                Surface(
+                    color = Color(0xFFEF4444).copy(alpha = 0.16f),
+                    shape = RoundedCornerShape(8.dp),
+                    border = BorderStroke(0.8.dp, Color(0xFFEF4444).copy(alpha = 0.6f))
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 10.dp, vertical = 6.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "✕ সময় শেষ (Expired / Failed) — কোনো OTP আসেনি",
+                            color = Color(0xFFFCA5A5),
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Surface(
+                            color = Color(0xFFEF4444),
+                            shape = RoundedCornerShape(5.dp),
+                            modifier = Modifier.clickable {
+                                UnixSmsManager.removeActiveNumber(prov.id)
+                            }
+                        ) {
+                            Text(
+                                text = "মুছুন",
+                                color = Color.White,
+                                fontSize = 9.sp,
+                                fontWeight = FontWeight.ExtraBold,
+                                modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp)
+                            )
+                        }
+                    }
+                }
             } else {
                 Surface(
                     color = Color(0xFF0E1D2F),
@@ -1386,7 +1578,7 @@ fun UnixActiveNumberRow(
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            text = "Waiting for SMS on Lamix • Hadi • Unix (1s Poll)...",
+                            text = "Waiting for 5–8 Digit OTP on Lamix • Hadi • Unix...",
                             color = Color(0xFF93C5FD),
                             fontSize = 10.5.sp,
                             fontWeight = FontWeight.SemiBold

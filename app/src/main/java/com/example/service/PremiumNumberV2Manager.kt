@@ -1244,6 +1244,22 @@ object PremiumNumberV2Manager {
         _state.update { it.copy(activeNumbers = emptyList()) }
     }
 
+    fun resetTodayCycle(context: Context? = null) {
+        OtpHistoryManager.markPanel24hReset("Premium Number V2")
+        val todayKey = "today_otp_" + SimpleDateFormat("yyyyMMdd", Locale.US).format(Date())
+        prefs?.edit()?.putInt(todayKey, 0)?.apply()
+        saveNumbers(emptyList())
+        _state.update {
+            it.copy(
+                activeNumbers = emptyList(),
+                todayOtpCount = 0
+            )
+        }
+        if (context != null) {
+            Toast.makeText(context, "✓ Premium Number V2 ওটিপি ও অ্যাক্টিভ নাম্বার রিসেট করা হয়েছে!", Toast.LENGTH_SHORT).show()
+        }
+    }
+
     fun removeNumber(id: String) {
         val updated = _state.value.activeNumbers.filter { it.id != id }
         saveNumbers(updated)

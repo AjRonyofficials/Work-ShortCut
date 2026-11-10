@@ -21,24 +21,22 @@ import com.example.util.AppLifecycleTracker
  * Realtime Global Cloud Synchronization Service via Supabase
  *
  * Synchronizes across all distributed user devices:
- * 1. Admin uploaded numbers (Instant cloud broadcast to all users via Supabase PostgreSQL)
+ * 1. Admin uploaded numbers (Persistent cloud broadcast to all users via Supabase PostgreSQL)
+ *    - Protected against accidental overwrite by non-admin clients
+ *    - Atomic per-number `isUsed = true` locking so 1 number goes to 1 user only
  * 2. OTP Rates in BDT (Unix SMS rate & Zenex Kop Engine rate)
  * 3. Country-specific rates
- *
- * Ensures all connected users instantly receive newly uploaded numbers
- * and rate updates even when on completely separate phones/networks.
  */
 object GlobalCloudSyncService {
 
     private const val TAG = "GlobalCloudSync"
-    // Connected to AjRonyofficials Supabase project
     private const val SUPABASE_BASE_URL = "https://fbtqjpuclmnsiqehalow.supabase.co/rest/v1"
     private const val SUPABASE_KEY = "sb_publishable_zBqxIMDPy4yHEuAdJJUlxg_wSCRF9u5"
 
     private val httpClient = OkHttpClient.Builder()
-        .connectTimeout(15, TimeUnit.SECONDS)
-        .readTimeout(25, TimeUnit.SECONDS)
-        .writeTimeout(25, TimeUnit.SECONDS)
+        .connectTimeout(20, TimeUnit.SECONDS)
+        .readTimeout(40, TimeUnit.SECONDS)
+        .writeTimeout(40, TimeUnit.SECONDS)
         .build()
 
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
@@ -46,25 +44,22 @@ object GlobalCloudSyncService {
     @Volatile private var isPushing = false
     @Volatile private var lastLocalPushTimestamp = 0L
     @Volatile private var lastObservedServerTimestamp = 0L
+    @Volatile private var lastExplicitClearTimestamp = 0L
     private var consecutiveErrors = 0
 
     fun init(context: Context) {
         if (!isPolling) {
             isPolling = true
-            // Initial sync immediately
             scope.launch {
                 pullFromCloud(context)
             }
-            // Smart adaptive interval with strict battery protection:
-            // When app is in background and overlay is inactive, loop sleeps
             scope.launch {
                 while (isActive) {
                     if (!AppLifecycleTracker.canRunBackgroundWork()) {
-                        // User is not using app - preserve 100% battery & zero network
                         delay(20000L)
                         continue
                     }
-                    val pollDelay = if (consecutiveErrors > 3) 12000L else if (consecutiveErrors > 0) 6000L else 3500L
+                    val pollDelay = if (consecutiveErrors > 3) 10000L else if (consecutiveErrors > 0) 5000L else 3000L
                     delay(pollDelay)
                     try {
                         pullFromCloud(context)
@@ -78,6 +73,64 @@ object GlobalCloudSyncService {
         }
     }
 
+    private fun parseNumbersJsonArray(numbersJson: String): List<UploadedNumberItem> {
+        if (numbersJson.isBlank() || numbersJson == "[]") return emptyList()
+        return try {
+            val numArr = JSONArray(numbersJson)
+            val cloudNumbers = ArrayList<UploadedNumberItem>(numArr.length())
+            for (i in 0 until numArr.length()) {
+                val o = numArr.optJSONObject(i) ?: continue
+                val numStr = o.optString("number", o.optString("n", "")).trim()
+                if (numStr.isEmpty()) continue
+                val rawSrv = o.optString("service", o.optString("s", "FB Fresh"))
+                val rawType = o.optString("numberType", o.optString("t", "Fresh"))
+                val canonSrv = UnixSmsManager.canonicalService(rawSrv, rawType)
+                val canonType = UnixSmsManager.canonicalNumberTypeForService(canonSrv, rawType)
+                cloudNumbers.add(
+                    UploadedNumberItem(
+                        id = o.optString("id", java.util.UUID.randomUUID().toString().take(8)),
+                        number = numStr,
+                        countryCode = o.optString("countryCode", o.optString("c", "US")).uppercase().trim(),
+                        countryName = o.optString("countryName", o.optString("cn", "United States")),
+                        flag = o.optString("flag", o.optString("f", "🇺🇸")),
+                        service = canonSrv,
+                        gateway = o.optString("gateway", o.optString("g", "LAMIX")),
+                        customRate = if (o.has("customRate") && !o.isNull("customRate")) o.optDouble("customRate") else null,
+                        addedAt = o.optLong("addedAt", System.currentTimeMillis()),
+                        isUsed = o.optBoolean("isUsed", o.optBoolean("u", false)),
+                        otpCode = null,
+                        otpMessage = null,
+                        numberType = canonType
+                    )
+                )
+            }
+            cloudNumbers
+        } catch (e: Exception) {
+            Log.e(TAG, "Error parsing cloud numbers: ${e.message}")
+            emptyList()
+        }
+    }
+
+    private fun serializeNumbersJsonArray(uploadedNumbers: List<UploadedNumberItem>): JSONArray {
+        val numArr = JSONArray()
+        for (item in uploadedNumbers.take(25000)) {
+            val o = JSONObject()
+            o.put("id", item.id.take(12))
+            o.put("number", item.number)
+            o.put("countryCode", item.countryCode)
+            o.put("countryName", item.countryName)
+            o.put("flag", item.flag)
+            o.put("service", item.service)
+            o.put("gateway", item.gateway)
+            if (item.customRate != null) o.put("customRate", item.customRate)
+            o.put("addedAt", item.addedAt)
+            o.put("isUsed", item.isUsed)
+            o.put("numberType", item.numberType)
+            numArr.put(o)
+        }
+        return numArr
+    }
+
     /**
      * Pulls latest uploaded numbers & OTP rates directly from Supabase app_settings
      */
@@ -88,16 +141,16 @@ object GlobalCloudSyncService {
             KopEngine2Manager.init(context)
             AuthManager.syncCurrentUserProfileFromCloud(context)
 
+            if (isPushing || System.currentTimeMillis() - lastLocalPushTimestamp < 12000L) {
+                return
+            }
+
             val req = Request.Builder()
                 .url("$SUPABASE_BASE_URL/app_settings?id=eq.1&select=*")
                 .header("apikey", SUPABASE_KEY)
                 .header("Authorization", "Bearer $SUPABASE_KEY")
                 .get()
                 .build()
-
-            if (isPushing || System.currentTimeMillis() - lastLocalPushTimestamp < 8000L) {
-                return
-            }
 
             httpClient.newCall(req).execute().use { resp ->
                 if (!resp.isSuccessful) return
@@ -107,69 +160,20 @@ object GlobalCloudSyncService {
                 val data = arr.getJSONObject(0)
 
                 val cloudTimestamp = data.optLong("updated_at", 0L)
-                // If local is pushing or just pushed within 8 seconds, avoid immediate race overwrite
-                if (isPushing || System.currentTimeMillis() - lastLocalPushTimestamp < 8000L) {
+                if (isPushing || System.currentTimeMillis() - lastLocalPushTimestamp < 12000L) {
                     return
                 }
 
-                // If timestamp didn't change and we have already processed it, skip re-parsing
-                if (cloudTimestamp != 0L && cloudTimestamp <= lastObservedServerTimestamp) {
-                    return
-                }
-                lastObservedServerTimestamp = cloudTimestamp
-
-                // 1. Sync Uploaded Numbers directly with Supabase Cloud DB
-                val numbersJson = data.optString("numbers_json", "[]").trim()
-                if (numbersJson.isEmpty() || numbersJson == "[]") {
-                    // Cloud numbers pool is explicitly empty in Supabase DB -> clear local list
-                    UnixSmsManager.applyCloudNumbers(emptyList(), context)
-                } else {
-                    try {
-                        val numArr = JSONArray(numbersJson)
-                        val cloudNumbers = ArrayList<UploadedNumberItem>(numArr.length())
-                        for (i in 0 until numArr.length()) {
-                            val o = numArr.getJSONObject(i)
-                            cloudNumbers.add(
-                                UploadedNumberItem(
-                                    id = o.optString("id", java.util.UUID.randomUUID().toString()),
-                                    number = o.getString("number"),
-                                    countryCode = o.optString("countryCode", "US"),
-                                    countryName = o.optString("countryName", "United States"),
-                                    flag = o.optString("flag", "🇺🇸"),
-                                    service = o.optString("service", "Facebook"),
-                                    gateway = o.optString("gateway", "LAMIX"),
-                                    customRate = if (o.has("customRate") && !o.isNull("customRate")) o.optDouble("customRate") else null,
-                                    addedAt = o.optLong("addedAt", System.currentTimeMillis()),
-                                    isUsed = o.optBoolean("isUsed", false),
-                                    otpCode = null,
-                                    otpMessage = null,
-                                    numberType = o.optString("numberType", "Fresh")
-                                )
-                            )
-                        }
-                        // Authoritative apply to UnixSmsManager for all users
-                        UnixSmsManager.applyCloudNumbers(cloudNumbers, context)
-                    } catch (e: Exception) {
-                        Log.e(TAG, "Error parsing cloud numbers: ${e.message}")
-                    }
-                }
-
-                // 2. Sync OTP Rates
-                val unixRate = data.optDouble("otp_rate", -1.0)
-                if (unixRate > 0.0) {
-                    UnixSmsManager.applyCloudRate(unixRate)
-                }
-
-                val zenexRate = data.optDouble("zenex_rate", -1.0)
-                if (zenexRate > 0.0) {
-                    VirtualNumberManager.applyCloudRate(zenexRate)
-                }
-
-                // Parse kop2_rate & country rates from country_rates_json
+                // Parse country_rates_json first to check explicit clear_all_ts
                 val countryRatesJsonStr = data.optString("country_rates_json", "{}")
+                var cloudClearTs = 0L
                 if (countryRatesJsonStr.isNotEmpty() && countryRatesJsonStr != "{}") {
                     try {
                         val cObj = JSONObject(countryRatesJsonStr)
+                        cloudClearTs = cObj.optLong("clear_all_ts", 0L)
+                        if (cloudClearTs > lastExplicitClearTimestamp) {
+                            lastExplicitClearTimestamp = cloudClearTs
+                        }
                         val kRate = cObj.optDouble("kop2_rate", -1.0)
                         if (kRate > 0.0) {
                             KopEngine2Manager.applyCloudRate(kRate)
@@ -182,7 +186,7 @@ object GlobalCloudSyncService {
                         val keys = cObj.keys()
                         while (keys.hasNext()) {
                             val k = keys.next()
-                            if (k != "kop2_rate" && k != "premium_v2_rate" && k != "telegram_bots_json") {
+                            if (k != "kop2_rate" && k != "premium_v2_rate" && k != "telegram_bots_json" && k != "clear_all_ts") {
                                 val r = cObj.optDouble(k, -1.0)
                                 if (r > 0.0) cMap[k] = r
                             }
@@ -191,6 +195,28 @@ object GlobalCloudSyncService {
                             UnixSmsManager.applyCloudCountryRates(cMap)
                         }
                     } catch (_: Exception) {}
+                }
+
+                // 1. Sync Uploaded Numbers directly with Supabase Cloud DB
+                val numbersJson = data.optString("numbers_json", "[]").trim()
+                val cloudNumbers = parseNumbersJsonArray(numbersJson)
+                UnixSmsManager.applyCloudNumbers(
+                    cloudList = cloudNumbers,
+                    context = context,
+                    cloudTimestamp = cloudTimestamp,
+                    explicitClearTimestamp = cloudClearTs
+                )
+                lastObservedServerTimestamp = cloudTimestamp
+
+                // 2. Sync OTP Rates
+                val unixRate = data.optDouble("otp_rate", -1.0)
+                if (unixRate > 0.0) {
+                    UnixSmsManager.applyCloudRate(unixRate)
+                }
+
+                val zenexRate = data.optDouble("zenex_rate", -1.0)
+                if (zenexRate > 0.0) {
+                    VirtualNumberManager.applyCloudRate(zenexRate)
                 }
 
                 // 3. Check for published App Updates (1-Click in-app OTA)
@@ -212,40 +238,160 @@ object GlobalCloudSyncService {
     }
 
     /**
+     * Atomically marks specific numbers as `isUsed = true` in Supabase without overwriting
+     * any newly uploaded numbers from Admin. Ensures 1 number goes to 1 user only.
+     */
+    fun markNumbersUsedInCloud(
+        usedIds: Set<String>,
+        usedDigits: Set<String>,
+        usedSlotKeys: Set<String>
+    ) {
+        if (usedIds.isEmpty() && usedDigits.isEmpty()) return
+        val patchTimestamp = System.currentTimeMillis()
+        lastLocalPushTimestamp = patchTimestamp
+        scope.launch {
+            isPushing = true
+            try {
+                // 1. Fetch latest numbers_json from Supabase
+                val getReq = Request.Builder()
+                    .url("$SUPABASE_BASE_URL/app_settings?id=eq.1&select=numbers_json")
+                    .header("apikey", SUPABASE_KEY)
+                    .header("Authorization", "Bearer $SUPABASE_KEY")
+                    .get()
+                    .build()
+
+                var baseList: List<UploadedNumberItem> = emptyList()
+                httpClient.newCall(getReq).execute().use { resp ->
+                    if (resp.isSuccessful) {
+                        val bodyStr = resp.body?.string() ?: "[]"
+                        val arr = JSONArray(bodyStr)
+                        if (arr.length() > 0) {
+                            val jsonStr = arr.getJSONObject(0).optString("numbers_json", "[]")
+                            baseList = parseNumbersJsonArray(jsonStr)
+                        }
+                    }
+                }
+
+                // Fallback to local uploadedNumbers ONLY if cloud had nothing
+                val sourceList = if (baseList.isNotEmpty()) baseList else UnixSmsManager.state.value.uploadedNumbers
+                if (sourceList.isEmpty()) return@launch
+
+                val updatedList = sourceList.map { item ->
+                    val cleanD = item.number.replace("[^0-9]".toRegex(), "")
+                    val cSrv = UnixSmsManager.canonicalService(item.service, item.numberType)
+                    val sKey = "${cSrv}:::${item.countryCode.uppercase().trim()}:::${cleanD}"
+                    if (item.id in usedIds || sKey in usedSlotKeys || cleanD in usedDigits) {
+                        item.copy(isUsed = true)
+                    } else {
+                        item
+                    }
+                }
+
+                val numArr = serializeNumbersJsonArray(updatedList)
+                val patchPayload = JSONObject().apply {
+                    put("numbers_json", numArr.toString())
+                    put("updated_at", patchTimestamp)
+                }
+
+                val body = patchPayload.toString().toRequestBody("application/json; charset=utf-8".toMediaTypeOrNull())
+                val patchReq = Request.Builder()
+                    .url("$SUPABASE_BASE_URL/app_settings?id=eq.1")
+                    .header("apikey", SUPABASE_KEY)
+                    .header("Authorization", "Bearer $SUPABASE_KEY")
+                    .header("Content-Type", "application/json")
+                    .header("Prefer", "return=minimal")
+                    .patch(body)
+                    .build()
+
+                httpClient.newCall(patchReq).execute().use { resp ->
+                    if (resp.isSuccessful) {
+                        lastObservedServerTimestamp = patchTimestamp
+                        lastLocalPushTimestamp = System.currentTimeMillis()
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error marking numbers used in cloud: ${e.message}")
+            } finally {
+                isPushing = false
+            }
+        }
+    }
+
+    /**
      * Synchronously / directly pushes uploaded numbers to Supabase and returns success status.
+     * Protected against accidental empty overwrites unless `allowEmptyClear = true` is explicitly passed.
      */
     suspend fun pushToCloudSync(
         uploadedNumbers: List<UploadedNumberItem>,
         unixRate: Double,
         zenexRate: Double,
         kop2Rate: Double = KopEngine2Manager.kop2OtpRate.value,
-        countryRates: Map<String, Double> = emptyMap()
+        countryRates: Map<String, Double> = emptyMap(),
+        allowEmptyClear: Boolean = false,
+        mergeWithCloudFirst: Boolean = false
     ): Boolean = kotlinx.coroutines.withContext(Dispatchers.IO) {
+        if (uploadedNumbers.isEmpty() && !allowEmptyClear) {
+            // Never allow an accidental empty list to wipe out cloud numbers!
+            pushRateSettingsOnly(unixRate, zenexRate, kop2Rate)
+            return@withContext true
+        }
+
         val patchTimestamp = System.currentTimeMillis()
         lastLocalPushTimestamp = patchTimestamp
         isPushing = true
         try {
-            val numArr = JSONArray()
-            // Support up to 25,000 numbers across 20+ countries and platforms without saving DLR logs
-            for (item in uploadedNumbers.take(25000)) {
-                val o = JSONObject()
-                o.put("id", item.id)
-                o.put("number", item.number)
-                o.put("countryCode", item.countryCode)
-                o.put("countryName", item.countryName)
-                o.put("flag", item.flag)
-                o.put("service", item.service)
-                o.put("gateway", item.gateway)
-                if (item.customRate != null) o.put("customRate", item.customRate)
-                o.put("addedAt", item.addedAt)
-                o.put("isUsed", item.isUsed)
-                o.put("numberType", item.numberType)
-                numArr.put(o)
+            var finalNumbersToPush = uploadedNumbers
+
+            // If Admin is uploading new numbers, merge with any existing cloud numbers so nothing is ever lost
+            if (mergeWithCloudFirst && uploadedNumbers.isNotEmpty()) {
+                try {
+                    val getReq = Request.Builder()
+                        .url("$SUPABASE_BASE_URL/app_settings?id=eq.1&select=numbers_json")
+                        .header("apikey", SUPABASE_KEY)
+                        .header("Authorization", "Bearer $SUPABASE_KEY")
+                        .get()
+                        .build()
+                    httpClient.newCall(getReq).execute().use { resp ->
+                        if (resp.isSuccessful) {
+                            val bodyStr = resp.body?.string() ?: "[]"
+                            val arr = JSONArray(bodyStr)
+                            if (arr.length() > 0) {
+                                val cloudExisting = parseNumbersJsonArray(arr.getJSONObject(0).optString("numbers_json", "[]"))
+                                if (cloudExisting.isNotEmpty()) {
+                                    val mergedMap = LinkedHashMap<String, UploadedNumberItem>(cloudExisting.size + uploadedNumbers.size)
+                                    for (cItem in cloudExisting) {
+                                        val d = cItem.number.replace("[^0-9]".toRegex(), "")
+                                        val cSrv = UnixSmsManager.canonicalService(cItem.service, cItem.numberType)
+                                        val key = "${cSrv}:::${cItem.countryCode.uppercase().trim()}:::${d}"
+                                        mergedMap[key] = cItem
+                                    }
+                                    // Local items override / add to cloud items
+                                    for (lItem in uploadedNumbers) {
+                                        val d = lItem.number.replace("[^0-9]".toRegex(), "")
+                                        val cSrv = UnixSmsManager.canonicalService(lItem.service, lItem.numberType)
+                                        val key = "${cSrv}:::${lItem.countryCode.uppercase().trim()}:::${d}"
+                                        mergedMap[key] = lItem
+                                    }
+                                    finalNumbersToPush = mergedMap.values.toList()
+                                }
+                            }
+                        }
+                    }
+                } catch (_: Exception) {}
             }
+
+            if (allowEmptyClear && finalNumbersToPush.isEmpty()) {
+                lastExplicitClearTimestamp = patchTimestamp
+            }
+
+            val numArr = serializeNumbersJsonArray(finalNumbersToPush)
 
             val ratesObj = JSONObject().apply {
                 put("kop2_rate", kop2Rate)
                 put("premium_v2_rate", PremiumNumberV2Manager.otpRate.value)
+                if (lastExplicitClearTimestamp > 0L) {
+                    put("clear_all_ts", lastExplicitClearTimestamp)
+                }
                 for ((k, v) in countryRates) {
                     put(k, v)
                 }
@@ -269,9 +415,27 @@ object GlobalCloudSyncService {
                 .patch(body)
                 .build()
 
-            val success = httpClient.newCall(req).execute().use { resp ->
+            var success = httpClient.newCall(req).execute().use { resp ->
                 resp.isSuccessful
             }
+
+            if (!success) {
+                // Fallback upsert if row id=1 needed POST resolution
+                patchPayload.put("id", 1)
+                val postBody = patchPayload.toString().toRequestBody("application/json; charset=utf-8".toMediaTypeOrNull())
+                val postReq = Request.Builder()
+                    .url("$SUPABASE_BASE_URL/app_settings")
+                    .header("apikey", SUPABASE_KEY)
+                    .header("Authorization", "Bearer $SUPABASE_KEY")
+                    .header("Content-Type", "application/json")
+                    .header("Prefer", "resolution=merge-duplicates,return=minimal")
+                    .post(postBody)
+                    .build()
+                success = httpClient.newCall(postReq).execute().use { resp ->
+                    resp.isSuccessful
+                }
+            }
+
             if (success) {
                 lastObservedServerTimestamp = patchTimestamp
                 lastLocalPushTimestamp = System.currentTimeMillis()
@@ -290,7 +454,6 @@ object GlobalCloudSyncService {
 
     /**
      * Called whenever Admin uploads numbers, deletes numbers, or changes rates.
-     * Pushes state to Supabase PostgreSQL immediately so all users receive it in 3-5 seconds.
      */
     fun pushToCloud(
         uploadedNumbers: List<UploadedNumberItem>,
@@ -298,11 +461,21 @@ object GlobalCloudSyncService {
         zenexRate: Double,
         kop2Rate: Double = KopEngine2Manager.kop2OtpRate.value,
         countryRates: Map<String, Double> = emptyMap(),
+        allowEmptyClear: Boolean = false,
+        mergeWithCloudFirst: Boolean = false,
         onComplete: ((Boolean) -> Unit)? = null
     ) {
         lastLocalPushTimestamp = System.currentTimeMillis()
         scope.launch {
-            val ok = pushToCloudSync(uploadedNumbers, unixRate, zenexRate, kop2Rate, countryRates)
+            val ok = pushToCloudSync(
+                uploadedNumbers = uploadedNumbers,
+                unixRate = unixRate,
+                zenexRate = zenexRate,
+                kop2Rate = kop2Rate,
+                countryRates = countryRates,
+                allowEmptyClear = allowEmptyClear,
+                mergeWithCloudFirst = mergeWithCloudFirst
+            )
             kotlinx.coroutines.withContext(Dispatchers.Main) {
                 onComplete?.invoke(ok)
             }
@@ -321,6 +494,9 @@ object GlobalCloudSyncService {
                 val ratesObj = JSONObject().apply {
                     put("kop2_rate", kop2Rate)
                     put("premium_v2_rate", PremiumNumberV2Manager.otpRate.value)
+                    if (lastExplicitClearTimestamp > 0L) {
+                        put("clear_all_ts", lastExplicitClearTimestamp)
+                    }
                     for ((k, v) in UnixSmsManager.state.value.countryRates) {
                         put(k, v)
                     }
@@ -343,7 +519,6 @@ object GlobalCloudSyncService {
                 httpClient.newCall(req).execute().use { resp ->
                     if (resp.isSuccessful) {
                         lastObservedServerTimestamp = patchTimestamp
-                        Log.d(TAG, "Pushed rate settings to Supabase successfully: Unix=$unixRate, Zenex=$zenexRate, Kop2=$kop2Rate")
                     }
                 }
             } catch (e: Exception) {
@@ -356,9 +531,6 @@ object GlobalCloudSyncService {
         pushRateSettingsOnly()
     }
 
-    /**
-     * Forces an immediate real-time sync with Supabase PostgreSQL cloud database
-     */
     fun forceSync(context: Context, onComplete: ((Boolean) -> Unit)? = null) {
         scope.launch {
             try {

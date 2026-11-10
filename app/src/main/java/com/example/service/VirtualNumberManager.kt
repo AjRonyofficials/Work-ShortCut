@@ -232,6 +232,39 @@ object VirtualNumberManager {
         }
     }
 
+    fun clearExpiredAndFailedNumbers(context: Context? = null): Int {
+        val now = System.currentTimeMillis()
+        var removedCount = 0
+        _state.update { current ->
+            val surviving = current.provisionedNumbers.filter { prov ->
+                val hasOtp = !prov.otpCode.isNullOrEmpty() || prov.status.equals("success", ignoreCase = true)
+                val isFailedOrExpired = !hasOtp && (
+                    prov.status.equals("expired", ignoreCase = true) ||
+                    prov.status.equals("failed", ignoreCase = true) ||
+                    now >= prov.expiresAt
+                )
+                if (isFailedOrExpired) {
+                    removedCount++
+                    false
+                } else {
+                    true
+                }
+            }
+            saveUserProvisionedNumbers(surviving)
+            current.copy(provisionedNumbers = surviving)
+        }
+        if (context != null) {
+            android.os.Handler(android.os.Looper.getMainLooper()).post {
+                if (removedCount > 0) {
+                    Toast.makeText(context, "🗑️ $removedCount টি Expired/Failed নাম্বার মুছে ফেলা হয়েছে", Toast.LENGTH_SHORT).show()
+                } else {
+                    Toast.makeText(context, "কোনো Expired বা Failed নাম্বার নেই", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+        return removedCount
+    }
+
     private fun getTodayKey(): String {
         val sdf = SimpleDateFormat("yyyy_MM_dd", Locale.US)
         return "otp_today_" + sdf.format(Date())
@@ -890,7 +923,11 @@ object VirtualNumberManager {
     }
 
     fun clearProvisionedNumbers() {
-        prefs?.edit()?.putLong("reset_cycle_start_time", 0L)?.apply()
+        val todayKey = getTodayKey()
+        prefs?.edit()
+            ?.putLong("reset_cycle_start_time", 0L)
+            ?.putInt(todayKey, 0)
+            ?.apply()
         saveUserProvisionedNumbers(emptyList())
         _state.update {
             it.copy(
@@ -898,6 +935,14 @@ object VirtualNumberManager {
                 todayOtpCount = 0,
                 resetCycleStartTime = 0L
             )
+        }
+    }
+
+    fun resetTodayCycle(context: Context? = null) {
+        OtpHistoryManager.markPanel24hReset("Kop Engine 1")
+        clearProvisionedNumbers()
+        if (context != null) {
+            Toast.makeText(context, "✓ Kop Engine 1 ওটিপি ও অ্যাক্টিভ নাম্বার রিসেট করা হয়েছে!", Toast.LENGTH_SHORT).show()
         }
     }
 

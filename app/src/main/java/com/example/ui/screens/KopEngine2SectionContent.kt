@@ -33,6 +33,7 @@ import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Sensors
 import androidx.compose.material.icons.filled.Tune
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -45,6 +46,7 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
@@ -395,7 +397,53 @@ fun KopEngine2SectionContent(
 
                 Spacer(modifier = Modifier.height(10.dp))
 
-                // 24-Hour Auto Reset Cycle Bar
+                // 24-Hour Auto Reset Cycle Bar with Yes/No Confirmation Popup
+                var showKop2ResetConfirmDialog by remember { mutableStateOf(false) }
+
+                if (showKop2ResetConfirmDialog) {
+                    AlertDialog(
+                        onDismissRequest = { showKop2ResetConfirmDialog = false },
+                        containerColor = ThemeCardBg,
+                        titleContentColor = Color.White,
+                        textContentColor = Color(0xFFCBD5E1),
+                        title = {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.Default.Refresh, contentDescription = null, tint = ThemeSkyBright, modifier = Modifier.size(20.dp))
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("OTP ও নম্বর রিসেট করবেন?", fontSize = 15.sp, fontWeight = FontWeight.ExtraBold)
+                            }
+                        },
+                        text = {
+                            Text(
+                                "আপনি কি নিশ্চিত যে Kop Engine 2-এর বর্তমান অ্যাক্টিভ নম্বর এবং আজকের ২৪ ঘণ্টার OTP লিস্ট রিসেট (Reset) করতে চান?",
+                                fontSize = 12.5.sp,
+                                lineHeight = 18.sp
+                            )
+                        },
+                        confirmButton = {
+                            Button(
+                                onClick = {
+                                    showKop2ResetConfirmDialog = false
+                                    KopEngine2Manager.resetTodayCycle(context)
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFEF4444)),
+                                shape = RoundedCornerShape(8.dp)
+                            ) {
+                                Text("Yes (হ্যাঁ)", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                            }
+                        },
+                        dismissButton = {
+                            OutlinedButton(
+                                onClick = { showKop2ResetConfirmDialog = false },
+                                border = BorderStroke(1.dp, ThemeBorder),
+                                shape = RoundedCornerShape(8.dp)
+                            ) {
+                                Text("No (না)", color = Color(0xFFCBD5E1), fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                            }
+                        }
+                    )
+                }
+
                 Surface(
                     color = ThemeSurfaceDark,
                     shape = RoundedCornerShape(8.dp),
@@ -419,15 +467,22 @@ fun KopEngine2SectionContent(
                                 fontWeight = FontWeight.SemiBold
                             )
                         }
-                        Text(
-                            text = "Reset Now",
-                            color = ThemeSkyBright,
-                            fontSize = 10.5.sp,
-                            fontWeight = FontWeight.Bold,
+                        Surface(
+                            color = Color(0xFFEF4444).copy(alpha = 0.16f),
+                            shape = RoundedCornerShape(6.dp),
+                            border = BorderStroke(1.dp, Color(0xFFEF4444).copy(alpha = 0.55f)),
                             modifier = Modifier.clickable {
-                                KopEngine2Manager.resetTodayCycle(context)
+                                showKop2ResetConfirmDialog = true
                             }
-                        )
+                        ) {
+                            Text(
+                                text = "🔄 Reset Now",
+                                color = Color(0xFFFCA5A5),
+                                fontSize = 10.5.sp,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                            )
+                        }
                     }
                 }
             }
@@ -659,34 +714,72 @@ fun KopEngine2SectionContent(
                 }
 
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    val successfulNumbers = remember(state.provisionedNumbers) {
-                        state.provisionedNumbers.filter { !it.otpCode.isNullOrEmpty() || it.status.equals("success", true) }
+                    val activeExportItems = remember(state.provisionedNumbers, kop2OtpRate) {
+                        state.provisionedNumbers
+                            .filter { !it.otpCode.isNullOrEmpty() || it.status.equals("success", true) }
+                            .map { num ->
+                                val cInfo = com.example.util.AllCountriesProvider.detectCountry(num.number)
+                                    ?: com.example.util.AllCountriesProvider.detectCountry(num.range ?: "")
+                                    ?: com.example.util.AllCountriesProvider.detectCountry(num.country)
+                                com.example.util.ExportOtpItem(
+                                    phoneNumber = num.number,
+                                    country = cInfo?.name ?: num.country,
+                                    iso = (cInfo?.code ?: num.iso).uppercase(),
+                                    flag = cInfo?.flag ?: "🌐",
+                                    serviceOrRange = num.range ?: "Kop 2",
+                                    otpCode = num.otpCode ?: "",
+                                    otpMessage = num.otpMessage,
+                                    timestamp = num.timestamp,
+                                    rate = kop2OtpRate
+                                )
+                            }
                     }
+                    val kop2ExpiredCount = remember(state.provisionedNumbers, nowTick) {
+                        state.provisionedNumbers.count { prov ->
+                            val hasOtp = !prov.otpCode.isNullOrEmpty() || prov.status.equals("success", true)
+                            !hasOtp && (prov.status.equals("expired", true) || prov.status.equals("failed", true) || nowTick >= prov.expiresAt)
+                        }
+                    }
+                    val merged24hKop2Otps = remember(activeExportItems, state.resetCycleStartTime, state.todayOtpCount) {
+                        com.example.util.OtpExportHelper.getMerged24hOtps("Kop Engine 2", activeExportItems)
+                    }
+
+                    // Red Clear Failed / Expired Button
                     Surface(
-                        color = if (successfulNumbers.isNotEmpty()) Color(0xFF0284C7).copy(alpha = 0.25f) else Color(0xFF1E293B),
+                        color = if (kop2ExpiredCount > 0) Color(0xFFEF4444).copy(alpha = 0.25f) else Color(0xFFEF4444).copy(alpha = 0.14f),
                         shape = RoundedCornerShape(8.dp),
-                        border = BorderStroke(1.dp, if (successfulNumbers.isNotEmpty()) Color(0xFF38BDF8) else Color(0xFF475569)),
+                        border = BorderStroke(1.dp, Color(0xFFEF4444).copy(alpha = if (kop2ExpiredCount > 0) 0.85f else 0.45f)),
                         modifier = Modifier.clickable {
-                            if (successfulNumbers.isEmpty()) {
-                                Toast.makeText(context, "ডাউনলোড করার মতো কোনো সফল OTP নম্বর পাওয়া যায়নি", Toast.LENGTH_SHORT).show()
+                            KopEngine2Manager.clearExpiredAndFailedNumbers(context)
+                        }
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 7.dp, vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(Icons.Default.Delete, contentDescription = null, tint = Color(0xFFF87171), modifier = Modifier.size(12.dp))
+                            Spacer(modifier = Modifier.width(3.dp))
+                            Text(
+                                text = if (kop2ExpiredCount > 0) "Clear Failed ($kop2ExpiredCount)" else "Clear Failed",
+                                fontSize = 9.5.sp,
+                                color = Color(0xFFFCA5A5),
+                                fontWeight = FontWeight.ExtraBold
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.width(5.dp))
+
+                    Surface(
+                        color = if (merged24hKop2Otps.isNotEmpty()) Color(0xFF0284C7).copy(alpha = 0.25f) else Color(0xFF1E293B),
+                        shape = RoundedCornerShape(8.dp),
+                        border = BorderStroke(1.dp, if (merged24hKop2Otps.isNotEmpty()) Color(0xFF38BDF8) else Color(0xFF475569)),
+                        modifier = Modifier.clickable {
+                            val currentExportList = com.example.util.OtpExportHelper.getMerged24hOtps("Kop Engine 2", activeExportItems)
+                            if (currentExportList.isEmpty()) {
+                                Toast.makeText(context, "গত ২৪ ঘণ্টায় ডাউনলোড করার মতো কোনো সফল OTP নম্বর পাওয়া যায়নি", Toast.LENGTH_SHORT).show()
                             } else {
-                                val exportItems = successfulNumbers.map { num ->
-                                    val cInfo = com.example.util.AllCountriesProvider.detectCountry(num.number)
-                                        ?: com.example.util.AllCountriesProvider.detectCountry(num.range ?: "")
-                                        ?: com.example.util.AllCountriesProvider.detectCountry(num.country)
-                                    com.example.util.ExportOtpItem(
-                                        phoneNumber = num.number,
-                                        country = cInfo?.name ?: num.country,
-                                        iso = (cInfo?.code ?: num.iso).uppercase(),
-                                        flag = cInfo?.flag ?: "🌐",
-                                        serviceOrRange = num.range ?: "Kop 2",
-                                        otpCode = num.otpCode ?: "",
-                                        otpMessage = num.otpMessage,
-                                        timestamp = num.timestamp,
-                                        rate = kop2OtpRate
-                                    )
-                                }
-                                com.example.util.OtpExportHelper.exportOtps(context, "Kop Engine 2", exportItems)
+                                com.example.util.OtpExportHelper.exportOtps(context, "Kop Engine 2", currentExportList)
                             }
                         }
                     ) {
@@ -694,12 +787,12 @@ fun KopEngine2SectionContent(
                             modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Icon(Icons.Default.Download, contentDescription = null, tint = if (successfulNumbers.isNotEmpty()) Color(0xFF38BDF8) else Color(0xFF94A3B8), modifier = Modifier.size(13.dp))
+                            Icon(Icons.Default.Download, contentDescription = null, tint = if (merged24hKop2Otps.isNotEmpty()) Color(0xFF38BDF8) else Color(0xFF94A3B8), modifier = Modifier.size(13.dp))
                             Spacer(modifier = Modifier.width(3.dp))
                             Text(
-                                text = if (successfulNumbers.isNotEmpty()) "📥 ডাউনলোড (${successfulNumbers.size})" else "📥 ডাউনলোড",
+                                text = if (merged24hKop2Otps.isNotEmpty()) "📥 24h OTP (${merged24hKop2Otps.size})" else "📥 24h OTP",
                                 fontSize = 10.sp,
-                                color = if (successfulNumbers.isNotEmpty()) Color.White else Color(0xFF94A3B8),
+                                color = if (merged24hKop2Otps.isNotEmpty()) Color.White else Color(0xFF94A3B8),
                                 fontWeight = FontWeight.Bold
                             )
                         }
@@ -813,7 +906,7 @@ private fun Kop2ProvisionedNumberCard(
         colors = CardDefaults.cardColors(
             containerColor = when {
                 isSuccess -> Color(0xFF063529)
-                isExpired -> Color(0xFF1E293B)
+                isExpired -> Color(0xFF280C12) // Red failed/expired background
                 else -> Color(0xFF0F1E2E)
             }
         ),
@@ -822,7 +915,7 @@ private fun Kop2ProvisionedNumberCard(
             1.4.dp,
             when {
                 isSuccess -> ThemeEmerald
-                isExpired -> ThemeBorder
+                isExpired -> Color(0xFFEF4444).copy(alpha = 0.85f) // Vivid Red border for expired/failed
                 else -> ThemeSky.copy(alpha = 0.8f)
             }
         ),
@@ -942,20 +1035,20 @@ private fun Kop2ProvisionedNumberCard(
                 }
 
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    // Status Badge (WAITING: Ocean Cyan | SUCCESS: Emerald | EXPIRED: Slate)
+                    // Status Badge (WAITING: Ocean Cyan | SUCCESS: Emerald | EXPIRED: Red)
                     Surface(
                         color = when {
                             isSuccess -> ThemeEmerald.copy(alpha = 0.2f)
-                            isExpired -> ThemeBorder.copy(alpha = 0.4f)
-                            else -> ThemeSky.copy(alpha = 0.25f) // NOT RED
+                            isExpired -> Color(0xFFEF4444).copy(alpha = 0.25f)
+                            else -> ThemeSky.copy(alpha = 0.25f)
                         },
                         shape = RoundedCornerShape(4.dp),
                         border = BorderStroke(
                             1.dp,
                             when {
                                 isSuccess -> ThemeEmerald
-                                isExpired -> ThemeBorder
-                                else -> ThemeSkyBright // NOT RED
+                                isExpired -> Color(0xFFEF4444)
+                                else -> ThemeSkyBright
                             }
                         )
                     ) {

@@ -326,6 +326,39 @@ object KopEngine2Manager {
         _state.update { it.copy(provisionedNumbers = updated) }
     }
 
+    fun clearExpiredAndFailedNumbers(context: Context? = null): Int {
+        val now = System.currentTimeMillis()
+        var removedCount = 0
+        _state.update { current ->
+            val surviving = current.provisionedNumbers.filter { prov ->
+                val hasOtp = !prov.otpCode.isNullOrEmpty() || prov.status.equals("success", ignoreCase = true)
+                val isFailedOrExpired = !hasOtp && (
+                    prov.status.equals("expired", ignoreCase = true) ||
+                    prov.status.equals("failed", ignoreCase = true) ||
+                    now >= prov.expiresAt
+                )
+                if (isFailedOrExpired) {
+                    removedCount++
+                    false
+                } else {
+                    true
+                }
+            }
+            saveUserProvisionedNumbers(surviving)
+            current.copy(provisionedNumbers = surviving)
+        }
+        if (context != null) {
+            android.os.Handler(android.os.Looper.getMainLooper()).post {
+                if (removedCount > 0) {
+                    Toast.makeText(context, "🗑️ $removedCount টি Expired/Failed নাম্বার মুছে ফেলা হয়েছে", Toast.LENGTH_SHORT).show()
+                } else {
+                    Toast.makeText(context, "কোনো Expired বা Failed নাম্বার নেই", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+        return removedCount
+    }
+
 
 
     fun provisionNumbers(
@@ -929,6 +962,7 @@ object KopEngine2Manager {
     }
 
     fun resetTodayCycle(context: Context) {
+        OtpHistoryManager.markPanel24hReset("Kop Engine 2")
         val todayKey = getTodayKey()
         prefs?.edit()
             ?.putLong("reset_cycle_start_time", 0L)
@@ -942,7 +976,7 @@ object KopEngine2Manager {
                 resetCycleStartTime = 0L
             )
         }
-        Toast.makeText(context, "Kop Engine 2 ২৪ ঘণ্টার ডাটা রিসেট হয়েছে", Toast.LENGTH_SHORT).show()
+        Toast.makeText(context, "✓ Kop Engine 2 ওটিপি ও অ্যাক্টিভ নাম্বার রিসেট করা হয়েছে!", Toast.LENGTH_SHORT).show()
     }
 
     private fun getTodayKey(): String {

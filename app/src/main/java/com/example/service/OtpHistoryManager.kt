@@ -956,4 +956,77 @@ object OtpHistoryManager {
         recalculateSummaries(emptyList(), 0)
         return count
     }
+
+    private fun getPanelResetKey(panelKey: String): String {
+        val email = AuthManager.currentEmail.value.trim().lowercase()
+        val norm = normalizePanelKey(panelKey)
+        return if (email.isNotEmpty()) "panel_24h_reset_${norm}_$email" else "panel_24h_reset_$norm"
+    }
+
+    fun normalizePanelKey(panelName: String): String {
+        val p = panelName.trim().lowercase(Locale.US)
+        return when {
+            p.contains("v2") -> "PREMIUM_V2"
+            p.contains("kop engine 2") || p.contains("kop 2") || p.contains("kop2") -> "KOP_2"
+            p.contains("kop engine") || p.contains("kop 1") || p.contains("zenex") -> "KOP_1"
+            p.contains("unix") || p.contains("lamix") || p.contains("hadi") || p.contains("premium") -> "UNIX_SMS"
+            else -> "ALL"
+        }
+    }
+
+    fun getPanelLastResetTime(panelName: String): Long {
+        val key = getPanelResetKey(panelName)
+        return prefs?.getLong(key, 0L) ?: 0L
+    }
+
+    fun markPanel24hReset(panelName: String) {
+        val now = System.currentTimeMillis()
+        val norm = normalizePanelKey(panelName)
+        if (norm == "ALL") {
+            listOf("UNIX_SMS", "KOP_1", "KOP_2", "PREMIUM_V2", "ALL").forEach { k ->
+                prefs?.edit()?.putLong(getPanelResetKey(k), now)?.apply()
+            }
+        } else {
+            prefs?.edit()?.putLong(getPanelResetKey(norm), now)?.apply()
+        }
+    }
+
+    /**
+     * Returns all OTPs received within the last 24 hours (and after any manual reset for that panel).
+     */
+    fun get24hOtpItemsForPanel(panelName: String): List<com.example.util.ExportOtpItem> {
+        val now = System.currentTimeMillis()
+        val cutoff24h = now - 24L * 60L * 60L * 1000L
+        val norm = normalizePanelKey(panelName)
+        val resetCutoff = if (norm == "ALL") {
+            getPanelLastResetTime("ALL")
+        } else {
+            maxOf(getPanelLastResetTime(norm), getPanelLastResetTime("ALL"))
+        }
+        val effectiveCutoff = maxOf(cutoff24h, resetCutoff)
+        val currentEmail = AuthManager.currentEmail.value.trim().lowercase()
+
+        return _state.value.recentRecords
+            .filter { r ->
+                r.timestamp >= effectiveCutoff &&
+                r.otpCode.isNotBlank() &&
+                r.phoneNumber.isNotBlank() &&
+                (currentEmail.isEmpty() || r.userEmail.isBlank() || r.userEmail.equals(currentEmail, ignoreCase = true)) &&
+                (norm == "ALL" || normalizePanelKey(r.platform) == norm)
+            }
+            .map { r ->
+                val cInfo = com.example.util.AllCountriesProvider.detectCountry(r.phoneNumber)
+                com.example.util.ExportOtpItem(
+                    phoneNumber = r.phoneNumber,
+                    country = cInfo?.name ?: "Global",
+                    iso = (cInfo?.code ?: "").uppercase(),
+                    flag = cInfo?.flag ?: "🌐",
+                    serviceOrRange = "${r.platform} • ${r.service}",
+                    otpCode = r.otpCode,
+                    otpMessage = null,
+                    timestamp = r.timestamp,
+                    rate = r.rate
+                )
+            }
+    }
 }

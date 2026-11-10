@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.SharedPreferences
 import android.os.Handler
 import android.os.Looper
+import android.widget.Toast
 import com.example.data.model.ProvisionedNumber
 import com.example.util.ClipboardHelper
 import com.example.util.OtpNotificationHelper
@@ -11,6 +12,7 @@ import com.example.util.VibrationHelper
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -275,20 +277,39 @@ object UnixSmsManager {
         )
     }
 
-    fun applyCloudNumbers(cloudList: List<UploadedNumberItem>, context: Context? = null) {
+    fun applyCloudNumbers(
+        cloudList: List<UploadedNumberItem>,
+        context: Context? = null,
+        cloudTimestamp: Long = 0L,
+        explicitClearTimestamp: Long = 0L
+    ) {
         if (context != null) {
             appContext = context.applicationContext
             if (prefs == null) {
                 prefs = context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
             }
         }
-        if (cloudList.isEmpty()) {
-            _state.update { it.copy(uploadedNumbers = emptyList()) }
-            saveUploadedNumbers(emptyList())
-            return
-        }
         val current = _state.value.uploadedNumbers
         val activeNumbers = _state.value.activeNumbers
+
+        if (cloudList.isEmpty()) {
+            // Only clear local uploaded numbers if Admin explicitly cleared all numbers AFTER our local items were added
+            if (explicitClearTimestamp > 0L) {
+                val survivingLocal = current.filter { it.addedAt > explicitClearTimestamp }
+                _state.update { it.copy(uploadedNumbers = survivingLocal) }
+                saveUploadedNumbers(survivingLocal)
+            } else if (current.isNotEmpty() && AuthManager.isAdmin()) {
+                // Admin has local uploaded numbers that haven't reached cloud yet — push them to cloud so all users get them!
+                GlobalCloudSyncService.pushToCloud(
+                    uploadedNumbers = current,
+                    unixRate = _state.value.otpRatePerSms,
+                    zenexRate = VirtualNumberManager.zenexOtpRate.value,
+                    countryRates = _state.value.countryRates,
+                    mergeWithCloudFirst = true
+                )
+            }
+            return
+        }
 
         val localBySlot = current.associateBy {
             val d = it.number.replace("[^0-9]".toRegex(), "")
@@ -296,8 +317,11 @@ object UnixSmsManager {
         }
         val localByDigits = current.associateBy { it.number.replace("[^0-9]".toRegex(), "") }
 
-        val merged = cloudList.map { cloudItem ->
+        val mergedMap = LinkedHashMap<String, UploadedNumberItem>(cloudList.size + current.size)
+
+        for (cloudItem in cloudList) {
             val cleanDigits = cloudItem.number.replace("[^0-9]".toRegex(), "")
+            if (cleanDigits.length < 7) continue
             val canonSrv = canonicalService(cloudItem.service, cloudItem.numberType)
             val canonType = canonicalNumberTypeForService(canonSrv, cloudItem.numberType)
             val sKey = slotKey(canonSrv, canonType, cloudItem.countryCode, cleanDigits)
@@ -305,11 +329,11 @@ object UnixSmsManager {
             val isActiveOnDevice = activeNumbers.any { isPhoneNumberMatch(it.number, cleanDigits) }
             val isPermanentlyUsed = permanentlyUsedDigits.contains(cleanDigits) || permanentlyUsedDigits.contains(sKey)
             val isUsed = isActiveOnDevice || isPermanentlyUsed || (local?.isUsed == true) || cloudItem.isUsed
-            if (isUsed && cleanDigits.length >= 7) {
+            if (isUsed) {
                 permanentlyUsedDigits.add(cleanDigits)
                 permanentlyUsedDigits.add(sKey)
             }
-            cloudItem.copy(
+            mergedMap[sKey] = cloudItem.copy(
                 id = local?.id?.ifEmpty { cloudItem.id } ?: cloudItem.id,
                 service = canonSrv,
                 numberType = canonType,
@@ -318,6 +342,21 @@ object UnixSmsManager {
                 otpMessage = null
             )
         }
+
+        // Preserve any locally uploaded numbers that are newer than cloudTimestamp (and after any explicit clear)
+        for (localItem in current) {
+            if (localItem.addedAt > explicitClearTimestamp && (cloudTimestamp == 0L || localItem.addedAt > cloudTimestamp)) {
+                val cleanDigits = localItem.number.replace("[^0-9]".toRegex(), "")
+                val canonSrv = canonicalService(localItem.service, localItem.numberType)
+                val canonType = canonicalNumberTypeForService(canonSrv, localItem.numberType)
+                val sKey = slotKey(canonSrv, canonType, localItem.countryCode, cleanDigits)
+                if (!mergedMap.containsKey(sKey)) {
+                    mergedMap[sKey] = localItem.copy(service = canonSrv, numberType = canonType)
+                }
+            }
+        }
+
+        val merged = mergedMap.values.toList()
         savePermanentlyUsedDigits()
         _state.update { it.copy(uploadedNumbers = merged) }
         saveUploadedNumbers(merged)
@@ -466,7 +505,8 @@ object UnixSmsManager {
                         rate = o.optDouble("rate", 0.50),
                         fbStatus = o.optString("fbStatus").ifEmpty { null },
                         fbTagType = fbTag,
-                        userEmail = o.optString("userEmail", effectiveEmail)
+                        userEmail = o.optString("userEmail", effectiveEmail),
+                        isMarked = o.optBoolean("isMarked", false)
                     )
                 )
             }
@@ -496,9 +536,82 @@ object UnixSmsManager {
             o.put("fbStatus", item.fbStatus ?: "")
             o.put("fbTagType", item.fbTagType.name)
             o.put("userEmail", item.userEmail.ifEmpty { effectiveEmail })
+            o.put("isMarked", item.isMarked)
             arr.put(o)
         }
         prefs?.edit()?.putString(getUserActiveNumbersKey(effectiveEmail), arr.toString())?.apply()
+    }
+
+    fun toggleMarkActiveNumber(id: String) {
+        _state.update { current ->
+            val updated = current.activeNumbers.map { item ->
+                if (item.id == id && item.range.contains("Clone", ignoreCase = true)) {
+                    item.copy(isMarked = !item.isMarked)
+                } else {
+                    item
+                }
+            }
+            saveActiveNumbers(updated)
+            current.copy(activeNumbers = updated)
+        }
+    }
+
+    fun resetTodayCycle(context: Context? = null) {
+        OtpHistoryManager.markPanel24hReset("Premium Numbers")
+        prefs?.edit()?.putInt(KEY_TODAY_OTP, 0)?.apply()
+        saveActiveNumbers(emptyList())
+        _state.update {
+            it.copy(
+                activeNumbers = emptyList(),
+                todayOtpCount = 0
+            )
+        }
+        if (context != null) {
+            mainHandler.post {
+                Toast.makeText(context, "✓ Premium Numbers ওটিপি ও অ্যাক্টিভ নাম্বার রিসেট করা হয়েছে!", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    fun removeActiveNumber(id: String) {
+        _state.update { current ->
+            val updated = current.activeNumbers.filterNot { it.id == id }
+            saveActiveNumbers(updated)
+            current.copy(activeNumbers = updated)
+        }
+    }
+
+    fun clearExpiredAndFailedNumbers(context: Context? = null): Int {
+        val now = System.currentTimeMillis()
+        var removedCount = 0
+        _state.update { current ->
+            val surviving = current.activeNumbers.filter { prov ->
+                val hasOtp = !prov.otpCode.isNullOrEmpty() || prov.status.equals("success", ignoreCase = true)
+                val isFailedOrExpired = !hasOtp && (
+                    prov.status.equals("expired", ignoreCase = true) ||
+                    prov.status.equals("failed", ignoreCase = true) ||
+                    now >= prov.expiresAt
+                )
+                if (isFailedOrExpired) {
+                    removedCount++
+                    false
+                } else {
+                    true
+                }
+            }
+            saveActiveNumbers(surviving)
+            current.copy(activeNumbers = surviving)
+        }
+        if (context != null) {
+            mainHandler.post {
+                if (removedCount > 0) {
+                    Toast.makeText(context, "🗑️ $removedCount টি Expired/Failed নাম্বার মুছে ফেলা হয়েছে", Toast.LENGTH_SHORT).show()
+                } else {
+                    Toast.makeText(context, "কোনো Expired বা Failed নাম্বার নেই", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+        return removedCount
     }
 
     fun onUserLoggedIn(email: String) {
@@ -643,7 +756,8 @@ object UnixSmsManager {
             uploadedNumbers = updated,
             unixRate = _state.value.otpRatePerSms,
             zenexRate = VirtualNumberManager.zenexOtpRate.value,
-            countryRates = _state.value.countryRates
+            countryRates = _state.value.countryRates,
+            mergeWithCloudFirst = true
         )
 
         return processedCount
@@ -764,7 +878,8 @@ object UnixSmsManager {
             uploadedNumbers = updated,
             unixRate = _state.value.otpRatePerSms,
             zenexRate = VirtualNumberManager.zenexOtpRate.value,
-            countryRates = _state.value.countryRates
+            countryRates = _state.value.countryRates,
+            mergeWithCloudFirst = true
         )
 
         return Pair(freshSet.size, cloneSet.size)
@@ -819,6 +934,7 @@ object UnixSmsManager {
             savePermanentlyUsedDigits()
             _state.value.uploadedNumbers.filterNot { it.countryCode.equals(countryCode, ignoreCase = true) }
         }
+        val isDeleteAll = countryCode.equals("ALL", ignoreCase = true)
         val updatedActive = _state.value.activeNumbers
         _state.update { it.copy(uploadedNumbers = updated, activeNumbers = updatedActive) }
         saveUploadedNumbers(updated)
@@ -828,6 +944,7 @@ object UnixSmsManager {
             unixRate = _state.value.otpRatePerSms,
             zenexRate = VirtualNumberManager.zenexOtpRate.value,
             countryRates = _state.value.countryRates,
+            allowEmptyClear = isDeleteAll || updated.isEmpty(),
             onComplete = onComplete
         )
     }
@@ -1019,14 +1136,20 @@ object UnixSmsManager {
         val chosen = pool.take(safeCount)
         val chosenIds = chosen.map { it.id }.toSet()
 
+        val chosenDigits = HashSet<String>()
+        val chosenSlotKeys = HashSet<String>()
+
         // Atomically mark chosen numbers as permanently used locally so cloud sync never reverts them
         chosen.forEach { item ->
             val d = item.number.replace("[^0-9]".toRegex(), "")
             val cSrv = canonicalService(item.service, item.numberType)
             val cType = canonicalNumberTypeForService(cSrv, item.numberType)
             if (d.length >= 7) {
+                val sKey = slotKey(cSrv, cType, item.countryCode, d)
                 permanentlyUsedDigits.add(d)
-                permanentlyUsedDigits.add(slotKey(cSrv, cType, item.countryCode, d))
+                permanentlyUsedDigits.add(sKey)
+                chosenDigits.add(d)
+                chosenSlotKeys.add(sKey)
             }
         }
         savePermanentlyUsedDigits()
@@ -1080,12 +1203,12 @@ object UnixSmsManager {
             )
         }
 
-        // Push updated isUsed status to cloud with anti-rollback lock
-        GlobalCloudSyncService.pushToCloud(
-            uploadedNumbers = updatedUploaded,
-            unixRate = _state.value.otpRatePerSms,
-            zenexRate = VirtualNumberManager.zenexOtpRate.value,
-            countryRates = _state.value.countryRates
+        // Atomically mark ONLY the taken numbers as isUsed = true in Supabase so 1 number goes to 1 user
+        // without ever overwriting newly uploaded numbers from Admin!
+        GlobalCloudSyncService.markNumbersUsedInCloud(
+            usedIds = chosenIds,
+            usedDigits = chosenDigits,
+            usedSlotKeys = chosenSlotKeys
         )
 
         mainHandler.post {
@@ -1197,16 +1320,18 @@ object UnixSmsManager {
                     val uploadedNums = _state.value.uploadedNumbers
 
                     if (activeNums.isNotEmpty() || uploadedNums.isNotEmpty()) {
-                        // 1. Fast 1-Second Hadi SMS CDR Polling
-                        pollHadiSmsCdr(context)
+                        coroutineScope {
+                            // 1. Fast 1-Second Hadi SMS CDR Polling
+                            launch { pollHadiSmsCdr(context) }
 
-                        // 2. Fast 1-Second Lamix SMS Polling
-                        pollLamixSms(context)
+                            // 2. Fast 1-Second Lamix SMS Polling
+                            launch { pollLamixSms(context) }
 
-                        // 3. Unix SMS API (throttled to 2.5s)
-                        if (now - lastUnixPollTime >= 2500L) {
-                            lastUnixPollTime = now
-                            pollUnixSmsCdr(context)
+                            // 3. Unix SMS API (throttled to 2.0s)
+                            if (now - lastUnixPollTime >= 2000L) {
+                                lastUnixPollTime = now
+                                launch { pollUnixSmsCdr(context) }
+                            }
                         }
                     }
                 } catch (_: Exception) {}
@@ -1373,15 +1498,19 @@ object UnixSmsManager {
                 val extracted = extractOtp(matchedCdr.message, cleanDigits).ifEmpty {
                     extractOtp(matchedCdr.message, "")
                 }
-                val finalOtp = if (extracted.isNotEmpty()) extracted else "OTP"
-                if (prov.otpCode != finalOtp || prov.status != "success") {
-                    val updatedProv = prov.copy(
-                        status = "success",
-                        otpCode = finalOtp,
-                        otpMessage = matchedCdr.message
-                    )
-                    newlyArrivedOtps.add(Pair(updatedProv, finalOtp))
-                    updatedProv
+                // Strictly require a valid 5–8 digit OTP code before crediting balance and marking success
+                if (extracted.length in 5..8) {
+                    if (prov.otpCode != extracted || prov.status != "success") {
+                        val effectiveRate = if (prov.rate >= 0.05) prov.rate else getRateForCountry(prov.iso)
+                        val updatedProv = prov.copy(
+                            status = "success",
+                            otpCode = extracted,
+                            otpMessage = matchedCdr.message,
+                            rate = effectiveRate
+                        )
+                        newlyArrivedOtps.add(Pair(updatedProv, extracted))
+                        updatedProv
+                    } else prov
                 } else prov
             } else prov
         }
@@ -1398,12 +1527,13 @@ object UnixSmsManager {
                     "LAMIX" -> "Lamix SMS"
                     else -> "Unix SMS"
                 }
+                val creditRate = if (prov.rate >= 0.05) prov.rate else getRateForCountry(prov.iso)
                 OtpHistoryManager.recordOtp(
                     phoneNumber = prov.number,
                     otpCode = otp,
                     service = prov.range.ifEmpty { gatewayLabel },
                     platform = platformName,
-                    rate = prov.rate
+                    rate = creditRate
                 )
             }
             WithdrawalManager.refreshBalances()
@@ -1501,7 +1631,7 @@ object UnixSmsManager {
         // Direct query for pending active numbers via filternum
         val activeNumbers = _state.value.activeNumbers
         for (prov in activeNumbers) {
-            if (prov.otpCode.isNullOrEmpty() && prov.status == "pending") {
+            if (prov.otpCode.isNullOrEmpty()) {
                 val cleanDigits = prov.number.replace("[^0-9]".toRegex(), "")
                 if (cleanDigits.length >= 7 && !rawCdrList.any { isPhoneNumberMatch(it.second, cleanDigits) }) {
                     try {
@@ -1596,7 +1726,7 @@ object UnixSmsManager {
         // Also query pending active numbers directly on Lamix if not found in general stream
         val activeNumbers = _state.value.activeNumbers
         for (prov in activeNumbers) {
-            if (prov.otpCode.isNullOrEmpty() && prov.status == "pending") {
+            if (prov.otpCode.isNullOrEmpty()) {
                 val cleanDigits = prov.number.replace("[^0-9]".toRegex(), "")
                 if (cleanDigits.length >= 7 && !rawCdrList.any { isPhoneNumberMatch(it.second, cleanDigits) }) {
                     try {

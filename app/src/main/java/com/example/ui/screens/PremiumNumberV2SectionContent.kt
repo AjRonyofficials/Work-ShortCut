@@ -54,6 +54,7 @@ import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Tag
 import androidx.compose.material.icons.filled.Undo
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -368,6 +369,72 @@ fun PremiumNumberV2SectionContent(
                                 contentDescription = "OTP Sound Alert",
                                 tint = if (state.isSoundEnabled) Color(0xFF00E5FF) else Color(0xFF64748B),
                                 modifier = Modifier.size(15.dp)
+                            )
+                        }
+                    }
+
+                    // Reset 24h OTP & Active Numbers Button with Yes/No Confirmation
+                    var showV2ResetConfirmDialog by remember { mutableStateOf(false) }
+
+                    if (showV2ResetConfirmDialog) {
+                        AlertDialog(
+                            onDismissRequest = { showV2ResetConfirmDialog = false },
+                            containerColor = Color(0xFF0E1A29),
+                            titleContentColor = Color.White,
+                            textContentColor = Color(0xFFCBD5E1),
+                            title = {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(Icons.Default.Refresh, contentDescription = null, tint = Color(0xFF00E5FF), modifier = Modifier.size(20.dp))
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text("OTP ও নম্বর রিসেট করবেন?", fontSize = 15.sp, fontWeight = FontWeight.ExtraBold)
+                                }
+                            },
+                            text = {
+                                Text(
+                                    "আপনি কি নিশ্চিত যে Premium Number V2-এর বর্তমান অ্যাক্টিভ নম্বর এবং আজকের ২৪ ঘণ্টার OTP লিস্ট রিসেট (Reset) করতে চান?",
+                                    fontSize = 12.5.sp,
+                                    lineHeight = 18.sp
+                                )
+                            },
+                            confirmButton = {
+                                Button(
+                                    onClick = {
+                                        showV2ResetConfirmDialog = false
+                                        PremiumNumberV2Manager.resetTodayCycle(context)
+                                    },
+                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFEF4444)),
+                                    shape = RoundedCornerShape(8.dp)
+                                ) {
+                                    Text("Yes (হ্যাঁ)", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                }
+                            },
+                            dismissButton = {
+                                OutlinedButton(
+                                    onClick = { showV2ResetConfirmDialog = false },
+                                    border = BorderStroke(1.dp, Color(0xFF334155)),
+                                    shape = RoundedCornerShape(8.dp)
+                                ) {
+                                    Text("No (না)", color = Color(0xFFCBD5E1), fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                }
+                            }
+                        )
+                    }
+
+                    Surface(
+                        color = Color(0xFFEF4444).copy(alpha = 0.16f),
+                        shape = RoundedCornerShape(8.dp),
+                        border = BorderStroke(1.dp, Color(0xFFEF4444).copy(alpha = 0.55f)),
+                        modifier = Modifier.clickable { showV2ResetConfirmDialog = true }
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "🔄 Reset",
+                                color = Color(0xFFFCA5A5),
+                                fontSize = 9.5.sp,
+                                fontWeight = FontWeight.ExtraBold
                             )
                         }
                     }
@@ -938,34 +1005,39 @@ fun PremiumNumberV2SectionContent(
                         }
 
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                            // Download OTP Button
-                            val successfulV2Numbers = remember(state.activeNumbers) {
-                                state.activeNumbers.filter { !it.otpCode.isNullOrEmpty() || it.status.equals("success", true) }
+                            // Download 24h OTP Button
+                            val activeExportItems = remember(state.activeNumbers) {
+                                state.activeNumbers
+                                    .filter { !it.otpCode.isNullOrEmpty() || it.status.equals("success", true) }
+                                    .map { num ->
+                                        val cInfo = com.example.util.AllCountriesProvider.detectCountry(num.number)
+                                            ?: com.example.util.AllCountriesProvider.detectCountry(num.country)
+                                        com.example.util.ExportOtpItem(
+                                            phoneNumber = num.number,
+                                            country = cInfo?.name ?: num.country,
+                                            iso = (cInfo?.code ?: num.iso).uppercase(),
+                                            flag = cInfo?.flag ?: num.flag ?: "🌐",
+                                            serviceOrRange = num.range ?: "Premium V2",
+                                            otpCode = num.otpCode ?: "",
+                                            otpMessage = num.otpMessage,
+                                            timestamp = num.timestamp,
+                                            rate = num.rate
+                                        )
+                                    }
+                            }
+                            val merged24hV2Otps = remember(activeExportItems, state.todayOtpCount) {
+                                com.example.util.OtpExportHelper.getMerged24hOtps("Premium Number V2", activeExportItems)
                             }
                             Surface(
-                                color = if (successfulV2Numbers.isNotEmpty()) Color(0xFF0284C7).copy(alpha = 0.25f) else Color(0xFF1E293B),
+                                color = if (merged24hV2Otps.isNotEmpty()) Color(0xFF0284C7).copy(alpha = 0.25f) else Color(0xFF1E293B),
                                 shape = RoundedCornerShape(6.dp),
-                                border = BorderStroke(1.dp, if (successfulV2Numbers.isNotEmpty()) Color(0xFF00E5FF) else Color(0xFF334155)),
+                                border = BorderStroke(1.dp, if (merged24hV2Otps.isNotEmpty()) Color(0xFF00E5FF) else Color(0xFF334155)),
                                 modifier = Modifier.clickable {
-                                    if (successfulV2Numbers.isEmpty()) {
-                                        Toast.makeText(context, "ডাউনলোড করার মতো কোনো সফল OTP নম্বর পাওয়া যায়নি", Toast.LENGTH_SHORT).show()
+                                    val currentExportList = com.example.util.OtpExportHelper.getMerged24hOtps("Premium Number V2", activeExportItems)
+                                    if (currentExportList.isEmpty()) {
+                                        Toast.makeText(context, "গত ২৪ ঘণ্টায় ডাউনলোড করার মতো কোনো সফল OTP নম্বর পাওয়া যায়নি", Toast.LENGTH_SHORT).show()
                                     } else {
-                                        val exportItems = successfulV2Numbers.map { num ->
-                                            val cInfo = com.example.util.AllCountriesProvider.detectCountry(num.number)
-                                                ?: com.example.util.AllCountriesProvider.detectCountry(num.country)
-                                            com.example.util.ExportOtpItem(
-                                                phoneNumber = num.number,
-                                                country = cInfo?.name ?: num.country,
-                                                iso = (cInfo?.code ?: num.iso).uppercase(),
-                                                flag = cInfo?.flag ?: num.flag ?: "🌐",
-                                                serviceOrRange = num.range ?: "Premium V2",
-                                                otpCode = num.otpCode ?: "",
-                                                otpMessage = num.otpMessage,
-                                                timestamp = num.timestamp,
-                                                rate = num.rate
-                                            )
-                                        }
-                                        com.example.util.OtpExportHelper.exportOtps(context, "Premium Number V2", exportItems)
+                                        com.example.util.OtpExportHelper.exportOtps(context, "Premium Number V2", currentExportList)
                                     }
                                 }
                             ) {
@@ -973,11 +1045,11 @@ fun PremiumNumberV2SectionContent(
                                     modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp),
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Icon(Icons.Default.Download, contentDescription = null, tint = if (successfulV2Numbers.isNotEmpty()) Color(0xFF00E5FF) else Color(0xFF94A3B8), modifier = Modifier.size(11.dp))
+                                    Icon(Icons.Default.Download, contentDescription = null, tint = if (merged24hV2Otps.isNotEmpty()) Color(0xFF00E5FF) else Color(0xFF94A3B8), modifier = Modifier.size(11.dp))
                                     Spacer(modifier = Modifier.width(3.dp))
                                     Text(
-                                        text = if (successfulV2Numbers.isNotEmpty()) "📥 ডাউনলোড (${successfulV2Numbers.size})" else "📥 ডাউনলোড",
-                                        color = if (successfulV2Numbers.isNotEmpty()) Color.White else Color(0xFF94A3B8),
+                                        text = if (merged24hV2Otps.isNotEmpty()) "📥 24h OTP (${merged24hV2Otps.size})" else "📥 24h OTP",
+                                        color = if (merged24hV2Otps.isNotEmpty()) Color.White else Color(0xFF94A3B8),
                                         fontSize = 9.sp,
                                         fontWeight = FontWeight.Bold
                                     )
@@ -1007,25 +1079,33 @@ fun PremiumNumberV2SectionContent(
                                 }
                             }
 
-                            // Smart Clear Expired / Completed Numbers Button
-                            if (state.activeNumbers.any { it.status == "expired" || it.status == "cancelled" || !it.otpCode.isNullOrEmpty() || nowTick >= it.expiresAt }) {
-                                Surface(
-                                    color = Color(0xFFF59E0B).copy(alpha = 0.18f),
-                                    shape = RoundedCornerShape(6.dp),
-                                    border = BorderStroke(0.8.dp, Color(0xFFF59E0B).copy(alpha = 0.5f)),
-                                    modifier = Modifier.clickable {
-                                        PremiumNumberV2Manager.clearExpiredOrCompletedNumbers()
-                                        Toast.makeText(context, "✓ এক্সপায়ার্ড নম্বরগুলো ক্লিয়ার হয়েছে", Toast.LENGTH_SHORT).show()
-                                    }
+                            // Red Clear Failed / Expired Numbers Button
+                            val v2FailedCount = remember(state.activeNumbers, nowTick) {
+                                state.activeNumbers.count {
+                                    it.otpCode.isNullOrEmpty() && (it.status == "expired" || it.status == "cancelled" || nowTick >= it.expiresAt)
+                                }
+                            }
+                            Surface(
+                                color = if (v2FailedCount > 0) Color(0xFFEF4444).copy(alpha = 0.25f) else Color(0xFFEF4444).copy(alpha = 0.14f),
+                                shape = RoundedCornerShape(6.dp),
+                                border = BorderStroke(1.dp, Color(0xFFEF4444).copy(alpha = if (v2FailedCount > 0) 0.85f else 0.45f)),
+                                modifier = Modifier.clickable {
+                                    PremiumNumberV2Manager.clearExpiredOrCompletedNumbers()
+                                    Toast.makeText(context, "🗑️ এক্সপায়ার্ড/ফেইল্ড নম্বরগুলো ক্লিয়ার হয়েছে", Toast.LENGTH_SHORT).show()
+                                }
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp),
+                                    verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Row(
-                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp),
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Icon(Icons.Default.Clear, contentDescription = null, tint = Color(0xFFF59E0B), modifier = Modifier.size(10.dp))
-                                        Spacer(modifier = Modifier.width(2.dp))
-                                        Text("এক্সপায়ার্ড", color = Color(0xFFF59E0B), fontSize = 9.sp, fontWeight = FontWeight.Bold)
-                                    }
+                                    Icon(Icons.Default.Delete, contentDescription = null, tint = Color(0xFFF87171), modifier = Modifier.size(10.dp))
+                                    Spacer(modifier = Modifier.width(2.dp))
+                                    Text(
+                                        text = if (v2FailedCount > 0) "Clear Failed ($v2FailedCount)" else "Clear Failed",
+                                        color = Color(0xFFFCA5A5),
+                                        fontSize = 9.sp,
+                                        fontWeight = FontWeight.ExtraBold
+                                    )
                                 }
                             }
 

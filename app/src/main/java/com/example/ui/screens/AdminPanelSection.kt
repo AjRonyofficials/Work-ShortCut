@@ -2688,74 +2688,7 @@ fun AdminUnixSmsCard(
                 Spacer(modifier = Modifier.height(10.dp))
 
                 if (isFacebookServiceSelected) {
-                    // ONLY FOR FACEBOOK: Fresh vs Old selector + 2 Separate Number Slots (FB Fresh Slot & FB Clone Slot) for the selected country!
-                    Text(
-                        text = "3. নম্বরের অবস্থা নির্বাচন করুন (শুধুমাত্র Facebook এর জন্য - Fresh ও Old ২টি আলাদা স্লট):",
-                        fontSize = 11.sp,
-                        color = Color(0xFF94A3B8),
-                        fontWeight = FontWeight.SemiBold
-                    )
-                    Spacer(modifier = Modifier.height(6.dp))
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        val isFreshSel = selectedService == "FB Fresh"
-                        Surface(
-                            color = if (isFreshSel) Color(0xFF00E676).copy(alpha = 0.25f) else Color(0xFF090E17),
-                            shape = RoundedCornerShape(8.dp),
-                            border = BorderStroke(1.2.dp, if (isFreshSel) Color(0xFF00E676) else Color(0xFF243B55)),
-                            modifier = Modifier
-                                .weight(1f)
-                                .clickable {
-                                    selectedNumberType = "Fresh"
-                                    selectedService = "FB Fresh"
-                                }
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(vertical = 9.dp),
-                                horizontalArrangement = Arrangement.Center,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text(
-                                    text = "✨ Fresh (নতুন ফ্রেশ নম্বর)",
-                                    color = if (isFreshSel) Color.White else Color(0xFF94A3B8),
-                                    fontSize = 11.sp,
-                                    fontWeight = if (isFreshSel) FontWeight.Bold else FontWeight.Medium
-                                )
-                            }
-                        }
-
-                        val isOldSel = selectedService == "FB Clone"
-                        Surface(
-                            color = if (isOldSel) Color(0xFFF59E0B).copy(alpha = 0.25f) else Color(0xFF090E17),
-                            shape = RoundedCornerShape(8.dp),
-                            border = BorderStroke(1.2.dp, if (isOldSel) Color(0xFFF59E0B) else Color(0xFF243B55)),
-                            modifier = Modifier
-                                .weight(1f)
-                                .clickable {
-                                    selectedNumberType = "Old"
-                                    selectedService = "FB Clone"
-                                }
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(vertical = 9.dp),
-                                horizontalArrangement = Arrangement.Center,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text(
-                                    text = "⏳ Old (পুরাতন ক্লোন নম্বর)",
-                                    color = if (isOldSel) Color.White else Color(0xFF94A3B8),
-                                    fontSize = 11.sp,
-                                    fontWeight = if (isOldSel) FontWeight.Bold else FontWeight.Medium
-                                )
-                            }
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(10.dp))
-
+                    // ONLY FOR FACEBOOK: 2 Separate Number Slots (FB Fresh Slot & FB Clone Slot) for the selected country!
                     val freshStockInCountry = unixState.uploadedNumbers.count {
                         !it.isUsed &&
                         it.countryCode.equals(selectedCountry.code, ignoreCase = true) &&
@@ -2840,7 +2773,7 @@ fun AdminUnixSmsCard(
                                 placeholder = {
                                     Text(
                                         text = if (fbFreshFileCount > 0) "✓ ফাইল বাফারে $fbFreshFileCount টি FB Fresh নাম্বার লোড আছে! চাইলে আরও পেস্ট করুন..."
-                                        else "FB Fresh (নতুন ফ্রেশ নাম্বার) এখানে পেস্ট করুন (৫k/১০k+ সাপোর্টেড)...",
+                                        else "FB Fresh নাম্বার এখানে পেস্ট করুন (৫k/১০k+ সাপোর্টেড)...",
                                         fontSize = 10.5.sp,
                                         color = if (fbFreshFileCount > 0) Color(0xFF00E676) else Color(0xFF475569)
                                     )
@@ -2863,7 +2796,7 @@ fun AdminUnixSmsCard(
 
                     Spacer(modifier = Modifier.height(8.dp))
 
-                    // SLOT 2: FB CLONE / OLD NUMBERS SLOT
+                    // SLOT 2: FB CLONE NUMBERS SLOT
                     Surface(
                         color = Color(0xFF0A1622),
                         shape = RoundedCornerShape(12.dp),
@@ -2881,7 +2814,7 @@ fun AdminUnixSmsCard(
                             ) {
                                 Column(modifier = Modifier.weight(1f)) {
                                     Text(
-                                        text = "👥 স্লট ২: FB Clone / Old (${selectedCountry.flag} ${selectedCountry.name})",
+                                        text = "👥 স্লট ২: FB Clone (${selectedCountry.flag} ${selectedCountry.name})",
                                         fontSize = 11.5.sp,
                                         color = Color(0xFFF59E0B),
                                         fontWeight = FontWeight.ExtraBold
@@ -2936,7 +2869,7 @@ fun AdminUnixSmsCard(
                                 placeholder = {
                                     Text(
                                         text = if (fbCloneFileCount > 0) "✓ ফাইল বাফারে $fbCloneFileCount টি FB Clone নাম্বার লোড আছে! চাইলে আরও পেস্ট করুন..."
-                                        else "FB Clone (পুরাতন ক্লোন নাম্বার) এখানে পেস্ট করুন (৫k/১০k+ সাপোর্টেড)...",
+                                        else "FB Clone নাম্বার এখানে পেস্ট করুন (৫k/১০k+ সাপোর্টেড)...",
                                         fontSize = 10.5.sp,
                                         color = if (fbCloneFileCount > 0) Color(0xFFF59E0B) else Color(0xFF475569)
                                     )

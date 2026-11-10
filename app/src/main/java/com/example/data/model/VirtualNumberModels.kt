@@ -20,7 +20,8 @@ data class ProvisionedNumber(
     val flag: String? = null,
     val fbStatus: String? = null,
     val fbTagType: com.example.service.PhoneItem.TagType = com.example.service.PhoneItem.TagType.PENDING,
-    val userEmail: String = ""
+    val userEmail: String = "",
+    val isMarked: Boolean = false
 )
 
 data class ActiveRangeItem(

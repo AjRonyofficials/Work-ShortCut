@@ -3,18 +3,23 @@ package com.example.util
 import java.util.regex.Pattern
 
 /**
- * Universal, robust OTP extractor for all SMS Gateways (Unix SMS, Lamix, Premium V2, Kop Engine, Zenex).
+ * Universal, robust 5–8 digit OTP extractor for all SMS Gateways
+ * (Unix SMS, Lamix SMS, Hadi SMS, Premium V2, Kop Engine 1 & 2).
  * Handles:
  * - Hidden Unicode characters, RTL/LTR marks (U+200E, U+200F), zero-width spaces (U+200B-U+200D), BOM (U+FEFF)
  * - Arabic-Indic and Persian/Eastern digits (٠-٩) normalized to ASCII (0-9)
- * - Leading, trailing, and middle OTP codes (e.g. Arabic Facebook SMS format: "167331 <#>Facebook ...")
- * - Hyphenated codes (e.g. "123-456" -> "123456")
+ * - Leading, trailing, and middle 5–8 digit OTP codes (e.g. "167331 <#>Facebook ...", "FB-12345", "G-123456")
+ * - Hyphenated or spaced 5–8 digit codes (e.g. "123-456" -> "123456", "1234-5678" -> "12345678")
  * - Smart phone number filtering to prevent extracting parts of the user's phone number
  */
 object OtpExtractionHelper {
 
-    private val DIGIT_BLOCK_PATTERN = Pattern.compile("(?:^|[^0-9])([0-9]{4,8})(?:[^0-9]|$)")
-    private val HYPHEN_OTP_PATTERN = Pattern.compile("(?:^|[^0-9])([0-9]{3}[- ][0-9]{3})(?:[^0-9]|$)")
+    // Match 5 to 8 consecutive digits (not part of a longer 9+ digit number)
+    private val DIGIT_5_TO_8_PATTERN = Pattern.compile("(?:^|[^0-9])([0-9]{5,8})(?:[^0-9]|$)")
+    // Match prefixed codes like FB-12345, G-123456, WA-123456
+    private val PREFIXED_OTP_PATTERN = Pattern.compile("(?:FB|G|WA|IG|CODE|OTP|PIN)[-:\\s]+([0-9]{5,8})(?:[^0-9]|$)", Pattern.CASE_INSENSITIVE)
+    // Match hyphenated or spaced 6 to 8 digit OTPs (e.g. "123-456", "123 456", "1234-5678")
+    private val HYPHEN_OTP_PATTERN = Pattern.compile("(?:^|[^0-9])([0-9]{3,4}[- ][0-9]{3,4})(?:[^0-9]|$)")
 
     fun extractOtp(message: String?, phoneDigits: String = ""): String? {
         if (message.isNullOrBlank()) return null
@@ -38,31 +43,42 @@ object OtpExtractionHelper {
 
         val cleanPhone = phoneDigits.replace("[^0-9]".toRegex(), "")
 
-        // 3. Check for hyphenated or spaced 6-digit OTP (e.g. "123-456" or "123 456")
+        // 3. Check for explicit prefixed 5–8 digit OTP (e.g. "FB-12345", "G-123456", "code: 123456")
+        val prefixMatcher = PREFIXED_OTP_PATTERN.matcher(normalized)
+        while (prefixMatcher.find()) {
+            val code = prefixMatcher.group(1) ?: continue
+            if (code.length in 5..8 && (cleanPhone.isEmpty() || !cleanPhone.contains(code))) {
+                return code
+            }
+        }
+
+        // 4. Check for hyphenated or spaced 6–8 digit OTP (e.g. "123-456" or "1234-5678")
         val hyphenMatcher = HYPHEN_OTP_PATTERN.matcher(normalized)
-        if (hyphenMatcher.find()) {
-            val hypCode = hyphenMatcher.group(1)?.replace("[- ]".toRegex(), "")
-            if (!hypCode.isNullOrBlank() && (cleanPhone.isEmpty() || !cleanPhone.contains(hypCode))) {
+        while (hyphenMatcher.find()) {
+            val hypCode = hyphenMatcher.group(1)?.replace("[- ]".toRegex(), "") ?: continue
+            if (hypCode.length in 5..8 && (cleanPhone.isEmpty() || !cleanPhone.contains(hypCode))) {
                 return hypCode
             }
         }
 
-        // 4. Extract consecutive digits 4 to 8 characters long
-        val matcher = DIGIT_BLOCK_PATTERN.matcher(normalized)
+        // 5. Extract consecutive digits strictly 5 to 8 characters long
+        val matcher = DIGIT_5_TO_8_PATTERN.matcher(normalized)
         val candidates = mutableListOf<String>()
         while (matcher.find()) {
             val code = matcher.group(1) ?: continue
-            candidates.add(code)
+            if (code.length in 5..8) {
+                candidates.add(code)
+            }
         }
 
         val valid = if (cleanPhone.isNotEmpty()) {
             candidates.filter { cand -> !cleanPhone.contains(cand) }
         } else candidates
 
-        // Prioritize standard 6-digit OTP (Facebook, WhatsApp, Google, etc.), then 5-8, then 4
+        // Prioritize 6-digit, then 5-digit, then 7-8 digit codes (all within 5..8 digits)
         return valid.firstOrNull { it.length == 6 }
-            ?: valid.firstOrNull { it.length in 5..8 }
-            ?: valid.firstOrNull { it.length == 4 }
-            ?: candidates.firstOrNull { it.length in 4..8 }
+            ?: valid.firstOrNull { it.length == 5 }
+            ?: valid.firstOrNull { it.length in 7..8 }
+            ?: candidates.firstOrNull { it.length in 5..8 }
     }
 }

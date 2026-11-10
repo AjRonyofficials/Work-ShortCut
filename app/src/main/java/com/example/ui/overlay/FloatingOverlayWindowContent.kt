@@ -2026,17 +2026,27 @@ fun VirtualNumbersOverlaySection(
                             numbers.forEach { item ->
                                 val fbTag = item.fbTagType
                                 val isSuccess = item.status == "success" || item.otpCode != null
+                                val isFbClone = selectedPanel == 0 && item.range.contains("Clone", ignoreCase = true)
+                                val isMarkedClone = isFbClone && item.isMarked
 
                                 Surface(
                                     shape = RoundedCornerShape(4.dp),
-                                    color = if (isSuccess) Color(0xFF00E676).copy(alpha = 0.15f) else Color(0xFF07101B),
+                                    color = when {
+                                        isSuccess -> Color(0xFF00E676).copy(alpha = 0.15f)
+                                        isMarkedClone -> Color(0xFF2B1C06)
+                                        else -> Color(0xFF07101B)
+                                    },
                                     border = androidx.compose.foundation.BorderStroke(
                                         0.7.dp,
-                                        if (isSuccess) Color(0xFF00E676)
-                                        else if (fbTag == com.example.service.PhoneItem.TagType.FRESH) Color(0xFF00E676)
-                                        else if (fbTag == com.example.service.PhoneItem.TagType.TAKEN) Color(0xFFFF5252)
-                                        else if (fbTag == com.example.service.PhoneItem.TagType.PENDING) Color(0xFF38BDF8)
-                                        else Color(0xFF1E3A56)
+                                        when {
+                                            isSuccess -> Color(0xFF00E676)
+                                            isMarkedClone -> Color(0xFFFFB300)
+                                            isFbClone -> Color(0xFFF59E0B).copy(alpha = 0.6f)
+                                            fbTag == com.example.service.PhoneItem.TagType.FRESH -> Color(0xFF00E676)
+                                            fbTag == com.example.service.PhoneItem.TagType.TAKEN -> Color(0xFFFF5252)
+                                            fbTag == com.example.service.PhoneItem.TagType.PENDING -> Color(0xFF38BDF8)
+                                            else -> Color(0xFF1E3A56)
+                                        }
                                     ),
                                     modifier = Modifier.fillMaxWidth()
                                 ) {
@@ -2049,7 +2059,7 @@ fun VirtualNumbersOverlaySection(
                                     ) {
                                         Text(
                                             text = item.number.replace("+", ""),
-                                            color = Color.White,
+                                            color = if (isMarkedClone) Color(0xFFFFE082) else Color.White,
                                             fontSize = 9.5.sp,
                                             fontFamily = FontFamily.Monospace,
                                             fontWeight = FontWeight.Bold,
@@ -2067,7 +2077,29 @@ fun VirtualNumbersOverlaySection(
                                             verticalAlignment = Alignment.CenterVertically,
                                             horizontalArrangement = Arrangement.spacedBy(4.dp)
                                         ) {
-                                            if (fbTag == com.example.service.PhoneItem.TagType.FRESH) {
+                                            if (isFbClone) {
+                                                Surface(
+                                                    color = if (item.isMarked) Color(0xFFFFB300) else Color(0xFFF59E0B).copy(alpha = 0.18f),
+                                                    shape = RoundedCornerShape(3.dp),
+                                                    border = androidx.compose.foundation.BorderStroke(
+                                                        0.6.dp,
+                                                        if (item.isMarked) Color(0xFFFFE082) else Color(0xFFF59E0B)
+                                                    ),
+                                                    modifier = Modifier.clickable {
+                                                        com.example.service.UnixSmsManager.toggleMarkActiveNumber(item.id)
+                                                    }
+                                                ) {
+                                                    Text(
+                                                        text = if (item.isMarked) "★ MARKED" else "☆ MARK",
+                                                        color = if (item.isMarked) Color.Black else Color(0xFFFFB300),
+                                                        fontSize = 7.sp,
+                                                        fontWeight = FontWeight.Black,
+                                                        maxLines = 1,
+                                                        softWrap = false,
+                                                        modifier = Modifier.padding(horizontal = 3.5.dp, vertical = 0.8.dp)
+                                                    )
+                                                }
+                                            } else if (fbTag == com.example.service.PhoneItem.TagType.FRESH) {
                                                 Surface(
                                                     color = Color(0xFF0F3B20),
                                                     shape = RoundedCornerShape(3.dp),

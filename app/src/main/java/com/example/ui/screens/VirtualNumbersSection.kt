@@ -58,11 +58,13 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Sensors
 import androidx.compose.material.icons.filled.Tag
 import androidx.compose.material.icons.filled.Terminal
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
@@ -760,6 +762,52 @@ fun VirtualNumbersSection(
                     val resetMinutes = ((remainingMs / (1000 * 60)) % 60).toInt()
                     val resetSeconds = ((remainingMs / 1000) % 60).toInt()
 
+                    var showKop1ResetConfirmDialog by remember { mutableStateOf(false) }
+
+                    if (showKop1ResetConfirmDialog) {
+                        AlertDialog(
+                            onDismissRequest = { showKop1ResetConfirmDialog = false },
+                            containerColor = Color(0xFF0F1A26),
+                            titleContentColor = Color.White,
+                            textContentColor = Color(0xFFB0BEC5),
+                            title = {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(Icons.Default.Refresh, contentDescription = null, tint = Color(0xFF00E5FF), modifier = Modifier.size(20.dp))
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text("OTP ও নম্বর রিসেট করবেন?", fontSize = 15.sp, fontWeight = FontWeight.ExtraBold)
+                                }
+                            },
+                            text = {
+                                Text(
+                                    "আপনি কি নিশ্চিত যে Kop Engine 1-এর বর্তমান অ্যাক্টিভ নম্বর এবং আজকের ২৪ ঘণ্টার OTP লিস্ট রিসেট (Reset) করতে চান?",
+                                    fontSize = 12.5.sp,
+                                    lineHeight = 18.sp
+                                )
+                            },
+                            confirmButton = {
+                                Button(
+                                    onClick = {
+                                        showKop1ResetConfirmDialog = false
+                                        VirtualNumberManager.resetTodayCycle(context)
+                                    },
+                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFEF4444)),
+                                    shape = RoundedCornerShape(8.dp)
+                                ) {
+                                    Text("Yes (হ্যাঁ)", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                }
+                            },
+                            dismissButton = {
+                                OutlinedButton(
+                                    onClick = { showKop1ResetConfirmDialog = false },
+                                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF37474F)),
+                                    shape = RoundedCornerShape(8.dp)
+                                ) {
+                                    Text("No (না)", color = Color(0xFFB0BEC5), fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                }
+                            }
+                        )
+                    }
+
                     Surface(
                         color = Color(0xFF0F1A26),
                         shape = RoundedCornerShape(10.dp),
@@ -767,7 +815,9 @@ fun VirtualNumbersSection(
                             1.dp,
                             if (isCycleRunning) Color(0xFF00B0FF).copy(alpha = 0.5f) else Color(0xFF263238)
                         ),
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { showKop1ResetConfirmDialog = true }
                     ) {
                         Row(
                             modifier = Modifier
@@ -797,7 +847,7 @@ fun VirtualNumbersSection(
                                     )
                                     Text(
                                         text = if (isCycleRunning) {
-                                            "নম্বর ও OTP ২৪ ঘণ্টা পর স্বয়ংক্রিয়ভাবে মুছে যাবে"
+                                            "নম্বর ও OTP ২৪ ঘণ্টা পর মুছে যাবে • রিসেট করতে ট্যাপ করুন"
                                         } else {
                                             "১ম নম্বর/OTP নেওয়ার পর থেকে ২৪ ঘণ্টার টাইমার চালু হবে"
                                         },
@@ -807,27 +857,36 @@ fun VirtualNumbersSection(
                                 }
                             }
 
-                            if (isCycleRunning) {
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                if (isCycleRunning) {
+                                    Surface(
+                                        color = Color(0xFF00E5FF).copy(alpha = 0.15f),
+                                        shape = RoundedCornerShape(6.dp),
+                                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF00E5FF).copy(alpha = 0.6f))
+                                    ) {
+                                        Text(
+                                            text = String.format(Locale.US, "%02dh %02dm %02ds", resetHours, resetMinutes, resetSeconds),
+                                            color = Color(0xFF00E5FF),
+                                            fontSize = 10.5.sp,
+                                            fontWeight = FontWeight.ExtraBold,
+                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp)
+                                        )
+                                    }
+                                }
                                 Surface(
-                                    color = Color(0xFF00E5FF).copy(alpha = 0.15f),
+                                    color = Color(0xFFEF4444).copy(alpha = 0.18f),
                                     shape = RoundedCornerShape(6.dp),
-                                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF00E5FF).copy(alpha = 0.6f))
+                                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFEF4444).copy(alpha = 0.6f)),
+                                    modifier = Modifier.clickable { showKop1ResetConfirmDialog = true }
                                 ) {
                                     Text(
-                                        text = String.format(Locale.US, "%02dh %02dm %02ds", resetHours, resetMinutes, resetSeconds),
-                                        color = Color(0xFF00E5FF),
-                                        fontSize = 11.sp,
+                                        text = "🔄 Reset",
+                                        color = Color(0xFFFCA5A5),
+                                        fontSize = 10.sp,
                                         fontWeight = FontWeight.ExtraBold,
                                         modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp)
                                     )
                                 }
-                            } else {
-                                Text(
-                                    text = "Ready (24h)",
-                                    color = Color(0xFF546E7A),
-                                    fontSize = 10.sp,
-                                    fontWeight = FontWeight.Bold
-                                )
                             }
                         }
                     }
@@ -1121,35 +1180,71 @@ fun VirtualNumbersSection(
                             fontWeight = FontWeight.Bold
                         )
 
-                        val successfulKop1Numbers = remember(state.provisionedNumbers) {
-                            state.provisionedNumbers.filter { !it.otpCode.isNullOrEmpty() || it.status.equals("success", true) }
+                        val activeExportItems = remember(state.provisionedNumbers, zenexOtpRate) {
+                            state.provisionedNumbers
+                                .filter { !it.otpCode.isNullOrEmpty() || it.status.equals("success", true) }
+                                .map { num ->
+                                    val cInfo = com.example.util.AllCountriesProvider.detectCountry(num.number)
+                                        ?: com.example.util.AllCountriesProvider.detectCountry(num.range ?: "")
+                                        ?: com.example.util.AllCountriesProvider.detectCountry(num.country)
+                                    com.example.util.ExportOtpItem(
+                                        phoneNumber = num.number,
+                                        country = cInfo?.name ?: num.country,
+                                        iso = (cInfo?.code ?: num.iso).uppercase(),
+                                        flag = cInfo?.flag ?: "🌐",
+                                        serviceOrRange = num.range ?: "Kop 1",
+                                        otpCode = num.otpCode ?: "",
+                                        otpMessage = num.otpMessage,
+                                        timestamp = num.timestamp,
+                                        rate = zenexOtpRate
+                                    )
+                                }
+                        }
+                        val merged24hKop1Otps = remember(activeExportItems, state.resetCycleStartTime, state.todayOtpCount) {
+                            com.example.util.OtpExportHelper.getMerged24hOtps("Kop Engine 1", activeExportItems)
+                        }
+                        val kop1ExpiredCount = remember(state.provisionedNumbers, nowTick) {
+                            state.provisionedNumbers.count { prov ->
+                                val hasOtp = !prov.otpCode.isNullOrEmpty() || prov.status.equals("success", true)
+                                !hasOtp && (prov.status.equals("expired", true) || prov.status.equals("failed", true) || nowTick >= prov.expiresAt)
+                            }
                         }
                         Spacer(modifier = Modifier.width(6.dp))
+                        // Red Clear Failed / Expired Button
                         Surface(
-                            color = if (successfulKop1Numbers.isNotEmpty()) Color(0xFF0091EA).copy(alpha = 0.25f) else Color(0xFF142434),
+                            color = if (kop1ExpiredCount > 0) Color(0xFFEF4444).copy(alpha = 0.25f) else Color(0xFFEF4444).copy(alpha = 0.14f),
                             shape = RoundedCornerShape(6.dp),
-                            border = androidx.compose.foundation.BorderStroke(1.dp, if (successfulKop1Numbers.isNotEmpty()) Color(0xFF00B0FF) else Color(0xFF26415E)),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFEF4444).copy(alpha = if (kop1ExpiredCount > 0) 0.85f else 0.45f)),
                             modifier = Modifier.clickable {
-                                if (successfulKop1Numbers.isEmpty()) {
-                                    Toast.makeText(context, "ডাউনলোড করার মতো কোনো সফল OTP নম্বর পাওয়া যায়নি", Toast.LENGTH_SHORT).show()
+                                VirtualNumberManager.clearExpiredAndFailedNumbers(context)
+                            }
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.5.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(Icons.Default.Delete, contentDescription = null, tint = Color(0xFFF87171), modifier = Modifier.size(11.dp))
+                                Spacer(modifier = Modifier.width(2.dp))
+                                Text(
+                                    text = if (kop1ExpiredCount > 0) "Clear Failed ($kop1ExpiredCount)" else "Clear Failed",
+                                    fontSize = 8.5.sp,
+                                    color = Color(0xFFFCA5A5),
+                                    fontWeight = FontWeight.ExtraBold
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.width(5.dp))
+                        Surface(
+                            color = if (merged24hKop1Otps.isNotEmpty()) Color(0xFF0091EA).copy(alpha = 0.25f) else Color(0xFF142434),
+                            shape = RoundedCornerShape(6.dp),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, if (merged24hKop1Otps.isNotEmpty()) Color(0xFF00B0FF) else Color(0xFF26415E)),
+                            modifier = Modifier.clickable {
+                                val currentExportList = com.example.util.OtpExportHelper.getMerged24hOtps("Kop Engine 1", activeExportItems)
+                                if (currentExportList.isEmpty()) {
+                                    Toast.makeText(context, "গত ২৪ ঘণ্টায় ডাউনলোড করার মতো কোনো সফল OTP নম্বর পাওয়া যায়নি", Toast.LENGTH_SHORT).show()
                                 } else {
-                                    val exportItems = successfulKop1Numbers.map { num ->
-                                        val cInfo = com.example.util.AllCountriesProvider.detectCountry(num.number)
-                                            ?: com.example.util.AllCountriesProvider.detectCountry(num.range ?: "")
-                                            ?: com.example.util.AllCountriesProvider.detectCountry(num.country)
-                                        com.example.util.ExportOtpItem(
-                                            phoneNumber = num.number,
-                                            country = cInfo?.name ?: num.country,
-                                            iso = (cInfo?.code ?: num.iso).uppercase(),
-                                            flag = cInfo?.flag ?: "🌐",
-                                            serviceOrRange = num.range ?: "Kop 1",
-                                            otpCode = num.otpCode ?: "",
-                                            otpMessage = num.otpMessage,
-                                            timestamp = num.timestamp,
-                                            rate = zenexOtpRate
-                                        )
-                                    }
-                                    com.example.util.OtpExportHelper.exportOtps(context, "Kop Engine 1", exportItems)
+                                    com.example.util.OtpExportHelper.exportOtps(context, "Kop Engine 1", currentExportList)
                                 }
                             }
                         ) {
@@ -1157,12 +1252,12 @@ fun VirtualNumbersSection(
                                 modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.5.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Icon(Icons.Default.Download, contentDescription = null, tint = if (successfulKop1Numbers.isNotEmpty()) Color(0xFF00B0FF) else Color(0xFF90A4AE), modifier = Modifier.size(11.dp))
+                                Icon(Icons.Default.Download, contentDescription = null, tint = if (merged24hKop1Otps.isNotEmpty()) Color(0xFF00B0FF) else Color(0xFF90A4AE), modifier = Modifier.size(11.dp))
                                 Spacer(modifier = Modifier.width(3.dp))
                                 Text(
-                                    text = if (successfulKop1Numbers.isNotEmpty()) "📥 ডাউনলোড (${successfulKop1Numbers.size})" else "📥 ডাউনলোড",
+                                    text = if (merged24hKop1Otps.isNotEmpty()) "📥 24h OTP (${merged24hKop1Otps.size})" else "📥 24h OTP",
                                     fontSize = 9.sp,
-                                    color = if (successfulKop1Numbers.isNotEmpty()) Color.White else Color(0xFF90A4AE),
+                                    color = if (merged24hKop1Otps.isNotEmpty()) Color.White else Color(0xFF90A4AE),
                                     fontWeight = FontWeight.Bold
                                 )
                             }
