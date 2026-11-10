@@ -105,47 +105,6 @@ object AuthManager {
             _currentUserRole.value = prefs?.getString(KEY_LOGGED_IN_ROLE, "USER") ?: "USER"
             loadUsers()
             val savedEmail = _currentEmail.value.trim().lowercase()
-            // One-time auto-wipe of old shared history/balances to establish strict per-user isolation
-            val hasWipedV3 = prefs?.getBoolean("wiped_v3_per_user_isolation", false) ?: false
-            if (!hasWipedV3) {
-                prefs?.edit()?.putBoolean("wiped_v3_per_user_isolation", true)?.apply()
-                wipeAllUserBalancesAndOtpHistory(context)
-            }
-            val hasWipedAllOtpsV4 = prefs?.getBoolean("wiped_all_otps_and_balances_v4", false) ?: false
-            if (!hasWipedAllOtpsV4) {
-                prefs?.edit()?.putBoolean("wiped_all_otps_and_balances_v4", true)?.apply()
-                wipeAllUserBalancesAndOtpHistory(context)
-            }
-            val hasWipedAllDataV5 = prefs?.getBoolean("wiped_all_user_data_v5", false) ?: false
-            if (!hasWipedAllDataV5) {
-                prefs?.edit()?.putBoolean("wiped_all_user_data_v5", true)?.apply()
-                wipeAllUserBalancesAndOtpHistory(context)
-                wipeAllLiveFeedsAndOtpDatabase(context)
-            }
-            val hasWipedNonAdminV6 = prefs?.getBoolean("wiped_all_non_admin_users_v6", false) ?: false
-            if (!hasWipedNonAdminV6) {
-                prefs?.edit()?.putBoolean("wiped_all_non_admin_users_v6", true)?.apply()
-                // Force logout any non-admin logged-in session immediately
-                if (savedEmail.isNotEmpty() && savedEmail != ADMIN_EMAIL.lowercase()) {
-                    _isLoggedIn.value = false
-                    _currentEmail.value = ""
-                    _currentUserRole.value = "USER"
-                    prefs?.edit()
-                        ?.putBoolean(KEY_IS_LOGGED_IN, false)
-                        ?.putString(KEY_LOGGED_IN_EMAIL, "")
-                        ?.putString(KEY_LOGGED_IN_ROLE, "USER")
-                        ?.apply()
-                }
-                // Wipe local managed users list
-                _managedUsers.value = emptyList()
-                saveUsersLocallyOnly(emptyList())
-                // Wipe balances, OTPs, feeds, and records
-                wipeAllUserBalancesAndOtpHistory(context)
-                wipeAllLiveFeedsAndOtpDatabase(context)
-                // Clear all uploaded numbers pool
-                UnixSmsManager.clearAllUploadedNumbers()
-                PremiumNumberV2Manager.clearAllNumbers()
-            }
             if (_isLoggedIn.value && savedEmail.isNotEmpty()) {
                 VirtualNumberManager.onUserLoggedIn(savedEmail)
                 UnixSmsManager.onUserLoggedIn(savedEmail)
@@ -157,7 +116,7 @@ object AuthManager {
             authScope.launch {
                 syncFromCloud()
                 while (isActive) {
-                    kotlinx.coroutines.delay(15000L) // every 15s
+                    kotlinx.coroutines.delay(8000L) // every 8s live sync
                     try {
                         if (!com.example.util.AppLifecycleTracker.canRunBackgroundWork()) {
                             continue
@@ -262,11 +221,116 @@ object AuthManager {
         }
     }
 
+    private fun parseIsoTimestamp(dateStr: String): Long {
+        if (dateStr.isBlank()) return System.currentTimeMillis()
+        return try {
+            val clean = if (dateStr.contains(".")) {
+                dateStr.substringBefore(".") + "Z"
+            } else if (dateStr.endsWith("+00:00")) {
+                dateStr.substringBefore("+") + "Z"
+            } else dateStr
+            val sdf = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", java.util.Locale.US).apply {
+                timeZone = java.util.TimeZone.getTimeZone("UTC")
+            }
+            sdf.parse(clean)?.time ?: System.currentTimeMillis()
+        } catch (_: Exception) {
+            System.currentTimeMillis()
+        }
+    }
+
+    private data class LiveUserOtpStats(
+        var totalOtps: Int = 0,
+        var todayOtps: Int = 0,
+        var last7dOtps: Int = 0,
+        var last30dOtps: Int = 0,
+        var totalEarnedTk: Double = 0.0
+    )
+
     private fun syncFromCloudInternal(): Int {
         try {
+            // 1. Fetch live OTP history across all users to compute real-time Today / 7D / 30D / Total OTP & Earned Balance
+            val liveOtpMap = HashMap<String, LiveUserOtpStats>()
+            val seenOtpKeys = HashSet<String>()
+            val now = System.currentTimeMillis()
+            val todayDateStr = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).format(java.util.Date(now))
+            val cutoff24h = now - 24L * 60L * 60L * 1000L
+            val cutoff7d = now - 7L * 24L * 60L * 60L * 1000L
+            val cutoff30d = now - 30L * 24L * 60L * 60L * 1000L
+
+            try {
+                val otpReq = okhttp3.Request.Builder()
+                    .url("$SUPABASE_BASE_URL/otp_history?select=*&order=created_at.desc&limit=2000")
+                    .header("apikey", SUPABASE_KEY)
+                    .header("Authorization", "Bearer $SUPABASE_KEY")
+                    .get()
+                    .build()
+                httpClient.newCall(otpReq).execute().use { otpResp ->
+                    if (otpResp.isSuccessful) {
+                        val otpBody = otpResp.body?.string() ?: "[]"
+                        val otpArr = JSONArray(otpBody)
+                        for (i in 0 until otpArr.length()) {
+                            val o = otpArr.optJSONObject(i) ?: continue
+                            val uEmail = o.optString("user_email", "").trim().lowercase()
+                            val phone = o.optString("phone_number", "").trim()
+                            val code = o.optString("otp_code", "").trim()
+                            if (uEmail.isBlank() || code.isBlank() || code == "null" || code.length < 3) continue
+                            if (phone.isBlank() || phone.startsWith("+120255501") || phone.startsWith("+2376991122")) continue
+
+                            val dedupKey = "${uEmail}_${phone}_${code}"
+                            if (!seenOtpKeys.add(dedupKey)) continue
+
+                            val ts = parseIsoTimestamp(o.optString("created_at", ""))
+                            val recDateStr = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).format(java.util.Date(ts))
+                            val rateVal = o.optDouble("earned_amount", 0.50).let { if (it < 0.05) 0.50 else it }
+
+                            val stats = liveOtpMap.getOrPut(uEmail) { LiveUserOtpStats() }
+                            stats.totalOtps++
+                            stats.totalEarnedTk += rateVal
+                            if (recDateStr == todayDateStr || ts >= cutoff24h) {
+                                stats.todayOtps++
+                            }
+                            if (ts >= cutoff7d) {
+                                stats.last7dOtps++
+                            }
+                            if (ts >= cutoff30d) {
+                                stats.last30dOtps++
+                            }
+                        }
+                    }
+                }
+            } catch (_: Exception) {}
+
+            // 2. Fetch live withdrawal requests per user to deduct pending/approved withdrawals from earned balance
+            val withdrawnByUser = HashMap<String, Double>()
+            try {
+                val wdReq = okhttp3.Request.Builder()
+                    .url("$SUPABASE_BASE_URL/withdraw_history?select=user_email,amount,status&limit=500")
+                    .header("apikey", SUPABASE_KEY)
+                    .header("Authorization", "Bearer $SUPABASE_KEY")
+                    .get()
+                    .build()
+                httpClient.newCall(wdReq).execute().use { wdResp ->
+                    if (wdResp.isSuccessful) {
+                        val wdBody = wdResp.body?.string() ?: "[]"
+                        val wdArr = JSONArray(wdBody)
+                        for (i in 0 until wdArr.length()) {
+                            val o = wdArr.optJSONObject(i) ?: continue
+                            val uEmail = o.optString("user_email", "").trim().lowercase()
+                            val status = o.optString("status", "PENDING").uppercase()
+                            val amt = o.optDouble("amount", 0.0)
+                            if (uEmail.isNotBlank() && amt > 0.0 && (status == "PENDING" || status == "APPROVED")) {
+                                withdrawnByUser[uEmail] = (withdrawnByUser[uEmail] ?: 0.0) + amt
+                            }
+                        }
+                    }
+                }
+            } catch (_: Exception) {}
+
+            // 3. Fetch app_users and reconcile with live OTP & withdrawal stats
             val req = okhttp3.Request.Builder()
                 .url("$SUPABASE_BASE_URL/app_users?select=*")
                 .header("apikey", SUPABASE_KEY)
+                .header("Authorization", "Bearer $SUPABASE_KEY")
                 .get()
                 .build()
             val resp = httpClient.newCall(req).execute()
@@ -276,6 +340,10 @@ object AuthManager {
                 val cloudUsers = mutableListOf<AuthUser>()
                 for (i in 0 until arr.length()) {
                     val obj = arr.getJSONObject(i)
+                    val emailStr = obj.optString("email", "").trim()
+                    if (emailStr.isEmpty()) continue
+                    val emailLower = emailStr.lowercase()
+
                     val permObj = try {
                         val pStr = obj.optString("permissions_json", "{}")
                         JSONObject(pStr)
@@ -293,11 +361,10 @@ object AuthManager {
                     val statusStr = obj.optString("status", "ACTIVE")
                     val lastActive = obj.optLong("last_active", 0L)
                     val devModel = obj.optString("device_model", "").ifEmpty { obj.optString("lastDeviceName", "") }
-                    val now = System.currentTimeMillis()
                     val isOnline = (now - lastActive) < 180_000L && lastActive > 0L && statusStr != "OFFLINE"
 
                     // Find any existing local device sessions to preserve
-                    val existingUser = _managedUsers.value.firstOrNull { it.email.equals(obj.getString("email"), ignoreCase = true) }
+                    val existingUser = _managedUsers.value.firstOrNull { it.email.equals(emailStr, ignoreCase = true) }
                     val devSessions = existingUser?.deviceSessions ?: emptyList()
                     val disabledSecs = try {
                         val sArr = permObj.optJSONArray("disabledSections")
@@ -323,10 +390,39 @@ object AuthManager {
                     }
                     val boundAt = obj.optLong("bound_at", 0L)
 
+                    val dbTotalOtps = obj.optInt("total_otps", 0)
+                    val dbBalance = obj.optDouble("balance", 0.0)
+                    val dbToday = obj.optInt("otp_today", 0)
+                    val db7d = obj.optInt("otp_7days", 0)
+                    val db30d = obj.optInt("otp_30days", 0)
+
+                    val liveStats = liveOtpMap[emailLower]
+                    val withdrawnTk = withdrawnByUser[emailLower] ?: 0.0
+                    val liveNetBalance = if (liveStats != null) {
+                        maxOf(0.0, Math.round((liveStats.totalEarnedTk - withdrawnTk) * 100.0) / 100.0)
+                    } else 0.0
+
+                    val finalTotalOtps = maxOf(dbTotalOtps, liveStats?.totalOtps ?: 0)
+                    val finalTodayOtps = if ((liveStats?.todayOtps ?: 0) > 0) maxOf(dbToday, liveStats!!.todayOtps) else dbToday
+                    val final7dOtps = maxOf(db7d, liveStats?.last7dOtps ?: 0, finalTodayOtps)
+                    val final30dOtps = maxOf(db30d, liveStats?.last30dOtps ?: 0, final7dOtps)
+                    val finalBalanceTk = maxOf(dbBalance, liveNetBalance)
+
+                    // If live OTP history shows newer/higher numbers than app_users row, sync back to app_users automatically
+                    if (liveStats != null && (finalTotalOtps > dbTotalOtps || finalTodayOtps > dbToday || finalBalanceTk > dbBalance + 0.01)) {
+                        patchUserField(emailLower, JSONObject().apply {
+                            put("total_otps", finalTotalOtps)
+                            put("balance", finalBalanceTk)
+                            put("otp_today", finalTodayOtps)
+                            put("otp_7days", final7dOtps)
+                            put("otp_30days", final30dOtps)
+                        })
+                    }
+
                     cloudUsers.add(
                         AuthUser(
-                            email = obj.getString("email"),
-                            passwordHash = obj.getString("password"),
+                            email = emailStr,
+                            passwordHash = obj.optString("password", ""),
                             name = obj.optString("username", "User"),
                             role = obj.optString("role", "USER"),
                             createdAt = System.currentTimeMillis(),
@@ -336,11 +432,11 @@ object AuthManager {
                             activeDevicesCount = if (devSessions.isNotEmpty()) devSessions.count { it.isOnline && !it.isRevoked } else (if (isOnline) 1 else 0),
                             lastLoginAt = if (lastActive > 0L) lastActive else obj.optLong("lastLoginAt", 0L),
                             lastDeviceName = devModel,
-                            totalOtps = obj.optInt("total_otps", 0),
-                            balanceTk = obj.optDouble("balance", 0.0),
-                            todayOtps = obj.optInt("otp_today", 0),
-                            last7DaysOtps = obj.optInt("otp_7days", 0),
-                            last30DaysOtps = obj.optInt("otp_30days", 0),
+                            totalOtps = finalTotalOtps,
+                            balanceTk = finalBalanceTk,
+                            todayOtps = finalTodayOtps,
+                            last7DaysOtps = final7dOtps,
+                            last30DaysOtps = final30dOtps,
                             lastActive = lastActive,
                             isOnline = isOnline,
                             permissions = perms,
@@ -1142,6 +1238,10 @@ object AuthManager {
      * and in Supabase, establishing clean, strictly isolated per-user accounting.
      */
     fun wipeAllUserBalancesAndOtpHistory(context: Context? = null, onComplete: ((Boolean) -> Unit)? = null) {
+        if (!isAdmin()) {
+            onComplete?.invoke(false)
+            return
+        }
         val resetList = _managedUsers.value.map {
             it.copy(
                 balanceTk = 0.0,
@@ -1219,6 +1319,10 @@ object AuthManager {
      * and permanently deletes all OTP history records from the Supabase database.
      */
     fun wipeAllLiveFeedsAndOtpDatabase(context: Context? = null, onComplete: ((Boolean) -> Unit)? = null) {
+        if (!isAdmin()) {
+            onComplete?.invoke(false)
+            return
+        }
         UnixSmsManager.clearLiveDlrLogs()
         VirtualNumberManager.clearBroadcastFeed()
         KopEngine2Manager.clearBroadcastFeed()
@@ -1267,22 +1371,44 @@ object AuthManager {
     ) {
         val email = _currentEmail.value.trim().lowercase()
         if (email.isEmpty() || email == ADMIN_EMAIL.lowercase()) return
+        val nowTime = System.currentTimeMillis()
+        val deviceModel = "${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}"
+
+        // Immediately update local managedUsers list so UI is instant
+        _managedUsers.update { list ->
+            list.map { u ->
+                if (u.email.equals(email, ignoreCase = true)) {
+                    u.copy(
+                        totalOtps = maxOf(u.totalOtps, totalOtps),
+                        balanceTk = balanceTk,
+                        todayOtps = maxOf(u.todayOtps, todayOtps),
+                        last7DaysOtps = maxOf(u.last7DaysOtps, last7d),
+                        last30DaysOtps = maxOf(u.last30DaysOtps, last30d),
+                        lastActive = nowTime,
+                        lastDeviceName = deviceModel,
+                        isOnline = true
+                    )
+                } else u
+            }
+        }
+        saveUsersLocallyOnly(_managedUsers.value)
+
         authScope.launch {
             try {
-                val deviceModel = "${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}"
+                val encEmail = java.net.URLEncoder.encode(email, "UTF-8")
                 val payload = JSONObject().apply {
                     put("total_otps", totalOtps)
                     put("balance", balanceTk)
                     put("otp_today", todayOtps)
                     put("otp_7days", last7d)
                     put("otp_30days", last30d)
-                    put("last_active", System.currentTimeMillis())
+                    put("last_active", nowTime)
                     put("device_model", deviceModel)
                     put("status", "ONLINE")
                 }
                 val body = payload.toString().toRequestBody("application/json; charset=utf-8".toMediaTypeOrNull())
                 val req = okhttp3.Request.Builder()
-                    .url("$SUPABASE_BASE_URL/app_users?email=eq.$email")
+                    .url("$SUPABASE_BASE_URL/app_users?email=ilike.$encEmail")
                     .header("apikey", SUPABASE_KEY)
                     .header("Authorization", "Bearer $SUPABASE_KEY")
                     .header("Content-Type", "application/json")
@@ -1370,6 +1496,7 @@ object AuthManager {
 
         authScope.launch {
             try {
+                val encEmail = java.net.URLEncoder.encode(email, "UTF-8")
                 val deviceModel = "${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}"
                 val nowTime = System.currentTimeMillis()
                 val payload = JSONObject().apply {
@@ -1379,12 +1506,14 @@ object AuthManager {
                 }
                 val body = payload.toString().toRequestBody("application/json; charset=utf-8".toMediaTypeOrNull())
                 val req = okhttp3.Request.Builder()
-                    .url("$SUPABASE_BASE_URL/app_users?email=eq.$email")
+                    .url("$SUPABASE_BASE_URL/app_users?email=ilike.$encEmail")
                     .header("apikey", SUPABASE_KEY)
+                    .header("Authorization", "Bearer $SUPABASE_KEY")
+                    .header("Prefer", "return=minimal")
                     .header("Content-Type", "application/json")
                     .patch(body)
                     .build()
-                httpClient.newCall(req).execute()
+                httpClient.newCall(req).execute().close()
 
                 // Update online status in local memory
                 _managedUsers.value = _managedUsers.value.map { u ->

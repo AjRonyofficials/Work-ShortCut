@@ -655,6 +655,13 @@ fun AdminUnixSmsCard(
 
     Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
         // 1. Stats Counter
+        val globalOtpState by OtpHistoryManager.state.collectAsState()
+        val allManagedUsers by AuthManager.managedUsers.collectAsState()
+        val liveTodayOtpCount = maxOf(
+            unixState.todayOtpCount,
+            globalOtpState.todayOtps,
+            allManagedUsers.sumOf { it.todayOtps }
+        )
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -666,7 +673,7 @@ fun AdminUnixSmsCard(
             AdminStatPill(title = "TOTAL", count = total.toString(), color = Color(0xFF60A5FA), modifier = Modifier.weight(1f))
             AdminStatPill(title = "AVAILABLE", count = available.toString(), color = Color(0xFF34D399), modifier = Modifier.weight(1f))
             AdminStatPill(title = "USED", count = used.toString(), color = Color(0xFFFBBF24), modifier = Modifier.weight(1f))
-            AdminStatPill(title = "TODAY OTP", count = unixState.todayOtpCount.toString(), color = Color(0xFFF472B6), modifier = Modifier.weight(1f))
+            AdminStatPill(title = "TODAY OTP", count = liveTodayOtpCount.toString(), color = Color(0xFFF472B6), modifier = Modifier.weight(1f))
         }
 
         // 1.5 USER OTP RATE CONTROL CARD: BOTH UNIX SMS & ZENEX SMS (IN TAKA ৳ WITH UNLIMITED CUSTOM ADJUSTER)
@@ -5118,7 +5125,162 @@ fun AdminUserManagerCard(
     var broadcastMsg by remember { mutableStateOf("") }
     val coroutineScope = rememberCoroutineScope()
 
+    val otpHistoryState by OtpHistoryManager.state.collectAsState()
+    val totalAllUsersBalance = managedUsers.sumOf { it.balanceTk }
+    val totalAllUsersTodayOtps = maxOf(managedUsers.sumOf { it.todayOtps }, otpHistoryState.todayOtps)
+    val totalAllUsers7dOtps = maxOf(managedUsers.sumOf { it.last7DaysOtps }, otpHistoryState.last7DaysOtps)
+    val totalAllUsers30dOtps = maxOf(managedUsers.sumOf { it.last30DaysOtps }, otpHistoryState.last30DaysOtps)
+    val totalAllUsersAllTimeOtps = maxOf(managedUsers.sumOf { it.totalOtps }, otpHistoryState.totalOtpsAllTime)
+
     Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+        // LIVE ALL-USERS OTP & BALANCE SUMMARY CARD
+        Card(
+            colors = CardDefaults.cardColors(containerColor = Color(0xFF0D1829)),
+            shape = RoundedCornerShape(16.dp),
+            border = BorderStroke(1.dp, Color(0xFF10B981).copy(alpha = 0.55f)),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Default.Bolt,
+                            contentDescription = null,
+                            tint = Color(0xFF10B981),
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Column {
+                            Text(
+                                text = "ALL USERS LIVE OTP & BALANCE STATS",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.ExtraBold,
+                                color = Color.White
+                            )
+                            Text(
+                                text = "সকল ইউজারের লাইভ ব্যালেন্স, Today, 7 Days, 30 Days ও All OTP রিপোর্ট",
+                                fontSize = 10.sp,
+                                color = Color(0xFF94A3B8)
+                            )
+                        }
+                    }
+
+                    Surface(
+                        color = Color(0xFF064E3B).copy(alpha = 0.6f),
+                        shape = RoundedCornerShape(8.dp),
+                        border = BorderStroke(1.dp, Color(0xFF10B981))
+                    ) {
+                        Text(
+                            text = "৳ ${String.format(Locale.US, "%.2f", totalAllUsersBalance)}",
+                            color = Color(0xFF34D399),
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
+                        )
+                    }
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    AdminStatPill(
+                        title = "TODAY OTP",
+                        count = totalAllUsersTodayOtps.toString(),
+                        color = Color(0xFF38BDF8),
+                        modifier = Modifier.weight(1f)
+                    )
+                    AdminStatPill(
+                        title = "7 DAYS",
+                        count = totalAllUsers7dOtps.toString(),
+                        color = Color(0xFFA78BFA),
+                        modifier = Modifier.weight(1f)
+                    )
+                    AdminStatPill(
+                        title = "30 DAYS",
+                        count = totalAllUsers30dOtps.toString(),
+                        color = Color(0xFFF472B6),
+                        modifier = Modifier.weight(1f)
+                    )
+                    AdminStatPill(
+                        title = "ALL OTP",
+                        count = totalAllUsersAllTimeOtps.toString(),
+                        color = Color(0xFFFBBF24),
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+
+                if (otpHistoryState.recentRecords.isNotEmpty()) {
+                    HorizontalDivider(color = Color(0xFF1E293B))
+                    Text(
+                        text = "⚡ সকল ইউজারের লাইভ রিসেন্ট ওটিপি স্ট্রিম (${otpHistoryState.recentRecords.size}):",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFF38BDF8)
+                    )
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(max = 220.dp)
+                            .verticalScroll(rememberScrollState()),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        val timeFormatter = remember { SimpleDateFormat("dd MMM, hh:mm:ss a", Locale.US) }
+                        otpHistoryState.recentRecords.take(25).forEach { rec ->
+                            Surface(
+                                color = Color(0xFF090E17),
+                                shape = RoundedCornerShape(10.dp),
+                                border = BorderStroke(1.dp, Color(0xFF1E293B)),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 10.dp, vertical = 7.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = "${rec.phoneNumber}  •  OTP: ${rec.otpCode}",
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = Color(0xFF34D399),
+                                            fontFamily = FontFamily.Monospace
+                                        )
+                                        Text(
+                                            text = "User: ${rec.userEmail.ifBlank { "Unknown" }} • ${rec.service} (${rec.platform})",
+                                            fontSize = 9.sp,
+                                            color = Color(0xFF94A3B8),
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                    }
+                                    Column(horizontalAlignment = Alignment.End) {
+                                        Text(
+                                            text = "+৳${String.format(Locale.US, "%.2f", rec.rate)}",
+                                            fontSize = 10.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = Color(0xFFFBBF24)
+                                        )
+                                        Text(
+                                            text = timeFormatter.format(Date(rec.timestamp)),
+                                            fontSize = 8.sp,
+                                            color = Color(0xFF64748B)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         // Broadcast Notification / Push Message Card
         Card(
             colors = CardDefaults.cardColors(containerColor = Color(0xFF0F1A2B)),

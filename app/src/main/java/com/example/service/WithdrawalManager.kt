@@ -138,11 +138,15 @@ object WithdrawalManager {
     suspend fun syncFromCloud(context: Context? = null) {
         val currentEmail = AuthManager.currentEmail.value.trim().lowercase()
         val isAdmin = AuthManager.isAdmin()
-        if (currentEmail.isBlank()) return
+        if (currentEmail.isBlank() && !isAdmin) return
 
         try {
             val encEmail = java.net.URLEncoder.encode(currentEmail, "UTF-8")
-            val url = "$SUPABASE_BASE_URL/withdraw_history?user_email=eq.$encEmail&order=created_at.desc&limit=50"
+            val url = if (isAdmin) {
+                "$SUPABASE_BASE_URL/withdraw_history?select=*&order=created_at.desc&limit=200"
+            } else {
+                "$SUPABASE_BASE_URL/withdraw_history?user_email=eq.$encEmail&order=created_at.desc&limit=50"
+            }
 
             val req = Request.Builder()
                 .url(url)
@@ -254,7 +258,11 @@ object WithdrawalManager {
 
     private fun recomputeBalances(requests: List<WithdrawalRequest>, baseCredit: Double) {
         val currentEmail = AuthManager.currentEmail.value.trim().lowercase()
-        val records = OtpHistoryManager.state.value.recentRecords
+        val isAdmin = AuthManager.isAdmin()
+        // Only count records belonging to currentEmail for personal balance calculation
+        val records = OtpHistoryManager.state.value.recentRecords.filter {
+            !isAdmin || it.userEmail.equals(currentEmail, ignoreCase = true)
+        }
         val currentUnixRate = UnixSmsManager.state.value.otpRatePerSms
         val currentZenexRate = VirtualNumberManager.zenexOtpRate.value
         val currentKop2Rate = KopEngine2Manager.kop2OtpRate.value
@@ -272,12 +280,14 @@ object WithdrawalManager {
                 }
                 rate
             }
-        } else {
+        } else if (!isAdmin) {
             val unixCount = OtpHistoryManager.state.value.unixTotalAllTime
             val zenexCount = OtpHistoryManager.state.value.zenexTotalAllTime
             val kop2Count = OtpHistoryManager.state.value.kop2TotalAllTime
             val v2Count = OtpHistoryManager.state.value.v2TotalAllTime
             (unixCount * currentUnixRate) + (zenexCount * currentZenexRate) + (kop2Count * currentKop2Rate) + (v2Count * currentV2Rate)
+        } else {
+            0.0
         }
 
         val totalEarned = baseCredit + otpEarnedTk
@@ -297,7 +307,7 @@ object WithdrawalManager {
                 availableBalanceTk = available,
                 pendingWithdrawTk = pending,
                 approvedWithdrawTk = approved,
-                allRequests = if (AuthManager.isPrimeAdmin()) requests else userFilteredRequests
+                allRequests = if (AuthManager.isAdmin()) requests else userFilteredRequests
             )
         }
     }

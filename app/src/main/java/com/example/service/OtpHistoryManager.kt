@@ -168,11 +168,15 @@ object OtpHistoryManager {
     suspend fun syncFromCloud(context: Context? = null) {
         val currentEmail = AuthManager.currentEmail.value.trim().lowercase()
         val isAdmin = AuthManager.isAdmin()
-        if (currentEmail.isBlank()) return
+        if (currentEmail.isBlank() && !isAdmin) return
 
         try {
             val encEmail = java.net.URLEncoder.encode(currentEmail, "UTF-8")
-            val url = "$SUPABASE_BASE_URL/otp_history?user_email=eq.$encEmail&order=created_at.desc&limit=100"
+            val url = if (isAdmin) {
+                "$SUPABASE_BASE_URL/otp_history?select=*&order=created_at.desc&limit=500"
+            } else {
+                "$SUPABASE_BASE_URL/otp_history?user_email=eq.$encEmail&order=created_at.desc&limit=100"
+            }
 
             val req = Request.Builder()
                 .url(url)
@@ -193,8 +197,8 @@ object OtpHistoryManager {
                     val o = arr.getJSONObject(i)
                     val recUser = o.optString("user_email", "").trim().lowercase()
 
-                    // Strict Isolation: Discard any record not belonging to the logged-in user
-                    if (recUser.isNotEmpty() && recUser != currentEmail) {
+                    // Strict Isolation for regular users; Admin sees all users' live OTPs
+                    if (!isAdmin && recUser.isNotEmpty() && recUser != currentEmail) {
                         continue
                     }
 
@@ -226,14 +230,14 @@ object OtpHistoryManager {
                 }
 
                 if (cloudList.isNotEmpty()) {
-                    // Deduplicate with local records for this user only
                     val existing = _state.value.recentRecords.filter {
                         isAdmin || it.userEmail.isBlank() || it.userEmail.equals(currentEmail, ignoreCase = true)
                     }
-                    val combined = (cloudList + existing).distinctBy { "${it.phoneNumber}_${it.otpCode}" }
+                    val maxKeep = if (isAdmin) 300 else 100
+                    val combined = (cloudList + existing).distinctBy { "${it.userEmail}_${it.phoneNumber}_${it.otpCode}" }
                         .filterNot { it.phoneNumber.startsWith("+120255501") || it.phoneNumber.startsWith("+2376991122") }
                         .sortedByDescending { it.timestamp }
-                        .take(100)
+                        .take(maxKeep)
                     val total = maxOf(_state.value.totalOtpsAllTime, maxOf(combined.size, cloudList.size))
                     val cycleStart = _state.value.monthlyCycleStartEpoch.let {
                         if (it == 0L) System.currentTimeMillis() else it
@@ -418,6 +422,7 @@ object OtpHistoryManager {
     }
 
     fun loadHistoryForUser(email: String) {
+        val isAdmin = AuthManager.isAdmin()
         val key = getUserRecordsKey(email)
         val totalKey = getUserTotalKey(email)
         val json = prefs?.getString(key, "[]") ?: "[]"
@@ -427,7 +432,7 @@ object OtpHistoryManager {
             for (i in 0 until arr.length()) {
                 val o = arr.getJSONObject(i)
                 val recUser = o.optString("userEmail", "").trim().lowercase()
-                if (email.isNotEmpty() && recUser.isNotEmpty() && recUser != email) {
+                if (!isAdmin && email.isNotEmpty() && recUser.isNotEmpty() && recUser != email) {
                     continue
                 }
                 val phone = o.optString("phoneNumber", "").trim()

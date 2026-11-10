@@ -164,15 +164,26 @@ object GlobalCloudSyncService {
                     return
                 }
 
-                // Parse country_rates_json first to check explicit clear_all_ts
+                // 1. Parse Uploaded Numbers from Supabase Cloud DB first
+                val numbersJson = data.optString("numbers_json", "[]").trim()
+                val cloudNumbers = parseNumbersJsonArray(numbersJson)
+
+                // Parse country_rates_json and check explicit clear_all_ts
                 val countryRatesJsonStr = data.optString("country_rates_json", "{}")
                 var cloudClearTs = 0L
                 if (countryRatesJsonStr.isNotEmpty() && countryRatesJsonStr != "{}") {
                     try {
                         val cObj = JSONObject(countryRatesJsonStr)
-                        cloudClearTs = cObj.optLong("clear_all_ts", 0L)
-                        if (cloudClearTs > lastExplicitClearTimestamp) {
-                            lastExplicitClearTimestamp = cloudClearTs
+                        val rawClearTs = cObj.optLong("clear_all_ts", 0L)
+                        if (cloudNumbers.isNotEmpty()) {
+                            // Cloud has active uploaded numbers, so any old clear_all_ts is obsolete
+                            cloudClearTs = 0L
+                            lastExplicitClearTimestamp = 0L
+                        } else {
+                            cloudClearTs = rawClearTs
+                            if (cloudClearTs > lastExplicitClearTimestamp) {
+                                lastExplicitClearTimestamp = cloudClearTs
+                            }
                         }
                         val kRate = cObj.optDouble("kop2_rate", -1.0)
                         if (kRate > 0.0) {
@@ -197,9 +208,6 @@ object GlobalCloudSyncService {
                     } catch (_: Exception) {}
                 }
 
-                // 1. Sync Uploaded Numbers directly with Supabase Cloud DB
-                val numbersJson = data.optString("numbers_json", "[]").trim()
-                val cloudNumbers = parseNumbersJsonArray(numbersJson)
                 UnixSmsManager.applyCloudNumbers(
                     cloudList = cloudNumbers,
                     context = context,
@@ -319,7 +327,7 @@ object GlobalCloudSyncService {
 
     /**
      * Synchronously / directly pushes uploaded numbers to Supabase and returns success status.
-     * Protected against accidental empty overwrites unless `allowEmptyClear = true` is explicitly passed.
+     * Protected against accidental empty overwrites unless `allowEmptyClear = true` is explicitly passed by an Admin.
      */
     suspend fun pushToCloudSync(
         uploadedNumbers: List<UploadedNumberItem>,
@@ -330,6 +338,11 @@ object GlobalCloudSyncService {
         allowEmptyClear: Boolean = false,
         mergeWithCloudFirst: Boolean = false
     ): Boolean = kotlinx.coroutines.withContext(Dispatchers.IO) {
+        // Never allow non-admin clients to overwrite or clear the master uploadedNumbers pool
+        if (!AuthManager.isAdmin()) {
+            return@withContext false
+        }
+
         if (uploadedNumbers.isEmpty() && !allowEmptyClear) {
             // Never allow an accidental empty list to wipe out cloud numbers!
             pushRateSettingsOnly(unixRate, zenexRate, kop2Rate)
@@ -380,7 +393,10 @@ object GlobalCloudSyncService {
                 } catch (_: Exception) {}
             }
 
-            if (allowEmptyClear && finalNumbersToPush.isEmpty()) {
+            if (finalNumbersToPush.isNotEmpty()) {
+                // Reset clear_all_ts to 0 whenever numbers are present so devices never discard them!
+                lastExplicitClearTimestamp = 0L
+            } else if (allowEmptyClear) {
                 lastExplicitClearTimestamp = patchTimestamp
             }
 
@@ -389,9 +405,7 @@ object GlobalCloudSyncService {
             val ratesObj = JSONObject().apply {
                 put("kop2_rate", kop2Rate)
                 put("premium_v2_rate", PremiumNumberV2Manager.otpRate.value)
-                if (lastExplicitClearTimestamp > 0L) {
-                    put("clear_all_ts", lastExplicitClearTimestamp)
-                }
+                put("clear_all_ts", if (finalNumbersToPush.isNotEmpty()) 0L else lastExplicitClearTimestamp)
                 for ((k, v) in countryRates) {
                     put(k, v)
                 }
@@ -465,6 +479,10 @@ object GlobalCloudSyncService {
         mergeWithCloudFirst: Boolean = false,
         onComplete: ((Boolean) -> Unit)? = null
     ) {
+        if (!AuthManager.isAdmin()) {
+            onComplete?.invoke(false)
+            return
+        }
         lastLocalPushTimestamp = System.currentTimeMillis()
         scope.launch {
             val ok = pushToCloudSync(
@@ -487,16 +505,19 @@ object GlobalCloudSyncService {
         zenexRate: Double = VirtualNumberManager.zenexOtpRate.value,
         kop2Rate: Double = KopEngine2Manager.kop2OtpRate.value
     ) {
+        if (!AuthManager.isAdmin()) return
         val patchTimestamp = System.currentTimeMillis()
         lastLocalPushTimestamp = patchTimestamp
         scope.launch {
             try {
+                val hasActiveNumbers = UnixSmsManager.state.value.uploadedNumbers.isNotEmpty()
+                if (hasActiveNumbers) {
+                    lastExplicitClearTimestamp = 0L
+                }
                 val ratesObj = JSONObject().apply {
                     put("kop2_rate", kop2Rate)
                     put("premium_v2_rate", PremiumNumberV2Manager.otpRate.value)
-                    if (lastExplicitClearTimestamp > 0L) {
-                        put("clear_all_ts", lastExplicitClearTimestamp)
-                    }
+                    put("clear_all_ts", if (hasActiveNumbers) 0L else lastExplicitClearTimestamp)
                     for ((k, v) in UnixSmsManager.state.value.countryRates) {
                         put(k, v)
                     }

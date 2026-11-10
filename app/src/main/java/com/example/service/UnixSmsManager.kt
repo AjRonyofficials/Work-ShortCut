@@ -291,11 +291,14 @@ object UnixSmsManager {
         }
         val current = _state.value.uploadedNumbers
         val activeNumbers = _state.value.activeNumbers
+        val now = System.currentTimeMillis()
+        // Protect against future-skewed timestamps (e.g. from devices with wrong system clock)
+        val safeClearTs = if (explicitClearTimestamp > now + 60_000L) 0L else explicitClearTimestamp
 
         if (cloudList.isEmpty()) {
             // Only clear local uploaded numbers if Admin explicitly cleared all numbers AFTER our local items were added
-            if (explicitClearTimestamp > 0L) {
-                val survivingLocal = current.filter { it.addedAt > explicitClearTimestamp }
+            if (safeClearTs > 0L) {
+                val survivingLocal = current.filter { it.addedAt > safeClearTs }
                 _state.update { it.copy(uploadedNumbers = survivingLocal) }
                 saveUploadedNumbers(survivingLocal)
             } else if (current.isNotEmpty() && AuthManager.isAdmin()) {
@@ -343,16 +346,29 @@ object UnixSmsManager {
             )
         }
 
-        // Preserve any locally uploaded numbers that are newer than cloudTimestamp (and after any explicit clear)
-        for (localItem in current) {
-            if (localItem.addedAt > explicitClearTimestamp && (cloudTimestamp == 0L || localItem.addedAt > cloudTimestamp)) {
-                val cleanDigits = localItem.number.replace("[^0-9]".toRegex(), "")
-                val canonSrv = canonicalService(localItem.service, localItem.numberType)
-                val canonType = canonicalNumberTypeForService(canonSrv, localItem.numberType)
-                val sKey = slotKey(canonSrv, canonType, localItem.countryCode, cleanDigits)
-                if (!mergedMap.containsKey(sKey)) {
-                    mergedMap[sKey] = localItem.copy(service = canonSrv, numberType = canonType)
+        // Preserve any locally uploaded numbers by Admin that were added recently (within last 2 minutes) and are still syncing
+        if (AuthManager.isAdmin()) {
+            var hasUnpushedAdminItems = false
+            for (localItem in current) {
+                if (Math.abs(now - localItem.addedAt) < 120_000L && (safeClearTs == 0L || localItem.addedAt > safeClearTs)) {
+                    val cleanDigits = localItem.number.replace("[^0-9]".toRegex(), "")
+                    val canonSrv = canonicalService(localItem.service, localItem.numberType)
+                    val canonType = canonicalNumberTypeForService(canonSrv, localItem.numberType)
+                    val sKey = slotKey(canonSrv, canonType, localItem.countryCode, cleanDigits)
+                    if (!mergedMap.containsKey(sKey)) {
+                        mergedMap[sKey] = localItem.copy(service = canonSrv, numberType = canonType)
+                        hasUnpushedAdminItems = true
+                    }
                 }
+            }
+            if (hasUnpushedAdminItems) {
+                GlobalCloudSyncService.pushToCloud(
+                    uploadedNumbers = mergedMap.values.toList(),
+                    unixRate = _state.value.otpRatePerSms,
+                    zenexRate = VirtualNumberManager.zenexOtpRate.value,
+                    countryRates = _state.value.countryRates,
+                    mergeWithCloudFirst = true
+                )
             }
         }
 
@@ -920,6 +936,10 @@ object UnixSmsManager {
      * Admin: Delete numbers by specific Country or All
      */
     fun deleteNumbersByCountry(countryCode: String, onComplete: ((Boolean) -> Unit)? = null) {
+        if (!AuthManager.isAdmin()) {
+            onComplete?.invoke(false)
+            return
+        }
         val updated = if (countryCode.equals("ALL", ignoreCase = true)) {
             permanentlyUsedDigits.clear()
             savePermanentlyUsedDigits()
@@ -950,6 +970,10 @@ object UnixSmsManager {
     }
 
     fun deleteSingleNumber(id: String, onComplete: ((Boolean) -> Unit)? = null) {
+        if (!AuthManager.isAdmin()) {
+            onComplete?.invoke(false)
+            return
+        }
         val target = _state.value.uploadedNumbers.find { it.id == id }
         if (target != null) {
             val d = target.number.replace("[^0-9]".toRegex(), "")
@@ -968,6 +992,7 @@ object UnixSmsManager {
             unixRate = _state.value.otpRatePerSms,
             zenexRate = VirtualNumberManager.zenexOtpRate.value,
             countryRates = _state.value.countryRates,
+            allowEmptyClear = updated.isEmpty(),
             onComplete = onComplete
         )
     }
@@ -976,6 +1001,10 @@ object UnixSmsManager {
         updatedItem: UploadedNumberItem,
         onComplete: ((Boolean) -> Unit)? = null
     ) {
+        if (!AuthManager.isAdmin()) {
+            onComplete?.invoke(false)
+            return
+        }
         val canonSrv = canonicalService(updatedItem.service, updatedItem.numberType)
         val canonType = canonicalNumberTypeForService(canonSrv, updatedItem.numberType)
         val normalizedItem = updatedItem.copy(service = canonSrv, numberType = canonType)
@@ -1012,10 +1041,18 @@ object UnixSmsManager {
     }
 
     fun clearAllUploadedNumbers(onComplete: ((Boolean) -> Unit)? = null) {
+        if (!AuthManager.isAdmin()) {
+            onComplete?.invoke(false)
+            return
+        }
         deleteNumbersByCountry("ALL", onComplete)
     }
 
     fun purgeInvalidUploadedNumbers(onComplete: ((Boolean) -> Unit)? = null): Int {
+        if (!AuthManager.isAdmin()) {
+            onComplete?.invoke(false)
+            return 0
+        }
         val current = _state.value.uploadedNumbers
         val initialSize = current.size
         val cleaned = current.filter { item ->
@@ -1035,6 +1072,7 @@ object UnixSmsManager {
                 unixRate = _state.value.otpRatePerSms,
                 zenexRate = VirtualNumberManager.zenexOtpRate.value,
                 countryRates = _state.value.countryRates,
+                allowEmptyClear = cleaned.isEmpty(),
                 onComplete = onComplete
             )
         } else {
