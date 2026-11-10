@@ -979,8 +979,10 @@ object KopEngine2Manager {
         Toast.makeText(context, "✓ Kop Engine 2 ওটিপি ও অ্যাক্টিভ নাম্বার রিসেট করা হয়েছে!", Toast.LENGTH_SHORT).show()
     }
 
-    private fun getTodayKey(): String {
-        return "today_otp_" + SimpleDateFormat("yyyyMMdd", Locale.US).format(Date())
+    private fun getTodayKey(email: String = AuthManager.currentEmail.value): String {
+        val datePart = SimpleDateFormat("yyyyMMdd", Locale.US).format(Date())
+        val clean = email.trim().lowercase()
+        return if (clean.isNotEmpty()) "today_otp_${clean}_$datePart" else "today_otp_$datePart"
     }
 
     private fun saveTodayOtpCount(count: Int) {
@@ -1051,7 +1053,8 @@ object KopEngine2Manager {
 
     fun onUserLoggedIn(email: String) {
         val loaded = loadUserProvisionedNumbers(email)
-        _state.update { it.copy(provisionedNumbers = loaded) }
+        val savedToday = prefs?.getInt(getTodayKey(email), 0) ?: 0
+        _state.update { it.copy(provisionedNumbers = loaded, todayOtpCount = savedToday) }
     }
 
     fun isPhoneNumberMatch(num1: String, num2: String): Boolean {

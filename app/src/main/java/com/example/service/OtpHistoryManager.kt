@@ -931,7 +931,10 @@ object OtpHistoryManager {
      * Download / Export 30 Days OTP History
      */
     fun exportOtpHistory(context: Context) {
-        val records = _state.value.recentRecords
+        val currentEmail = AuthManager.currentEmail.value.trim().lowercase()
+        val records = _state.value.recentRecords.filter {
+            currentEmail.isNotEmpty() && it.userEmail.equals(currentEmail, ignoreCase = true)
+        }
         if (records.isEmpty()) {
             Toast.makeText(context, "কোনো ওটিপি রেকর্ড পাওয়া যায়নি", Toast.LENGTH_SHORT).show()
             return
@@ -981,7 +984,7 @@ object OtpHistoryManager {
                     last30DaysOtps = maxOf(it.last30DaysOtps, last30d)
                 )
             }
-            prefs?.edit()?.putInt(KEY_TOTAL_COUNT, totalOtps)?.apply()
+            prefs?.edit()?.putInt(getUserTotalKey(AuthManager.currentEmail.value), totalOtps)?.apply()
         }
     }
 
@@ -1029,7 +1032,7 @@ object OtpHistoryManager {
     fun exportToCsv(context: Context) {
         val currentEmail = AuthManager.currentEmail.value.trim().lowercase()
         val records = _state.value.recentRecords.filter {
-            currentEmail.isEmpty() || it.userEmail.isBlank() || it.userEmail.equals(currentEmail, ignoreCase = true)
+            currentEmail.isNotEmpty() && it.userEmail.equals(currentEmail, ignoreCase = true)
         }
 
         if (records.isEmpty()) {
@@ -1080,7 +1083,7 @@ object OtpHistoryManager {
     fun copyRecentOtpsToClipboard(context: Context) {
         val currentEmail = AuthManager.currentEmail.value.trim().lowercase()
         val records = _state.value.recentRecords.filter {
-            currentEmail.isEmpty() || it.userEmail.isBlank() || it.userEmail.equals(currentEmail, ignoreCase = true)
+            currentEmail.isNotEmpty() && it.userEmail.equals(currentEmail, ignoreCase = true)
         }
 
         if (records.isEmpty()) {
@@ -1165,7 +1168,7 @@ object OtpHistoryManager {
                 r.timestamp >= effectiveCutoff &&
                 r.otpCode.isNotBlank() &&
                 r.phoneNumber.isNotBlank() &&
-                (currentEmail.isEmpty() || r.userEmail.isBlank() || r.userEmail.equals(currentEmail, ignoreCase = true)) &&
+                (currentEmail.isNotEmpty() && r.userEmail.equals(currentEmail, ignoreCase = true)) &&
                 (norm == "ALL" || normalizePanelKey(r.platform) == norm)
             }
             .map { r ->

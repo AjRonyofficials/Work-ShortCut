@@ -678,9 +678,9 @@ object WithdrawalManager {
     fun getUserRequests(userEmail: String): List<WithdrawalRequest> {
         val email = userEmail.trim().lowercase()
         return if (email.isBlank() || email == "user account") {
-            _state.value.allRequests
+            emptyList()
         } else {
-            _state.value.allRequests.filter { it.userEmail.equals(email, ignoreCase = true) || it.userEmail.isBlank() }
+            _state.value.allRequests.filter { it.userEmail.equals(email, ignoreCase = true) }
         }
     }
 

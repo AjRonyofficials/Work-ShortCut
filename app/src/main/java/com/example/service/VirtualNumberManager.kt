@@ -265,9 +265,10 @@ object VirtualNumberManager {
         return removedCount
     }
 
-    private fun getTodayKey(): String {
+    private fun getTodayKey(email: String = AuthManager.currentEmail.value): String {
         val sdf = SimpleDateFormat("yyyy_MM_dd", Locale.US)
-        return "otp_today_" + sdf.format(Date())
+        val clean = email.trim().lowercase()
+        return if (clean.isNotEmpty()) "otp_today_${clean}_${sdf.format(Date())}" else "otp_today_" + sdf.format(Date())
     }
 
     private fun getUserNumbersKey(email: String = AuthManager.currentEmail.value): String {
@@ -348,7 +349,8 @@ object VirtualNumberManager {
 
     fun onUserLoggedIn(email: String) {
         val loaded = loadUserProvisionedNumbers(email)
-        _state.update { it.copy(provisionedNumbers = loaded) }
+        val savedToday = prefs?.getInt(getTodayKey(email), 0) ?: 0
+        _state.update { it.copy(provisionedNumbers = loaded, todayOtpCount = savedToday) }
     }
 
     fun setApiKey(key: String) {
