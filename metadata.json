@@ -1,0 +1,8 @@
+{
+  "name": "Work ShortCut",
+  "description": "Messenger-style floating bubble with multi-country fake name generator, duplicate-detecting multi-column clipboard, instant 2FA generator, and fast SOCKS5/HTTP proxy switcher.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

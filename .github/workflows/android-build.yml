@@ -1,0 +1,227 @@
+name: Build Work ShortCut APK
+
+on:
+  push:
+    branches: [ "**" ]
+    tags: [ "v*" ]
+  pull_request:
+    branches: [ "**" ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  packages: write
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
+jobs:
+  build:
+    name: Build & Export APK
+    runs-on: ubuntu-latest
+    env:
+      JAVA_TOOL_OPTIONS: "-Djava.awt.headless=true -Dfile.encoding=UTF-8"
+      GRADLE_OPTS: "-Djava.awt.headless=true -Dorg.gradle.internal.http.connectionTimeout=120000 -Dorg.gradle.internal.http.socketTimeout=120000"
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+
+      - name: Setup Android SDK Licenses
+        run: |
+          SDK_MGR=$(command -v sdkmanager || find "${ANDROID_HOME:-/usr/local/lib/android/sdk}" -name sdkmanager -type f 2>/dev/null | head -n 1 || true)
+          if [ -n "$SDK_MGR" ] && [ -x "$SDK_MGR" ]; then
+            yes | "$SDK_MGR" --licenses >/dev/null 2>&1 || true
+          fi
+          echo "Android SDK licenses verified."
+
+      - name: Restore Clean Gradle & Maven Cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.m2/repository
+            ~/.gradle/wrapper
+            ~/.gradle/caches/modules-2
+          key: gradle-clean-v6-${{ runner.os }}-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties', '**/libs.versions.toml') }}
+          restore-keys: |
+            gradle-clean-v6-${{ runner.os }}-
+
+      - name: Prepare Environment Files
+        run: |
+          if [ ! -f ".env" ] && [ -f ".env.example" ]; then
+            cp .env.example .env
+          fi
+          touch .env
+
+      - name: Ensure Debug Keystore
+        run: |
+          if [ -f "debug.keystore.base64" ]; then
+            echo "Decoding persistent debug.keystore from repository base64..."
+            base64 -d debug.keystore.base64 > debug.keystore
+          elif [ ! -f "debug.keystore" ]; then
+            echo "Generating fresh debug.keystore..."
+            keytool -genkey -v -keystore debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
+          fi
+          test -f debug.keystore
+          echo "debug.keystore is ready ($(wc -c < debug.keystore) bytes)"
+
+      - name: Verify and Auto-Repair Critical Resource Configurations
+        run: |
+          mkdir -p app/src/main/res/xml
+          if [ ! -f "app/src/main/res/xml/accessibility_service_config.xml" ]; then
+            echo "Auto-repairing missing accessibility_service_config.xml..."
+            printf '%s\n' \
+              '<?xml version="1.0" encoding="utf-8"?>' \
+              '<accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"' \
+              '    android:accessibilityEventTypes="typeWindowStateChanged|typeWindowContentChanged"' \
+              '    android:accessibilityFeedbackType="feedbackGeneric"' \
+              '    android:accessibilityFlags="flagDefault|flagRetrieveInteractiveWindows|flagReportViewIds"' \
+              '    android:canRetrieveWindowContent="true"' \
+              '    android:canPerformGestures="true"' \
+              '    android:description="@string/accessibility_service_description"' \
+              '    android:notificationTimeout="50" />' > app/src/main/res/xml/accessibility_service_config.xml
+          fi
+          test -f app/src/main/res/xml/accessibility_service_config.xml
+          echo "accessibility_service_config.xml verified."
+
+      - name: Ensure Gradle Wrapper and Executable Permissions
+        run: |
+          if [ -f "gradlew" ]; then
+            chmod +x gradlew
+            echo "gradlew found and marked executable."
+          fi
+
+      - name: Pre-populate & SHA1-Verify Kotlin 2.2.10 Artifacts from Maven Central
+        run: |
+          echo "Purging any stub (<500B) JAR files in Gradle caches..."
+          if [ -d "$HOME/.gradle/caches" ]; then
+            find "$HOME/.gradle/caches" -name "*.jar" -size -500c -delete 2>/dev/null || true
+          fi
+
+          CACHE_BASE="$HOME/.gradle/caches/modules-2/files-2.1/org.jetbrains.kotlin"
+          
+          fetch_artifact() {
+            local group_name="$1"
+            local ver="$2"
+            local dir_sha="$3"
+            local full_sha="$4"
+            local file="$5"
+            local target_dir="$CACHE_BASE/$group_name/$ver/$dir_sha"
+            local m2_dir="$HOME/.m2/repository/org/jetbrains/kotlin/$group_name/$ver"
+            mkdir -p "$target_dir" "$m2_dir"
+
+            local valid=false
+            if [ -f "$target_dir/$file" ]; then
+              local actual_sha
+              actual_sha=$(sha1sum "$target_dir/$file" | awk '{print $1}')
+              if [ "$actual_sha" = "$full_sha" ]; then
+                valid=true
+              else
+                echo "Corrupted artifact detected for $file (sha1=$actual_sha, expected=$full_sha). Removing..."
+                rm -f "$target_dir/$file"
+                rm -rf "$HOME/.gradle/caches"/*/transforms 2>/dev/null || true
+              fi
+            fi
+
+            if [ "$valid" = false ]; then
+              echo "Downloading $file from Maven Central..."
+              curl -fSL --retry 5 --retry-delay 2 "https://repo1.maven.org/maven2/org/jetbrains/kotlin/$group_name/$ver/$file" -o "$target_dir/$file" || \
+              curl -fSL --retry 5 --retry-delay 2 "https://maven.aliyun.com/repository/central/org/jetbrains/kotlin/$group_name/$ver/$file" -o "$target_dir/$file"
+              local dl_sha
+              dl_sha=$(sha1sum "$target_dir/$file" | awk '{print $1}')
+              if [ "$dl_sha" != "$full_sha" ]; then
+                echo "FATAL: SHA-1 verification failed for $file (got $dl_sha, expected $full_sha)"
+                exit 1
+              fi
+            fi
+
+            cp -f "$target_dir/$file" "$m2_dir/$file"
+            printf "%s" "$full_sha" > "$m2_dir/$file.sha1"
+            echo "Verified $file ($(wc -c < "$target_dir/$file") bytes, sha1=$full_sha)"
+          }
+
+          fetch_artifact "kotlin-compiler-embeddable" "2.2.10" "4e933584f8590460b4d080da5eb891ac0cb03679" "4e933584f8590460b4d080da5eb891ac0cb03679" "kotlin-compiler-embeddable-2.2.10.pom"
+          fetch_artifact "kotlin-compiler-embeddable" "2.2.10" "6882d39ef03b18879c1a5d2a83c2212361bed5fe" "6882d39ef03b18879c1a5d2a83c2212361bed5fe" "kotlin-compiler-embeddable-2.2.10.jar"
+          fetch_artifact "kotlin-compose-compiler-plugin-embeddable" "2.2.10" "9b1f452dd51d8a7274c799fa234d5d7b24ba22e5" "9b1f452dd51d8a7274c799fa234d5d7b24ba22e5" "kotlin-compose-compiler-plugin-embeddable-2.2.10.pom"
+          fetch_artifact "kotlin-compose-compiler-plugin-embeddable" "2.2.10" "fd3cd12d4e9702cfcd731120564af86814cf95b7" "fd3cd12d4e9702cfcd731120564af86814cf95b7" "kotlin-compose-compiler-plugin-embeddable-2.2.10.jar"
+          fetch_artifact "kotlin-daemon-embeddable" "2.2.10" "212fd3c2c6e4e5d0f4db3c4191233e2b622380cc" "212fd3c2c6e4e5d0f4db3c4191233e2b622380cc" "kotlin-daemon-embeddable-2.2.10.jar"
+          fetch_artifact "kotlin-daemon-embeddable" "2.2.10" "3487e8adfd32eccf389ce9077acaab7b168a1f86" "3487e8adfd32eccf389ce9077acaab7b168a1f86" "kotlin-daemon-embeddable-2.2.10.pom"
+          fetch_artifact "kotlin-scripting-compiler-embeddable" "2.2.10" "25d0e9a886551d4a46ae85d4d5d0088829ef9" "00025d0e9a886551d4a46ae85d4d5d0088829ef9" "kotlin-scripting-compiler-embeddable-2.2.10.jar"
+          fetch_artifact "kotlin-scripting-compiler-embeddable" "2.2.10" "5b2289ae77495985523c987f4b5623102e0f8c7" "05b2289ae77495985523c987f4b5623102e0f8c7" "kotlin-scripting-compiler-embeddable-2.2.10.pom"
+          fetch_artifact "kotlin-scripting-compiler-impl-embeddable" "2.2.10" "3f1bcab651be1ab86e8d240b797b1a05dd8b0027" "3f1bcab651be1ab86e8d240b797b1a05dd8b0027" "kotlin-scripting-compiler-impl-embeddable-2.2.10.jar"
+          fetch_artifact "kotlin-scripting-compiler-impl-embeddable" "2.2.10" "4471dfcfdb09eea2767c0e67764df8a851d3299e" "4471dfcfdb09eea2767c0e67764df8a851d3299e" "kotlin-scripting-compiler-impl-embeddable-2.2.10.pom"
+          fetch_artifact "kotlin-build-tools-api" "2.2.10" "bd273e5e6fca899296058f0dc9e2369c120422bc" "bd273e5e6fca899296058f0dc9e2369c120422bc" "kotlin-build-tools-api-2.2.10.pom"
+          fetch_artifact "kotlin-build-tools-api" "2.2.10" "eac607420801deb9abcf71e250ab1ea11b049c06" "eac607420801deb9abcf71e250ab1ea11b049c06" "kotlin-build-tools-api-2.2.10.jar"
+          fetch_artifact "kotlin-build-tools-impl" "2.2.10" "6bf34d03b713e0536300b0d507bdd701ba53318c" "6bf34d03b713e0536300b0d507bdd701ba53318c" "kotlin-build-tools-impl-2.2.10.jar"
+          fetch_artifact "kotlin-build-tools-impl" "2.2.10" "a4168d26085c9950f367af99574cc44b514fbd1b" "a4168d26085c9950f367af99574cc44b514fbd1b" "kotlin-build-tools-impl-2.2.10.pom"
+          fetch_artifact "kotlin-compiler-runner" "2.2.10" "86f548c94190375005e20c9801ba254ddc51ba74" "86f548c94190375005e20c9801ba254ddc51ba74" "kotlin-compiler-runner-2.2.10.pom"
+          fetch_artifact "kotlin-compiler-runner" "2.2.10" "aee5165d5829687acee89311747076622a05d664" "aee5165d5829687acee89311747076622a05d664" "kotlin-compiler-runner-2.2.10.jar"
+          fetch_artifact "kotlin-daemon-client" "2.2.10" "9de9722b2ab63b00fed168c924c41ea3b2f7d9c5" "9de9722b2ab63b00fed168c924c41ea3b2f7d9c5" "kotlin-daemon-client-2.2.10.jar"
+          fetch_artifact "kotlin-daemon-client" "2.2.10" "d0c14eff36d629de71fdc9abe3b9e66b1633d8f2" "d0c14eff36d629de71fdc9abe3b9e66b1633d8f2" "kotlin-daemon-client-2.2.10.pom"
+          fetch_artifact "kotlin-stdlib" "2.2.10" "2011d055243f3ac8845b6b6bba8e4300f1b75602" "2011d055243f3ac8845b6b6bba8e4300f1b75602" "kotlin-stdlib-2.2.10.module"
+          fetch_artifact "kotlin-stdlib" "2.2.10" "2f34b52588b445a17411fd383cdba240a5f6c4fe" "2f34b52588b445a17411fd383cdba240a5f6c4fe" "kotlin-stdlib-2.2.10.pom"
+          fetch_artifact "kotlin-stdlib" "2.2.10" "30de6faa127a4a012db8e71bf1b9c0a99b1402b2" "30de6faa127a4a012db8e71bf1b9c0a99b1402b2" "kotlin-stdlib-2.2.10.jar"
+          fetch_artifact "kotlin-stdlib-jdk7" "2.2.10" "18cc96ae090a71726822631e1808c7d329faab5d" "18cc96ae090a71726822631e1808c7d329faab5d" "kotlin-stdlib-jdk7-2.2.10.jar"
+          fetch_artifact "kotlin-stdlib-jdk7" "2.2.10" "7ac7f0119f2bcb321a91d04aca06a5d2543dfeb9" "7ac7f0119f2bcb321a91d04aca06a5d2543dfeb9" "kotlin-stdlib-jdk7-2.2.10.pom"
+          fetch_artifact "kotlin-stdlib-jdk8" "2.2.10" "80cc9a776a058eeda7053731350bc41af8858a5a" "80cc9a776a058eeda7053731350bc41af8858a5a" "kotlin-stdlib-jdk8-2.2.10.jar"
+          fetch_artifact "kotlin-stdlib-jdk8" "2.2.10" "d0c9ff52a6d37b825f30b566d15bd39feaaf1424" "d0c9ff52a6d37b825f30b566d15bd39feaaf1424" "kotlin-stdlib-jdk8-2.2.10.pom"
+          fetch_artifact "kotlin-reflect" "2.2.10" "98d0ca9819d98cb3aa5c0a25793830b6659feee2" "98d0ca9819d98cb3aa5c0a25793830b6659feee2" "kotlin-reflect-2.2.10.jar"
+          fetch_artifact "kotlin-reflect" "2.2.10" "a42419debdb97ec791f028aac86568e64a0da45e" "a42419debdb97ec791f028aac86568e64a0da45e" "kotlin-reflect-2.2.10.pom"
+
+      - name: Build Debug APK
+        run: |
+          export JAVA_TOOL_OPTIONS="-Djava.awt.headless=true -Dfile.encoding=UTF-8 -Dsun.awt.noerasebackground=true"
+          echo "Building with ./gradlew assembleDebug (Gradle 9.3.1)..."
+          ./gradlew assembleDebug --no-daemon --no-configuration-cache -Djava.awt.headless=true -Dksp.incremental=false
+
+      - name: Verify Generated APK
+        run: |
+          ls -la app/build/outputs/apk/debug/
+          find app/build/outputs/apk/ -name "*.apk"
+
+      - name: Prepare APK Release Assets
+        run: |
+          mkdir -p release-assets
+          cp app/build/outputs/apk/debug/app-debug.apk release-assets/WorkShortCut-latest.apk
+          cp app/build/outputs/apk/debug/app-debug.apk "release-assets/WorkShortCut-v1.0.${{ github.run_number }}.apk"
+          echo "Release assets prepared:"
+          ls -la release-assets/
+
+      - name: Upload APK as Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: WorkShortCut-Debug-APK
+          path: release-assets/*.apk
+          retention-days: 30
+
+      - name: Auto Deploy GitHub Release
+        if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' || github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        continue-on-error: true
+        with:
+          tag_name: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || format('v1.0.{0}', github.run_number) }}
+          name: Work ShortCut ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || format('v1.0.{0}', github.run_number) }}
+          files: release-assets/*.apk
+          draft: false
+          prerelease: false
+          make_latest: true
+          body: |
+            ## 🚀 Work ShortCut - Automated Deployment Build
+
+            This release was automatically built, signed, and deployed by GitHub Actions.
+
+            - **Application**: Work ShortCut
+            - **Build Number**: `${{ github.run_number }}`
+            - **Commit**: `${{ github.sha }}`
+            - **Triggered By**: `${{ github.event_name }}` (${{ github.actor }})
+
+            ### 📥 Direct APK Downloads:
+            - **`WorkShortCut-latest.apk`**: Always contains the latest build.
+            - **`WorkShortCut-v1.0.${{ github.run_number }}.apk`**: Version-tagged build for archiving.
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
