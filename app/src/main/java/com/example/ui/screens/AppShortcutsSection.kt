@@ -1,9 +1,9 @@
 package com.example.ui.screens
 
-import android.content.Context
 import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
 import android.widget.Toast
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
@@ -41,6 +41,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -54,10 +55,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.service.OverlayStateManager
@@ -87,6 +90,24 @@ fun AppShortcutsSection(
     var appToRename by remember { mutableStateOf<com.example.service.CustomAppShortcut?>(null) }
     var newNameInput by remember { mutableStateOf("") }
 
+    val cardBgColor = Color(0xFF0D1726)
+    val innerBoxBgColor = Color(0xFF08101C)
+    val cardBorderColor = Color(0xFF1C2E4A)
+    val cyanAccent = Color(0xFF00E5FF)
+    val neonGreen = Color(0xFF00E676)
+
+    val textFieldColors = OutlinedTextFieldDefaults.colors(
+        focusedTextColor = Color.White,
+        unfocusedTextColor = Color(0xFFE2E8F0),
+        focusedContainerColor = innerBoxBgColor,
+        unfocusedContainerColor = innerBoxBgColor,
+        focusedBorderColor = cyanAccent,
+        unfocusedBorderColor = Color(0xFF233856),
+        focusedLabelColor = cyanAccent,
+        unfocusedLabelColor = Color(0xFF94A3B8),
+        cursorColor = cyanAccent
+    )
+
     val installedApps = remember { mutableStateListOf<AppInfoItem>() }
 
     LaunchedEffect(Unit) {
@@ -96,7 +117,6 @@ fun AppShortcutsSection(
             if (apps.isNotEmpty()) {
                 installedApps.addAll(apps)
             } else {
-                // Fallback to getInstalledApplications
                 val pm = context.packageManager
                 val fallbackList = pm.getInstalledApplications(PackageManager.GET_META_DATA)
                     .filter { (it.flags and ApplicationInfo.FLAG_SYSTEM) == 0 || it.packageName.contains("chrome") }
@@ -110,7 +130,6 @@ fun AppShortcutsSection(
                 installedApps.addAll(fallbackList)
             }
         } catch (_: Exception) {
-            // Gracefully handle query failure
         }
     }
 
@@ -132,53 +151,76 @@ fun AppShortcutsSection(
     LazyColumn(
         modifier = modifier
             .fillMaxSize()
-            .padding(16.dp)
+            .padding(horizontal = 14.dp, vertical = 12.dp)
             .testTag("app_shortcuts_section"),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
+        verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
         // Section Header
         item {
             Card(
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(16.dp),
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
-                )
+                shape = RoundedCornerShape(18.dp),
+                colors = CardDefaults.cardColors(containerColor = cardBgColor),
+                border = BorderStroke(1.2.dp, cyanAccent.copy(alpha = 0.4f))
             ) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
                         Box(
                             modifier = Modifier
-                                .size(38.dp)
+                                .size(44.dp)
                                 .clip(CircleShape)
-                                .background(BrandBlue.copy(alpha = 0.15f)),
+                                .background(
+                                    Brush.linearGradient(
+                                        listOf(cyanAccent, BrandBlue)
+                                    )
+                                ),
                             contentAlignment = Alignment.Center
                         ) {
                             Icon(
                                 imageVector = Icons.Default.Apps,
                                 contentDescription = null,
-                                tint = BrandBlue,
+                                tint = Color(0xFF041E2B),
                                 modifier = Modifier.size(24.dp)
                             )
                         }
                         Spacer(modifier = Modifier.width(12.dp))
-                        Column(modifier = Modifier.weight(1f)) {
+                        Column {
                             Text(
                                 text = "Floating Overlay Apps",
                                 style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold
+                                fontWeight = FontWeight.ExtraBold,
+                                color = Color.White
                             )
                             Text(
-                                text = "Select any app to instantly show on your floating edge bar!",
+                                text = "1-Tap Open & 2s Hold Force-Close from Edge Bar",
                                 style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                color = Color(0xFF94A3B8)
                             )
                         }
+                    }
+
+                    Surface(
+                        shape = RoundedCornerShape(10.dp),
+                        color = neonGreen.copy(alpha = 0.14f),
+                        border = BorderStroke(1.dp, neonGreen.copy(alpha = 0.45f))
+                    ) {
+                        Text(
+                            text = "${state.customAppShortcuts.size} Active",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            color = neonGreen,
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
+                        )
                     }
                 }
             }
         }
-
 
         // Active Overlay Apps Status & Management
         item {
@@ -190,11 +232,16 @@ fun AppShortcutsSection(
                 Text(
                     text = "Live in Floating Overlay (${state.customAppShortcuts.size})",
                     style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.Bold
+                    fontWeight = FontWeight.ExtraBold,
+                    color = Color.White
                 )
 
                 TextButton(onClick = { showManualForm = !showManualForm }) {
-                    Text(if (showManualForm) "Hide Custom Input" else "+ Custom Package")
+                    Text(
+                        text = if (showManualForm) "Hide Custom Input" else "+ Custom Package",
+                        color = cyanAccent,
+                        fontWeight = FontWeight.Bold
+                    )
                 }
             }
         }
@@ -203,8 +250,9 @@ fun AppShortcutsSection(
         if (state.customAppShortcuts.isEmpty()) {
             item {
                 Surface(
-                    shape = RoundedCornerShape(12.dp),
-                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
+                    shape = RoundedCornerShape(14.dp),
+                    color = cardBgColor,
+                    border = BorderStroke(1.dp, cardBorderColor),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Box(
@@ -212,9 +260,9 @@ fun AppShortcutsSection(
                         modifier = Modifier.padding(20.dp)
                     ) {
                         Text(
-                            text = "No apps in floating overlay yet. Tap '+ Add to Overlay' on any app below to show it instantly!",
+                            text = "No apps in floating overlay yet. Tap '+ Add' on any app below to show it instantly!",
                             style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            color = Color(0xFF94A3B8)
                         )
                     }
                 }
@@ -224,7 +272,7 @@ fun AppShortcutsSection(
                 val cardColor = try {
                     Color(android.graphics.Color.parseColor(shortcut.colorHex))
                 } catch (_: Exception) {
-                    BrandBlue
+                    cyanAccent
                 }
 
                 Card(
@@ -239,13 +287,13 @@ fun AppShortcutsSection(
                             }
                         ),
                     shape = RoundedCornerShape(14.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, cardColor.copy(alpha = 0.5f))
+                    colors = CardDefaults.cardColors(containerColor = cardBgColor),
+                    border = BorderStroke(1.2.dp, cardColor.copy(alpha = 0.55f))
                 ) {
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(12.dp),
+                            .padding(horizontal = 12.dp, vertical = 10.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
@@ -253,8 +301,8 @@ fun AppShortcutsSection(
                             com.example.ui.components.AppIconImage(
                                 packageName = shortcut.packageName,
                                 fallbackText = shortcut.appName,
-                                size = 38.dp,
-                                shape = RoundedCornerShape(8.dp)
+                                size = 40.dp,
+                                shape = RoundedCornerShape(10.dp)
                             )
 
                             Spacer(modifier = Modifier.width(10.dp))
@@ -262,28 +310,29 @@ fun AppShortcutsSection(
                             Column {
                                 Text(
                                     text = shortcut.appName,
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 14.sp
+                                    fontWeight = FontWeight.ExtraBold,
+                                    fontSize = 14.sp,
+                                    color = Color.White,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
                                 )
                                 Text(
                                     text = "Tap: Open • Hold: Auto Close",
                                     fontSize = 11.sp,
-                                    color = BrandGreen,
+                                    color = neonGreen,
                                     fontWeight = FontWeight.SemiBold
                                 )
                             }
                         }
 
-                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                            // Test Open
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(2.dp)) {
                             IconButton(
                                 onClick = { OverlayStateManager.launchAppShortcut(context, shortcut) },
                                 modifier = Modifier.size(36.dp)
                             ) {
-                                Icon(Icons.Default.Launch, contentDescription = "Open App", tint = BrandGreen, modifier = Modifier.size(18.dp))
+                                Icon(Icons.Default.Launch, contentDescription = "Open App", tint = neonGreen, modifier = Modifier.size(18.dp))
                             }
 
-                            // Test Close
                             IconButton(
                                 onClick = { OverlayStateManager.closeAppShortcut(context, shortcut) },
                                 modifier = Modifier.size(36.dp)
@@ -291,7 +340,6 @@ fun AppShortcutsSection(
                                 Icon(Icons.Default.Close, contentDescription = "Auto Close App", tint = AlertRed, modifier = Modifier.size(18.dp))
                             }
 
-                            // Rename App
                             IconButton(
                                 onClick = {
                                     appToRename = shortcut
@@ -299,10 +347,9 @@ fun AppShortcutsSection(
                                 },
                                 modifier = Modifier.size(36.dp)
                             ) {
-                                Icon(Icons.Default.Edit, contentDescription = "Rename App", tint = Color(0xFF38BDF8), modifier = Modifier.size(18.dp))
+                                Icon(Icons.Default.Edit, contentDescription = "Rename App", tint = cyanAccent, modifier = Modifier.size(18.dp))
                             }
 
-                            // Remove from Overlay
                             IconButton(
                                 onClick = {
                                     OverlayStateManager.removeCustomAppShortcut(shortcut.id)
@@ -310,7 +357,7 @@ fun AppShortcutsSection(
                                 },
                                 modifier = Modifier.size(36.dp)
                             ) {
-                                Icon(Icons.Default.Delete, contentDescription = "Delete", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
+                                Icon(Icons.Default.Delete, contentDescription = "Delete", tint = Color(0xFF94A3B8), modifier = Modifier.size(18.dp))
                             }
                         }
                     }
@@ -323,29 +370,37 @@ fun AppShortcutsSection(
             item {
                 Card(
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(14.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = cardBgColor),
+                    border = BorderStroke(1.dp, cyanAccent.copy(alpha = 0.4f))
                 ) {
                     Column(modifier = Modifier.padding(14.dp)) {
-                        Text("Add Cloned / Custom Package", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                        Text(
+                            text = "Add Cloned / Custom Package",
+                            fontWeight = FontWeight.ExtraBold,
+                            fontSize = 13.5.sp,
+                            color = Color.White
+                        )
                         Spacer(modifier = Modifier.height(8.dp))
 
                         OutlinedTextField(
                             value = inputAppName,
                             onValueChange = { inputAppName = it },
                             label = { Text("Display Name (e.g. Dual FB, Work Via)") },
+                            colors = textFieldColors,
                             singleLine = true,
-                            shape = RoundedCornerShape(8.dp),
+                            shape = RoundedCornerShape(10.dp),
                             modifier = Modifier.fillMaxWidth()
                         )
-                        Spacer(modifier = Modifier.height(6.dp))
+                        Spacer(modifier = Modifier.height(8.dp))
 
                         OutlinedTextField(
                             value = inputPkgName,
                             onValueChange = { inputPkgName = it },
                             label = { Text("Package Name (e.g. com.facebook.katana)") },
+                            colors = textFieldColors,
                             singleLine = true,
-                            shape = RoundedCornerShape(8.dp),
+                            shape = RoundedCornerShape(10.dp),
                             modifier = Modifier.fillMaxWidth()
                         )
                         Spacer(modifier = Modifier.height(10.dp))
@@ -360,13 +415,13 @@ fun AppShortcutsSection(
                                 }
                             },
                             enabled = inputAppName.isNotBlank() && inputPkgName.isNotBlank(),
-                            shape = RoundedCornerShape(8.dp),
-                            colors = ButtonDefaults.buttonColors(containerColor = BrandBlue),
+                            shape = RoundedCornerShape(10.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = cyanAccent),
                             modifier = Modifier.fillMaxWidth()
                         ) {
-                            Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp), tint = Color(0xFF041E2B))
                             Spacer(modifier = Modifier.width(6.dp))
-                            Text("Save & Add to Overlay", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            Text("Save & Add to Overlay", fontSize = 12.sp, fontWeight = FontWeight.ExtraBold, color = Color(0xFF041E2B))
                         }
                     }
                 }
@@ -377,24 +432,33 @@ fun AppShortcutsSection(
         item {
             Column {
                 Text(
-                    text = "Select from Installed Apps",
+                    text = "Select from Installed Apps (${filteredApps.size})",
                     style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.Bold
+                    fontWeight = FontWeight.ExtraBold,
+                    color = Color.White
                 )
                 Text(
-                    text = "Tap '+ Add to Overlay' on any app to show its glossy button on the floating sidebar instantly!",
-                    fontSize = 11.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    text = "Tap '+ Add' on any app to show its shortcut button on the floating sidebar instantly",
+                    fontSize = 11.5.sp,
+                    color = Color(0xFF94A3B8)
                 )
                 Spacer(modifier = Modifier.height(10.dp))
 
                 OutlinedTextField(
                     value = appSearchQuery,
                     onValueChange = { appSearchQuery = it },
-                    placeholder = { Text("Search installed apps (Via, Chrome, Facebook, Dual)...") },
+                    placeholder = { Text("Search installed apps (Via, Chrome, Facebook, Dual)...", fontSize = 12.sp) },
                     leadingIcon = {
-                        Icon(imageVector = Icons.Default.Search, contentDescription = null)
+                        Icon(imageVector = Icons.Default.Search, contentDescription = null, tint = cyanAccent)
                     },
+                    trailingIcon = if (appSearchQuery.isNotEmpty()) {
+                        {
+                            IconButton(onClick = { appSearchQuery = "" }) {
+                                Icon(Icons.Default.Close, contentDescription = "Clear", tint = Color(0xFF94A3B8), modifier = Modifier.size(16.dp))
+                            }
+                        }
+                    } else null,
+                    colors = textFieldColors,
                     modifier = Modifier
                         .fillMaxWidth()
                         .testTag("search_installed_apps_input"),
@@ -426,11 +490,11 @@ fun AppShortcutsSection(
                             OverlayStateManager.autoForceClosePackage(context, app.packageName, app.appName)
                         }
                     ),
-                shape = RoundedCornerShape(12.dp),
-                color = if (isInOverlay) BrandGreen.copy(alpha = 0.1f) else MaterialTheme.colorScheme.surface,
-                border = androidx.compose.foundation.BorderStroke(
+                shape = RoundedCornerShape(14.dp),
+                color = if (isInOverlay) Color(0xFF0A2218) else cardBgColor,
+                border = BorderStroke(
                     1.dp,
-                    if (isInOverlay) BrandGreen.copy(alpha = 0.5f) else MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)
+                    if (isInOverlay) neonGreen.copy(alpha = 0.55f) else cardBorderColor
                 )
             ) {
                 Row(
@@ -447,8 +511,8 @@ fun AppShortcutsSection(
                         com.example.ui.components.AppIconImage(
                             packageName = app.packageName,
                             fallbackText = app.appName,
-                            size = 36.dp,
-                            shape = RoundedCornerShape(8.dp)
+                            size = 38.dp,
+                            shape = RoundedCornerShape(9.dp)
                         )
 
                         Spacer(modifier = Modifier.width(10.dp))
@@ -456,16 +520,23 @@ fun AppShortcutsSection(
                         Column {
                             Text(
                                 text = app.appName,
-                                fontWeight = FontWeight.SemiBold,
-                                fontSize = 13.sp
+                                fontWeight = FontWeight.ExtraBold,
+                                fontSize = 13.5.sp,
+                                color = Color.White,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
                             )
                             Text(
                                 text = app.packageName,
                                 fontSize = 11.sp,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                color = Color(0xFF94A3B8),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
                             )
                         }
                     }
+
+                    Spacer(modifier = Modifier.width(8.dp))
 
                     if (isInOverlay) {
                         Button(
@@ -473,13 +544,13 @@ fun AppShortcutsSection(
                                 OverlayStateManager.removeCustomAppShortcutByPackage(app.packageName)
                                 Toast.makeText(context, "${app.appName} removed from overlay", Toast.LENGTH_SHORT).show()
                             },
-                            shape = RoundedCornerShape(8.dp),
-                            colors = ButtonDefaults.buttonColors(containerColor = BrandGreen),
-                            modifier = Modifier.height(34.dp)
+                            shape = RoundedCornerShape(10.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = neonGreen),
+                            modifier = Modifier.height(36.dp)
                         ) {
-                            Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(15.dp))
+                            Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(15.dp), tint = Color(0xFF042F16))
                             Spacer(modifier = Modifier.width(4.dp))
-                            Text("In Overlay ✓", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            Text("Added ✓", fontSize = 11.sp, fontWeight = FontWeight.ExtraBold, color = Color(0xFF042F16))
                         }
                     } else {
                         OutlinedButton(
@@ -487,12 +558,13 @@ fun AppShortcutsSection(
                                 OverlayStateManager.addCustomAppShortcut(app.appName, app.packageName)
                                 Toast.makeText(context, "${app.appName} added to floating overlay! ✓", Toast.LENGTH_SHORT).show()
                             },
-                            shape = RoundedCornerShape(8.dp),
-                            modifier = Modifier.height(34.dp)
+                            shape = RoundedCornerShape(10.dp),
+                            border = BorderStroke(1.dp, cyanAccent.copy(alpha = 0.6f)),
+                            modifier = Modifier.height(36.dp)
                         ) {
-                            Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(15.dp))
+                            Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(15.dp), tint = cyanAccent)
                             Spacer(modifier = Modifier.width(4.dp))
-                            Text("+ Add", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            Text("+ Add", fontSize = 11.sp, fontWeight = FontWeight.ExtraBold, color = cyanAccent)
                         }
                     }
                 }
@@ -502,21 +574,21 @@ fun AppShortcutsSection(
         // Usage Tip Card
         item {
             Surface(
-                shape = RoundedCornerShape(12.dp),
-                color = BrandBlue.copy(alpha = 0.08f),
-                border = androidx.compose.foundation.BorderStroke(1.dp, BrandBlue.copy(alpha = 0.25f)),
+                shape = RoundedCornerShape(14.dp),
+                color = cardBgColor,
+                border = BorderStroke(1.dp, cyanAccent.copy(alpha = 0.35f)),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Row(
-                    modifier = Modifier.padding(12.dp),
+                    modifier = Modifier.padding(14.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Icon(Icons.Default.Info, contentDescription = null, tint = BrandBlue, modifier = Modifier.size(20.dp))
+                    Icon(Icons.Default.Info, contentDescription = null, tint = cyanAccent, modifier = Modifier.size(20.dp))
                     Spacer(modifier = Modifier.width(10.dp))
                     Text(
-                        text = "Once added, the app tab shows up directly on the floating sidebar! Simply TAP to launch, or HOLD FOR 2 SECONDS to auto-close it instantly!",
+                        text = "Once added, the app icon shows directly on the floating sidebar! Tap to launch, or HOLD FOR 2 SECONDS to force-stop & close it automatically.",
                         fontSize = 12.sp,
-                        color = MaterialTheme.colorScheme.onSurface
+                        color = Color(0xFFE2E8F0)
                     )
                 }
             }
@@ -527,16 +599,18 @@ fun AppShortcutsSection(
         val targetApp = appToRename!!
         AlertDialog(
             onDismissRequest = { appToRename = null },
+            containerColor = cardBgColor,
             title = {
-                Text("শর্টকাট অ্যাপের নাম পরিবর্তন করুন", fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                Text("শর্টকাট অ্যাপের নাম পরিবর্তন করুন", fontWeight = FontWeight.ExtraBold, fontSize = 15.sp, color = Color.White)
             },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("নতুন নাম লিখুন (${targetApp.packageName}):", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("নতুন নাম লিখুন (${targetApp.packageName}):", fontSize = 12.sp, color = Color(0xFF94A3B8))
                     OutlinedTextField(
                         value = newNameInput,
                         onValueChange = { newNameInput = it },
                         singleLine = true,
+                        colors = textFieldColors,
                         placeholder = { Text("যেমন: FB Fresh 1, Clone 2...") },
                         modifier = Modifier.fillMaxWidth()
                     )
@@ -551,14 +625,18 @@ fun AppShortcutsSection(
                             Toast.makeText(context, "✓ শর্টকাটের নাম পরিবর্তন হয়েছে: $clean", Toast.LENGTH_SHORT).show()
                             appToRename = null
                         }
-                    }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = cyanAccent)
                 ) {
-                    Text("Save")
+                    Text("Save", fontWeight = FontWeight.ExtraBold, color = Color(0xFF041E2B))
                 }
             },
             dismissButton = {
-                OutlinedButton(onClick = { appToRename = null }) {
-                    Text("Cancel")
+                OutlinedButton(
+                    onClick = { appToRename = null },
+                    border = BorderStroke(1.dp, Color(0xFF475569))
+                ) {
+                    Text("Cancel", color = Color(0xFFCBD5E1))
                 }
             }
         )

@@ -1,9 +1,8 @@
 package com.example.ui.screens
 
 import android.widget.Toast
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -25,7 +24,6 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.ContentPaste
 import androidx.compose.material.icons.filled.Key
-import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Save
 import androidx.compose.material.icons.filled.Shuffle
@@ -39,7 +37,6 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
@@ -66,9 +63,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.service.OverlayStateManager
 import com.example.service.OverlayUiState
-import com.example.ui.theme.BrandBlue
-import com.example.ui.theme.BrandGreen
-import com.example.ui.theme.BrandSky
 import com.example.util.ClipboardHelper
 import com.example.util.VibrationHelper
 
@@ -82,21 +76,39 @@ fun PwCopySection(
     var passwordInput by remember(state.savedPasswordText) { mutableStateOf(state.savedPasswordText) }
     var isPasswordVisible by remember { mutableStateOf(false) }
 
+    val cardBgColor = Color(0xFF0D1726)
+    val innerBoxBgColor = Color(0xFF08101C)
+    val cardBorderColor = Color(0xFF1C2E4A)
+    val purpleAccent = Color(0xFFA855F7)
+    val cyanAccent = Color(0xFF00E5FF)
+    val neonGreen = Color(0xFF00E676)
+
+    val textFieldColors = OutlinedTextFieldDefaults.colors(
+        focusedTextColor = Color.White,
+        unfocusedTextColor = Color(0xFFE2E8F0),
+        focusedContainerColor = innerBoxBgColor,
+        unfocusedContainerColor = innerBoxBgColor,
+        focusedBorderColor = purpleAccent,
+        unfocusedBorderColor = Color(0xFF233856),
+        focusedLabelColor = purpleAccent,
+        unfocusedLabelColor = Color(0xFF94A3B8),
+        cursorColor = purpleAccent
+    )
+
     Column(
         modifier = modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
-            .padding(16.dp)
+            .padding(horizontal = 14.dp, vertical = 12.dp)
             .testTag("pw_copy_section"),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
+        verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
         // 1. Header Card
         Card(
             modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(16.dp),
-            colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
-            )
+            shape = RoundedCornerShape(18.dp),
+            colors = CardDefaults.cardColors(containerColor = cardBgColor),
+            border = BorderStroke(1.2.dp, purpleAccent.copy(alpha = 0.45f))
         ) {
             Row(
                 modifier = Modifier
@@ -107,11 +119,11 @@ fun PwCopySection(
                 Box(
                     contentAlignment = Alignment.Center,
                     modifier = Modifier
-                        .size(48.dp)
+                        .size(46.dp)
                         .clip(CircleShape)
                         .background(
                             Brush.linearGradient(
-                                listOf(Color(0xFFAB47BC), Color(0xFF6A1B9A))
+                                listOf(purpleAccent, Color(0xFF6A1B9A))
                             )
                         )
                 ) {
@@ -119,7 +131,7 @@ fun PwCopySection(
                         imageVector = Icons.Default.Key,
                         contentDescription = "Password Copy",
                         tint = Color.White,
-                        modifier = Modifier.size(26.dp)
+                        modifier = Modifier.size(24.dp)
                     )
                 }
 
@@ -127,15 +139,15 @@ fun PwCopySection(
 
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = "PW Copy (পাসওয়ার্ড কপি)",
-                        fontWeight = FontWeight.Bold,
+                        text = "PW Copy & Password Studio",
+                        fontWeight = FontWeight.ExtraBold,
                         fontSize = 17.sp,
-                        color = MaterialTheme.colorScheme.onSurface
+                        color = Color.White
                     )
                     Text(
                         text = "সংরক্ষিত পাসওয়ার্ড অথবা শক্তিশালী র‍্যান্ডম পাসওয়ার্ড জেনারেটর ১-ট্যাপে সরাসরি কপি করুন",
                         fontSize = 12.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        color = Color(0xFF94A3B8),
                         lineHeight = 16.sp
                     )
                 }
@@ -145,43 +157,41 @@ fun PwCopySection(
         // 2. Mode Selector: Saved PW vs Random Strong Generator
         Card(
             modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(14.dp),
-            colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surface
-            ),
-            elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(containerColor = cardBgColor),
+            border = BorderStroke(1.dp, cardBorderColor)
         ) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(8.dp),
+                    .padding(10.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 // Saved Password Mode Button
                 Surface(
                     onClick = { OverlayStateManager.setRandomPasswordMode(false) },
                     modifier = Modifier.weight(1f),
-                    shape = RoundedCornerShape(10.dp),
-                    color = if (!state.isRandomPasswordMode) Color(0xFF7B1FA2).copy(alpha = 0.15f) else Color.Transparent,
-                    border = if (!state.isRandomPasswordMode) androidx.compose.foundation.BorderStroke(1.5.dp, Color(0xFF7B1FA2)) else null
+                    shape = RoundedCornerShape(12.dp),
+                    color = if (!state.isRandomPasswordMode) purpleAccent.copy(alpha = 0.22f) else innerBoxBgColor,
+                    border = BorderStroke(1.2.dp, if (!state.isRandomPasswordMode) purpleAccent else Color(0xFF1E3A56))
                 ) {
                     Row(
-                        modifier = Modifier.padding(vertical = 10.dp, horizontal = 8.dp),
+                        modifier = Modifier.padding(vertical = 11.dp, horizontal = 8.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.Center
                     ) {
                         Icon(
                             imageVector = Icons.Default.Save,
                             contentDescription = null,
-                            tint = if (!state.isRandomPasswordMode) Color(0xFF7B1FA2) else MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(18.dp)
+                            tint = if (!state.isRandomPasswordMode) Color.White else Color(0xFF94A3B8),
+                            modifier = Modifier.size(17.dp)
                         )
                         Spacer(modifier = Modifier.width(6.dp))
                         Text(
                             text = "Saved PW (সেভ)",
-                            fontWeight = if (!state.isRandomPasswordMode) FontWeight.Bold else FontWeight.Normal,
-                            fontSize = 13.sp,
-                            color = if (!state.isRandomPasswordMode) Color(0xFF7B1FA2) else MaterialTheme.colorScheme.onSurfaceVariant
+                            fontWeight = FontWeight.ExtraBold,
+                            fontSize = 12.5.sp,
+                            color = if (!state.isRandomPasswordMode) Color.White else Color(0xFF94A3B8)
                         )
                     }
                 }
@@ -190,27 +200,27 @@ fun PwCopySection(
                 Surface(
                     onClick = { OverlayStateManager.setRandomPasswordMode(true) },
                     modifier = Modifier.weight(1f),
-                    shape = RoundedCornerShape(10.dp),
-                    color = if (state.isRandomPasswordMode) Color(0xFF0091EA).copy(alpha = 0.15f) else Color.Transparent,
-                    border = if (state.isRandomPasswordMode) androidx.compose.foundation.BorderStroke(1.5.dp, Color(0xFF0091EA)) else null
+                    shape = RoundedCornerShape(12.dp),
+                    color = if (state.isRandomPasswordMode) cyanAccent.copy(alpha = 0.2f) else innerBoxBgColor,
+                    border = BorderStroke(1.2.dp, if (state.isRandomPasswordMode) cyanAccent else Color(0xFF1E3A56))
                 ) {
                     Row(
-                        modifier = Modifier.padding(vertical = 10.dp, horizontal = 8.dp),
+                        modifier = Modifier.padding(vertical = 11.dp, horizontal = 8.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.Center
                     ) {
                         Icon(
                             imageVector = Icons.Default.Shuffle,
                             contentDescription = null,
-                            tint = if (state.isRandomPasswordMode) Color(0xFF0091EA) else MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(18.dp)
+                            tint = if (state.isRandomPasswordMode) cyanAccent else Color(0xFF94A3B8),
+                            modifier = Modifier.size(17.dp)
                         )
                         Spacer(modifier = Modifier.width(6.dp))
                         Text(
                             text = "Random Generator",
-                            fontWeight = if (state.isRandomPasswordMode) FontWeight.Bold else FontWeight.Normal,
-                            fontSize = 13.sp,
-                            color = if (state.isRandomPasswordMode) Color(0xFF0091EA) else MaterialTheme.colorScheme.onSurfaceVariant
+                            fontWeight = FontWeight.ExtraBold,
+                            fontSize = 12.5.sp,
+                            color = if (state.isRandomPasswordMode) cyanAccent else Color(0xFF94A3B8)
                         )
                     }
                 }
@@ -221,11 +231,9 @@ fun PwCopySection(
         if (!state.isRandomPasswordMode) {
             Card(
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(16.dp),
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surface
-                ),
-                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                shape = RoundedCornerShape(18.dp),
+                colors = CardDefaults.cardColors(containerColor = cardBgColor),
+                border = BorderStroke(1.2.dp, purpleAccent.copy(alpha = 0.45f))
             ) {
                 Column(
                     modifier = Modifier
@@ -240,19 +248,21 @@ fun PwCopySection(
                     ) {
                         Text(
                             text = "সংরক্ষিত পাসওয়ার্ড / ফিক্সড টেক্সট",
-                            fontWeight = FontWeight.SemiBold,
-                            fontSize = 14.sp
+                            fontWeight = FontWeight.ExtraBold,
+                            fontSize = 14.sp,
+                            color = Color.White
                         )
 
                         Surface(
                             shape = RoundedCornerShape(8.dp),
-                            color = if (state.savedPasswordText.isNotEmpty()) BrandGreen.copy(alpha = 0.15f) else Color.Gray.copy(alpha = 0.15f)
+                            color = if (state.savedPasswordText.isNotEmpty()) neonGreen.copy(alpha = 0.15f) else Color.Gray.copy(alpha = 0.15f),
+                            border = BorderStroke(1.dp, if (state.savedPasswordText.isNotEmpty()) neonGreen.copy(alpha = 0.45f) else Color.Gray)
                         ) {
                             Text(
                                 text = if (state.savedPasswordText.isNotEmpty()) "সক্রিয় ✓" else "খালি",
-                                color = if (state.savedPasswordText.isNotEmpty()) BrandGreen else Color.Gray,
+                                color = if (state.savedPasswordText.isNotEmpty()) neonGreen else Color.Gray,
                                 fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold,
+                                fontWeight = FontWeight.ExtraBold,
                                 modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
                             )
                         }
@@ -271,7 +281,8 @@ fun PwCopySection(
                                 IconButton(onClick = { isPasswordVisible = !isPasswordVisible }) {
                                     Icon(
                                         imageVector = if (isPasswordVisible) Icons.Default.VisibilityOff else Icons.Default.Visibility,
-                                        contentDescription = "Toggle Visibility"
+                                        contentDescription = "Toggle Visibility",
+                                        tint = Color(0xFF94A3B8)
                                     )
                                 }
                                 IconButton(
@@ -287,15 +298,13 @@ fun PwCopySection(
                                     Icon(
                                         imageVector = Icons.Default.ContentPaste,
                                         contentDescription = "Paste from Clipboard",
-                                        tint = BrandBlue
+                                        tint = cyanAccent
                                     )
                                 }
                             }
                         },
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = Color(0xFF7B1FA2),
-                            unfocusedBorderColor = MaterialTheme.colorScheme.outline
-                        ),
+                        colors = textFieldColors,
+                        shape = RoundedCornerShape(12.dp),
                         modifier = Modifier
                             .fillMaxWidth()
                             .testTag("input_saved_password")
@@ -305,28 +314,27 @@ fun PwCopySection(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        // Save Button
                         Button(
                             onClick = {
                                 OverlayStateManager.setSavedPasswordText(context, passwordInput)
                             },
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = Color(0xFF7B1FA2)
-                            ),
+                            colors = ButtonDefaults.buttonColors(containerColor = purpleAccent),
+                            shape = RoundedCornerShape(12.dp),
                             modifier = Modifier
                                 .weight(1f)
+                                .height(48.dp)
                                 .testTag("btn_save_password")
                         ) {
                             Icon(
                                 imageVector = Icons.Default.Save,
                                 contentDescription = null,
-                                modifier = Modifier.size(18.dp)
+                                modifier = Modifier.size(18.dp),
+                                tint = Color.White
                             )
                             Spacer(modifier = Modifier.width(6.dp))
-                            Text("Save PW", fontWeight = FontWeight.Bold)
+                            Text("Save PW", fontWeight = FontWeight.ExtraBold, color = Color.White)
                         }
 
-                        // Test Copy Button
                         OutlinedButton(
                             onClick = {
                                 if (passwordInput.isNotEmpty()) {
@@ -335,17 +343,21 @@ fun PwCopySection(
                                     Toast.makeText(context, "✓ ক্লিপবোর্ডে কপি করা হয়েছে!", Toast.LENGTH_SHORT).show()
                                 }
                             },
+                            border = BorderStroke(1.2.dp, neonGreen),
+                            shape = RoundedCornerShape(12.dp),
                             modifier = Modifier
                                 .weight(1f)
+                                .height(48.dp)
                                 .testTag("btn_test_copy_password")
                         ) {
                             Icon(
                                 imageVector = Icons.Default.ContentCopy,
                                 contentDescription = null,
-                                modifier = Modifier.size(18.dp)
+                                modifier = Modifier.size(18.dp),
+                                tint = neonGreen
                             )
                             Spacer(modifier = Modifier.width(6.dp))
-                            Text("Copy Now")
+                            Text("Copy Now", fontWeight = FontWeight.ExtraBold, color = neonGreen)
                         }
                     }
                 }
@@ -356,11 +368,9 @@ fun PwCopySection(
         if (state.isRandomPasswordMode) {
             Card(
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(16.dp),
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surface
-                ),
-                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                shape = RoundedCornerShape(18.dp),
+                colors = CardDefaults.cardColors(containerColor = cardBgColor),
+                border = BorderStroke(1.2.dp, cyanAccent.copy(alpha = 0.45f))
             ) {
                 Column(
                     modifier = Modifier
@@ -377,14 +387,15 @@ fun PwCopySection(
                             Icon(
                                 imageVector = Icons.Default.AutoAwesome,
                                 contentDescription = null,
-                                tint = Color(0xFF0091EA),
+                                tint = cyanAccent,
                                 modifier = Modifier.size(20.dp)
                             )
                             Spacer(modifier = Modifier.width(8.dp))
                             Text(
                                 text = "Random Strong Password Generator",
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 14.sp
+                                fontWeight = FontWeight.ExtraBold,
+                                fontSize = 14.sp,
+                                color = Color.White
                             )
                         }
 
@@ -397,7 +408,7 @@ fun PwCopySection(
                             Icon(
                                 imageVector = Icons.Default.Refresh,
                                 contentDescription = "Regenerate",
-                                tint = Color(0xFF0091EA)
+                                tint = cyanAccent
                             )
                         }
                     }
@@ -407,8 +418,8 @@ fun PwCopySection(
                         Text(
                             text = "পাসওয়ার্ডের দৈর্ঘ্য (Digit Length):",
                             fontSize = 12.sp,
-                            fontWeight = FontWeight.Medium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            fontWeight = FontWeight.SemiBold,
+                            color = Color(0xFF94A3B8)
                         )
                         Row(
                             modifier = Modifier.fillMaxWidth(),
@@ -421,8 +432,9 @@ fun PwCopySection(
                                     onClick = { OverlayStateManager.setRandomPasswordLength(len) },
                                     label = {
                                         Text(
-                                            text = "$len Digits" + if (len == 12) " (Recommended)" else "",
-                                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                                            text = "$len Digits",
+                                            fontWeight = FontWeight.ExtraBold,
+                                            fontSize = 12.sp
                                         )
                                     },
                                     leadingIcon = if (isSelected) {
@@ -435,8 +447,11 @@ fun PwCopySection(
                                         }
                                     } else null,
                                     colors = FilterChipDefaults.filterChipColors(
-                                        selectedContainerColor = Color(0xFF0091EA).copy(alpha = 0.2f),
-                                        selectedLabelColor = Color(0xFF0091EA)
+                                        selectedContainerColor = cyanAccent.copy(alpha = 0.2f),
+                                        selectedLabelColor = cyanAccent,
+                                        selectedLeadingIconColor = cyanAccent,
+                                        containerColor = innerBoxBgColor,
+                                        labelColor = Color(0xFFCBD5E1)
                                     ),
                                     modifier = Modifier.weight(1f)
                                 )
@@ -449,22 +464,21 @@ fun PwCopySection(
                         Text(
                             text = "সিম্বল সেটিংস (Symbol Option):",
                             fontSize = 12.sp,
-                            fontWeight = FontWeight.Medium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            fontWeight = FontWeight.SemiBold,
+                            color = Color(0xFF94A3B8)
                         )
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            // With Symbols
                             FilterChip(
                                 selected = state.randomPwIncludeSymbols,
                                 onClick = { OverlayStateManager.setRandomPasswordSymbols(true) },
                                 label = {
                                     Text(
                                         text = "With Symbols (!@#$)",
-                                        fontWeight = if (state.randomPwIncludeSymbols) FontWeight.Bold else FontWeight.Normal,
-                                        fontSize = 12.sp
+                                        fontWeight = FontWeight.ExtraBold,
+                                        fontSize = 11.5.sp
                                     )
                                 },
                                 leadingIcon = if (state.randomPwIncludeSymbols) {
@@ -477,21 +491,23 @@ fun PwCopySection(
                                     }
                                 } else null,
                                 colors = FilterChipDefaults.filterChipColors(
-                                    selectedContainerColor = Color(0xFF0091EA).copy(alpha = 0.2f),
-                                    selectedLabelColor = Color(0xFF0091EA)
+                                    selectedContainerColor = cyanAccent.copy(alpha = 0.2f),
+                                    selectedLabelColor = cyanAccent,
+                                    selectedLeadingIconColor = cyanAccent,
+                                    containerColor = innerBoxBgColor,
+                                    labelColor = Color(0xFFCBD5E1)
                                 ),
                                 modifier = Modifier.weight(1f)
                             )
 
-                            // Without Symbols
                             FilterChip(
                                 selected = !state.randomPwIncludeSymbols,
                                 onClick = { OverlayStateManager.setRandomPasswordSymbols(false) },
                                 label = {
                                     Text(
-                                        text = "Without Symbols (A-Z, 0-9)",
-                                        fontWeight = if (!state.randomPwIncludeSymbols) FontWeight.Bold else FontWeight.Normal,
-                                        fontSize = 12.sp
+                                        text = "No Symbols (A-Z,0-9)",
+                                        fontWeight = FontWeight.ExtraBold,
+                                        fontSize = 11.5.sp
                                     )
                                 },
                                 leadingIcon = if (!state.randomPwIncludeSymbols) {
@@ -504,8 +520,11 @@ fun PwCopySection(
                                     }
                                 } else null,
                                 colors = FilterChipDefaults.filterChipColors(
-                                    selectedContainerColor = Color(0xFF0091EA).copy(alpha = 0.2f),
-                                    selectedLabelColor = Color(0xFF0091EA)
+                                    selectedContainerColor = cyanAccent.copy(alpha = 0.2f),
+                                    selectedLabelColor = cyanAccent,
+                                    selectedLeadingIconColor = cyanAccent,
+                                    containerColor = innerBoxBgColor,
+                                    labelColor = Color(0xFFCBD5E1)
                                 ),
                                 modifier = Modifier.weight(1f)
                             )
@@ -520,9 +539,9 @@ fun PwCopySection(
                         onClick = {
                             OverlayStateManager.copyRandomPasswordToClipboard(context)
                         },
-                        shape = RoundedCornerShape(12.dp),
-                        color = Color(0xFF102027),
-                        border = androidx.compose.foundation.BorderStroke(1.5.dp, Color(0xFF0091EA).copy(alpha = 0.7f)),
+                        shape = RoundedCornerShape(14.dp),
+                        color = innerBoxBgColor,
+                        border = BorderStroke(1.5.dp, cyanAccent.copy(alpha = 0.65f)),
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Column(
@@ -532,12 +551,12 @@ fun PwCopySection(
                             Text(
                                 text = "ক্লিক করলেই কপি হবে এবং নতুন পাসওয়ার্ড আসবে:",
                                 fontSize = 11.sp,
-                                color = Color(0xFF80D8FF)
+                                color = cyanAccent
                             )
                             Spacer(modifier = Modifier.height(8.dp))
                             Text(
                                 text = activePw,
-                                fontSize = 20.sp,
+                                fontSize = 21.sp,
                                 fontWeight = FontWeight.ExtraBold,
                                 fontFamily = FontFamily.Monospace,
                                 color = Color.White,
@@ -548,15 +567,15 @@ fun PwCopySection(
                                 Icon(
                                     imageVector = Icons.Default.ContentCopy,
                                     contentDescription = null,
-                                    tint = Color(0xFF00E676),
+                                    tint = neonGreen,
                                     modifier = Modifier.size(14.dp)
                                 )
                                 Spacer(modifier = Modifier.width(4.dp))
                                 Text(
                                     text = "Tap to Copy & Generate Next ➔",
                                     fontSize = 11.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = Color(0xFF00E676)
+                                    fontWeight = FontWeight.ExtraBold,
+                                    color = neonGreen
                                 )
                             }
                         }
@@ -567,9 +586,7 @@ fun PwCopySection(
                         onClick = {
                             OverlayStateManager.copyRandomPasswordToClipboard(context)
                         },
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = Color(0xFF0091EA)
-                        ),
+                        colors = ButtonDefaults.buttonColors(containerColor = cyanAccent),
                         shape = RoundedCornerShape(12.dp),
                         modifier = Modifier
                             .fillMaxWidth()
@@ -578,13 +595,15 @@ fun PwCopySection(
                         Icon(
                             imageVector = Icons.Default.ContentCopy,
                             contentDescription = null,
-                            modifier = Modifier.size(18.dp)
+                            modifier = Modifier.size(18.dp),
+                            tint = Color(0xFF041E2B)
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
                             text = "Copy & Auto Generate Next PW",
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 14.sp
+                            fontWeight = FontWeight.ExtraBold,
+                            fontSize = 14.sp,
+                            color = Color(0xFF041E2B)
                         )
                     }
                 }
@@ -595,9 +614,8 @@ fun PwCopySection(
         Card(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(16.dp),
-            colors = CardDefaults.cardColors(
-                containerColor = Color(0xFF1B2333)
-            )
+            colors = CardDefaults.cardColors(containerColor = cardBgColor),
+            border = BorderStroke(1.dp, cardBorderColor)
         ) {
             Column(
                 modifier = Modifier
@@ -607,9 +625,9 @@ fun PwCopySection(
             ) {
                 Text(
                     text = "💡 ফ্লোয়েটিং বাবল ও পাসওয়ার্ড কপি গাইড:",
-                    fontWeight = FontWeight.Bold,
+                    fontWeight = FontWeight.ExtraBold,
                     fontSize = 13.sp,
-                    color = Color(0xFF80D8FF)
+                    color = cyanAccent
                 )
 
                 Text(
@@ -617,7 +635,7 @@ fun PwCopySection(
                             "• 'Random Generator' মোডে থাকলে প্রতিবার বাটন বা পাসওয়ার্ডে চাপ দিলে পাসওয়ার্ড কীবোর্ডে কপি হবে এবং সাথে সাথে নতুন আরেকটি ফ্রেশ পাসওয়ার্ড জেনারেট হয়ে যাবে।\n" +
                             "• ফ্লোয়েটিং বাবলের 'PW Copy' বাটনে চাপ দিলেও আপনার নির্বাচিত মোড (সেভ করা বা র‍্যান্ডম পাসওয়ার্ড) সরাসরি কীবোর্ডে কপি হয়ে যাবে!",
                     fontSize = 12.sp,
-                    color = Color.White.copy(alpha = 0.85f),
+                    color = Color(0xFFE2E8F0),
                     lineHeight = 18.sp
                 )
             }

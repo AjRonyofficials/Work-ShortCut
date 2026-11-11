@@ -1,8 +1,7 @@
 package com.example.ui.screens
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -39,6 +38,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -50,11 +50,13 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.local.WorkShortcutRepository
@@ -83,51 +85,93 @@ fun TwoFactorSection(
     var editingKey by remember { mutableStateOf<TwoFactorKeyEntity?>(null) }
     val totp = state.totpResult
 
+    val cardBgColor = Color(0xFF0D1726)
+    val innerBoxBgColor = Color(0xFF08101C)
+    val cardBorderColor = Color(0xFF1C2E4A)
+    val cyanAccent = Color(0xFF00E5FF)
+    val neonGreen = Color(0xFF00E676)
+
+    val textFieldColors = OutlinedTextFieldDefaults.colors(
+        focusedTextColor = Color.White,
+        unfocusedTextColor = Color(0xFFE2E8F0),
+        focusedContainerColor = innerBoxBgColor,
+        unfocusedContainerColor = innerBoxBgColor,
+        focusedBorderColor = BrandAmber,
+        unfocusedBorderColor = Color(0xFF233856),
+        focusedLabelColor = BrandAmber,
+        unfocusedLabelColor = Color(0xFF94A3B8),
+        cursorColor = BrandAmber
+    )
+
     LazyColumn(
         modifier = modifier
             .fillMaxSize()
-            .padding(16.dp)
+            .padding(horizontal = 14.dp, vertical = 12.dp)
             .testTag("two_factor_section"),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
+        verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
         // Section Header
         item {
             Card(
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(16.dp),
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
-                )
+                shape = RoundedCornerShape(18.dp),
+                colors = CardDefaults.cardColors(containerColor = cardBgColor),
+                border = BorderStroke(1.2.dp, BrandAmber.copy(alpha = 0.4f))
             ) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
                         Box(
                             modifier = Modifier
-                                .size(36.dp)
+                                .size(44.dp)
                                 .clip(CircleShape)
-                                .background(BrandAmber.copy(alpha = 0.15f)),
+                                .background(
+                                    Brush.linearGradient(
+                                        listOf(BrandAmber, Color(0xFFF59E0B))
+                                    )
+                                ),
                             contentAlignment = Alignment.Center
                         ) {
                             Icon(
-                                imageVector = Icons.Default.Key,
+                                imageVector = Icons.Default.Security,
                                 contentDescription = null,
-                                tint = BrandAmber,
-                                modifier = Modifier.size(22.dp)
+                                tint = Color.Black,
+                                modifier = Modifier.size(24.dp)
                             )
                         }
                         Spacer(modifier = Modifier.width(12.dp))
                         Column {
                             Text(
-                                text = "2FA Authenticator Generator",
+                                text = "2FA Authenticator Studio",
                                 style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold
+                                fontWeight = FontWeight.ExtraBold,
+                                color = Color.White
                             )
                             Text(
-                                text = "Auto-generates & copies 6-digit TOTP code instantly",
+                                text = "Instant 6-Digit TOTP Code Generator & Vault",
                                 style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                color = Color(0xFF94A3B8)
                             )
                         }
+                    }
+
+                    Surface(
+                        shape = RoundedCornerShape(10.dp),
+                        color = BrandAmber.copy(alpha = 0.15f),
+                        border = BorderStroke(1.dp, BrandAmber.copy(alpha = 0.45f))
+                    ) {
+                        Text(
+                            text = "${savedKeys.size} Saved",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            color = BrandAmber,
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
+                        )
                     }
                 }
             }
@@ -147,7 +191,7 @@ fun TwoFactorSection(
                 },
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(54.dp)
+                    .height(52.dp)
                     .testTag("one_tap_paste_2fa_key_and_copy_button"),
                 shape = RoundedCornerShape(14.dp),
                 colors = ButtonDefaults.buttonColors(containerColor = BrandAmber)
@@ -156,14 +200,16 @@ fun TwoFactorSection(
                     imageVector = Icons.Default.Bolt,
                     contentDescription = null,
                     tint = Color.Black,
-                    modifier = Modifier.size(24.dp)
+                    modifier = Modifier.size(22.dp)
                 )
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
                     text = "⚡ PASTE KEY & GET 6-DIGIT CODE",
                     fontWeight = FontWeight.Black,
-                    fontSize = 15.sp,
-                    color = Color.Black
+                    fontSize = 14.sp,
+                    color = Color.Black,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
             }
         }
@@ -172,14 +218,12 @@ fun TwoFactorSection(
         item {
             Card(
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(20.dp),
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surface
-                ),
-                border = androidx.compose.foundation.BorderStroke(1.5.dp, BrandAmber.copy(alpha = 0.4f))
+                shape = RoundedCornerShape(18.dp),
+                colors = CardDefaults.cardColors(containerColor = cardBgColor),
+                border = BorderStroke(1.5.dp, BrandAmber.copy(alpha = 0.45f))
             ) {
                 Column(
-                    modifier = Modifier.padding(20.dp),
+                    modifier = Modifier.padding(18.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
                     Row(
@@ -187,23 +231,32 @@ fun TwoFactorSection(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        Text(
-                            text = "SECURITY CODE (RFC 6238)",
-                            style = MaterialTheme.typography.labelMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = BrandAmber
-                        )
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Default.Key,
+                                contentDescription = null,
+                                tint = BrandAmber,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "LIVE SECURITY CODE (RFC 6238)",
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.ExtraBold,
+                                color = BrandAmber
+                            )
+                        }
                         if (totp != null) {
                             TotpCountdownRing(
                                 remainingSeconds = totp.remainingSeconds,
                                 progress = totp.progress,
-                                size = 36.dp,
+                                size = 34.dp,
                                 strokeWidth = 3.dp
                             )
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(16.dp))
+                    Spacer(modifier = Modifier.height(14.dp))
 
                     // 6-digit code large text
                     Surface(
@@ -211,23 +264,23 @@ fun TwoFactorSection(
                             OverlayStateManager.copyCurrentTotpCode(context)
                         },
                         shape = RoundedCornerShape(14.dp),
-                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
-                        border = androidx.compose.foundation.BorderStroke(1.dp, BrandAmber.copy(alpha = 0.3f)),
+                        color = innerBoxBgColor,
+                        border = BorderStroke(1.2.dp, BrandAmber.copy(alpha = 0.4f)),
                         modifier = Modifier
                             .fillMaxWidth()
                             .testTag("totp_code_display_box")
                     ) {
                         Column(
-                            modifier = Modifier.padding(vertical = 18.dp, horizontal = 16.dp),
+                            modifier = Modifier.padding(vertical = 18.dp, horizontal = 14.dp),
                             horizontalAlignment = Alignment.CenterHorizontally
                         ) {
                             Text(
                                 text = totp?.formattedCode ?: "ENTER 2FA KEY",
-                                fontSize = 34.sp,
+                                fontSize = 32.sp,
                                 fontWeight = FontWeight.ExtraBold,
                                 fontFamily = FontFamily.Monospace,
                                 letterSpacing = 4.sp,
-                                color = if (totp != null) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant
+                                color = if (totp != null) neonGreen else Color(0xFF94A3B8)
                             )
                             Spacer(modifier = Modifier.height(6.dp))
                             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -239,7 +292,7 @@ fun TwoFactorSection(
                                 )
                                 Spacer(modifier = Modifier.width(6.dp))
                                 Text(
-                                    text = "Tap to copy code to clipboard",
+                                    text = "Tap anywhere to copy 6-digit code",
                                     fontSize = 12.sp,
                                     color = BrandAmber,
                                     fontWeight = FontWeight.SemiBold
@@ -248,7 +301,7 @@ fun TwoFactorSection(
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(16.dp))
+                    Spacer(modifier = Modifier.height(14.dp))
 
                     // 1-Click Copy Code Button
                     Button(
@@ -260,14 +313,14 @@ fun TwoFactorSection(
                             .height(48.dp)
                             .testTag("copy_2fa_code_button"),
                         shape = RoundedCornerShape(12.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = BrandAmber)
+                        colors = ButtonDefaults.buttonColors(containerColor = neonGreen)
                     ) {
-                        Icon(imageVector = Icons.Default.ContentCopy, contentDescription = null)
+                        Icon(imageVector = Icons.Default.ContentCopy, contentDescription = null, tint = Color(0xFF042F16))
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            text = "Auto-Copy 2FA Code (${totp?.code ?: ""})",
-                            fontWeight = FontWeight.Bold,
-                            color = Color.Black
+                            text = "Copy 2FA Code (${totp?.code ?: "------"})",
+                            fontWeight = FontWeight.ExtraBold,
+                            color = Color(0xFF042F16)
                         )
                     }
                 }
@@ -279,14 +332,15 @@ fun TwoFactorSection(
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(16.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.25f))
+                colors = CardDefaults.cardColors(containerColor = cardBgColor),
+                border = BorderStroke(1.dp, cardBorderColor)
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
                     Text(
-                        text = "Paste Facebook / Instagram 2FA Secret Key",
+                        text = "Paste Facebook / Instagram / Google 2FA Secret Key",
                         style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.Bold
+                        fontWeight = FontWeight.ExtraBold,
+                        color = Color.White
                     )
                     Spacer(modifier = Modifier.height(10.dp))
 
@@ -300,7 +354,8 @@ fun TwoFactorSection(
                                 inputKey = newKey
                                 OverlayStateManager.setTwoFactorKey(newKey)
                             },
-                            placeholder = { Text("e.g. JBSWY3DPEHPK3PXP") },
+                            placeholder = { Text("e.g. JBSWY3DPEHPK3PXP", fontSize = 12.sp) },
+                            colors = textFieldColors,
                             modifier = Modifier
                                 .weight(1f)
                                 .testTag("two_factor_key_input"),
@@ -320,15 +375,16 @@ fun TwoFactorSection(
                                 }
                             },
                             shape = RoundedCornerShape(12.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = BrandAmber),
                             modifier = Modifier
-                                .height(56.dp)
+                                .height(54.dp)
                                 .testTag("paste_2fa_clipboard_btn")
                         ) {
-                            Icon(imageVector = Icons.Default.ContentPaste, contentDescription = "Paste")
+                            Icon(imageVector = Icons.Default.ContentPaste, contentDescription = "Paste", tint = Color.Black)
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(12.dp))
+                    Spacer(modifier = Modifier.height(10.dp))
 
                     // Optional Save to accounts
                     Row(
@@ -338,13 +394,14 @@ fun TwoFactorSection(
                         OutlinedTextField(
                             value = accountTitle,
                             onValueChange = { accountTitle = it },
-                            placeholder = { Text("Account Name (e.g. FB Work, IG Main)") },
+                            placeholder = { Text("Account Name (e.g. FB Work, IG Main)", fontSize = 12.sp) },
+                            colors = textFieldColors,
                             modifier = Modifier.weight(1f),
                             singleLine = true,
-                            shape = RoundedCornerShape(10.dp)
+                            shape = RoundedCornerShape(12.dp)
                         )
                         Spacer(modifier = Modifier.width(8.dp))
-                        OutlinedButton(
+                        Button(
                             onClick = {
                                 if (inputKey.isNotEmpty()) {
                                     scope.launch {
@@ -360,12 +417,13 @@ fun TwoFactorSection(
                                     }
                                 }
                             },
-                            shape = RoundedCornerShape(10.dp),
-                            modifier = Modifier.height(52.dp)
+                            shape = RoundedCornerShape(12.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = cyanAccent),
+                            modifier = Modifier.height(54.dp)
                         ) {
-                            Icon(imageVector = Icons.Default.Add, contentDescription = null)
+                            Icon(imageVector = Icons.Default.Add, contentDescription = null, tint = Color(0xFF041E2B))
                             Spacer(modifier = Modifier.width(4.dp))
-                            Text("Save")
+                            Text("Save", fontWeight = FontWeight.ExtraBold, color = Color(0xFF041E2B))
                         }
                     }
                 }
@@ -386,7 +444,8 @@ fun TwoFactorSection(
                 Text(
                     text = "Saved 2FA Accounts (${savedKeys.size})",
                     style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.Bold
+                    fontWeight = FontWeight.ExtraBold,
+                    color = Color.White
                 )
             }
 
@@ -402,15 +461,16 @@ fun TwoFactorSection(
                     trailingIcon = if (searchQuery.isNotEmpty()) {
                         {
                             IconButton(onClick = { searchQuery = "" }) {
-                                Icon(Icons.Default.Close, contentDescription = "Clear", modifier = Modifier.size(16.dp))
+                                Icon(Icons.Default.Close, contentDescription = "Clear", tint = Color(0xFF94A3B8), modifier = Modifier.size(16.dp))
                             }
                         }
                     } else null,
+                    colors = textFieldColors,
                     modifier = Modifier
                         .fillMaxWidth()
                         .testTag("search_2fa_input"),
                     singleLine = true,
-                    shape = RoundedCornerShape(10.dp)
+                    shape = RoundedCornerShape(12.dp)
                 )
             }
         }
@@ -418,14 +478,15 @@ fun TwoFactorSection(
         if (savedKeys.isEmpty()) {
             item {
                 Surface(
-                    shape = RoundedCornerShape(12.dp),
-                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
+                    shape = RoundedCornerShape(14.dp),
+                    color = cardBgColor,
+                    border = BorderStroke(1.dp, cardBorderColor),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Box(modifier = Modifier.padding(20.dp), contentAlignment = Alignment.Center) {
                         Text(
                             text = "No saved 2FA keys yet. Paste your key above and tap Save!",
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            color = Color(0xFF94A3B8),
                             fontSize = 13.sp
                         )
                     }
@@ -434,14 +495,15 @@ fun TwoFactorSection(
         } else if (filteredKeys.isEmpty()) {
             item {
                 Surface(
-                    shape = RoundedCornerShape(12.dp),
-                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.2f),
+                    shape = RoundedCornerShape(14.dp),
+                    color = cardBgColor,
+                    border = BorderStroke(1.dp, cardBorderColor),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Box(modifier = Modifier.padding(16.dp), contentAlignment = Alignment.Center) {
                         Text(
                             text = "\"$searchQuery\" দিয়ে কোনো 2FA কি পাওয়া যায়নি",
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            color = Color(0xFF94A3B8),
                             fontSize = 12.sp
                         )
                     }
@@ -451,31 +513,37 @@ fun TwoFactorSection(
             items(filteredKeys) { itemKey ->
                 val itemTotp = TotpHelper.generateTotp(itemKey.secretKey)
                 Surface(
-                    shape = RoundedCornerShape(12.dp),
-                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)),
+                    onClick = {
+                        OverlayStateManager.setTwoFactorKey(itemKey.secretKey, autoGenerateAndCopy = context)
+                    },
+                    shape = RoundedCornerShape(14.dp),
+                    color = cardBgColor,
+                    border = BorderStroke(1.dp, BrandAmber.copy(alpha = 0.35f)),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(14.dp),
+                            .padding(horizontal = 14.dp, vertical = 12.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
                                 text = itemKey.title,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 14.sp
+                                fontWeight = FontWeight.ExtraBold,
+                                fontSize = 14.sp,
+                                color = Color.White,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
                             )
                             Spacer(modifier = Modifier.height(4.dp))
                             Text(
                                 text = itemTotp?.formattedCode ?: "Invalid key",
                                 fontFamily = FontFamily.Monospace,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 18.sp,
-                                color = BrandAmber
+                                fontWeight = FontWeight.ExtraBold,
+                                fontSize = 19.sp,
+                                color = neonGreen
                             )
                         }
 
@@ -487,7 +555,7 @@ fun TwoFactorSection(
                                     size = 28.dp,
                                     strokeWidth = 2.5.dp
                                 )
-                                Spacer(modifier = Modifier.width(8.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
                             }
 
                             // Tap to load into active generator & copy
@@ -507,7 +575,7 @@ fun TwoFactorSection(
                                 Icon(
                                     imageVector = Icons.Default.Edit,
                                     contentDescription = "Edit 2FA Key in Database",
-                                    tint = BrandGreen
+                                    tint = cyanAccent
                                 )
                             }
 
@@ -517,7 +585,7 @@ fun TwoFactorSection(
                                 Icon(
                                     imageVector = Icons.Default.Delete,
                                     contentDescription = "Delete key",
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                    tint = Color(0xFFFF5252)
                                 )
                             }
                         }
@@ -534,11 +602,13 @@ fun TwoFactorSection(
 
         AlertDialog(
             onDismissRequest = { editingKey = null },
+            containerColor = cardBgColor,
             title = {
                 Text(
                     text = "এডিট 2FA কি (Edit in Database)",
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 16.sp
+                    fontWeight = FontWeight.ExtraBold,
+                    fontSize = 16.sp,
+                    color = Color.White
                 )
             },
             text = {
@@ -547,6 +617,7 @@ fun TwoFactorSection(
                         value = editTitle,
                         onValueChange = { editTitle = it },
                         label = { Text("একাউন্ট টাইটেল (Title)") },
+                        colors = textFieldColors,
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth()
                     )
@@ -554,6 +625,7 @@ fun TwoFactorSection(
                         value = editSecret,
                         onValueChange = { editSecret = it },
                         label = { Text("সিক্রেট কি (Secret Key)") },
+                        colors = textFieldColors,
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth()
                     )
@@ -578,12 +650,15 @@ fun TwoFactorSection(
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = BrandAmber)
                 ) {
-                    Text("সেভ করুন (Save)", color = Color.Black, fontWeight = FontWeight.Bold)
+                    Text("সেভ করুন (Save)", color = Color.Black, fontWeight = FontWeight.ExtraBold)
                 }
             },
             dismissButton = {
-                OutlinedButton(onClick = { editingKey = null }) {
-                    Text("বাতিল")
+                OutlinedButton(
+                    onClick = { editingKey = null },
+                    border = BorderStroke(1.dp, Color(0xFF475569))
+                ) {
+                    Text("বাতিল", color = Color(0xFFCBD5E1))
                 }
             }
         )
