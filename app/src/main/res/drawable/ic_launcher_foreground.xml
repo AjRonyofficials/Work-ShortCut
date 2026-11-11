@@ -1,0 +1,25 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Outer bubble shape -->
+    <path
+        android:fillColor="#38BDF8"
+        android:pathData="M32,28 h44 c6.6,0 12,5.4 12,12 v26 c0,6.6 -5.4,12 -12,12 h-26 l-12,10 v-10 h-6 c-6.6,0 -12,-5.4 -12,-12 v-26 c0,-6.6 5.4,-12 12,-12 Z" />
+    <!-- Inner bubble cutout/contrast -->
+    <path
+        android:fillColor="#0284C7"
+        android:pathData="M35,32 h38 c4.4,0 8,3.6 8,8 v22 c0,4.4 -3.6,8 -8,8 h-24 l-8,7 v-7 h-6 c-4.4,0 -8,-3.6 -8,-8 v-22 c0,-4.4 3.6,-8 8,-8 Z" />
+    <!-- Lightning bolt shortcut symbol -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M56,36 L43,53 h9 l-4,17 17,-20 h-9 l5,-14 Z" />
+    <!-- Mini indicator dots in bottom right -->
+    <path
+        android:fillColor="#FBBF24"
+        android:pathData="M70,42 a3,3 0 1,0 6,0 a3,3 0 1,0 -6,0 Z" />
+    <path
+        android:fillColor="#34D399"
+        android:pathData="M70,52 a3,3 0 1,0 6,0 a3,3 0 1,0 -6,0 Z" />
+</vector>
