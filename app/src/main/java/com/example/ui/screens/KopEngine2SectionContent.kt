@@ -138,41 +138,69 @@ fun KopEngine2SectionContent(
             .padding(bottom = 80.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-        // 1. Header Card (KOP ENGINE 2 ACTIVE & STATS)
+        // 1. Header Card (KOP ENGINE 2 • ELECTRIC VIOLET & SAPPHIRE LUXURY CARD)
         Card(
-            colors = CardDefaults.cardColors(containerColor = ThemeCardBg),
-            shape = RoundedCornerShape(18.dp),
-            border = BorderStroke(1.2.dp, ThemeSky.copy(alpha = 0.5f)),
+            colors = CardDefaults.cardColors(containerColor = Color(0xFF0E1024)),
+            shape = RoundedCornerShape(16.dp),
+            border = BorderStroke(1.5.dp, Color(0xFF8B5CF6).copy(alpha = 0.55f)),
             modifier = Modifier.fillMaxWidth()
         ) {
-            Column(modifier = Modifier.padding(14.dp)) {
+            Column(modifier = Modifier.padding(12.dp)) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Box(
-                            modifier = Modifier
-                                .size(9.dp)
-                                .clip(CircleShape)
-                                .background(ThemeEmerald)
-                        )
-                        Spacer(modifier = Modifier.width(7.dp))
-                        Text(
-                            text = "KOP ENGINE 2 • LIVE CORE",
-                            color = ThemeSkyBright,
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.ExtraBold,
-                            letterSpacing = 0.8.sp
-                        )
+                        Surface(
+                            color = Color(0xFF8B5CF6).copy(alpha = 0.2f),
+                            shape = RoundedCornerShape(10.dp),
+                            border = BorderStroke(1.dp, Color(0xFF8B5CF6).copy(alpha = 0.55f)),
+                            modifier = Modifier.size(34.dp)
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Text("🔥", fontSize = 16.sp)
+                            }
+                        }
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Column {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    text = "KOP ENGINE 2",
+                                    color = Color(0xFFA78BFA),
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Black,
+                                    letterSpacing = 0.6.sp
+                                )
+                                Spacer(modifier = Modifier.width(5.dp))
+                                Surface(
+                                    color = Color(0xFF6366F1).copy(alpha = 0.25f),
+                                    shape = RoundedCornerShape(5.dp),
+                                    border = BorderStroke(0.8.dp, Color(0xFF818CF8).copy(alpha = 0.6f))
+                                ) {
+                                    Text(
+                                        text = "RADAR CORE",
+                                        color = Color(0xFFC4B5FD),
+                                        fontSize = 8.5.sp,
+                                        fontWeight = FontWeight.ExtraBold,
+                                        modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp)
+                                    )
+                                }
+                            }
+                            Text(
+                                text = "Live Range Stream • High-Speed Radar API",
+                                color = Color(0xFF94A3B8),
+                                fontSize = 9.5.sp,
+                                fontWeight = FontWeight.Medium
+                            )
+                        }
                     }
 
                     // Today OTP Counter Card
                     Surface(
-                        color = ThemeSky.copy(alpha = 0.2f),
+                        color = Color(0xFF8B5CF6).copy(alpha = 0.2f),
                         shape = RoundedCornerShape(10.dp),
-                        border = BorderStroke(1.dp, ThemeSky.copy(alpha = 0.6f))
+                        border = BorderStroke(1.dp, Color(0xFF8B5CF6).copy(alpha = 0.65f))
                     ) {
                         Row(
                             modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
@@ -182,78 +210,87 @@ fun KopEngine2SectionContent(
                                 imageVector = Icons.Default.Bolt,
                                 contentDescription = "OTP",
                                 tint = Color(0xFFFDE047),
-                                modifier = Modifier.size(16.dp)
+                                modifier = Modifier.size(15.dp)
                             )
-                            Spacer(modifier = Modifier.width(5.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
                             Text(
                                 text = "TODAY OTP: ${state.todayOtpCount}",
                                 color = Color.White,
-                                fontSize = 11.5.sp,
-                                fontWeight = FontWeight.Bold
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.ExtraBold
                             )
                         }
                     }
                 }
 
-                Spacer(modifier = Modifier.height(12.dp))
+                Spacer(modifier = Modifier.height(10.dp))
 
-                // Stats Row: Total, Success, Rate
+                // 4 Stats Row: Total, Received, Expired, Rate
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
-                    // Total Numbers
                     Surface(
-                        color = ThemeSurfaceDark,
+                        color = Color(0xFF151932),
                         shape = RoundedCornerShape(10.dp),
-                        border = BorderStroke(1.dp, ThemeBorder),
+                        border = BorderStroke(1.dp, Color(0xFF2E365F)),
                         modifier = Modifier.weight(1f)
                     ) {
                         Column(
-                            modifier = Modifier.padding(vertical = 8.dp),
+                            modifier = Modifier.padding(vertical = 6.dp),
                             horizontalAlignment = Alignment.CenterHorizontally
                         ) {
-                            Text(text = "TOTAL", color = ThemeMuted, fontSize = 9.5.sp, fontWeight = FontWeight.Bold)
-                            Spacer(modifier = Modifier.height(2.dp))
-                            Text(text = "$total", color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.ExtraBold)
+                            Text(text = "TOTAL", color = ThemeMuted, fontSize = 8.5.sp, fontWeight = FontWeight.Bold)
+                            Text(text = "$total", color = Color.White, fontSize = 13.5.sp, fontWeight = FontWeight.Black)
                         }
                     }
 
-                    // Success Count
                     Surface(
-                        color = ThemeSurfaceDark,
+                        color = ThemeEmerald.copy(alpha = 0.12f),
                         shape = RoundedCornerShape(10.dp),
-                        border = BorderStroke(1.dp, ThemeBorder),
+                        border = BorderStroke(1.dp, ThemeEmerald.copy(alpha = 0.45f)),
                         modifier = Modifier.weight(1f)
                     ) {
                         Column(
-                            modifier = Modifier.padding(vertical = 8.dp),
+                            modifier = Modifier.padding(vertical = 6.dp),
                             horizontalAlignment = Alignment.CenterHorizontally
                         ) {
-                            Text(text = "SUCCESS", color = ThemeEmerald, fontSize = 9.5.sp, fontWeight = FontWeight.Bold)
-                            Spacer(modifier = Modifier.height(2.dp))
-                            Text(text = "$successCount", color = ThemeEmerald, fontSize = 15.sp, fontWeight = FontWeight.ExtraBold)
+                            Text(text = "RECEIVED", color = ThemeEmerald, fontSize = 8.5.sp, fontWeight = FontWeight.Bold)
+                            Text(text = "$successCount", color = ThemeEmerald, fontSize = 13.5.sp, fontWeight = FontWeight.Black)
                         }
                     }
 
-                    // OTP Rate
                     Surface(
-                        color = ThemeSurfaceDark,
+                        color = Color(0xFFEF4444).copy(alpha = 0.12f),
                         shape = RoundedCornerShape(10.dp),
-                        border = BorderStroke(1.dp, ThemeBorder),
+                        border = BorderStroke(1.dp, Color(0xFFEF4444).copy(alpha = 0.4f)),
                         modifier = Modifier.weight(1f)
                     ) {
                         Column(
-                            modifier = Modifier.padding(vertical = 8.dp),
+                            modifier = Modifier.padding(vertical = 6.dp),
                             horizontalAlignment = Alignment.CenterHorizontally
                         ) {
-                            Text(text = "RATE", color = ThemeSkyBright, fontSize = 9.5.sp, fontWeight = FontWeight.Bold)
-                            Spacer(modifier = Modifier.height(2.dp))
+                            Text(text = "FAILED", color = Color(0xFFF87171), fontSize = 8.5.sp, fontWeight = FontWeight.Bold)
+                            Text(text = "$expiredCount", color = Color(0xFFEF4444), fontSize = 13.5.sp, fontWeight = FontWeight.Black)
+                        }
+                    }
+
+                    Surface(
+                        color = Color(0xFF8B5CF6).copy(alpha = 0.18f),
+                        shape = RoundedCornerShape(10.dp),
+                        border = BorderStroke(1.dp, Color(0xFF8B5CF6).copy(alpha = 0.55f)),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(vertical = 6.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Text(text = "OTP RATE", color = Color(0xFFC4B5FD), fontSize = 8.5.sp, fontWeight = FontWeight.Bold)
                             Text(
-                                text = "${String.format(Locale.US, "%.2f", kop2OtpRate)} ৳",
-                                color = ThemeSkyBright,
-                                fontSize = 14.sp,
-                                fontWeight = FontWeight.ExtraBold
+                                text = "${String.format(Locale.US, "%.2f", kop2OtpRate)}৳",
+                                color = Color(0xFFA78BFA),
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Black
                             )
                         }
                     }

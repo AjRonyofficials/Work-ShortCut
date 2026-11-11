@@ -148,10 +148,42 @@ fun MainScreen(
         }
     }
 
+    val activeVirtualPanel by com.example.service.VirtualNumberManager.selectedPanel.collectAsStateWithLifecycle()
+
+    androidx.compose.runtime.LaunchedEffect(activeVirtualPanel) {
+        if (selectedTab == AppNavTab.VIRTUAL_NUMBERS ||
+            selectedTab == AppNavTab.PREMIUM_V2 ||
+            selectedTab == AppNavTab.KOP_ENGINE_1 ||
+            selectedTab == AppNavTab.KOP_ENGINE_2
+        ) {
+            selectedTab = when (activeVirtualPanel) {
+                0 -> AppNavTab.VIRTUAL_NUMBERS
+                3 -> AppNavTab.PREMIUM_V2
+                2 -> AppNavTab.KOP_ENGINE_2
+                else -> AppNavTab.KOP_ENGINE_1
+            }
+        }
+    }
+
     androidx.compose.runtime.LaunchedEffect(Unit) {
         OverlayStateManager.requestedAppTab.collect { tabName ->
             when (tabName) {
-                "VIRTUAL_NUMBERS" -> selectedTab = AppNavTab.VIRTUAL_NUMBERS
+                "VIRTUAL_NUMBERS" -> {
+                    com.example.service.VirtualNumberManager.setSelectedPanel(0)
+                    selectedTab = AppNavTab.VIRTUAL_NUMBERS
+                }
+                "PREMIUM_V2" -> {
+                    com.example.service.VirtualNumberManager.setSelectedPanel(3)
+                    selectedTab = AppNavTab.PREMIUM_V2
+                }
+                "KOP_ENGINE_1" -> {
+                    com.example.service.VirtualNumberManager.setSelectedPanel(1)
+                    selectedTab = AppNavTab.KOP_ENGINE_1
+                }
+                "KOP_ENGINE_2" -> {
+                    com.example.service.VirtualNumberManager.setSelectedPanel(2)
+                    selectedTab = AppNavTab.KOP_ENGINE_2
+                }
                 "PROXY" -> selectedTab = AppNavTab.PROXY
                 "NAMES" -> selectedTab = AppNavTab.NAMES
                 "EXCEL" -> selectedTab = AppNavTab.EXCEL
@@ -367,7 +399,10 @@ fun MainScreen(
             ) {
                 val isCurrentTabAllowed = remember(selectedTab, managedUsers) {
                     when (selectedTab) {
-                        AppNavTab.VIRTUAL_NUMBERS -> com.example.service.AuthManager.isSectionAllowedForCurrentUser("VIRTUAL_NUMBERS")
+                        AppNavTab.VIRTUAL_NUMBERS,
+                        AppNavTab.PREMIUM_V2,
+                        AppNavTab.KOP_ENGINE_1,
+                        AppNavTab.KOP_ENGINE_2 -> com.example.service.AuthManager.isSectionAllowedForCurrentUser("VIRTUAL_NUMBERS")
                         AppNavTab.SHORTCUTS -> com.example.service.AuthManager.isSectionAllowedForCurrentUser("APP_SHORTCUTS")
                         AppNavTab.NAMES -> com.example.service.AuthManager.isSectionAllowedForCurrentUser("NAME_GENERATOR")
                         AppNavTab.EXCEL -> com.example.service.AuthManager.isSectionAllowedForCurrentUser("EXCEL_COLLECTOR")
@@ -410,7 +445,10 @@ fun MainScreen(
                     }
                 } else {
                     when (selectedTab) {
-                        AppNavTab.VIRTUAL_NUMBERS -> VirtualNumbersSection()
+                        AppNavTab.VIRTUAL_NUMBERS,
+                        AppNavTab.PREMIUM_V2,
+                        AppNavTab.KOP_ENGINE_1,
+                        AppNavTab.KOP_ENGINE_2 -> VirtualNumbersSection()
                         AppNavTab.SHORTCUTS -> AppShortcutsSection(state = state)
                         AppNavTab.NAMES -> NameGeneratorSection(state = state)
                         AppNavTab.EXCEL -> ExcelCollectorSection(
@@ -597,7 +635,16 @@ fun MainScreen(
         PremiumNavigationMenu(
             isOpen = sectionsMenuExpanded,
             currentTab = selectedTab,
-            onSelectTab = { selectedTab = it },
+            onSelectTab = { chosenTab ->
+                when (chosenTab) {
+                    AppNavTab.VIRTUAL_NUMBERS -> com.example.service.VirtualNumberManager.setSelectedPanel(0)
+                    AppNavTab.PREMIUM_V2 -> com.example.service.VirtualNumberManager.setSelectedPanel(3)
+                    AppNavTab.KOP_ENGINE_1 -> com.example.service.VirtualNumberManager.setSelectedPanel(1)
+                    AppNavTab.KOP_ENGINE_2 -> com.example.service.VirtualNumberManager.setSelectedPanel(2)
+                    else -> {}
+                }
+                selectedTab = chosenTab
+            },
             onDismiss = { sectionsMenuExpanded = false },
             isOverlayActive = state.isOverlayActive,
             onToggleOverlay = {

@@ -209,198 +209,247 @@ fun VirtualNumbersSection(
             .padding(horizontal = 14.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        // TOP PANEL SELECTOR (1. Unix SMS, 2. Zenex SMS) + 7D OTP HISTORY BUTTON
+        // TOP 4 SEPARATE PANEL SWITCHER CARDS + PROFILE BUTTON
         item {
             Spacer(modifier = Modifier.height(4.dp))
 
             Card(
-                colors = CardDefaults.cardColors(containerColor = Color(0xFF131F2E)),
-                shape = RoundedCornerShape(14.dp),
-                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF1E3A56)),
+                colors = CardDefaults.cardColors(containerColor = Color(0xFF0D1726)),
+                shape = RoundedCornerShape(16.dp),
+                border = BorderStroke(1.dp, Color(0xFF1E3A56)),
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Row(
+                Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 12.dp, vertical = 8.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+                        .padding(10.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
                         Text(
-                            text = "SELECT PANEL:",
+                            text = "⚡ ৪টি নাম্বার প্যানেল (SELECT NUMBER PANEL):",
                             fontSize = 11.sp,
                             fontWeight = FontWeight.ExtraBold,
-                            color = Color(0xFF90A4AE),
-                            letterSpacing = 0.5.sp
+                            color = Color(0xFF94A3B8),
+                            letterSpacing = 0.4.sp
                         )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Box {
-                            Surface(
-                                color = if (selectedPanel == 0) Color(0xFF0284C7).copy(alpha = 0.25f) else Color(0xFF10B981).copy(alpha = 0.25f),
-                                shape = RoundedCornerShape(8.dp),
-                                border = androidx.compose.foundation.BorderStroke(
-                                    1.dp,
-                                    if (selectedPanel == 0) Color(0xFF38BDF8) else Color(0xFF34D399)
-                                ),
-                                modifier = Modifier.clickable { panelDropdownExpanded = true }
-                            ) {
-                                Row(
-                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    if (selectedPanel == 0) {
-                                        Text(
-                                            text = "Premium Numbers",
-                                            color = Color.White,
-                                            fontSize = 12.sp,
-                                            fontWeight = FontWeight.ExtraBold
-                                        )
-                                    } else if (selectedPanel == 3) {
-                                        Text(
-                                            text = "Premium Number V2",
-                                            color = Color.White,
-                                            fontSize = 12.sp,
-                                            fontWeight = FontWeight.ExtraBold
-                                        )
-                                    } else if (selectedPanel == 2) {
-                                        Row(verticalAlignment = Alignment.CenterVertically) {
-                                            Text(
-                                                text = "Kop Engine 2 ",
-                                                color = Color.White,
-                                                fontSize = 12.sp,
-                                                fontWeight = FontWeight.ExtraBold
-                                            )
-                                            Text(
-                                                text = "(Api Number)",
-                                                color = Color(0xFFC4B5FD),
-                                                fontSize = 9.5.sp,
-                                                fontWeight = FontWeight.Medium
-                                            )
-                                        }
-                                    } else {
-                                        Row(verticalAlignment = Alignment.CenterVertically) {
-                                            Text(
-                                                text = "Kop Engine ",
-                                                color = Color.White,
-                                                fontSize = 12.sp,
-                                                fontWeight = FontWeight.ExtraBold
-                                            )
-                                            Text(
-                                                text = "(Api Number)",
-                                                color = Color(0xFFA7F3D0),
-                                                fontSize = 9.5.sp,
-                                                fontWeight = FontWeight.Medium
-                                            )
-                                        }
-                                    }
-                                    Spacer(modifier = Modifier.width(4.dp))
-                                    Text(text = "▼", color = Color(0xFF81D4FA), fontSize = 10.sp)
-                                }
-                            }
 
-                            DropdownMenu(
-                                expanded = panelDropdownExpanded,
-                                onDismissRequest = { panelDropdownExpanded = false },
-                                modifier = Modifier.background(Color(0xFF0F1A28))
+                        // User Profile & History Button
+                        Surface(
+                            color = Color(0xFF0284C7).copy(alpha = 0.25f),
+                            shape = RoundedCornerShape(8.dp),
+                            border = BorderStroke(1.dp, Color(0xFF38BDF8)),
+                            modifier = Modifier.clickable { showProfileHistoryDialog = true }
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 9.dp, vertical = 5.dp),
+                                verticalAlignment = Alignment.CenterVertically
                             ) {
-                                DropdownMenuItem(
-                                    text = {
-                                        Row(verticalAlignment = Alignment.CenterVertically) {
-                                            Text(text = "Premium Numbers", color = Color(0xFF38BDF8), fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                                            Spacer(modifier = Modifier.width(6.dp))
-                                            Surface(
-                                                color = Color(0xFF00E676).copy(alpha = 0.2f),
-                                                shape = RoundedCornerShape(4.dp)
-                                            ) {
-                                                Text(text = "FAST 1s", color = Color(0xFF00E676), fontSize = 9.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp))
-                                            }
-                                        }
-                                    },
-                                    onClick = {
-                                        VirtualNumberManager.setSelectedPanel(0)
-                                        panelDropdownExpanded = false
-                                    }
-                                )
-                                DropdownMenuItem(
-                                    text = {
-                                        Row(verticalAlignment = Alignment.CenterVertically) {
-                                            Text(text = "Premium Number V2", color = Color(0xFF38BDF8), fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                                            Spacer(modifier = Modifier.width(6.dp))
-                                            Surface(
-                                                color = Color(0xFF0284C7).copy(alpha = 0.2f),
-                                                shape = RoundedCornerShape(4.dp)
-                                            ) {
-                                                Text(text = "V2 LIVE POOL", color = Color(0xFF38BDF8), fontSize = 9.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp))
-                                            }
-                                        }
-                                    },
-                                    onClick = {
-                                        VirtualNumberManager.setSelectedPanel(3)
-                                        panelDropdownExpanded = false
-                                    }
-                                )
-                                DropdownMenuItem(
-                                    text = {
-                                        Row(verticalAlignment = Alignment.CenterVertically) {
-                                            Text(text = "Kop Engine ", color = Color(0xFF34D399), fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                                            Text(text = "(Api Number)", color = Color(0xFF6EE7B7), fontSize = 10.sp, fontWeight = FontWeight.Normal)
-                                            Spacer(modifier = Modifier.width(6.dp))
-                                            Surface(
-                                                color = Color(0xFF34D399).copy(alpha = 0.2f),
-                                                shape = RoundedCornerShape(4.dp)
-                                            ) {
-                                                Text(text = "NETWORK", color = Color(0xFF34D399), fontSize = 9.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp))
-                                            }
-                                        }
-                                    },
-                                    onClick = {
-                                        VirtualNumberManager.setSelectedPanel(1)
-                                        panelDropdownExpanded = false
-                                    }
-                                )
-                                DropdownMenuItem(
-                                    text = {
-                                        Row(verticalAlignment = Alignment.CenterVertically) {
-                                            Text(text = "Kop Engine 2 ", color = Color(0xFFA78BFA), fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                                            Text(text = "(Api Number)", color = Color(0xFFC4B5FD), fontSize = 10.sp, fontWeight = FontWeight.Normal)
-                                            Spacer(modifier = Modifier.width(6.dp))
-                                            Surface(
-                                                color = Color(0xFF8B5CF6).copy(alpha = 0.2f),
-                                                shape = RoundedCornerShape(4.dp)
-                                            ) {
-                                                Text(text = "NEW API", color = Color(0xFFC4B5FD), fontSize = 9.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp))
-                                            }
-                                        }
-                                    },
-                                    onClick = {
-                                        VirtualNumberManager.setSelectedPanel(2)
-                                        panelDropdownExpanded = false
-                                    }
+                                Icon(Icons.Default.Person, contentDescription = null, tint = Color(0xFF38BDF8), modifier = Modifier.size(14.dp))
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(
+                                    text = "👤 প্রোফাইল (PROFILE)",
+                                    color = Color.White,
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.ExtraBold
                                 )
                             }
                         }
                     }
 
-                    // User Profile & History Button
-                    Surface(
-                        color = Color(0xFF0284C7).copy(alpha = 0.25f),
-                        shape = RoundedCornerShape(8.dp),
-                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF38BDF8)),
-                        modifier = Modifier.clickable { showProfileHistoryDialog = true }
+                    // Row 1: Panel 1 (Premium Numbers) & Panel 2 (Premium Number V2)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        Row(
-                            modifier = Modifier.padding(horizontal = 9.dp, vertical = 6.dp),
-                            verticalAlignment = Alignment.CenterVertically
+                        // 1. Premium Numbers (Cyan / Emerald)
+                        val isPanel0 = selectedPanel == 0
+                        Surface(
+                            onClick = { VirtualNumberManager.setSelectedPanel(0) },
+                            shape = RoundedCornerShape(12.dp),
+                            color = if (isPanel0) Color(0xFF082A3E) else Color(0xFF08101C),
+                            border = BorderStroke(
+                                if (isPanel0) 1.5.dp else 1.dp,
+                                if (isPanel0) Color(0xFF00E5FF) else Color(0xFF1C2E4A)
+                            ),
+                            modifier = Modifier.weight(1f)
                         ) {
-                            Icon(Icons.Default.Person, contentDescription = null, tint = Color(0xFF38BDF8), modifier = Modifier.size(15.dp))
-                            Spacer(modifier = Modifier.width(5.dp))
-                            Text(
-                                text = "👤 প্রোফাইল (PROFILE)",
-                                color = Color.White,
-                                fontSize = 10.5.sp,
-                                fontWeight = FontWeight.ExtraBold
-                            )
+                            Row(
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = "👑 Premium Numbers",
+                                        color = if (isPanel0) Color.White else Color(0xFFCBD5E1),
+                                        fontSize = 11.5.sp,
+                                        fontWeight = FontWeight.ExtraBold,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                    Text(
+                                        text = "VIP Cloud • 1s OTP",
+                                        color = if (isPanel0) Color(0xFF00E5FF) else Color(0xFF64748B),
+                                        fontSize = 9.5.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        maxLines = 1
+                                    )
+                                }
+                                if (isPanel0) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(8.dp)
+                                            .clip(CircleShape)
+                                            .background(Color(0xFF00E5FF))
+                                    )
+                                }
+                            }
+                        }
+
+                        // 2. Premium Number V2 (Royal Gold / Amber)
+                        val isPanel3 = selectedPanel == 3
+                        Surface(
+                            onClick = { VirtualNumberManager.setSelectedPanel(3) },
+                            shape = RoundedCornerShape(12.dp),
+                            color = if (isPanel3) Color(0xFF2C1D0B) else Color(0xFF08101C),
+                            border = BorderStroke(
+                                if (isPanel3) 1.5.dp else 1.dp,
+                                if (isPanel3) Color(0xFFF59E0B) else Color(0xFF1C2E4A)
+                            ),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = "⚡ Premium V2",
+                                        color = if (isPanel3) Color.White else Color(0xFFCBD5E1),
+                                        fontSize = 11.5.sp,
+                                        fontWeight = FontWeight.ExtraBold,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                    Text(
+                                        text = "Carrier Live Pool",
+                                        color = if (isPanel3) Color(0xFFFBBF24) else Color(0xFF64748B),
+                                        fontSize = 9.5.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        maxLines = 1
+                                    )
+                                }
+                                if (isPanel3) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(8.dp)
+                                            .clip(CircleShape)
+                                            .background(Color(0xFFFBBF24))
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    // Row 2: Panel 3 (Kop Engine 1) & Panel 4 (Kop Engine 2)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        // 3. Kop Engine 1 (Matrix Neon Emerald)
+                        val isPanel1 = selectedPanel == 1
+                        Surface(
+                            onClick = { VirtualNumberManager.setSelectedPanel(1) },
+                            shape = RoundedCornerShape(12.dp),
+                            color = if (isPanel1) Color(0xFF09281E) else Color(0xFF08101C),
+                            border = BorderStroke(
+                                if (isPanel1) 1.5.dp else 1.dp,
+                                if (isPanel1) Color(0xFF00E676) else Color(0xFF1C2E4A)
+                            ),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = "🚀 Kop Engine 1",
+                                        color = if (isPanel1) Color.White else Color(0xFFCBD5E1),
+                                        fontSize = 11.5.sp,
+                                        fontWeight = FontWeight.ExtraBold,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                    Text(
+                                        text = "Zenex Range API",
+                                        color = if (isPanel1) Color(0xFF00E676) else Color(0xFF64748B),
+                                        fontSize = 9.5.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        maxLines = 1
+                                    )
+                                }
+                                if (isPanel1) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(8.dp)
+                                            .clip(CircleShape)
+                                            .background(Color(0xFF00E676))
+                                    )
+                                }
+                            }
+                        }
+
+                        // 4. Kop Engine 2 (Electric Violet / Sapphire)
+                        val isPanel2 = selectedPanel == 2
+                        Surface(
+                            onClick = { VirtualNumberManager.setSelectedPanel(2) },
+                            shape = RoundedCornerShape(12.dp),
+                            color = if (isPanel2) Color(0xFF1D163B) else Color(0xFF08101C),
+                            border = BorderStroke(
+                                if (isPanel2) 1.5.dp else 1.dp,
+                                if (isPanel2) Color(0xFFA78BFA) else Color(0xFF1C2E4A)
+                            ),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = "🔥 Kop Engine 2",
+                                        color = if (isPanel2) Color.White else Color(0xFFCBD5E1),
+                                        fontSize = 11.5.sp,
+                                        fontWeight = FontWeight.ExtraBold,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                    Text(
+                                        text = "Radar Core API",
+                                        color = if (isPanel2) Color(0xFFC4B5FD) else Color(0xFF64748B),
+                                        fontSize = 9.5.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        maxLines = 1
+                                    )
+                                }
+                                if (isPanel2) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(8.dp)
+                                            .clip(CircleShape)
+                                            .background(Color(0xFFA78BFA))
+                                    )
+                                }
+                            }
                         }
                     }
                 }
@@ -518,14 +567,23 @@ fun VirtualNumbersSection(
         item {
             Spacer(modifier = Modifier.height(2.dp))
 
-            // 1. ZENEX HEADER & TODAY OTP COUNTER
+            // 1. KOP ENGINE 1 MATRIX EMERALD HEADER & TODAY OTP COUNTER
             Card(
-                colors = CardDefaults.cardColors(containerColor = Color(0xFF13202E)),
-                shape = RoundedCornerShape(16.dp),
-                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF1E3A56)),
+                colors = CardDefaults.cardColors(containerColor = Color(0xFF081B18)),
+                shape = RoundedCornerShape(18.dp),
+                border = BorderStroke(1.2.dp, Color(0xFF10B981).copy(alpha = 0.55f)),
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Column(modifier = Modifier.padding(14.dp)) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(
+                            Brush.verticalGradient(
+                                colors = listOf(Color(0xFF0D2B24), Color(0xFF081B18))
+                            )
+                        )
+                        .padding(14.dp)
+                ) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
@@ -534,25 +592,33 @@ fun VirtualNumbersSection(
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Box(
                                 modifier = Modifier
-                                    .size(8.dp)
+                                    .size(9.dp)
                                     .clip(CircleShape)
                                     .background(Color(0xFF00E676))
                             )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text(
-                                text = "ZENEX NETWORK ACTIVE",
-                                color = Color(0xFF00E676),
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold,
-                                letterSpacing = 0.8.sp
-                            )
+                            Spacer(modifier = Modifier.width(7.dp))
+                            Column {
+                                Text(
+                                    text = "🚀 KOP ENGINE 1",
+                                    color = Color.White,
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.ExtraBold,
+                                    letterSpacing = 0.6.sp
+                                )
+                                Text(
+                                    text = "Zenex High-Speed Range API • Matrix Core",
+                                    color = Color(0xFF34D399),
+                                    fontSize = 9.5.sp,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                            }
                         }
 
                         // Prominent Today OTP Counter Card
                         Surface(
-                            color = Color(0xFF0091EA).copy(alpha = 0.2f),
+                            color = Color(0xFF10B981).copy(alpha = 0.2f),
                             shape = RoundedCornerShape(8.dp),
-                            border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF00B0FF))
+                            border = BorderStroke(1.dp, Color(0xFF00E676))
                         ) {
                             Row(
                                 modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
@@ -561,21 +627,21 @@ fun VirtualNumbersSection(
                                 Icon(
                                     imageVector = Icons.Default.Bolt,
                                     contentDescription = "OTP",
-                                    tint = Color(0xFF40C4FF),
+                                    tint = Color(0xFF00E676),
                                     modifier = Modifier.size(16.dp)
                                 )
                                 Spacer(modifier = Modifier.width(4.dp))
                                 Text(
                                     text = "TODAY OTP: ${state.todayOtpCount}",
-                                    color = Color(0xFFE1F5FE),
-                                    fontSize = 12.sp,
+                                    color = Color.White,
+                                    fontSize = 11.5.sp,
                                     fontWeight = FontWeight.ExtraBold
                                 )
                             }
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(14.dp))
+                    Spacer(modifier = Modifier.height(12.dp))
 
                     // 4 Stat Cards: TOTAL, SUCCESS, WAIT, FAILED
                     Row(
@@ -610,11 +676,11 @@ fun VirtualNumbersSection(
 
                     Spacer(modifier = Modifier.height(10.dp))
 
-                    // Smart Automation Toggles (Option 1 & Option 6) + Option 5 Clear Failed
+                    // Smart Automation Toggles + Prominent Red Clear Failed Button
                     Surface(
-                        color = Color(0xFF0F1A26),
+                        color = Color(0xFF061310),
                         shape = RoundedCornerShape(10.dp),
-                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF1E3A56)),
+                        border = BorderStroke(1.dp, Color(0xFF143D32)),
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Row(
@@ -627,11 +693,11 @@ fun VirtualNumbersSection(
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 // Option 1 Chip: Auto-Copy
                                 Surface(
-                                    color = if (overlayState.autoCopyOtp) Color(0xFF00E676).copy(alpha = 0.2f) else Color(0xFF263238),
+                                    color = if (overlayState.autoCopyOtp) Color(0xFF00E676).copy(alpha = 0.2f) else Color(0xFF1A2825),
                                     shape = RoundedCornerShape(6.dp),
-                                    border = androidx.compose.foundation.BorderStroke(
+                                    border = BorderStroke(
                                         1.dp,
-                                        if (overlayState.autoCopyOtp) Color(0xFF00E676) else Color(0xFF546E7A)
+                                        if (overlayState.autoCopyOtp) Color(0xFF00E676) else Color(0xFF475569)
                                     ),
                                     modifier = Modifier.clickable { OverlayStateManager.toggleAutoCopyOtp() }
                                 ) {
@@ -640,7 +706,7 @@ fun VirtualNumbersSection(
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
                                         Text(
-                                            text = "1. Auto-Copy: ",
+                                            text = "Auto-Copy: ",
                                             fontSize = 10.sp,
                                             fontWeight = FontWeight.Bold,
                                             color = Color.White
@@ -658,11 +724,11 @@ fun VirtualNumbersSection(
 
                                 // Option 6 Chip: Sound/Vibration
                                 Surface(
-                                    color = if (overlayState.otpSoundVibrationEnabled) Color(0xFFFFB300).copy(alpha = 0.2f) else Color(0xFF263238),
+                                    color = if (overlayState.otpSoundVibrationEnabled) Color(0xFFFFB300).copy(alpha = 0.2f) else Color(0xFF1A2825),
                                     shape = RoundedCornerShape(6.dp),
-                                    border = androidx.compose.foundation.BorderStroke(
+                                    border = BorderStroke(
                                         1.dp,
-                                        if (overlayState.otpSoundVibrationEnabled) Color(0xFFFFB300) else Color(0xFF546E7A)
+                                        if (overlayState.otpSoundVibrationEnabled) Color(0xFFFFB300) else Color(0xFF475569)
                                     ),
                                     modifier = Modifier.clickable { OverlayStateManager.toggleOtpSoundVibrationEnabled() }
                                 ) {
@@ -671,7 +737,7 @@ fun VirtualNumbersSection(
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
                                         Text(
-                                            text = "6. Sound/Vibe: ",
+                                            text = "Sound: ",
                                             fontSize = 10.sp,
                                             fontWeight = FontWeight.Bold,
                                             color = Color.White
@@ -686,27 +752,25 @@ fun VirtualNumbersSection(
                                 }
                             }
 
-                            // Option 5: Clear Failed (20m) Button
-                            if (failedCount > 0) {
-                                Surface(
-                                    color = Color(0xFFFF5252).copy(alpha = 0.2f),
-                                    shape = RoundedCornerShape(6.dp),
-                                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFFF5252)),
-                                    modifier = Modifier.clickable { VirtualNumberManager.clearFailedNumbers(context) }
+                            // Red Clear Failed / Expired Button (Always visible on Kop Engine 1)
+                            Surface(
+                                color = Color(0xFFEF4444).copy(alpha = 0.22f),
+                                shape = RoundedCornerShape(6.dp),
+                                border = BorderStroke(1.dp, Color(0xFFEF4444)),
+                                modifier = Modifier.clickable { VirtualNumberManager.clearFailedNumbers(context) }
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                    verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Row(
-                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 4.dp),
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Icon(Icons.Default.Delete, contentDescription = null, tint = Color(0xFFFF5252), modifier = Modifier.size(12.dp))
-                                        Spacer(modifier = Modifier.width(2.dp))
-                                        Text(
-                                            text = "Clear Failed",
-                                            fontSize = 9.5.sp,
-                                            fontWeight = FontWeight.Bold,
-                                            color = Color(0xFFFF5252)
-                                        )
-                                    }
+                                    Icon(Icons.Default.Delete, contentDescription = null, tint = Color(0xFFFCA5A5), modifier = Modifier.size(12.dp))
+                                    Spacer(modifier = Modifier.width(3.dp))
+                                    Text(
+                                        text = if (failedCount > 0) "Clear Failed ($failedCount)" else "Clear Failed",
+                                        fontSize = 9.5.sp,
+                                        fontWeight = FontWeight.ExtraBold,
+                                        color = Color(0xFFFCA5A5)
+                                    )
                                 }
                             }
                         }

@@ -96,13 +96,40 @@ enum class AppNavTab(
     val accentColor: Color
 ) {
     VIRTUAL_NUMBERS(
-        title = "Virtual Numbers",
-        subtitle = "Live OTP & Console",
+        title = "Premium Numbers",
+        subtitle = "VIP Cloud & 1s Fast OTP",
         category = "COMMUNICATION",
         selectedIcon = Icons.Filled.Phone,
         unselectedIcon = Icons.Outlined.Phone,
-        gradientColors = listOf(Color(0xFF00B0FF), Color(0xFF0066FF)),
-        accentColor = Color(0xFF00B0FF)
+        gradientColors = listOf(Color(0xFF00E5FF), Color(0xFF0284C7)),
+        accentColor = Color(0xFF00E5FF)
+    ),
+    PREMIUM_V2(
+        title = "Premium Number V2",
+        subtitle = "Carrier Live Pool Engine",
+        category = "COMMUNICATION",
+        selectedIcon = Icons.Filled.Bolt,
+        unselectedIcon = Icons.Filled.Bolt,
+        gradientColors = listOf(Color(0xFFF59E0B), Color(0xFFD97706)),
+        accentColor = Color(0xFFFBBF24)
+    ),
+    KOP_ENGINE_1(
+        title = "Kop Engine 1",
+        subtitle = "Zenex High-Speed API",
+        category = "COMMUNICATION",
+        selectedIcon = Icons.Filled.Phone,
+        unselectedIcon = Icons.Outlined.Phone,
+        gradientColors = listOf(Color(0xFF10B981), Color(0xFF047857)),
+        accentColor = Color(0xFF00E676)
+    ),
+    KOP_ENGINE_2(
+        title = "Kop Engine 2",
+        subtitle = "Radar Core API Number",
+        category = "COMMUNICATION",
+        selectedIcon = Icons.Filled.Bolt,
+        unselectedIcon = Icons.Filled.Bolt,
+        gradientColors = listOf(Color(0xFF6366F1), Color(0xFF3B82F6)),
+        accentColor = Color(0xFF60A5FA)
     ),
     PROXY(
         title = "Proxy Switcher",

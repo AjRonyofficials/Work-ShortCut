@@ -272,190 +272,241 @@ fun PremiumNumberV2SectionContent(
             .padding(horizontal = 4.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-        // TOP PLATFORM BAR (SL VIRTUAL NUMBER USER • REAL-TIME • BALANCE)
-        Surface(
-            color = Color(0xFF09121D),
-            shape = RoundedCornerShape(12.dp),
-            border = BorderStroke(1.dp, Color(0xFF162A3E)),
+        // TOP LUXURY HEADER CARD (PREMIUM NUMBER V2 • ROYAL GOLD / AMBER THEME)
+        Card(
+            colors = CardDefaults.cardColors(containerColor = Color(0xFF0E131F)),
+            shape = RoundedCornerShape(16.dp),
+            border = BorderStroke(1.5.dp, Color(0xFFF59E0B).copy(alpha = 0.55f)),
             modifier = Modifier.fillMaxWidth()
         ) {
-            Row(
-                modifier = Modifier.padding(horizontal = 12.dp, vertical = 9.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Surface(
-                        color = Color(0xFF1E293B),
-                        shape = RoundedCornerShape(6.dp),
-                        modifier = Modifier.size(24.dp)
-                    ) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Text("⚡", fontSize = 12.sp)
+            Column(modifier = Modifier.padding(12.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Surface(
+                            color = Color(0xFFF59E0B).copy(alpha = 0.18f),
+                            shape = RoundedCornerShape(10.dp),
+                            border = BorderStroke(1.dp, Color(0xFFF59E0B).copy(alpha = 0.5f)),
+                            modifier = Modifier.size(34.dp)
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Text("⚡", fontSize = 16.sp)
+                            }
+                        }
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Column {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    text = "PREMIUM NUMBER V2",
+                                    color = Color(0xFFFBBF24),
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Black,
+                                    letterSpacing = 0.5.sp
+                                )
+                                Spacer(modifier = Modifier.width(5.dp))
+                                Surface(
+                                    color = Color(0xFFF59E0B).copy(alpha = 0.22f),
+                                    shape = RoundedCornerShape(5.dp),
+                                    border = BorderStroke(0.8.dp, Color(0xFFF59E0B).copy(alpha = 0.6f))
+                                ) {
+                                    Text(
+                                        text = "V2 PRO",
+                                        color = Color(0xFFFDE68A),
+                                        fontSize = 8.5.sp,
+                                        fontWeight = FontWeight.ExtraBold,
+                                        modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp)
+                                    )
+                                }
+                            }
+                            Text(
+                                text = "Carrier Live Pool Engine • Instant OTP",
+                                color = Color(0xFF94A3B8),
+                                fontSize = 9.5.sp,
+                                fontWeight = FontWeight.Medium
+                            )
                         }
                     }
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Column {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(
-                                text = "PREMIUM NUMBERS",
-                                color = Color.White,
-                                fontSize = 12.5.sp,
-                                fontWeight = FontWeight.Black
-                            )
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Surface(
-                                color = Color(0xFF10B981).copy(alpha = 0.2f),
-                                shape = RoundedCornerShape(4.dp)
+
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                        // Live Pool Active Badge
+                        Surface(
+                            color = Color(0xFF064E3B).copy(alpha = 0.45f),
+                            shape = RoundedCornerShape(14.dp),
+                            border = BorderStroke(1.dp, Color(0xFF10B981).copy(alpha = 0.7f))
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.5.dp),
+                                verticalAlignment = Alignment.CenterVertically
                             ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(6.dp)
+                                        .clip(CircleShape)
+                                        .background(Color(0xFF10B981))
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
                                 Text(
-                                    text = "USER",
+                                    text = "LIVE POOL",
                                     color = Color(0xFF34D399),
                                     fontSize = 8.5.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                                    fontWeight = FontWeight.ExtraBold
                                 )
                             }
                         }
-                        Text(
-                            text = "Carrier Live Pool Engine",
-                            color = Color(0xFF64748B),
-                            fontSize = 9.5.sp
-                        )
+
+                        // Sound Alert Toggle Button
+                        Surface(
+                            color = Color(0xFF151E2E),
+                            shape = RoundedCornerShape(8.dp),
+                            border = BorderStroke(1.dp, if (state.isSoundEnabled) Color(0xFFF59E0B).copy(alpha = 0.65f) else Color(0xFF1E2D40)),
+                            modifier = Modifier.clickable {
+                                val next = !state.isSoundEnabled
+                                PremiumNumberV2Manager.setSoundEnabled(next)
+                                Toast.makeText(context, if (next) "🔔 ওটিপি সাউন্ড অ্যালার্ট চালু" else "🔕 ওটিপি সাউন্ড অ্যালার্ট বন্ধ", Toast.LENGTH_SHORT).show()
+                            }
+                        ) {
+                            Box(modifier = Modifier.padding(5.dp), contentAlignment = Alignment.Center) {
+                                Icon(
+                                    if (state.isSoundEnabled) Icons.Default.Notifications else Icons.Default.NotificationsOff,
+                                    contentDescription = "OTP Sound Alert",
+                                    tint = if (state.isSoundEnabled) Color(0xFFFBBF24) else Color(0xFF64748B),
+                                    modifier = Modifier.size(15.dp)
+                                )
+                            }
+                        }
+
+                        // Reset 24h OTP & Active Numbers Button with Yes/No Confirmation
+                        var showV2ResetConfirmDialog by remember { mutableStateOf(false) }
+
+                        if (showV2ResetConfirmDialog) {
+                            AlertDialog(
+                                onDismissRequest = { showV2ResetConfirmDialog = false },
+                                containerColor = Color(0xFF0E1A29),
+                                titleContentColor = Color.White,
+                                textContentColor = Color(0xFFCBD5E1),
+                                title = {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Icon(Icons.Default.Refresh, contentDescription = null, tint = Color(0xFFFBBF24), modifier = Modifier.size(20.dp))
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Text("OTP ও নম্বর রিসেট করবেন?", fontSize = 15.sp, fontWeight = FontWeight.ExtraBold)
+                                    }
+                                },
+                                text = {
+                                    Text(
+                                        "আপনি কি নিশ্চিত যে Premium Number V2-এর বর্তমান অ্যাক্টিভ নম্বর এবং আজকের ২৪ ঘণ্টার OTP লিস্ট রিসেট (Reset) করতে চান?",
+                                        fontSize = 12.5.sp,
+                                        lineHeight = 18.sp
+                                    )
+                                },
+                                confirmButton = {
+                                    Button(
+                                        onClick = {
+                                            showV2ResetConfirmDialog = false
+                                            PremiumNumberV2Manager.resetTodayCycle(context)
+                                        },
+                                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFEF4444)),
+                                        shape = RoundedCornerShape(8.dp)
+                                    ) {
+                                        Text("Yes (হ্যাঁ)", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                    }
+                                },
+                                dismissButton = {
+                                    OutlinedButton(
+                                        onClick = { showV2ResetConfirmDialog = false },
+                                        border = BorderStroke(1.dp, Color(0xFF334155)),
+                                        shape = RoundedCornerShape(8.dp)
+                                    ) {
+                                        Text("No (না)", color = Color(0xFFCBD5E1), fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                    }
+                                }
+                            )
+                        }
+
+                        Surface(
+                            color = Color(0xFFEF4444).copy(alpha = 0.16f),
+                            shape = RoundedCornerShape(8.dp),
+                            border = BorderStroke(1.dp, Color(0xFFEF4444).copy(alpha = 0.55f)),
+                            modifier = Modifier.clickable { showV2ResetConfirmDialog = true }
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 7.dp, vertical = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = "🔄 Reset",
+                                    color = Color(0xFFFCA5A5),
+                                    fontSize = 9.5.sp,
+                                    fontWeight = FontWeight.ExtraBold
+                                )
+                            }
+                        }
                     }
                 }
 
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-                    // API Health Connection Pill (Live Pool status - All-Time Active)
+                Spacer(modifier = Modifier.height(10.dp))
+
+                // 4 STAT PILLS ROW (Unified Premium Layout in Royal Gold Theme)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
                     Surface(
-                        color = Color(0xFF064E3B).copy(alpha = 0.45f),
-                        shape = RoundedCornerShape(14.dp),
-                        border = BorderStroke(1.dp, Color(0xFF059669))
+                        color = Color(0xFF141D2B),
+                        shape = RoundedCornerShape(10.dp),
+                        border = BorderStroke(1.dp, Color(0xFF26354D)),
+                        modifier = Modifier.weight(1f)
                     ) {
-                        Row(
-                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp),
-                            verticalAlignment = Alignment.CenterVertically
+                        Column(
+                            modifier = Modifier.padding(vertical = 6.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
                         ) {
-                            Box(
-                                modifier = Modifier
-                                    .size(6.dp)
-                                    .clip(CircleShape)
-                                    .background(Color(0xFF10B981))
-                            )
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text(
-                                text = "LIVE POOL (ACTIVE)",
-                                color = Color(0xFF34D399),
-                                fontSize = 8.sp,
-                                fontWeight = FontWeight.Bold
-                            )
+                            Text("TOTAL", color = Color(0xFF94A3B8), fontSize = 8.5.sp, fontWeight = FontWeight.Bold)
+                            Text("$total", color = Color.White, fontSize = 13.5.sp, fontWeight = FontWeight.Black)
                         }
                     }
-
-                    // Sound Alert Toggle Button
                     Surface(
-                        color = Color(0xFF0E1A29),
-                        shape = RoundedCornerShape(8.dp),
-                        border = BorderStroke(1.dp, if (state.isSoundEnabled) Color(0xFF00E5FF).copy(alpha = 0.5f) else Color(0xFF1E2D40)),
-                        modifier = Modifier.clickable {
-                            val next = !state.isSoundEnabled
-                            PremiumNumberV2Manager.setSoundEnabled(next)
-                            Toast.makeText(context, if (next) "🔔 ওটিপি সাউন্ড অ্যালার্ট চালু" else "🔕 ওটিপি সাউন্ড অ্যালার্ট বন্ধ", Toast.LENGTH_SHORT).show()
-                        }
+                        color = Color(0xFF10B981).copy(alpha = 0.12f),
+                        shape = RoundedCornerShape(10.dp),
+                        border = BorderStroke(1.dp, Color(0xFF10B981).copy(alpha = 0.4f)),
+                        modifier = Modifier.weight(1f)
                     ) {
-                        Box(modifier = Modifier.padding(5.dp), contentAlignment = Alignment.Center) {
-                            Icon(
-                                if (state.isSoundEnabled) Icons.Default.Notifications else Icons.Default.NotificationsOff,
-                                contentDescription = "OTP Sound Alert",
-                                tint = if (state.isSoundEnabled) Color(0xFF00E5FF) else Color(0xFF64748B),
-                                modifier = Modifier.size(15.dp)
-                            )
-                        }
-                    }
-
-                    // Reset 24h OTP & Active Numbers Button with Yes/No Confirmation
-                    var showV2ResetConfirmDialog by remember { mutableStateOf(false) }
-
-                    if (showV2ResetConfirmDialog) {
-                        AlertDialog(
-                            onDismissRequest = { showV2ResetConfirmDialog = false },
-                            containerColor = Color(0xFF0E1A29),
-                            titleContentColor = Color.White,
-                            textContentColor = Color(0xFFCBD5E1),
-                            title = {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Icon(Icons.Default.Refresh, contentDescription = null, tint = Color(0xFF00E5FF), modifier = Modifier.size(20.dp))
-                                    Spacer(modifier = Modifier.width(8.dp))
-                                    Text("OTP ও নম্বর রিসেট করবেন?", fontSize = 15.sp, fontWeight = FontWeight.ExtraBold)
-                                }
-                            },
-                            text = {
-                                Text(
-                                    "আপনি কি নিশ্চিত যে Premium Number V2-এর বর্তমান অ্যাক্টিভ নম্বর এবং আজকের ২৪ ঘণ্টার OTP লিস্ট রিসেট (Reset) করতে চান?",
-                                    fontSize = 12.5.sp,
-                                    lineHeight = 18.sp
-                                )
-                            },
-                            confirmButton = {
-                                Button(
-                                    onClick = {
-                                        showV2ResetConfirmDialog = false
-                                        PremiumNumberV2Manager.resetTodayCycle(context)
-                                    },
-                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFEF4444)),
-                                    shape = RoundedCornerShape(8.dp)
-                                ) {
-                                    Text("Yes (হ্যাঁ)", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                                }
-                            },
-                            dismissButton = {
-                                OutlinedButton(
-                                    onClick = { showV2ResetConfirmDialog = false },
-                                    border = BorderStroke(1.dp, Color(0xFF334155)),
-                                    shape = RoundedCornerShape(8.dp)
-                                ) {
-                                    Text("No (না)", color = Color(0xFFCBD5E1), fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                                }
-                            }
-                        )
-                    }
-
-                    Surface(
-                        color = Color(0xFFEF4444).copy(alpha = 0.16f),
-                        shape = RoundedCornerShape(8.dp),
-                        border = BorderStroke(1.dp, Color(0xFFEF4444).copy(alpha = 0.55f)),
-                        modifier = Modifier.clickable { showV2ResetConfirmDialog = true }
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 4.dp),
-                            verticalAlignment = Alignment.CenterVertically
+                        Column(
+                            modifier = Modifier.padding(vertical = 6.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
                         ) {
-                            Text(
-                                text = "🔄 Reset",
-                                color = Color(0xFFFCA5A5),
-                                fontSize = 9.5.sp,
-                                fontWeight = FontWeight.ExtraBold
-                            )
+                            Text("RECEIVED", color = Color(0xFF34D399), fontSize = 8.5.sp, fontWeight = FontWeight.Bold)
+                            Text("$receivedCount", color = Color(0xFF10B981), fontSize = 13.5.sp, fontWeight = FontWeight.Black)
                         }
                     }
-
-                    // User OTP Rate
                     Surface(
-                        color = Color(0xFF0F2537),
-                        shape = RoundedCornerShape(8.dp),
-                        border = BorderStroke(1.dp, Color(0xFF0284C7))
+                        color = Color(0xFFF59E0B).copy(alpha = 0.12f),
+                        shape = RoundedCornerShape(10.dp),
+                        border = BorderStroke(1.dp, Color(0xFFF59E0B).copy(alpha = 0.45f)),
+                        modifier = Modifier.weight(1f)
                     ) {
-                        Row(
-                            modifier = Modifier.padding(horizontal = 7.dp, vertical = 4.dp),
-                            verticalAlignment = Alignment.CenterVertically
+                        Column(
+                            modifier = Modifier.padding(vertical = 6.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
                         ) {
-                            Text("Rate: ", color = Color(0xFF38BDF8), fontSize = 9.5.sp, fontWeight = FontWeight.Bold)
-                            Text(
-                                text = "${String.format(Locale.US, "%.2f", otpRate)}৳",
-                                color = Color.White,
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.ExtraBold
-                            )
+                            Text("WAITING", color = Color(0xFFFBBF24), fontSize = 8.5.sp, fontWeight = FontWeight.Bold)
+                            Text("$waitingCount", color = Color(0xFFFBBF24), fontSize = 13.5.sp, fontWeight = FontWeight.Black)
+                        }
+                    }
+                    Surface(
+                        color = Color(0xFFF59E0B).copy(alpha = 0.18f),
+                        shape = RoundedCornerShape(10.dp),
+                        border = BorderStroke(1.dp, Color(0xFFF59E0B).copy(alpha = 0.6f)),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(vertical = 6.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Text("OTP RATE", color = Color(0xFFFDE68A), fontSize = 8.5.sp, fontWeight = FontWeight.Bold)
+                            Text("${String.format(Locale.US, "%.2f", otpRate)}৳", color = Color(0xFFFBBF24), fontSize = 13.sp, fontWeight = FontWeight.Black)
                         }
                     }
                 }
@@ -465,18 +516,18 @@ fun PremiumNumberV2SectionContent(
         // SUB-TABS: [GET NUMBER (Operator Desk)] & [LIVE CONSOLE (Live OTP)]
         TabRow(
             selectedTabIndex = selectedSubTab,
-            containerColor = Color(0xFF0B1420),
-            contentColor = Color(0xFF00E5FF),
+            containerColor = Color(0xFF0E131F),
+            contentColor = Color(0xFFFBBF24),
             indicator = { tabPositions ->
                 TabRowDefaults.SecondaryIndicator(
                     modifier = Modifier.tabIndicatorOffset(tabPositions[selectedSubTab]),
-                    color = Color(0xFF00E5FF),
+                    color = Color(0xFFF59E0B),
                     height = 2.5.dp
                 )
             },
             modifier = Modifier
                 .clip(RoundedCornerShape(10.dp))
-                .border(1.dp, Color(0xFF162A3E), RoundedCornerShape(10.dp))
+                .border(1.dp, Color(0xFFF59E0B).copy(alpha = 0.35f), RoundedCornerShape(10.dp))
         ) {
             Tab(
                 selected = selectedSubTab == 0,
@@ -486,10 +537,10 @@ fun PremiumNumberV2SectionContent(
                         Text("📱", fontSize = 12.sp)
                         Spacer(modifier = Modifier.width(4.dp))
                         Text(
-                            text = "GET NUMBER (DESK)",
+                            text = "GET NUMBER (V2 DESK)",
                             fontSize = 11.sp,
                             fontWeight = if (selectedSubTab == 0) FontWeight.ExtraBold else FontWeight.Medium,
-                            color = if (selectedSubTab == 0) Color(0xFF00E5FF) else Color(0xFF94A3B8)
+                            color = if (selectedSubTab == 0) Color(0xFFFBBF24) else Color(0xFF94A3B8)
                         )
                     }
                 }
@@ -505,10 +556,10 @@ fun PremiumNumberV2SectionContent(
                         Text("📡", fontSize = 12.sp)
                         Spacer(modifier = Modifier.width(4.dp))
                         Text(
-                            text = "LIVE OTP STREAM",
+                            text = "LIVE V2 OTP STREAM",
                             fontSize = 11.sp,
                             fontWeight = if (selectedSubTab == 1) FontWeight.ExtraBold else FontWeight.Medium,
-                            color = if (selectedSubTab == 1) Color(0xFF00E5FF) else Color(0xFF94A3B8)
+                            color = if (selectedSubTab == 1) Color(0xFFFBBF24) else Color(0xFF94A3B8)
                         )
                     }
                 }
