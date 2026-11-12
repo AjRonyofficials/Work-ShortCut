@@ -285,46 +285,101 @@ class AutoCleanAccessibilityService : AccessibilityService() {
     }
 
     /**
+     * Strictly checks if a package is a system Settings, PackageInstaller, SecurityCenter, or Dialog host.
+     * Never matches 3rd-party floating chat heads/bubbles (like Messenger com.facebook.orca, Telegram, Chrome, etc.).
+     */
+    private fun isSystemSettingsOrDialogPackage(pkg: String): Boolean {
+        if (pkg.isEmpty()) return false
+        return pkg.contains("settings") ||
+                pkg.contains("securitycenter") ||
+                pkg.contains("packageinstaller") ||
+                pkg.contains("permissioncontroller") ||
+                pkg.contains("miui") ||
+                pkg.contains("samsung.android.settings") ||
+                pkg.contains("coloros") ||
+                pkg.contains("oplus") ||
+                pkg.contains("oneplus") ||
+                pkg.contains("vivo") ||
+                pkg.contains("iqoo") ||
+                pkg.contains("transsion") ||
+                pkg.contains("phonemaster") ||
+                pkg.contains("huawei") ||
+                pkg.contains("hihonor") ||
+                pkg.contains("motorola") ||
+                pkg.contains("nothing") ||
+                pkg == "android"
+    }
+
+    /**
+     * Validates that a window is an actual full-width Settings / Manage Space / AlertDialog window
+     * and NOT a floating chat head (Messenger, Telegram, WhatsApp), floating app icon, or SystemUI notification banner.
+     */
+    private fun isAllowedTargetOrSettingsWindow(
+        win: AccessibilityWindowInfo?,
+        root: AccessibilityNodeInfo?,
+        targetPkgLower: String
+    ): Boolean {
+        if (root == null) return false
+        val pkg = (root.packageName?.toString() ?: "").lowercase()
+        if (pkg.isEmpty() || pkg == packageName.lowercase()) return false
+        if (pkg.contains("systemui") || pkg.contains("inputmethod") || pkg.contains("keyboard") || pkg.contains("launcher")) {
+            return false
+        }
+
+        // Only allow the exact target app being cleaned OR system Settings / Dialog packages.
+        // This completely blocks Messenger (com.facebook.orca), Telegram, Chrome, or other floating icons when cleaning another app!
+        val isTargetApp = targetPkgLower.isNotEmpty() && pkg == targetPkgLower
+        val isSettingsOrDialog = isSystemSettingsOrDialogPackage(pkg)
+        if (!isTargetApp && !isSettingsOrDialog) {
+            return false
+        }
+
+        // Reject small floating icon / chat-head bubble windows (e.g. Messenger chat head is ~150x150px)
+        val rect = Rect()
+        if (win != null) {
+            win.getBoundsInScreen(rect)
+        } else {
+            root.getBoundsInScreen(rect)
+        }
+        if (rect.width() in 1..419 || rect.height() in 1..199) {
+            return false
+        }
+        return true
+    }
+
+    /**
      * Retrieves the top-most interactive application/dialog root across Android 10–17.
-     * Strictly ignores SystemUI heads-up notifications (e.g. Telegram/WhatsApp popups) so they never block automation.
+     * Strictly ignores SystemUI heads-up notifications, Messenger chat heads, and floating app icons.
      */
     private fun getBestActiveRoot(): AccessibilityNodeInfo? {
         try {
+            val targetPkgLower = (targetPackage ?: "").lowercase()
             val activeRoot = rootInActiveWindow
             val winList = try { windows } catch (_: Throwable) { null }
             if (!winList.isNullOrEmpty()) {
-                val appWindows = winList.filter { win ->
-                    val pkg = (win.root?.packageName?.toString() ?: "").lowercase()
+                val validWindows = winList.filter { win ->
                     win.type == AccessibilityWindowInfo.TYPE_APPLICATION &&
-                            pkg.isNotEmpty() &&
-                            pkg != packageName.lowercase() &&
-                            !pkg.contains("systemui")
+                            isAllowedTargetOrSettingsWindow(win, win.root, targetPkgLower)
                 }
-                // 1. Check if any top application window is a confirmation dialog
-                for (win in appWindows) {
+                // 1. Priority: Check if any valid window is a confirmation popup dialog (OK / Clear / Delete / Cancel)
+                for (win in validWindows) {
                     val r = win.root ?: continue
                     if (hasDialogIndicators(r)) {
                         return r
                     }
                 }
-                // 2. If activeRoot is a valid non-SystemUI application window, use it
-                if (activeRoot != null) {
-                    val activePkg = (activeRoot.packageName?.toString() ?: "").lowercase()
-                    if (activePkg.isNotEmpty() && activePkg != packageName.lowercase() && !activePkg.contains("systemui")) {
-                        return activeRoot
-                    }
+                // 2. If activeRoot is a valid target/Settings window (not a floating icon), use it
+                if (activeRoot != null && isAllowedTargetOrSettingsWindow(null, activeRoot, targetPkgLower)) {
+                    return activeRoot
                 }
-                // 3. Otherwise pick the first valid application window
-                for (win in appWindows) {
+                // 3. Otherwise pick the top-most valid Settings or target Manage Space window
+                for (win in validWindows) {
                     val r = win.root ?: continue
                     return r
                 }
             }
-            if (activeRoot != null) {
-                val activePkg = (activeRoot.packageName?.toString() ?: "").lowercase()
-                if (!activePkg.contains("systemui")) {
-                    return activeRoot
-                }
+            if (activeRoot != null && isAllowedTargetOrSettingsWindow(null, activeRoot, targetPkgLower)) {
+                return activeRoot
             }
             return null
         } catch (_: Throwable) {
@@ -366,19 +421,10 @@ class AutoCleanAccessibilityService : AccessibilityService() {
             val pkg = (event?.packageName?.toString() ?: "").lowercase()
             if (pkg == packageName.lowercase()) return
 
-            val isTargetPkg = currentTarget.isNotEmpty() && pkg.contains(currentTarget.lowercase())
-            val isKnownSettingsOrSystem = pkg.contains("lite") || pkg.contains("facebook") || pkg.contains("katana") ||
-                    pkg.contains("settings") || pkg.contains("samsung") || pkg.contains("miui") ||
-                    pkg.contains("securitycenter") || pkg.contains("packageinstaller") ||
-                    pkg.contains("permissioncontroller") || pkg.contains("systemui") ||
-                    pkg.contains("coloros") || pkg.contains("oplus") || pkg.contains("oneplus") ||
-                    pkg.contains("vivo") || pkg.contains("iqoo") || pkg.contains("transsion") ||
-                    pkg.contains("phonemaster") || pkg.contains("huawei") || pkg.contains("hihonor") ||
-                    pkg.contains("motorola") || pkg.contains("nothing") || pkg.contains("google") ||
-                    pkg.contains("chrome") || pkg.contains("via") || pkg.contains("android") ||
-                    pkg.isEmpty()
+            val isTargetPkg = currentTarget.isNotEmpty() && pkg == currentTarget.lowercase()
+            val isKnownSettings = isSystemSettingsOrDialogPackage(pkg) || pkg.isEmpty()
 
-            if (!isTargetPkg && !isKnownSettingsOrSystem && !isTargetLiteMode) {
+            if (!isTargetPkg && !isKnownSettings) {
                 return
             }
 
@@ -1377,29 +1423,46 @@ class AutoCleanAccessibilityService : AccessibilityService() {
         attempt: Int = 1
     ): Boolean {
         val cb = info.checkboxNode
-        if (forceGesture) {
-            // Attempt 2 taps directly on the [ ] CheckBox coordinates; Attempt 3 taps on the "Accounts and settings" text
-            val targetForGesture = if (attempt == 2 && cb != null) cb else info.textNode
-            if (clickGestureAtNode(targetForGesture)) return true
-            if (cb != null && clickGestureAtNode(cb)) return true
-        }
 
-        if (cb != null && cb.isClickable && cb.isEnabled) {
-            if (cb.performAction(AccessibilityNodeInfo.ACTION_CLICK)) return true
-        }
-        if (info.clickableTarget.isClickable && info.clickableTarget.isEnabled) {
-            val r = Rect()
-            info.clickableTarget.getBoundsInScreen(r)
-            if (r.height() in 18..320) {
-                if (info.clickableTarget.performAction(AccessibilityNodeInfo.ACTION_CLICK)) return true
+        // 1. Always try direct in-memory Accessibility ACTION_CLICK on the row/checkbox/text first
+        //    because ACTION_CLICK goes straight to the View inside FB Lite and NEVER touches
+        //    floating Messenger chat heads or floating app icons on the screen edges!
+        if (!forceGesture) {
+            if (cb != null && cb.isEnabled && cb.performAction(AccessibilityNodeInfo.ACTION_CLICK)) {
+                return true
+            }
+            if (info.clickableTarget.isEnabled) {
+                val r = Rect()
+                info.clickableTarget.getBoundsInScreen(r)
+                if (r.height() in 18..320 && info.clickableTarget.performAction(AccessibilityNodeInfo.ACTION_CLICK)) {
+                    return true
+                }
+            }
+            if (info.textNode.isEnabled && info.textNode.performAction(AccessibilityNodeInfo.ACTION_CLICK)) {
+                return true
+            }
+            val rowParent = info.textNode.parent
+            if (rowParent != null && rowParent.isEnabled) {
+                val pr = Rect()
+                rowParent.getBoundsInScreen(pr)
+                if (pr.height() in 18..320 && rowParent.performAction(AccessibilityNodeInfo.ACTION_CLICK)) {
+                    return true
+                }
             }
         }
-        if (info.textNode.isClickable && info.textNode.isEnabled) {
-            if (info.textNode.performAction(AccessibilityNodeInfo.ACTION_CLICK)) return true
+
+        // 2. If a Touch Gesture is needed:
+        //    - First prefer tapping on the "Accounts and settings" text in the safe middle of the screen
+        //      (away from the left/right edges where Messenger chat heads & floating icons sit!).
+        //    - On attempt 3, tap the checkbox itself.
+        if (attempt <= 2) {
+            if (clickGestureAtNode(info.textNode, avoidScreenEdges = true)) return true
+            if (cb != null && clickGestureAtNode(cb, avoidScreenEdges = false)) return true
+        } else {
+            if (cb != null && clickGestureAtNode(cb, avoidScreenEdges = false)) return true
+            if (clickGestureAtNode(info.textNode, avoidScreenEdges = true)) return true
         }
-        // Fallback immediately to hardware-like Touch Gesture on the CheckBox or text node
-        if (cb != null && clickGestureAtNode(cb)) return true
-        return clickGestureAtNode(info.textNode)
+        return false
     }
 
     /**
@@ -1873,18 +1936,46 @@ class AutoCleanAccessibilityService : AccessibilityService() {
             curr = curr.parent
             depth++
         }
+        // Also try direct ACTION_CLICK on the node itself if its height is button/row-sized
+        node.getBoundsInScreen(rect)
+        if (node.isEnabled && rect.height() in 16..300) {
+            if (node.performAction(AccessibilityNodeInfo.ACTION_CLICK)) {
+                return true
+            }
+        }
         return false
     }
 
     /**
      * Dispatches a hardware-like touch tap directly at the center coordinates of the target node.
+     * When `avoidScreenEdges` is true, clamps the X coordinate away from the left/right 180px edges
+     * so floating Messenger chat heads, Chrome bubbles, or floating tool icons on the screen edges are NEVER tapped!
      */
-    private fun clickGestureAtNode(node: AccessibilityNodeInfo): Boolean {
+    private fun clickGestureAtNode(
+        node: AccessibilityNodeInfo,
+        avoidScreenEdges: Boolean = true
+    ): Boolean {
         return try {
             val rect = Rect()
             node.getBoundsInScreen(rect)
-            val cx = rect.exactCenterX()
+            if (rect.width() <= 0 || rect.height() <= 0) return false
+
+            val screenWidth = resources.displayMetrics.widthPixels.toFloat().coerceAtLeast(720f)
+            var cx = rect.exactCenterX()
             val cy = rect.exactCenterY()
+
+            if (avoidScreenEdges) {
+                val safeMinX = 185f
+                val safeMaxX = screenWidth - 185f
+                // If the node spans into the safe middle zone, clamp X inside the safe zone away from edge chat heads
+                if (rect.right > safeMinX && rect.left < safeMaxX) {
+                    cx = cx.coerceIn(
+                        maxOf(rect.left + 12f, safeMinX),
+                        minOf(rect.right - 12f, safeMaxX)
+                    )
+                }
+            }
+
             if (cx > 0f && cy > 0f && Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
                 val path = Path().apply { moveTo(cx, cy) }
                 val stroke = GestureDescription.StrokeDescription(path, 0L, 55L)
@@ -1900,10 +1991,10 @@ class AutoCleanAccessibilityService : AccessibilityService() {
 
     /**
      * Clicks the node via standard Accessibility ACTION_CLICK and, if that returns false,
-     * dispatches a real touch gesture at the node's center coordinates (Android 10–17 universal).
+     * dispatches a real touch gesture at the node's safe center coordinates (Android 10–17 universal).
      */
     private fun clickNodeOrGesture(node: AccessibilityNodeInfo): Boolean {
         if (clickNode(node)) return true
-        return clickGestureAtNode(node)
+        return clickGestureAtNode(node, avoidScreenEdges = true)
     }
 }
