@@ -167,36 +167,19 @@ jobs:
           echo "Building with ./gradlew assembleDebug (Gradle 9.3.1)..."
           ./gradlew assembleDebug --no-daemon --no-configuration-cache -Djava.awt.headless=true -Dksp.incremental=false
 
-      - name: Prepare Versioned & Release APK Assets
+      - name: Prepare APK Release Assets
         run: |
-          mkdir -p release-assets versioned-apk latest-apk
-          VER_CODE=$((120 + ${{ github.run_number }}))
+          mkdir -p release-assets
           cp app/build/outputs/apk/debug/app-debug.apk "release-assets/WorkShortCut-latest.apk"
           cp app/build/outputs/apk/debug/app-debug.apk "release-assets/WorkShortCut-v1.0.${{ github.run_number }}.apk"
-          cp app/build/outputs/apk/debug/app-debug.apk "versioned-apk/WorkShortCut-v1.0.${{ github.run_number }}.apk"
-          cp app/build/outputs/apk/debug/app-debug.apk "latest-apk/WorkShortCut-latest.apk"
           echo "Release assets prepared:"
-          ls -lh release-assets/
+          ls -la release-assets/
 
-      - name: Upload Versioned Build APK (v1.0.${{ github.run_number }})
-        uses: actions/upload-artifact@v4
-        with:
-          name: WorkShortCut-v1.0.${{ github.run_number }}
-          path: versioned-apk/WorkShortCut-v1.0.${{ github.run_number }}.apk
-          retention-days: 30
-
-      - name: Upload Latest Build APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: WorkShortCut-Latest-APK
-          path: latest-apk/WorkShortCut-latest.apk
-          retention-days: 30
-
-      - name: Upload Debug APK
+      - name: Upload APK as Artifact (All in 1 ZIP)
         uses: actions/upload-artifact@v4
         with:
           name: WorkShortCut-Debug-APK
-          path: app/build/outputs/apk/debug/app-debug.apk
+          path: release-assets/*.apk
           retention-days: 30
 
       - name: Auto Deploy GitHub Release (Versioned APK)
