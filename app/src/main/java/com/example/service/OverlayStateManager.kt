@@ -20,6 +20,7 @@ import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -116,6 +117,7 @@ data class OverlayUiState(
     val showOverlayClean: Boolean = true,
     val showOverlayVirtualNumbers: Boolean = true,
     val isVirtualNumbersOverlayExpanded: Boolean = false,
+    val isProxyOverlayEditExpanded: Boolean = false,
     val autoCopyOtp: Boolean = true,
     val otpSoundVibrationEnabled: Boolean = true,
     val uploadNumberTxtLocked: Boolean = true,
@@ -131,6 +133,7 @@ object OverlayStateManager {
     private var totpTickerJob: Job? = null
     private var pingTickerJob: Job? = null
     private var prefs: SharedPreferences? = null
+    private var proxySettingsPrefs: SharedPreferences? = null
     private var repository: com.example.data.local.WorkShortcutRepository? = null
 
     fun setRepository(repo: com.example.data.local.WorkShortcutRepository) {
@@ -209,6 +212,7 @@ object OverlayStateManager {
             val saved2faKey = p.getString("saved_2fa_key", "JBSWY3DPEHPK3PXP") ?: "JBSWY3DPEHPK3PXP"
             val savedPwText = p.getString("saved_password_text", "Pass@123456") ?: "Pass@123456"
             val proxyPrefs = context.getSharedPreferences("proxy_settings_prefs", Context.MODE_PRIVATE)
+            proxySettingsPrefs = proxyPrefs
             val profileName = proxyPrefs.getString("proxy_profile_name", null)
                 ?: p.getString("proxy_profile_name", "Profile 1") ?: "Profile 1"
             val proxyHost = proxyPrefs.getString("proxy_server", null)
@@ -358,6 +362,7 @@ object OverlayStateManager {
             }
         }
 
+        loadSelectedProxyProfileFromDb(context)
         startTotpTicker()
         startPeriodicPingTester()
         com.example.worker.BatteryEfficientProxyWorker.schedule(context)
@@ -1273,12 +1278,193 @@ object OverlayStateManager {
         prefs?.edit()
             ?.putString("proxy_profile_name", profileName)
             ?.putString("proxy_host", server)
+            ?.putString("proxy_server", server)
             ?.putInt("proxy_port", port)
             ?.putString("proxy_protocol", protocol)
             ?.putString("proxy_country", effectiveCountry)
             ?.putString("proxy_username", username)
+            ?.putString("proxy_user", username)
             ?.putString("proxy_password", password)
+            ?.putString("proxy_pass", password)
             ?.apply()
+
+        proxySettingsPrefs?.edit()
+            ?.putString("proxy_profile_name", profileName)
+            ?.putString("proxy_server", server)
+            ?.putInt("proxy_port", port)
+            ?.putString("proxy_protocol", protocol)
+            ?.putString("proxy_country", effectiveCountry)
+            ?.putString("proxy_user", username)
+            ?.putString("proxy_pass", password)
+            ?.apply()
+    }
+
+    /**
+     * Loads the exact selected Proxy Profile (`last_selected_proxy_id` or `isActive == true`) from Room DB
+     * into `proxyState` so the Overlay and Main App always use the currently selected profile.
+     */
+    fun loadSelectedProxyProfileFromDb(context: Context? = null) {
+        scope.launch {
+            try {
+                if (repository == null && context != null) {
+                    val db = com.example.data.local.AppDatabase.getDatabase(context)
+                    repository = com.example.data.local.WorkShortcutRepository(
+                        excelRowDao = db.excelRowDao(),
+                        proxyProfileDao = db.proxyProfileDao(),
+                        twoFactorDao = db.twoFactorDao()
+                    )
+                }
+                val repo = repository ?: return@launch
+                val pPrefs = proxySettingsPrefs ?: context?.getSharedPreferences("proxy_settings_prefs", Context.MODE_PRIVATE)
+                val lastId = pPrefs?.getLong("last_selected_proxy_id", -1L) ?: -1L
+
+                val savedList = repo.allProxies.firstOrNull() ?: emptyList()
+                if (savedList.isNotEmpty()) {
+                    val currentName = _uiState.value.proxyState.profileName.trim()
+                    val target = savedList.firstOrNull { it.id == lastId }
+                        ?: savedList.firstOrNull { it.isActive }
+                        ?: savedList.firstOrNull { it.name.trim().equals(currentName, ignoreCase = true) }
+                        ?: savedList.firstOrNull()
+
+                    if (target != null) {
+                        updateSuperProxyProfile(
+                            profileName = target.name,
+                            server = target.host,
+                            port = target.port,
+                            protocol = target.protocol,
+                            countryCode = target.countryCode,
+                            username = target.username,
+                            password = target.password
+                        )
+                    }
+                }
+            } catch (_: Exception) {}
+        }
+    }
+
+    fun openProxyOverlayEdit(context: Context) {
+        loadSelectedProxyProfileFromDb(context)
+        VibrationHelper.vibrateSuccess(context)
+        _uiState.update { it.copy(isProxyOverlayEditExpanded = true) }
+    }
+
+    fun closeProxyOverlayEdit() {
+        _uiState.update { it.copy(isProxyOverlayEditExpanded = false) }
+    }
+
+    fun toggleProxyOverlayEdit(context: Context) {
+        val next = !_uiState.value.isProxyOverlayEditExpanded
+        if (next) {
+            openProxyOverlayEdit(context)
+        } else {
+            closeProxyOverlayEdit()
+        }
+    }
+
+    /**
+     * Updates the currently selected Proxy Profile's Username & Password directly from the Floating Overlay
+     * and persists it to Room DB + SharedPreferences. If the proxy is connected, reconnects with the new credentials!
+     */
+    fun updateSelectedProxyProfileFromOverlay(
+        context: Context,
+        newUsername: String,
+        newPassword: String
+    ) {
+        val cleanUser = newUsername.trim()
+        val cleanPass = newPassword.trim()
+        val currentProxy = _uiState.value.proxyState
+
+        val crMatch = Regex("""(?:cr\.([a-z]{2})|country[_-]([a-z]{2}))""", RegexOption.IGNORE_CASE).find(cleanUser)
+        val extractedCountry = crMatch?.groupValues?.firstOrNull { it.length == 2 && !it.equals("cr", ignoreCase = true) }?.uppercase()
+        val effectiveCountry = if (!extractedCountry.isNullOrBlank()) {
+            extractedCountry
+        } else {
+            currentProxy.countryCode.ifBlank { "US" }
+        }
+
+        updateSuperProxyProfile(
+            profileName = currentProxy.profileName.ifBlank { "Primary Proxy" },
+            server = currentProxy.host,
+            port = currentProxy.port,
+            protocol = currentProxy.protocol.ifBlank { "SOCKS5" },
+            countryCode = effectiveCountry,
+            username = cleanUser,
+            password = cleanPass
+        )
+
+        _uiState.update { it.copy(isProxyOverlayEditExpanded = false) }
+
+        scope.launch {
+            try {
+                if (repository == null) {
+                    val db = com.example.data.local.AppDatabase.getDatabase(context)
+                    repository = com.example.data.local.WorkShortcutRepository(
+                        excelRowDao = db.excelRowDao(),
+                        proxyProfileDao = db.proxyProfileDao(),
+                        twoFactorDao = db.twoFactorDao()
+                    )
+                }
+                val repo = repository
+                val pPrefs = proxySettingsPrefs ?: context.getSharedPreferences("proxy_settings_prefs", Context.MODE_PRIVATE)
+                val lastId = pPrefs.getLong("last_selected_proxy_id", -1L)
+
+                if (repo != null) {
+                    val savedList = repo.allProxies.firstOrNull() ?: emptyList()
+                    val currentName = currentProxy.profileName.trim()
+                    val existing = savedList.firstOrNull { it.id == lastId }
+                        ?: savedList.firstOrNull { it.isActive }
+                        ?: savedList.firstOrNull { it.name.trim().equals(currentName, ignoreCase = true) }
+                        ?: savedList.firstOrNull()
+
+                    if (existing != null) {
+                        val updatedEntity = existing.copy(
+                            username = cleanUser,
+                            password = cleanPass,
+                            countryCode = effectiveCountry,
+                            isActive = true
+                        )
+                        repo.updateProxy(updatedEntity)
+                        repo.setActiveProxy(existing.id)
+                        pPrefs.edit().putLong("last_selected_proxy_id", existing.id).apply()
+
+                        updateSuperProxyProfile(
+                            profileName = updatedEntity.name,
+                            server = updatedEntity.host,
+                            port = updatedEntity.port,
+                            protocol = updatedEntity.protocol,
+                            countryCode = updatedEntity.countryCode,
+                            username = updatedEntity.username,
+                            password = updatedEntity.password
+                        )
+                    } else if (currentProxy.host.isNotBlank()) {
+                        val newEntity = com.example.data.local.model.ProxyProfileEntity(
+                            name = currentProxy.profileName.ifBlank { "Profile 1" },
+                            protocol = currentProxy.protocol.ifBlank { "SOCKS5" },
+                            host = currentProxy.host,
+                            port = currentProxy.port,
+                            username = cleanUser,
+                            password = cleanPass,
+                            countryCode = effectiveCountry,
+                            isActive = true
+                        )
+                        val newId = repo.insertProxy(newEntity)
+                        if (newId > 0) {
+                            repo.setActiveProxy(newId)
+                            pPrefs.edit().putLong("last_selected_proxy_id", newId).apply()
+                        }
+                    }
+                }
+            } catch (_: Exception) {}
+
+            kotlinx.coroutines.withContext(Dispatchers.Main) {
+                VibrationHelper.vibrateSuccess(context)
+                val pName = _uiState.value.proxyState.profileName.ifBlank { "Profile" }
+                Toast.makeText(context, "✓ $pName Updated!", Toast.LENGTH_SHORT).show()
+                if (_uiState.value.proxyState.isConnected) {
+                    startProxyConnection(context)
+                }
+            }
+        }
     }
 
     fun updateProxyConfig(

@@ -7,6 +7,8 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -29,14 +31,19 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Bolt
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.ContentPaste
 import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Phone
+import androidx.compose.material.icons.filled.Save
 import androidx.compose.material.icons.filled.SmartToy
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.SwapHoriz
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -52,8 +59,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -62,6 +71,11 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
+import kotlinx.coroutines.launch
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -228,8 +242,8 @@ fun FloatingOverlayWindowContent(
                 }
             }
         } else {
-            // Elegant Frosted Dark Glass Dock Chassis / Container (Fixed Proportions - NEVER Squashed)
-            val chassisWidth = if (state.isVirtualNumbersOverlayExpanded) 195.dp else 90.dp
+            // Elegant Frosted Dark Glass Dock Chassis / Container (Expands when Virtual Numbers or Proxy Edit Panel is open)
+            val chassisWidth = if (state.isVirtualNumbersOverlayExpanded || state.isProxyOverlayEditExpanded) 202.dp else 90.dp
             Surface(
                 shape = dockChassisShape,
                 color = Color.Transparent,
@@ -417,8 +431,8 @@ fun FloatingOverlayWindowContent(
 
                     Spacer(modifier = Modifier.height(2.dp))
 
-                    // 1. PROXY TAB (Original Always-Visible Tactile Button from #40,#41,#42)
-                    GlossyTactileButton(
+                    // 1. PROXY TAB (Tap to Connect/Disconnect; Press & Hold ~3 seconds to open Selected Profile Username/Password + Update Profile)
+                    ProxyHoldableTactileButton(
                         title = if (state.proxyState.isConnected) "Proxy ✓" else "Proxy",
                         icon = Icons.Default.Bolt,
                         brush = gradProxy,
@@ -426,9 +440,23 @@ fun FloatingOverlayWindowContent(
                         onClick = {
                             OverlayStateManager.toggleProxyConnection(context)
                         },
+                        onHold3Seconds = {
+                            OverlayStateManager.toggleProxyOverlayEdit(context)
+                        },
                         modifier = Modifier.fillMaxWidth(),
                         testTag = "tab_proxy"
                     )
+
+                    // 1B. EXPANDABLE PROXY USERNAME & PASSWORD + UPDATE PROFILE PANEL (Opens on ~3s hold on Proxy)
+                    AnimatedVisibility(visible = state.isProxyOverlayEditExpanded) {
+                        ProxyOverlayQuickEditPanel(
+                            state = state,
+                            context = context,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(top = 2.dp, bottom = 2.dp)
+                        )
+                    }
 
                     // 2. NAME GENERATOR TAB (Tap auto-copies authentic name to keyboard)
                     if (state.showOverlayName) {
@@ -797,6 +825,484 @@ fun GlossyTactileButton(
                 overflow = TextOverflow.Ellipsis,
                 textAlign = TextAlign.Center
             )
+        }
+    }
+}
+
+/**
+ * Proxy Tactile Button with 3-Second Press-and-Hold Gesture:
+ * - Short Tap: Toggles Proxy Connect / Disconnect.
+ * - Hold (~3 seconds): Shows live progress fill and opens Selected Profile's Username & Password + Update Profile panel!
+ */
+@Composable
+fun ProxyHoldableTactileButton(
+    title: String,
+    brush: Brush,
+    shape: RoundedCornerShape,
+    onClick: () -> Unit,
+    onHold3Seconds: () -> Unit,
+    icon: ImageVector? = null,
+    fontSize: androidx.compose.ui.unit.TextUnit = 10.5.sp,
+    horizontalPadding: androidx.compose.ui.unit.Dp = 6.dp,
+    modifier: Modifier = Modifier,
+    testTag: String = ""
+) {
+    val scope = rememberCoroutineScope()
+    var holdProgress by remember { mutableFloatStateOf(0f) }
+
+    Box(
+        modifier = modifier
+            .height(27.dp)
+            .widthIn(min = 32.dp)
+            .shadow(4.dp, shape = shape)
+            .clip(shape)
+            .background(brush)
+            .border(
+                1.dp,
+                Brush.verticalGradient(
+                    listOf(
+                        Color.White.copy(alpha = 0.55f),
+                        Color.White.copy(alpha = 0.15f)
+                    )
+                ),
+                shape
+            )
+            .pointerInput(Unit) {
+                detectTapGestures(
+                    onPress = {
+                        holdProgress = 0f
+                        var holdTriggered = false
+                        val startTime = System.currentTimeMillis()
+                        val holdDurationMs = 2800L // ~3 seconds hold feel
+                        val job = scope.launch {
+                            while (true) {
+                                delay(50L)
+                                val elapsed = System.currentTimeMillis() - startTime
+                                holdProgress = (elapsed.toFloat() / holdDurationMs).coerceIn(0f, 1f)
+                                if (elapsed >= holdDurationMs && !holdTriggered) {
+                                    holdTriggered = true
+                                    holdProgress = 0f
+                                    onHold3Seconds()
+                                    break
+                                }
+                            }
+                        }
+                        val released = tryAwaitRelease()
+                        job.cancel()
+                        val totalHeld = System.currentTimeMillis() - startTime
+                        holdProgress = 0f
+                        if (released && !holdTriggered && totalHeld < 650L) {
+                            onClick()
+                        }
+                    }
+                )
+            }
+            .padding(horizontal = horizontalPadding, vertical = 2.dp)
+            .testTag(testTag)
+    ) {
+        // Hold progress bar overlay while user is pressing and holding (~3s)
+        if (holdProgress > 0.08f) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.CenterStart)
+                    .fillMaxHeight()
+                    .fillMaxWidth(holdProgress)
+                    .clip(shape)
+                    .background(Color(0xFF00E676).copy(alpha = 0.45f))
+            )
+        }
+
+        // Specular Top Shine Overlay (Glass reflection)
+        Box(
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .fillMaxSize()
+                .background(
+                    Brush.verticalGradient(
+                        listOf(
+                            Color.White.copy(alpha = 0.28f),
+                            Color.Transparent
+                        )
+                    )
+                )
+        )
+
+        Row(
+            modifier = Modifier.fillMaxSize(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.Center
+        ) {
+            if (icon != null) {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = null,
+                    tint = Color.White,
+                    modifier = Modifier.size(15.dp)
+                )
+                Spacer(modifier = Modifier.width(4.dp))
+            }
+
+            val displayText = if (holdProgress > 0.18f) {
+                val remainSec = (((1f - holdProgress) * 3f) + 0.9f).toInt().coerceIn(1, 3)
+                "Hold ${remainSec}s..."
+            } else {
+                title
+            }
+
+            Text(
+                text = displayText,
+                color = Color.White,
+                fontWeight = FontWeight.ExtraBold,
+                fontSize = fontSize,
+                letterSpacing = if (fontSize < 12.sp) (-0.3).sp else 0.2.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                textAlign = TextAlign.Center
+            )
+        }
+    }
+}
+
+/**
+ * Expandable Selected Proxy Profile Editor inside the Floating Overlay:
+ * - Automatically loads the currently selected Proxy Profile (`profileName`, `username`, `password`).
+ * - Shows Username input box + Password input box + "Update Profile" button right underneath.
+ */
+@Composable
+fun ProxyOverlayQuickEditPanel(
+    state: OverlayUiState,
+    context: android.content.Context,
+    modifier: Modifier = Modifier
+) {
+    val proxy = state.proxyState
+
+    // Ensure the latest selected profile from Room DB is loaded whenever this panel opens
+    LaunchedEffect(Unit) {
+        OverlayStateManager.loadSelectedProxyProfileFromDb(context)
+    }
+
+    var editUsername by remember(proxy.profileName, proxy.username) {
+        mutableStateOf(proxy.username)
+    }
+    var editPassword by remember(proxy.profileName, proxy.password) {
+        mutableStateOf(proxy.password)
+    }
+    var showPassword by remember { mutableStateOf(false) }
+
+    val countryOpt = NameGenerator.getCountryOption(proxy.countryCode)
+    val cyanAccent = Color(0xFF00E5FF)
+    val neonGreen = Color(0xFF00E676)
+
+    Surface(
+        shape = RoundedCornerShape(10.dp),
+        color = Color(0xFA09111E),
+        border = androidx.compose.foundation.BorderStroke(1.2.dp, cyanAccent.copy(alpha = 0.75f)),
+        shadowElevation = 8.dp,
+        modifier = modifier.testTag("overlay_proxy_edit_panel")
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 7.dp, vertical = 6.dp),
+            verticalArrangement = Arrangement.spacedBy(5.dp)
+        ) {
+            // 1. Selected Profile Header Row + Close (✕)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text(text = countryOpt.flag, fontSize = 11.sp)
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(
+                        text = proxy.profileName.ifBlank { "Selected Profile" },
+                        color = cyanAccent,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+
+                Surface(
+                    shape = RoundedCornerShape(4.dp),
+                    color = Color(0xFF1E293B),
+                    border = androidx.compose.foundation.BorderStroke(0.5.dp, Color(0xFF64748B)),
+                    modifier = Modifier
+                        .size(16.dp)
+                        .clickable { OverlayStateManager.closeProxyOverlayEdit() }
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Text("✕", color = Color.White, fontSize = 8.5.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+
+            // 2. USERNAME BOX
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "USERNAME",
+                        color = Color(0xFF94A3B8),
+                        fontSize = 8.5.sp,
+                        fontWeight = FontWeight.ExtraBold
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+                        Surface(
+                            shape = RoundedCornerShape(4.dp),
+                            color = cyanAccent.copy(alpha = 0.16f),
+                            border = androidx.compose.foundation.BorderStroke(0.5.dp, cyanAccent.copy(alpha = 0.5f)),
+                            modifier = Modifier.clickable {
+                                val clip = ClipboardHelper.getFromClipboard(context)?.trim()
+                                if (!clip.isNullOrEmpty()) {
+                                    editUsername = clip
+                                } else {
+                                    Toast.makeText(context, "Clipboard empty!", Toast.LENGTH_SHORT).show()
+                                }
+                            }
+                        ) {
+                            Text(
+                                text = "📋 Paste",
+                                color = cyanAccent,
+                                fontSize = 8.sp,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                            )
+                        }
+                        if (editUsername.isNotEmpty()) {
+                            Surface(
+                                shape = RoundedCornerShape(4.dp),
+                                color = Color(0xFF1E293B),
+                                modifier = Modifier.clickable { editUsername = "" }
+                            ) {
+                                Text(
+                                    text = "✕",
+                                    color = Color(0xFFF87171),
+                                    fontSize = 8.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                                )
+                            }
+                        }
+                    }
+                }
+
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(28.dp)
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(Color(0xFF050B14))
+                        .border(1.dp, Color(0xFF1E3A5F), RoundedCornerShape(6.dp))
+                        .padding(horizontal = 6.dp),
+                    contentAlignment = Alignment.CenterStart
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Person,
+                            contentDescription = null,
+                            tint = cyanAccent,
+                            modifier = Modifier.size(12.dp)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Box(modifier = Modifier.weight(1f)) {
+                            if (editUsername.isEmpty()) {
+                                Text(
+                                    text = "Username...",
+                                    color = Color(0xFF64748B),
+                                    fontSize = 9.5.sp,
+                                    maxLines = 1
+                                )
+                            }
+                            BasicTextField(
+                                value = editUsername,
+                                onValueChange = { editUsername = it },
+                                singleLine = true,
+                                textStyle = TextStyle(
+                                    color = Color.White,
+                                    fontSize = 9.5.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    fontFamily = FontFamily.Monospace
+                                ),
+                                cursorBrush = SolidColor(cyanAccent),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .testTag("overlay_input_proxy_username")
+                            )
+                        }
+                    }
+                }
+            }
+
+            // 3. PASSWORD BOX
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "PASSWORD",
+                        color = Color(0xFF94A3B8),
+                        fontSize = 8.5.sp,
+                        fontWeight = FontWeight.ExtraBold
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+                        Surface(
+                            shape = RoundedCornerShape(4.dp),
+                            color = Color(0xFF1E293B),
+                            modifier = Modifier.clickable { showPassword = !showPassword }
+                        ) {
+                            Text(
+                                text = if (showPassword) "Hide" else "Show",
+                                color = Color(0xFFCBD5E1),
+                                fontSize = 8.sp,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                            )
+                        }
+                        Surface(
+                            shape = RoundedCornerShape(4.dp),
+                            color = cyanAccent.copy(alpha = 0.16f),
+                            border = androidx.compose.foundation.BorderStroke(0.5.dp, cyanAccent.copy(alpha = 0.5f)),
+                            modifier = Modifier.clickable {
+                                val clip = ClipboardHelper.getFromClipboard(context)?.trim()
+                                if (!clip.isNullOrEmpty()) {
+                                    editPassword = clip
+                                } else {
+                                    Toast.makeText(context, "Clipboard empty!", Toast.LENGTH_SHORT).show()
+                                }
+                            }
+                        ) {
+                            Text(
+                                text = "📋 Paste",
+                                color = cyanAccent,
+                                fontSize = 8.sp,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                            )
+                        }
+                        if (editPassword.isNotEmpty()) {
+                            Surface(
+                                shape = RoundedCornerShape(4.dp),
+                                color = Color(0xFF1E293B),
+                                modifier = Modifier.clickable { editPassword = "" }
+                            ) {
+                                Text(
+                                    text = "✕",
+                                    color = Color(0xFFF87171),
+                                    fontSize = 8.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                                )
+                            }
+                        }
+                    }
+                }
+
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(28.dp)
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(Color(0xFF050B14))
+                        .border(1.dp, Color(0xFF1E3A5F), RoundedCornerShape(6.dp))
+                        .padding(horizontal = 6.dp),
+                    contentAlignment = Alignment.CenterStart
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Lock,
+                            contentDescription = null,
+                            tint = cyanAccent,
+                            modifier = Modifier.size(12.dp)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Box(modifier = Modifier.weight(1f)) {
+                            if (editPassword.isEmpty()) {
+                                Text(
+                                    text = "Password...",
+                                    color = Color(0xFF64748B),
+                                    fontSize = 9.5.sp,
+                                    maxLines = 1
+                                )
+                            }
+                            BasicTextField(
+                                value = editPassword,
+                                onValueChange = { editPassword = it },
+                                singleLine = true,
+                                visualTransformation = if (showPassword) VisualTransformation.None else PasswordVisualTransformation(),
+                                textStyle = TextStyle(
+                                    color = Color.White,
+                                    fontSize = 9.5.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    fontFamily = FontFamily.Monospace
+                                ),
+                                cursorBrush = SolidColor(cyanAccent),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .testTag("overlay_input_proxy_password")
+                            )
+                        }
+                    }
+                }
+            }
+
+            // 4. UPDATE PROFILE BUTTON (Directly below Username & Password boxes)
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(27.dp)
+                    .clip(RoundedCornerShape(7.dp))
+                    .background(
+                        Brush.horizontalGradient(
+                            listOf(Color(0xFF00C853), Color(0xFF0091EA))
+                        )
+                    )
+                    .border(1.dp, neonGreen.copy(alpha = 0.7f), RoundedCornerShape(7.dp))
+                    .clickable {
+                        OverlayStateManager.updateSelectedProxyProfileFromOverlay(
+                            context = context,
+                            newUsername = editUsername,
+                            newPassword = editPassword
+                        )
+                    }
+                    .testTag("overlay_btn_update_proxy_profile")
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Save,
+                        contentDescription = null,
+                        tint = Color.White,
+                        modifier = Modifier.size(13.dp)
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(
+                        text = "Update Profile",
+                        color = Color.White,
+                        fontSize = 10.5.sp,
+                        fontWeight = FontWeight.ExtraBold
+                    )
+                }
+            }
         }
     }
 }

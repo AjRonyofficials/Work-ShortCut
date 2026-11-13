@@ -182,8 +182,11 @@ class FloatingOverlayService : Service(), LifecycleOwner, ViewModelStoreOwner, S
             setContent {
                 val state by OverlayStateManager.uiState.collectAsState()
 
-                androidx.compose.runtime.LaunchedEffect(state.isEdgeBarMinimized) {
-                    updateOverlayLayoutParams(state.isEdgeBarMinimized)
+                androidx.compose.runtime.LaunchedEffect(state.isEdgeBarMinimized, state.isProxyOverlayEditExpanded) {
+                    updateOverlayLayoutParams(
+                        isEdgeBarMinimized = state.isEdgeBarMinimized,
+                        needsKeyboardFocus = state.isProxyOverlayEditExpanded && !state.isEdgeBarMinimized
+                    )
                 }
 
                 WorkShortcutTheme(themeMode = state.appTheme) {
@@ -237,13 +240,23 @@ class FloatingOverlayService : Service(), LifecycleOwner, ViewModelStoreOwner, S
         } catch (_: Exception) {}
     }
 
-    private fun updateOverlayLayoutParams(isEdgeBarMinimized: Boolean) {
+    private fun updateOverlayLayoutParams(
+        isEdgeBarMinimized: Boolean,
+        needsKeyboardFocus: Boolean = false
+    ) {
         windowLayoutParams?.let { p ->
             p.width = WindowManager.LayoutParams.WRAP_CONTENT
             p.height = WindowManager.LayoutParams.WRAP_CONTENT
-            p.flags = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-                    WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or
-                    WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED
+            p.flags = if (needsKeyboardFocus) {
+                WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
+                        WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or
+                        WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED
+            } else {
+                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                        WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or
+                        WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED
+            }
+            p.softInputMode = WindowManager.LayoutParams.SOFT_INPUT_ADJUST_PAN
             try {
                 windowManager?.updateViewLayout(overlayComposeView, p)
             } catch (_: Exception) {}
