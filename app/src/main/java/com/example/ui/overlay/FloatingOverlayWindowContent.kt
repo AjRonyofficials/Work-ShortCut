@@ -966,7 +966,9 @@ fun ProxyHoldableTactileButton(
 /**
  * Expandable Selected Proxy Profile Editor inside the Floating Overlay:
  * - Automatically loads the currently selected Proxy Profile (`profileName`, `username`, `password`).
- * - Shows Username input box + Password input box + "Update Profile" button right underneath.
+ * - Shows ONLY Username OR ONLY Password based on Proxy Section's setting (`state.proxyOverlayEditField`).
+ * - Places `📋 Paste` & `Clear` in the CENTER/MIDDLE with a wide empty right-side zone and extra vertical
+ *   spacing so tapping/editing the right end of the text (e.g. `__cr.DE`) never hits Paste or Cross (`✕`).
  */
 @Composable
 fun ProxyOverlayQuickEditPanel(
@@ -975,6 +977,7 @@ fun ProxyOverlayQuickEditPanel(
     modifier: Modifier = Modifier
 ) {
     val proxy = state.proxyState
+    val isPasswordMode = state.proxyOverlayEditField.equals("PASSWORD", ignoreCase = true)
 
     // Ensure the latest selected profile from Room DB is loaded whenever this panel opens
     LaunchedEffect(Unit) {
@@ -987,7 +990,7 @@ fun ProxyOverlayQuickEditPanel(
     var editPassword by remember(proxy.profileName, proxy.password) {
         mutableStateOf(proxy.password)
     }
-    var showPassword by remember { mutableStateOf(false) }
+    var showPassword by remember { mutableStateOf(true) }
 
     val countryOpt = NameGenerator.getCountryOption(proxy.countryCode)
     val cyanAccent = Color(0xFF00E5FF)
@@ -1003,10 +1006,9 @@ fun ProxyOverlayQuickEditPanel(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 7.dp, vertical = 6.dp),
-            verticalArrangement = Arrangement.spacedBy(5.dp)
+                .padding(horizontal = 8.dp, vertical = 7.dp)
         ) {
-            // 1. Selected Profile Header Row + Close (✕)
+            // 1. Selected Profile Header Row + Mode Switcher + Close (✕)
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -1028,25 +1030,76 @@ fun ProxyOverlayQuickEditPanel(
                     )
                 }
 
-                Surface(
-                    shape = RoundedCornerShape(4.dp),
-                    color = Color(0xFF1E293B),
-                    border = androidx.compose.foundation.BorderStroke(0.5.dp, Color(0xFF64748B)),
-                    modifier = Modifier
-                        .size(16.dp)
-                        .clickable { OverlayStateManager.closeProxyOverlayEdit() }
+                // Quick mode indicator/toggle (synced with Proxy Section: USER vs PASS)
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(3.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Text("✕", color = Color.White, fontSize = 8.5.sp, fontWeight = FontWeight.Bold)
+                    Surface(
+                        shape = RoundedCornerShape(4.dp),
+                        color = if (!isPasswordMode) cyanAccent.copy(alpha = 0.22f) else Color(0xFF152234),
+                        border = androidx.compose.foundation.BorderStroke(
+                            0.6.dp,
+                            if (!isPasswordMode) cyanAccent else Color(0xFF334155)
+                        ),
+                        modifier = Modifier.clickable {
+                            OverlayStateManager.setProxyOverlayEditField("USERNAME")
+                        }
+                    ) {
+                        Text(
+                            text = "USER",
+                            color = if (!isPasswordMode) cyanAccent else Color(0xFF94A3B8),
+                            fontSize = 7.5.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.5.dp)
+                        )
+                    }
+
+                    Surface(
+                        shape = RoundedCornerShape(4.dp),
+                        color = if (isPasswordMode) cyanAccent.copy(alpha = 0.22f) else Color(0xFF152234),
+                        border = androidx.compose.foundation.BorderStroke(
+                            0.6.dp,
+                            if (isPasswordMode) cyanAccent else Color(0xFF334155)
+                        ),
+                        modifier = Modifier.clickable {
+                            OverlayStateManager.setProxyOverlayEditField("PASSWORD")
+                        }
+                    ) {
+                        Text(
+                            text = "PASS",
+                            color = if (isPasswordMode) cyanAccent else Color(0xFF94A3B8),
+                            fontSize = 7.5.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.5.dp)
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.width(2.dp))
+
+                    Surface(
+                        shape = RoundedCornerShape(4.dp),
+                        color = Color(0xFF1E293B),
+                        border = androidx.compose.foundation.BorderStroke(0.5.dp, Color(0xFF64748B)),
+                        modifier = Modifier
+                            .size(16.dp)
+                            .clickable { OverlayStateManager.closeProxyOverlayEdit() }
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Text("✕", color = Color.White, fontSize = 8.5.sp, fontWeight = FontWeight.Bold)
+                        }
                     }
                 }
             }
 
-            // 2. USERNAME BOX
-            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Spacer(modifier = Modifier.height(6.dp))
+
+            // 2. SINGLE FIELD SECTION (ONLY USERNAME OR ONLY PASSWORD)
+            if (!isPasswordMode) {
+                // --- ONLY USERNAME MODE ---
+                // Action Row: Label on Left, Paste & Clear in the MIDDLE, Right Side Empty so editing `.DE` never hits buttons!
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
@@ -1055,11 +1108,17 @@ fun ProxyOverlayQuickEditPanel(
                         fontSize = 8.5.sp,
                         fontWeight = FontWeight.ExtraBold
                     )
-                    Row(horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+
+                    // Centered Action Group (Paste & Clear in the middle, far away from right edge)
+                    Row(
+                        modifier = Modifier.weight(1f),
+                        horizontalArrangement = Arrangement.Center,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
                         Surface(
-                            shape = RoundedCornerShape(4.dp),
+                            shape = RoundedCornerShape(5.dp),
                             color = cyanAccent.copy(alpha = 0.16f),
-                            border = androidx.compose.foundation.BorderStroke(0.5.dp, cyanAccent.copy(alpha = 0.5f)),
+                            border = androidx.compose.foundation.BorderStroke(0.6.dp, cyanAccent.copy(alpha = 0.55f)),
                             modifier = Modifier.clickable {
                                 val clip = ClipboardHelper.getFromClipboard(context)?.trim()
                                 if (!clip.isNullOrEmpty()) {
@@ -1074,35 +1133,44 @@ fun ProxyOverlayQuickEditPanel(
                                 color = cyanAccent,
                                 fontSize = 8.sp,
                                 fontWeight = FontWeight.Bold,
-                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                             )
                         }
+
                         if (editUsername.isNotEmpty()) {
+                            Spacer(modifier = Modifier.width(5.dp))
                             Surface(
-                                shape = RoundedCornerShape(4.dp),
+                                shape = RoundedCornerShape(5.dp),
                                 color = Color(0xFF1E293B),
+                                border = androidx.compose.foundation.BorderStroke(0.5.dp, Color(0xFF475569)),
                                 modifier = Modifier.clickable { editUsername = "" }
                             ) {
                                 Text(
-                                    text = "✕",
+                                    text = "Clear",
                                     color = Color(0xFFF87171),
-                                    fontSize = 8.sp,
+                                    fontSize = 7.5.sp,
                                     fontWeight = FontWeight.Bold,
-                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                                    modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
                                 )
                             }
                         }
                     }
+
+                    // Safe Empty Zone on Right Side (protects right end of Username box when editing country code like .DE)
+                    Spacer(modifier = Modifier.width(34.dp))
                 }
 
+                Spacer(modifier = Modifier.height(6.dp))
+
+                // Taller, easy-to-edit Username Input Box
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(28.dp)
-                        .clip(RoundedCornerShape(6.dp))
+                        .height(34.dp)
+                        .clip(RoundedCornerShape(7.dp))
                         .background(Color(0xFF050B14))
-                        .border(1.dp, Color(0xFF1E3A5F), RoundedCornerShape(6.dp))
-                        .padding(horizontal = 6.dp),
+                        .border(1.2.dp, Color(0xFF1E3A5F), RoundedCornerShape(7.dp))
+                        .padding(horizontal = 8.dp),
                     contentAlignment = Alignment.CenterStart
                 ) {
                     Row(
@@ -1113,15 +1181,15 @@ fun ProxyOverlayQuickEditPanel(
                             imageVector = Icons.Default.Person,
                             contentDescription = null,
                             tint = cyanAccent,
-                            modifier = Modifier.size(12.dp)
+                            modifier = Modifier.size(13.dp)
                         )
-                        Spacer(modifier = Modifier.width(4.dp))
+                        Spacer(modifier = Modifier.width(5.dp))
                         Box(modifier = Modifier.weight(1f)) {
                             if (editUsername.isEmpty()) {
                                 Text(
                                     text = "Username...",
                                     color = Color(0xFF64748B),
-                                    fontSize = 9.5.sp,
+                                    fontSize = 10.sp,
                                     maxLines = 1
                                 )
                             }
@@ -1131,7 +1199,7 @@ fun ProxyOverlayQuickEditPanel(
                                 singleLine = true,
                                 textStyle = TextStyle(
                                     color = Color.White,
-                                    fontSize = 9.5.sp,
+                                    fontSize = 10.sp,
                                     fontWeight = FontWeight.SemiBold,
                                     fontFamily = FontFamily.Monospace
                                 ),
@@ -1143,13 +1211,11 @@ fun ProxyOverlayQuickEditPanel(
                         }
                     }
                 }
-            }
-
-            // 3. PASSWORD BOX
-            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            } else {
+                // --- ONLY PASSWORD MODE ---
+                // Action Row: Label on Left, Paste & Clear & Show/Hide in the MIDDLE, Right Side Empty!
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
@@ -1158,24 +1224,16 @@ fun ProxyOverlayQuickEditPanel(
                         fontSize = 8.5.sp,
                         fontWeight = FontWeight.ExtraBold
                     )
-                    Row(horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+
+                    Row(
+                        modifier = Modifier.weight(1f),
+                        horizontalArrangement = Arrangement.Center,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
                         Surface(
-                            shape = RoundedCornerShape(4.dp),
-                            color = Color(0xFF1E293B),
-                            modifier = Modifier.clickable { showPassword = !showPassword }
-                        ) {
-                            Text(
-                                text = if (showPassword) "Hide" else "Show",
-                                color = Color(0xFFCBD5E1),
-                                fontSize = 8.sp,
-                                fontWeight = FontWeight.Bold,
-                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
-                            )
-                        }
-                        Surface(
-                            shape = RoundedCornerShape(4.dp),
+                            shape = RoundedCornerShape(5.dp),
                             color = cyanAccent.copy(alpha = 0.16f),
-                            border = androidx.compose.foundation.BorderStroke(0.5.dp, cyanAccent.copy(alpha = 0.5f)),
+                            border = androidx.compose.foundation.BorderStroke(0.6.dp, cyanAccent.copy(alpha = 0.55f)),
                             modifier = Modifier.clickable {
                                 val clip = ClipboardHelper.getFromClipboard(context)?.trim()
                                 if (!clip.isNullOrEmpty()) {
@@ -1190,35 +1248,61 @@ fun ProxyOverlayQuickEditPanel(
                                 color = cyanAccent,
                                 fontSize = 8.sp,
                                 fontWeight = FontWeight.Bold,
-                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                             )
                         }
+
+                        Spacer(modifier = Modifier.width(4.dp))
+
+                        Surface(
+                            shape = RoundedCornerShape(5.dp),
+                            color = Color(0xFF1E293B),
+                            border = androidx.compose.foundation.BorderStroke(0.5.dp, Color(0xFF475569)),
+                            modifier = Modifier.clickable { showPassword = !showPassword }
+                        ) {
+                            Text(
+                                text = if (showPassword) "Hide" else "Show",
+                                color = Color(0xFFCBD5E1),
+                                fontSize = 7.5.sp,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
+                            )
+                        }
+
                         if (editPassword.isNotEmpty()) {
+                            Spacer(modifier = Modifier.width(4.dp))
                             Surface(
-                                shape = RoundedCornerShape(4.dp),
+                                shape = RoundedCornerShape(5.dp),
                                 color = Color(0xFF1E293B),
+                                border = androidx.compose.foundation.BorderStroke(0.5.dp, Color(0xFF475569)),
                                 modifier = Modifier.clickable { editPassword = "" }
                             ) {
                                 Text(
-                                    text = "✕",
+                                    text = "Clear",
                                     color = Color(0xFFF87171),
-                                    fontSize = 8.sp,
+                                    fontSize = 7.5.sp,
                                     fontWeight = FontWeight.Bold,
-                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                                    modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
                                 )
                             }
                         }
                     }
+
+                    // Safe Empty Zone on Right Side (protects right end of Password box when editing)
+                    Spacer(modifier = Modifier.width(28.dp))
                 }
 
+                Spacer(modifier = Modifier.height(6.dp))
+
+                // Taller, easy-to-edit Password Input Box
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(28.dp)
-                        .clip(RoundedCornerShape(6.dp))
+                        .height(34.dp)
+                        .clip(RoundedCornerShape(7.dp))
                         .background(Color(0xFF050B14))
-                        .border(1.dp, Color(0xFF1E3A5F), RoundedCornerShape(6.dp))
-                        .padding(horizontal = 6.dp),
+                        .border(1.2.dp, Color(0xFF1E3A5F), RoundedCornerShape(7.dp))
+                        .padding(horizontal = 8.dp),
                     contentAlignment = Alignment.CenterStart
                 ) {
                     Row(
@@ -1229,15 +1313,15 @@ fun ProxyOverlayQuickEditPanel(
                             imageVector = Icons.Default.Lock,
                             contentDescription = null,
                             tint = cyanAccent,
-                            modifier = Modifier.size(12.dp)
+                            modifier = Modifier.size(13.dp)
                         )
-                        Spacer(modifier = Modifier.width(4.dp))
+                        Spacer(modifier = Modifier.width(5.dp))
                         Box(modifier = Modifier.weight(1f)) {
                             if (editPassword.isEmpty()) {
                                 Text(
                                     text = "Password...",
                                     color = Color(0xFF64748B),
-                                    fontSize = 9.5.sp,
+                                    fontSize = 10.sp,
                                     maxLines = 1
                                 )
                             }
@@ -1248,7 +1332,7 @@ fun ProxyOverlayQuickEditPanel(
                                 visualTransformation = if (showPassword) VisualTransformation.None else PasswordVisualTransformation(),
                                 textStyle = TextStyle(
                                     color = Color.White,
-                                    fontSize = 9.5.sp,
+                                    fontSize = 10.sp,
                                     fontWeight = FontWeight.SemiBold,
                                     fontFamily = FontFamily.Monospace
                                 ),
@@ -1262,12 +1346,15 @@ fun ProxyOverlayQuickEditPanel(
                 }
             }
 
-            // 4. UPDATE PROFILE BUTTON (Directly below Username & Password boxes)
+            // Extra bottom buffer so the Android text cursor teardrop handle (💧) has plenty of space
+            Spacer(modifier = Modifier.height(9.dp))
+
+            // 3. UPDATE PROFILE BUTTON (Directly below the active Username or Password box)
             Box(
                 contentAlignment = Alignment.Center,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(27.dp)
+                    .height(28.dp)
                     .clip(RoundedCornerShape(7.dp))
                     .background(
                         Brush.horizontalGradient(

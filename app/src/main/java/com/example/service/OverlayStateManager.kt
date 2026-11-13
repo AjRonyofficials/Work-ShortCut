@@ -118,6 +118,7 @@ data class OverlayUiState(
     val showOverlayVirtualNumbers: Boolean = true,
     val isVirtualNumbersOverlayExpanded: Boolean = false,
     val isProxyOverlayEditExpanded: Boolean = false,
+    val proxyOverlayEditField: String = "USERNAME",
     val autoCopyOtp: Boolean = true,
     val otpSoundVibrationEnabled: Boolean = true,
     val uploadNumberTxtLocked: Boolean = true,
@@ -348,6 +349,8 @@ object OverlayStateManager {
                     maxOverlayNumbersCount = p.getInt("max_overlay_numbers_count", 10).coerceIn(1, 10),
                     customAppTitle = p.getString("custom_app_title", "Work ShortCut") ?: "Work ShortCut",
                     isOverlayActive = p.getBoolean("overlay_persistent_enabled", false),
+                    proxyOverlayEditField = proxyPrefs.getString("proxy_overlay_edit_field", null)
+                        ?: p.getString("proxy_overlay_edit_field", "USERNAME") ?: "USERNAME",
                     proxyState = it.proxyState.copy(
                         profileName = profileName,
                         host = proxyHost,
@@ -1359,6 +1362,13 @@ object OverlayStateManager {
         } else {
             closeProxyOverlayEdit()
         }
+    }
+
+    fun setProxyOverlayEditField(field: String) {
+        val clean = if (field.uppercase() == "PASSWORD") "PASSWORD" else "USERNAME"
+        _uiState.update { it.copy(proxyOverlayEditField = clean) }
+        prefs?.edit()?.putString("proxy_overlay_edit_field", clean)?.apply()
+        proxySettingsPrefs?.edit()?.putString("proxy_overlay_edit_field", clean)?.apply()
     }
 
     /**

@@ -941,6 +941,98 @@ fun ProxySection(
                         )
                     }
 
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    // Overlay 3s Hold Edit Field Selector (Only Username OR Only Password)
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = innerBoxBgColor,
+                        border = BorderStroke(1.dp, Color(0xFF1E3A5F)),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = "OVERLAY 3s HOLD EDIT BOX",
+                                    fontSize = 10.5.sp,
+                                    fontWeight = FontWeight.ExtraBold,
+                                    color = cyanAccent,
+                                    letterSpacing = 0.4.sp
+                                )
+                                Text(
+                                    text = if (state.proxyOverlayEditField == "PASSWORD") "🔒 শুধু Password" else "👤 শুধু Username",
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = neonGreen
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                listOf(
+                                    "USERNAME" to "👤 শুধু Username",
+                                    "PASSWORD" to "🔒 শুধু Password"
+                                ).forEach { (fieldKey, labelText) ->
+                                    val isSelectedField = state.proxyOverlayEditField.equals(fieldKey, ignoreCase = true)
+                                    FilterChip(
+                                        selected = isSelectedField,
+                                        onClick = {
+                                            OverlayStateManager.setProxyOverlayEditField(fieldKey)
+                                            Toast.makeText(
+                                                context,
+                                                "Overlay Hold: $labelText সেট করা হয়েছে ✓",
+                                                Toast.LENGTH_SHORT
+                                            ).show()
+                                        },
+                                        label = {
+                                            Text(
+                                                text = labelText,
+                                                fontSize = 11.5.sp,
+                                                fontWeight = if (isSelectedField) FontWeight.ExtraBold else FontWeight.SemiBold,
+                                                maxLines = 1
+                                            )
+                                        },
+                                        leadingIcon = if (isSelectedField) {
+                                            {
+                                                Icon(
+                                                    imageVector = Icons.Default.Check,
+                                                    contentDescription = null,
+                                                    modifier = Modifier.size(14.dp)
+                                                )
+                                            }
+                                        } else null,
+                                        shape = RoundedCornerShape(9.dp),
+                                        colors = FilterChipDefaults.filterChipColors(
+                                            containerColor = Color(0xFF0D1726),
+                                            labelColor = Color(0xFF94A3B8),
+                                            selectedContainerColor = electricBlue,
+                                            selectedLabelColor = Color.White,
+                                            selectedLeadingIconColor = Color.White
+                                        ),
+                                        border = FilterChipDefaults.filterChipBorder(
+                                            enabled = true,
+                                            selected = isSelectedField,
+                                            borderColor = Color(0xFF233856),
+                                            selectedBorderColor = cyanAccent,
+                                            borderWidth = 1.dp,
+                                            selectedBorderWidth = 1.2.dp
+                                        ),
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .height(38.dp)
+                                            .testTag("chip_overlay_edit_field_$fieldKey")
+                                    )
+                                }
+                            }
+                        }
+                    }
+
                     Spacer(modifier = Modifier.height(10.dp))
 
                     // 4. Direct Username & Password inputs (No toggle switch needed)
