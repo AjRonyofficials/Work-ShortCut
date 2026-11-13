@@ -217,16 +217,18 @@ object UnixSmsManager {
                 } else {
                     uploaded
                 }
+                val finalActive = if (current.activeNumbers.isNotEmpty()) current.activeNumbers else active
+                val successIn24h = finalActive.count { !it.otpCode.isNullOrEmpty() || it.status.equals("success", true) }
                 current.copy(
                     apiToken = token,
                     lamixApiToken = lamixToken,
                     hadiApiToken = hadiToken,
                     selectedUploadGateway = gateway,
                     uploadedNumbers = finalUploaded,
-                    activeNumbers = if (current.activeNumbers.isNotEmpty()) current.activeNumbers else active,
+                    activeNumbers = finalActive,
                     selectedCountry = if (savedCountry.equals("ALL", true)) "US" else savedCountry,
                     selectedService = savedService,
-                    todayOtpCount = todayOtp,
+                    todayOtpCount = maxOf(todayOtp, successIn24h),
                     otpRatePerSms = savedRate,
                     countryRates = loadedCountryRates
                 )
@@ -534,9 +536,11 @@ object UnixSmsManager {
     }
 
     private fun saveActiveNumbers(list: List<ProvisionedNumber>, email: String = AuthManager.currentEmail.value) {
+        val cutoff24h = System.currentTimeMillis() - 24 * 60 * 60 * 1000L
+        val cleanList = list.filter { it.timestamp >= cutoff24h }
         val arr = JSONArray()
         val effectiveEmail = email.trim().lowercase()
-        for (item in list) {
+        for (item in cleanList) {
             val o = JSONObject()
             o.put("id", item.id)
             o.put("number", item.number)
@@ -639,7 +643,9 @@ object UnixSmsManager {
         val loaded = loadActiveNumbers(clean)
         val todayOtpKey = if (clean.isNotEmpty()) "${KEY_TODAY_OTP}_$clean" else KEY_TODAY_OTP
         val savedToday = prefs?.getInt(todayOtpKey, 0) ?: 0
-        _state.update { it.copy(activeNumbers = loaded, todayOtpCount = savedToday) }
+        val successIn24h = loaded.count { !it.otpCode.isNullOrEmpty() || it.status.equals("success", true) }
+        val effectiveToday = maxOf(savedToday, successIn24h)
+        _state.update { it.copy(activeNumbers = loaded, todayOtpCount = effectiveToday) }
     }
 
     fun setApiToken(token: String) {
@@ -1236,14 +1242,19 @@ object UnixSmsManager {
             )
         }
 
-        val maxCap = OverlayStateManager.uiState.value.maxOverlayNumbersCount.coerceIn(1, 10)
-        val updatedActive = (newProvs + _state.value.activeNumbers).sortedByDescending { it.timestamp }.take(maxCap)
+        val cutoff24h = now - 24 * 60 * 60 * 1000L
+        val updatedActive = (newProvs + _state.value.activeNumbers)
+            .filter { it.timestamp >= cutoff24h }
+            .distinctBy { it.id }
+            .sortedByDescending { it.timestamp }
         saveActiveNumbers(updatedActive, effectiveEmail)
+        val successIn24h = updatedActive.count { !it.otpCode.isNullOrEmpty() || it.status.equals("success", true) }
 
         _state.update {
             it.copy(
                 uploadedNumbers = updatedUploaded,
                 activeNumbers = updatedActive,
+                todayOtpCount = maxOf(it.todayOtpCount, successIn24h),
                 selectedCountry = chosen.first().countryCode.uppercase()
             )
         }
@@ -1399,13 +1410,21 @@ object UnixSmsManager {
         val filteredCdr = currentCdr.filter { it.timestamp > cutoff }
 
         val currentActive = _state.value.activeNumbers
-        val filteredActive = currentActive.filter { it.timestamp > cutoff || !it.otpCode.isNullOrEmpty() }
+        val filteredActive = currentActive
+            .filter { it.timestamp >= cutoff }
+            .map { item ->
+                if (item.otpCode.isNullOrEmpty() && (item.status.equals("pending", true) || item.status.equals("wait", true)) && nowTime >= item.expiresAt) {
+                    item.copy(status = "expired", failReason = "Timeout (20m)")
+                } else item
+            }
 
-        if (filteredCdr.size != currentCdr.size || filteredActive.size != currentActive.size) {
+        if (filteredCdr.size != currentCdr.size || filteredActive != currentActive) {
+            val successIn24h = filteredActive.count { !it.otpCode.isNullOrEmpty() || it.status.equals("success", true) }
             _state.update {
                 it.copy(
                     liveCdrRecords = filteredCdr,
-                    activeNumbers = filteredActive
+                    activeNumbers = filteredActive,
+                    todayOtpCount = maxOf(it.todayOtpCount, successIn24h)
                 )
             }
             saveActiveNumbers(filteredActive)
@@ -1526,55 +1545,53 @@ object UnixSmsManager {
         val allUploaded = _state.value.uploadedNumbers
         val newlyArrivedOtps = mutableListOf<Pair<ProvisionedNumber, String>>()
 
-        val updatedActive = if (currentEmail.isBlank()) {
-            currentActive
-        } else {
-            currentActive.map { prov ->
-                if (!prov.otpCode.isNullOrEmpty() && prov.status == "success") {
-                    return@map prov
-                }
-                val cleanDigits = prov.number.replace("[^0-9]".toRegex(), "")
-                if (cleanDigits.length < 7) return@map prov
+        val updatedActive = currentActive.map { prov ->
+            if (!prov.otpCode.isNullOrEmpty() && prov.status == "success") {
+                return@map prov
+            }
+            val cleanDigits = prov.number.replace("[^0-9]".toRegex(), "")
+            if (cleanDigits.length < 7) return@map prov
 
-                // Ensure this active number belongs to the currently logged-in user
-                if (prov.userEmail.isNotBlank() && !prov.userEmail.equals(currentEmail, ignoreCase = true)) {
-                    return@map prov
-                }
+            // Ensure this active number belongs to the currently logged-in user
+            if (currentEmail.isNotBlank() && prov.userEmail.isNotBlank() && !prov.userEmail.equals(currentEmail, ignoreCase = true)) {
+                return@map prov
+            }
 
-                var matchedCdr: UnixSmsCdrRecord? = null
-                for ((cdr, rawPhone) in rawCdrList) {
-                    if (isPhoneNumberMatch(cleanDigits, rawPhone)) {
-                        matchedCdr = cdr
-                        break
-                    }
+            var matchedCdr: UnixSmsCdrRecord? = null
+            for ((cdr, rawPhone) in rawCdrList) {
+                if (isPhoneNumberMatch(cleanDigits, rawPhone)) {
+                    matchedCdr = cdr
+                    break
                 }
+            }
 
-                if (matchedCdr != null && matchedCdr.message.isNotBlank()) {
-                    val extracted = extractOtp(matchedCdr.message, cleanDigits).ifEmpty {
-                        extractOtp(matchedCdr.message, "")
-                    }
-                    // Strictly require a valid 5–8 digit OTP code before crediting balance and marking success
-                    if (extracted.length in 5..8) {
-                        if (prov.otpCode != extracted || prov.status != "success") {
-                            val effectiveRate = if (prov.rate >= 0.05) prov.rate else getRateForCountry(prov.iso)
-                            val updatedProv = prov.copy(
-                                status = "success",
-                                otpCode = extracted,
-                                otpMessage = matchedCdr.message,
-                                rate = effectiveRate
-                            )
-                            newlyArrivedOtps.add(Pair(updatedProv, extracted))
-                            updatedProv
-                        } else prov
+            if (matchedCdr != null && matchedCdr.message.isNotBlank()) {
+                val extracted = extractOtp(matchedCdr.message, cleanDigits).ifEmpty {
+                    extractOtp(matchedCdr.message, "")
+                }
+                // Accept valid 4–8 digit OTP codes before crediting balance and marking success
+                if (extracted.length in 4..8) {
+                    if (prov.otpCode != extracted || prov.status != "success") {
+                        val effectiveRate = if (prov.rate >= 0.05) prov.rate else getRateForCountry(prov.iso)
+                        val updatedProv = prov.copy(
+                            status = "success",
+                            otpCode = extracted,
+                            otpMessage = matchedCdr.message,
+                            rate = effectiveRate
+                        )
+                        newlyArrivedOtps.add(Pair(updatedProv, extracted))
+                        updatedProv
                     } else prov
                 } else prov
-            }
+            } else prov
         }
 
-        var newTodayOtpCount = _state.value.todayOtpCount
-        if (newlyArrivedOtps.isNotEmpty() && currentEmail.isNotBlank()) {
-            newTodayOtpCount += newlyArrivedOtps.size
-            prefs?.edit()?.putInt("${KEY_TODAY_OTP}_$currentEmail", newTodayOtpCount)?.apply()
+        val successIn24h = updatedActive.count { !it.otpCode.isNullOrEmpty() || it.status.equals("success", true) }
+        var newTodayOtpCount = maxOf(_state.value.todayOtpCount, successIn24h)
+        if (newlyArrivedOtps.isNotEmpty()) {
+            newTodayOtpCount = maxOf(_state.value.todayOtpCount + newlyArrivedOtps.size, successIn24h)
+            val todayOtpKey = if (currentEmail.isNotEmpty()) "${KEY_TODAY_OTP}_$currentEmail" else KEY_TODAY_OTP
+            prefs?.edit()?.putInt(todayOtpKey, newTodayOtpCount)?.apply()
             saveActiveNumbers(updatedActive)
 
             newlyArrivedOtps.forEach { (prov, otp) ->
@@ -1619,6 +1636,8 @@ object UnixSmsManager {
                     prov.copy(status = "success", otpCode = matched.second, otpMessage = matched.first.otpMessage)
                 } else prov
             }
+            val mergedSuccessCount = mergedActive.count { !it.otpCode.isNullOrEmpty() || it.status.equals("success", true) }
+            val effectiveTodayCount = maxOf(newTodayOtpCount, mergedSuccessCount)
             if (newlyArrivedOtps.isNotEmpty()) {
                 saveActiveNumbers(mergedActive)
             }
@@ -1629,7 +1648,7 @@ object UnixSmsManager {
             current.copy(
                 liveCdrRecords = mergedCdr,
                 activeNumbers = mergedActive,
-                todayOtpCount = newTodayOtpCount,
+                todayOtpCount = effectiveTodayCount,
                 lastSyncTime = System.currentTimeMillis()
             )
         }

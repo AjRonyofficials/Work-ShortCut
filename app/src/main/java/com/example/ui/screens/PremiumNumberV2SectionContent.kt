@@ -448,10 +448,11 @@ fun PremiumNumberV2SectionContent(
 
                 Spacer(modifier = Modifier.height(10.dp))
 
-                // 4 STAT PILLS ROW (Unified Premium Layout in Royal Gold Theme)
+                // 5 STAT PILLS ROW (24H TOTAL, SUCCESS OTP, WAITING, FAILED, OTP RATE)
+                val effectiveV2TodayOtp = maxOf(state.todayOtpCount, receivedCount)
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    horizontalArrangement = Arrangement.spacedBy(5.dp)
                 ) {
                     Surface(
                         color = Color(0xFF141D2B),
@@ -463,8 +464,8 @@ fun PremiumNumberV2SectionContent(
                             modifier = Modifier.padding(vertical = 6.dp),
                             horizontalAlignment = Alignment.CenterHorizontally
                         ) {
-                            Text("TOTAL", color = Color(0xFF94A3B8), fontSize = 8.5.sp, fontWeight = FontWeight.Bold)
-                            Text("$total", color = Color.White, fontSize = 13.5.sp, fontWeight = FontWeight.Black)
+                            Text("TOTAL (24H)", color = Color(0xFF94A3B8), fontSize = 8.sp, fontWeight = FontWeight.Bold)
+                            Text("$total", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Black)
                         }
                     }
                     Surface(
@@ -477,8 +478,8 @@ fun PremiumNumberV2SectionContent(
                             modifier = Modifier.padding(vertical = 6.dp),
                             horizontalAlignment = Alignment.CenterHorizontally
                         ) {
-                            Text("RECEIVED", color = Color(0xFF34D399), fontSize = 8.5.sp, fontWeight = FontWeight.Bold)
-                            Text("$receivedCount", color = Color(0xFF10B981), fontSize = 13.5.sp, fontWeight = FontWeight.Black)
+                            Text("SUCCESS OTP", color = Color(0xFF34D399), fontSize = 8.sp, fontWeight = FontWeight.Bold)
+                            Text("$effectiveV2TodayOtp", color = Color(0xFF10B981), fontSize = 13.sp, fontWeight = FontWeight.Black)
                         }
                     }
                     Surface(
@@ -491,8 +492,22 @@ fun PremiumNumberV2SectionContent(
                             modifier = Modifier.padding(vertical = 6.dp),
                             horizontalAlignment = Alignment.CenterHorizontally
                         ) {
-                            Text("WAITING", color = Color(0xFFFBBF24), fontSize = 8.5.sp, fontWeight = FontWeight.Bold)
-                            Text("$waitingCount", color = Color(0xFFFBBF24), fontSize = 13.5.sp, fontWeight = FontWeight.Black)
+                            Text("WAITING", color = Color(0xFFFBBF24), fontSize = 8.sp, fontWeight = FontWeight.Bold)
+                            Text("$waitingCount", color = Color(0xFFFBBF24), fontSize = 13.sp, fontWeight = FontWeight.Black)
+                        }
+                    }
+                    Surface(
+                        color = Color(0xFFEF4444).copy(alpha = 0.12f),
+                        shape = RoundedCornerShape(10.dp),
+                        border = BorderStroke(1.dp, Color(0xFFEF4444).copy(alpha = 0.45f)),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(vertical = 6.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Text("FAILED", color = Color(0xFFF87171), fontSize = 8.sp, fontWeight = FontWeight.Bold)
+                            Text("$expiredCount", color = Color(0xFFEF4444), fontSize = 13.sp, fontWeight = FontWeight.Black)
                         }
                     }
                     Surface(
@@ -505,8 +520,8 @@ fun PremiumNumberV2SectionContent(
                             modifier = Modifier.padding(vertical = 6.dp),
                             horizontalAlignment = Alignment.CenterHorizontally
                         ) {
-                            Text("OTP RATE", color = Color(0xFFFDE68A), fontSize = 8.5.sp, fontWeight = FontWeight.Bold)
-                            Text("${String.format(Locale.US, "%.2f", otpRate)}৳", color = Color(0xFFFBBF24), fontSize = 13.sp, fontWeight = FontWeight.Black)
+                            Text("OTP RATE", color = Color(0xFFFDE68A), fontSize = 8.sp, fontWeight = FontWeight.Bold)
+                            Text("${String.format(Locale.US, "%.2f", otpRate)}৳", color = Color(0xFFFBBF24), fontSize = 12.5.sp, fontWeight = FontWeight.Black)
                         }
                     }
                 }

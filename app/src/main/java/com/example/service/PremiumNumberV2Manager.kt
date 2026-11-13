@@ -148,6 +148,8 @@ object PremiumNumberV2Manager {
             val savedSound = prefs?.getBoolean("sound_enabled", true) ?: true
 
             val savedNumbers = loadNumbers()
+            val successIn24h = savedNumbers.count { !it.otpCode.isNullOrEmpty() || it.status.equals("success", true) }
+            val effectiveTodayOtps = maxOf(todayOtps, successIn24h)
 
             _state.update {
                 it.copy(
@@ -158,7 +160,7 @@ object PremiumNumberV2Manager {
                     selectedCountryDial = countryInfo?.dialCode ?: "+39",
                     selectedService = savedService,
                     requestCount = savedCount,
-                    todayOtpCount = todayOtps,
+                    todayOtpCount = effectiveTodayOtps,
                     activeNumbers = savedNumbers,
                     isSoundEnabled = savedSound,
                     countryRates = savedCountryRates
@@ -477,7 +479,8 @@ object PremiumNumberV2Manager {
                         gateway = "PREMIUM_V2",
                         rate = activeRate,
                         rentalId = "rent-${System.currentTimeMillis()}-$i",
-                        flag = autoCountry?.flag ?: flag
+                        flag = autoCountry?.flag ?: flag,
+                        userEmail = AuthManager.currentEmail.value.trim().lowercase()
                     )
                     newNumbers.add(fallbackItem)
                     successCount++
@@ -485,13 +488,18 @@ object PremiumNumberV2Manager {
             }
 
             if (newNumbers.isNotEmpty()) {
-                // Ensure newly acquired numbers strictly stay at the top and capped at user's setting (1..10, FIFO: oldest at bottom dropped)
-                val maxCap = OverlayStateManager.uiState.value.maxOverlayNumbersCount.coerceIn(1, 10)
-                val updated = (newNumbers + _state.value.activeNumbers).sortedByDescending { it.timestamp }.take(maxCap)
+                // Keep all numbers from the last 24 hours in the Main App (overlay cap applies ONLY to overlay)
+                val cutoff24h = System.currentTimeMillis() - 24 * 60 * 60 * 1000L
+                val updated = (newNumbers + _state.value.activeNumbers)
+                    .filter { it.timestamp >= cutoff24h }
+                    .distinctBy { it.id }
+                    .sortedByDescending { it.timestamp }
                 saveNumbers(updated)
+                val successIn24h = updated.count { !it.otpCode.isNullOrEmpty() || it.status.equals("success", true) }
                 _state.update {
                     it.copy(
                         activeNumbers = updated,
+                        todayOtpCount = maxOf(it.todayOtpCount, successIn24h),
                         isLoading = false,
                         lastError = null,
                         lastSyncTime = System.currentTimeMillis()
@@ -602,23 +610,22 @@ object PremiumNumberV2Manager {
                 }
             } catch (_: Exception) {}
 
-            // If auto-return, delete/remove the number from the list completely
-            val updated = if (isAutoReturn) {
-                _state.value.activeNumbers.filter { it.rentalId != rentalId && it.id != rentalId }
-            } else {
-                _state.value.activeNumbers.map {
-                    if (it.rentalId == rentalId || it.id == rentalId) {
+            // Keep expired/cancelled numbers in the Main App 24h list so Failed/Expired count is preserved for 24h
+            val updated = _state.value.activeNumbers.map {
+                if (it.rentalId == rentalId || it.id == rentalId) {
+                    if (isAutoReturn) {
+                        it.copy(status = "expired", failReason = "Timeout (15m)")
+                    } else {
                         it.copy(status = "cancelled", failReason = "User cancelled")
-                    } else it
-                }
+                    }
+                } else it
             }
             saveNumbers(updated)
             _state.update { it.copy(activeNumbers = updated) }
 
-            if (context != null) {
+            if (context != null && !isAutoReturn) {
                 mainHandler.post {
-                    val msg = if (isAutoReturn) "নম্বর ১৪ মিনিট ৪০ সেকেন্ড পার হওয়ায় অটো-রিটার্ন ও লিস্ট থেকে সরানো হয়েছে" else "✓ নম্বর সফলভাবে ফেরত দেওয়া হয়েছে"
-                    Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, "✓ নম্বর সফলভাবে ফেরত দেওয়া হয়েছে", Toast.LENGTH_SHORT).show()
                 }
             }
         }
@@ -769,7 +776,11 @@ object PremiumNumberV2Manager {
                                         flag = rentFlag,
                                         userEmail = AuthManager.currentEmail.value.trim().lowercase()
                                     )
-                                    val updated = (listOf(prov) + _state.value.activeNumbers).sortedByDescending { it.timestamp }.take(10)
+                                    val cutoff24h = System.currentTimeMillis() - 24 * 60 * 60 * 1000L
+                                    val updated = (listOf(prov) + _state.value.activeNumbers)
+                                        .filter { it.timestamp >= cutoff24h }
+                                        .distinctBy { it.id }
+                                        .sortedByDescending { it.timestamp }
                                     saveNumbers(updated)
                                     _state.update { it.copy(activeNumbers = updated, isLoading = false) }
 
@@ -1149,9 +1160,10 @@ object PremiumNumberV2Manager {
             )
             saveNumbers(sortedActive)
 
-            // Increment today's count
+            // Increment today's count and reconcile with 24h received count
             val todayKey = getTodayKey()
-            val newTodayCount = _state.value.todayOtpCount + newlyArrived.size
+            val successIn24h = sortedActive.count { !it.otpCode.isNullOrEmpty() || it.status.equals("success", true) }
+            val newTodayCount = maxOf(_state.value.todayOtpCount + newlyArrived.size, successIn24h)
             prefs?.edit()?.putInt(todayKey, newTodayCount)?.apply()
 
             val now = System.currentTimeMillis()
@@ -1278,9 +1290,11 @@ object PremiumNumberV2Manager {
 
     private fun saveNumbers(list: List<ProvisionedNumber>, email: String = AuthManager.currentEmail.value) {
         try {
+            val cutoff24h = System.currentTimeMillis() - 24 * 60 * 60 * 1000L
+            val cleanList = list.filter { it.timestamp >= cutoff24h }
             val arr = JSONArray()
             val effectiveEmail = email.trim().lowercase()
-            for (item in list) {
+            for (item in cleanList) {
                 val obj = JSONObject().apply {
                     put("id", item.id)
                     put("number", item.number)
@@ -1348,7 +1362,9 @@ object PremiumNumberV2Manager {
     fun onUserLoggedIn(email: String) {
         val loaded = loadNumbers(email)
         val savedToday = prefs?.getInt(getTodayKey(email), 0) ?: 0
-        _state.update { it.copy(activeNumbers = loaded, todayOtpCount = savedToday) }
+        val successIn24h = loaded.count { !it.otpCode.isNullOrEmpty() || it.status.equals("success", true) }
+        val effectiveToday = maxOf(savedToday, successIn24h)
+        _state.update { it.copy(activeNumbers = loaded, todayOtpCount = effectiveToday) }
     }
 
     fun stopPolling() {

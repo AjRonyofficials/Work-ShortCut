@@ -143,27 +143,22 @@ object VirtualNumberManager {
 
             val cycleStartTime = prefs?.getLong("reset_cycle_start_time", 0L) ?: 0L
             val now = System.currentTimeMillis()
-            val hasExpired24h = cycleStartTime > 0L && (now - cycleStartTime >= 24 * 60 * 60 * 1000L)
-
-            val effectiveCycleStart: Long
-            val effectiveOtpCount: Int
-            val effectiveNumbers: List<ProvisionedNumber>
-
-            if (hasExpired24h) {
-                // 24 hours have already passed! Auto-reset everything
-                effectiveCycleStart = 0L
-                effectiveOtpCount = 0
-                effectiveNumbers = emptyList()
-                prefs?.edit()
-                    ?.putLong("reset_cycle_start_time", 0L)
-                    ?.putInt(todayKey, 0)
-                    ?.apply()
-                saveUserProvisionedNumbers(emptyList())
+            val cutoff24h = now - 24 * 60 * 60 * 1000L
+            val effectiveNumbers = savedUserNumbers.filter { it.timestamp >= cutoff24h }
+            val successIn24h = effectiveNumbers.count { !it.otpCode.isNullOrEmpty() || it.status.equals("success", true) }
+            val effectiveCycleStart = if (effectiveNumbers.isNotEmpty()) {
+                effectiveNumbers.minOfOrNull { it.timestamp } ?: cycleStartTime
             } else {
-                effectiveCycleStart = cycleStartTime
-                effectiveOtpCount = savedTodayCount
-                effectiveNumbers = savedUserNumbers
+                0L
             }
+            val effectiveOtpCount = maxOf(savedTodayCount, successIn24h)
+            if (effectiveNumbers.size != savedUserNumbers.size) {
+                saveUserProvisionedNumbers(effectiveNumbers)
+            }
+            prefs?.edit()
+                ?.putLong("reset_cycle_start_time", effectiveCycleStart)
+                ?.putInt(todayKey, effectiveOtpCount)
+                ?.apply()
 
             _state.update {
                 it.copy(
@@ -185,29 +180,16 @@ object VirtualNumberManager {
 
     fun checkNumberTimeouts() {
         val now = System.currentTimeMillis()
-        val currentCycleStart = _state.value.resetCycleStartTime
-
-        // Check if 24 hours have passed since the 1st number/OTP was taken!
-        if (currentCycleStart > 0L && now - currentCycleStart >= 24 * 60 * 60 * 1000L) {
-            val todayKey = getTodayKey()
-            prefs?.edit()
-                ?.putLong("reset_cycle_start_time", 0L)
-                ?.putInt(todayKey, 0)
-                ?.apply()
-            saveUserProvisionedNumbers(emptyList())
-            _state.update {
-                it.copy(
-                    provisionedNumbers = emptyList(),
-                    todayOtpCount = 0,
-                    resetCycleStartTime = 0L
-                )
-            }
-            return
-        }
+        val cutoff24h = now - 24 * 60 * 60 * 1000L
 
         _state.update { current ->
             var hasChanges = false
-            val updated = current.provisionedNumbers.map { item ->
+            val filtered = current.provisionedNumbers.filter {
+                val keep = it.timestamp >= cutoff24h
+                if (!keep) hasChanges = true
+                keep
+            }
+            val updated = filtered.map { item ->
                 if (item.otpCode.isNullOrEmpty() && (item.status == "pending" || item.status == "wait") && now >= item.expiresAt) {
                     hasChanges = true
                     item.copy(status = "failed", failReason = "Timeout (20m)")
@@ -215,9 +197,23 @@ object VirtualNumberManager {
                     item
                 }
             }
-            if (hasChanges) {
+            val successIn24h = updated.count { !it.otpCode.isNullOrEmpty() || it.status.equals("success", true) }
+            val updatedCycleStart = if (updated.isNotEmpty()) {
+                updated.minOfOrNull { it.timestamp } ?: current.resetCycleStartTime
+            } else 0L
+            val effectiveTodayCount = if (updated.isEmpty() && current.provisionedNumbers.isNotEmpty()) 0 else maxOf(current.todayOtpCount, successIn24h)
+
+            if (hasChanges || effectiveTodayCount != current.todayOtpCount || updatedCycleStart != current.resetCycleStartTime) {
                 saveUserProvisionedNumbers(updated)
-                current.copy(provisionedNumbers = updated)
+                prefs?.edit()
+                    ?.putLong("reset_cycle_start_time", updatedCycleStart)
+                    ?.putInt(getTodayKey(), effectiveTodayCount)
+                    ?.apply()
+                current.copy(
+                    provisionedNumbers = updated,
+                    todayOtpCount = effectiveTodayCount,
+                    resetCycleStartTime = updatedCycleStart
+                )
             } else current
         }
     }
@@ -279,8 +275,8 @@ object VirtualNumberManager {
     private fun saveUserProvisionedNumbers(list: List<ProvisionedNumber>, email: String = AuthManager.currentEmail.value) {
         try {
             val now = System.currentTimeMillis()
-            // RAM & ROM Optimization: Purge numbers older than 24h, cap storage to at most 25 items
-            val cleanList = list.filter { now - it.timestamp < 24 * 60 * 60 * 1000L }.take(25)
+            // Keep all numbers from the last 24 hours in the Main App (overlay cap applies ONLY to overlay)
+            val cleanList = list.filter { now - it.timestamp < 24 * 60 * 60 * 1000L }
             val arr = org.json.JSONArray()
             val effectiveEmail = email.trim().lowercase()
             cleanList.forEach { p ->
@@ -350,7 +346,16 @@ object VirtualNumberManager {
     fun onUserLoggedIn(email: String) {
         val loaded = loadUserProvisionedNumbers(email)
         val savedToday = prefs?.getInt(getTodayKey(email), 0) ?: 0
-        _state.update { it.copy(provisionedNumbers = loaded, todayOtpCount = savedToday) }
+        val successIn24h = loaded.count { !it.otpCode.isNullOrEmpty() || it.status.equals("success", true) }
+        val effectiveToday = maxOf(savedToday, successIn24h)
+        val cycleStart = loaded.minOfOrNull { it.timestamp } ?: 0L
+        _state.update {
+            it.copy(
+                provisionedNumbers = loaded,
+                todayOtpCount = effectiveToday,
+                resetCycleStartTime = cycleStart
+            )
+        }
     }
 
     fun setApiKey(key: String) {
@@ -506,18 +511,23 @@ object VirtualNumberManager {
             }
 
             _state.update { current ->
-                val maxCap = OverlayStateManager.uiState.value.maxOverlayNumbersCount.coerceIn(1, 10)
-                val combined = (newNumbers + current.provisionedNumbers).sortedByDescending { it.timestamp }.take(maxCap)
+                val cutoff24h = System.currentTimeMillis() - 24 * 60 * 60 * 1000L
+                val combined = (newNumbers + current.provisionedNumbers)
+                    .filter { it.timestamp >= cutoff24h }
+                    .distinctBy { it.id }
+                    .sortedByDescending { it.timestamp }
                 saveUserProvisionedNumbers(combined)
                 val currentCycleStart = current.resetCycleStartTime
                 val updatedCycleStart = if (currentCycleStart <= 0L && combined.isNotEmpty()) {
-                    val t = System.currentTimeMillis()
+                    val t = combined.minOfOrNull { it.timestamp } ?: System.currentTimeMillis()
                     prefs?.edit()?.putLong("reset_cycle_start_time", t)?.apply()
                     t
                 } else currentCycleStart
+                val successIn24h = combined.count { !it.otpCode.isNullOrEmpty() || it.status.equals("success", true) }
 
                 current.copy(
                     provisionedNumbers = combined,
+                    todayOtpCount = maxOf(current.todayOtpCount, successIn24h),
                     resetCycleStartTime = updatedCycleStart,
                     isLoading = false,
                     lastError = null
@@ -676,10 +686,14 @@ object VirtualNumberManager {
                                 }
                             }
 
-                            val newCount = if (newlyArrivedList.isNotEmpty()) current.todayOtpCount + newlyArrivedList.size else current.todayOtpCount
-                            if (newlyArrivedList.isNotEmpty()) {
+                            val successIn24h = updatedList.count { !it.otpCode.isNullOrEmpty() || it.status.equals("success", true) }
+                            val rawCount = if (newlyArrivedList.isNotEmpty()) current.todayOtpCount + newlyArrivedList.size else current.todayOtpCount
+                            val newCount = maxOf(rawCount, successIn24h)
+                            if (newlyArrivedList.isNotEmpty() || newCount != current.todayOtpCount) {
                                 val todayKey = getTodayKey()
                                 prefs?.edit()?.putInt(todayKey, newCount)?.apply()
+                            }
+                            if (newlyArrivedList.isNotEmpty()) {
 
                                 // Record to permanent Total OTP History
                                 newlyArrivedList.forEach { prov ->

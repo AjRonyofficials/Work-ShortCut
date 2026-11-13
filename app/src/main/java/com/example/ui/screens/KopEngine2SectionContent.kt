@@ -124,13 +124,28 @@ fun KopEngine2SectionContent(
         }
     }
 
+    var kop2FilterTab by remember { mutableStateOf("ALL") }
     val total = state.provisionedNumbers.size
     val successCount = state.provisionedNumbers.count { it.status.equals("success", true) || !it.otpCode.isNullOrEmpty() }
+    val waitCount = state.provisionedNumbers.count {
+        it.otpCode.isNullOrEmpty() && (it.status.equals("pending", true) || it.status.equals("wait", true)) && nowTick < it.expiresAt
+    }
     val expiredCount = state.provisionedNumbers.count {
-        it.status.equals("expired", true) || it.status.equals("timeout", true) || it.status.equals("failed", true) ||
-                (it.otpCode.isNullOrEmpty() && nowTick >= it.expiresAt)
+        val hasOtp = it.status.equals("success", true) || !it.otpCode.isNullOrEmpty()
+        !hasOtp && (it.status.equals("expired", true) || it.status.equals("timeout", true) || it.status.equals("failed", true) || nowTick >= it.expiresAt)
     }
     val successRate = if (total > 0) (successCount.toFloat() / total) * 100f else 0f
+    val filteredKop2Numbers = remember(state.provisionedNumbers, kop2FilterTab, nowTick) {
+        when (kop2FilterTab) {
+            "SUCCESS" -> state.provisionedNumbers.filter { it.status.equals("success", true) || !it.otpCode.isNullOrEmpty() }
+            "PENDING" -> state.provisionedNumbers.filter { it.otpCode.isNullOrEmpty() && (it.status.equals("pending", true) || it.status.equals("wait", true)) && nowTick < it.expiresAt }
+            "FAILED" -> state.provisionedNumbers.filter {
+                val hasOtp = it.status.equals("success", true) || !it.otpCode.isNullOrEmpty()
+                !hasOtp && (it.status.equals("expired", true) || it.status.equals("timeout", true) || it.status.equals("failed", true) || nowTick >= it.expiresAt)
+            }
+            else -> state.provisionedNumbers
+        }
+    }
 
     Column(
         modifier = modifier
@@ -214,7 +229,7 @@ fun KopEngine2SectionContent(
                             )
                             Spacer(modifier = Modifier.width(4.dp))
                             Text(
-                                text = "TODAY OTP: ${state.todayOtpCount}",
+                                text = "TODAY OTP: ${maxOf(state.todayOtpCount, successCount)}",
                                 color = Color.White,
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.ExtraBold
@@ -889,8 +904,37 @@ fun KopEngine2SectionContent(
                 }
             }
 
-            // PROVISIONED NUMBERS LIST (NO RED - USES CYBER SKY / OCEAN BLUE & EMERALD)
-            if (state.provisionedNumbers.isEmpty()) {
+            // 24h Filter Chips Row: ALL, SUCCESS, PENDING, FAILED
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                listOf(
+                    "ALL" to "ALL ($total)",
+                    "SUCCESS" to "SUCCESS ($successCount)",
+                    "PENDING" to "WAIT ($waitCount)",
+                    "FAILED" to "FAILED ($expiredCount)"
+                ).forEach { (keyTab, labelTab) ->
+                    val isSelected = kop2FilterTab == keyTab
+                    Surface(
+                        color = if (isSelected) ThemeSky else ThemeSurfaceDark,
+                        shape = RoundedCornerShape(6.dp),
+                        border = BorderStroke(1.dp, if (isSelected) ThemeSkyBright else ThemeBorder),
+                        modifier = Modifier.clickable { kop2FilterTab = keyTab }
+                    ) {
+                        Text(
+                            text = labelTab,
+                            color = if (isSelected) Color.White else ThemeMuted,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                        )
+                    }
+                }
+            }
+
+            // PROVISIONED NUMBERS LIST (ALL 24H NUMBERS)
+            if (filteredKop2Numbers.isEmpty()) {
                 Surface(
                     color = ThemeCardBg,
                     shape = RoundedCornerShape(14.dp),
@@ -912,14 +956,14 @@ fun KopEngine2SectionContent(
                             fontSize = 13.sp
                         )
                         Text(
-                            text = "উপরে 'GET NUMBER' চাপুন নতুন নাম্বার নিতে (১৫ মিনিট ভ্যালিডিটি)",
+                            text = "উপরে 'GET NUMBER' চাপুন নতুন নাম্বার নিতে (২৪ ঘণ্টা হিস্ট্রি)",
                             color = ThemeMuted,
                             fontSize = 11.sp
                         )
                     }
                 }
             } else {
-                state.provisionedNumbers.forEach { item ->
+                filteredKop2Numbers.forEach { item ->
                     key(item.id) {
                         Kop2ProvisionedNumberCard(
                             item = item,

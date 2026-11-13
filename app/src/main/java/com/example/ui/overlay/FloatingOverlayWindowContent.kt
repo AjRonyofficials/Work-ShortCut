@@ -2048,11 +2048,12 @@ fun VirtualNumbersOverlaySection(
     var serviceDropdownExpanded by remember { mutableStateOf(false) }
     var isUnixGettingNumber by remember { mutableStateOf(false) }
 
+    val maxOverlayCards = overlayUiState.maxOverlayNumbersCount.coerceIn(1, 10)
     val activeCount = when (selectedPanel) {
-        0 -> unixState.activeNumbers.size
-        1 -> vnState.provisionedNumbers.size
-        2 -> kop2State.provisionedNumbers.size
-        else -> v2State.activeNumbers.size
+        0 -> minOf(unixState.activeNumbers.size, maxOverlayCards)
+        1 -> minOf(vnState.provisionedNumbers.size, maxOverlayCards)
+        2 -> minOf(kop2State.provisionedNumbers.size, maxOverlayCards)
+        else -> minOf(v2State.activeNumbers.size, maxOverlayCards)
     }
     val panelName = when (selectedPanel) {
         0 -> "Unix"
@@ -2150,13 +2151,14 @@ fun VirtualNumbersOverlaySection(
                             )
                         }
 
+                        val overlayTodayOtp = when (selectedPanel) {
+                            0 -> maxOf(unixState.todayOtpCount, unixState.activeNumbers.count { !it.otpCode.isNullOrEmpty() || it.status.equals("success", true) })
+                            3 -> maxOf(v2State.todayOtpCount, v2State.activeNumbers.count { !it.otpCode.isNullOrEmpty() || it.status.equals("success", true) })
+                            1 -> maxOf(vnState.todayOtpCount, vnState.provisionedNumbers.count { !it.otpCode.isNullOrEmpty() || it.status.equals("success", true) })
+                            else -> maxOf(kop2State.todayOtpCount, kop2State.provisionedNumbers.count { !it.otpCode.isNullOrEmpty() || it.status.equals("success", true) })
+                        }
                         Text(
-                            text = when (selectedPanel) {
-                                0 -> "OTP: ${unixState.todayOtpCount}"
-                                3 -> "OTP: ${v2State.todayOtpCount}"
-                                1 -> "OTP: ${vnState.todayOtpCount}"
-                                else -> "OTP: ${kop2State.todayOtpCount}"
-                            },
+                            text = "OTP: $overlayTodayOtp",
                             fontSize = 8.sp,
                             fontWeight = FontWeight.Bold,
                             color = Color(0xFF80DEEA)

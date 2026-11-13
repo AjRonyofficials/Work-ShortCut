@@ -152,26 +152,20 @@ object KopEngine2Manager {
 
             val cycleStartTime = prefs?.getLong("reset_cycle_start_time", 0L) ?: 0L
             val now = System.currentTimeMillis()
-            val hasExpired24h = cycleStartTime > 0L && (now - cycleStartTime >= 24 * 60 * 60 * 1000L)
-
-            val effectiveCycleStart: Long
-            val effectiveOtpCount: Int
-            val effectiveNumbers: List<ProvisionedNumber>
-
-            if (hasExpired24h) {
-                effectiveCycleStart = 0L
-                effectiveOtpCount = 0
-                effectiveNumbers = emptyList()
-                prefs?.edit()
-                    ?.putLong("reset_cycle_start_time", 0L)
-                    ?.putInt(todayKey, 0)
-                    ?.apply()
-                saveUserProvisionedNumbers(emptyList())
-            } else {
-                effectiveCycleStart = cycleStartTime
-                effectiveOtpCount = savedTodayCount
-                effectiveNumbers = savedUserNumbers
+            val cutoff24h = now - 24 * 60 * 60 * 1000L
+            val effectiveNumbers = savedUserNumbers.filter { it.timestamp >= cutoff24h }
+            val successIn24h = effectiveNumbers.count { !it.otpCode.isNullOrEmpty() || it.status.equals("success", true) }
+            val effectiveCycleStart = if (effectiveNumbers.isNotEmpty()) {
+                effectiveNumbers.minOfOrNull { it.timestamp } ?: cycleStartTime
+            } else 0L
+            val effectiveOtpCount = maxOf(savedTodayCount, successIn24h)
+            if (effectiveNumbers.size != savedUserNumbers.size) {
+                saveUserProvisionedNumbers(effectiveNumbers)
             }
+            prefs?.edit()
+                ?.putLong("reset_cycle_start_time", effectiveCycleStart)
+                ?.putInt(todayKey, effectiveOtpCount)
+                ?.apply()
 
             _state.update {
                 it.copy(
@@ -234,34 +228,34 @@ object KopEngine2Manager {
 
     fun checkNumberTimeouts() {
         val now = System.currentTimeMillis()
-        val currentCycleStart = _state.value.resetCycleStartTime
-
-        if (currentCycleStart > 0L && now - currentCycleStart >= 24 * 60 * 60 * 1000L) {
-            val todayKey = getTodayKey()
-            prefs?.edit()
-                ?.putLong("reset_cycle_start_time", 0L)
-                ?.putInt(todayKey, 0)
-                ?.apply()
-            saveUserProvisionedNumbers(emptyList())
-            _state.update {
-                it.copy(
-                    provisionedNumbers = emptyList(),
-                    todayOtpCount = 0,
-                    resetCycleStartTime = 0L
-                )
-            }
-            return
-        }
+        val cutoff24h = now - 24 * 60 * 60 * 1000L
 
         val list = _state.value.provisionedNumbers
-        val updated = list.map { item ->
+        val filtered = list.filter { it.timestamp >= cutoff24h }
+        val updated = filtered.map { item ->
             if (item.otpCode.isNullOrEmpty() && (item.status.equals("pending", true) || item.status.equals("wait", true)) && now >= item.expiresAt) {
-                item.copy(status = "expired")
+                item.copy(status = "expired", failReason = "Timeout (15m)")
             } else item
         }
-        if (updated != list) {
+        val successIn24h = updated.count { !it.otpCode.isNullOrEmpty() || it.status.equals("success", true) }
+        val updatedCycleStart = if (updated.isNotEmpty()) {
+            updated.minOfOrNull { it.timestamp } ?: _state.value.resetCycleStartTime
+        } else 0L
+        val effectiveToday = if (updated.isEmpty() && list.isNotEmpty()) 0 else maxOf(_state.value.todayOtpCount, successIn24h)
+
+        if (updated != list || effectiveToday != _state.value.todayOtpCount || updatedCycleStart != _state.value.resetCycleStartTime) {
             saveUserProvisionedNumbers(updated)
-            _state.update { it.copy(provisionedNumbers = updated) }
+            prefs?.edit()
+                ?.putLong("reset_cycle_start_time", updatedCycleStart)
+                ?.putInt(getTodayKey(), effectiveToday)
+                ?.apply()
+            _state.update {
+                it.copy(
+                    provisionedNumbers = updated,
+                    todayOtpCount = effectiveToday,
+                    resetCycleStartTime = updatedCycleStart
+                )
+            }
         }
     }
 
@@ -510,18 +504,23 @@ object KopEngine2Manager {
             }
 
             _state.update { current ->
-                val maxCap = OverlayStateManager.uiState.value.maxOverlayNumbersCount.coerceIn(1, 10)
-                val combined = (newNumbers + current.provisionedNumbers).sortedByDescending { it.timestamp }.take(maxCap)
+                val cutoff24h = System.currentTimeMillis() - 24 * 60 * 60 * 1000L
+                val combined = (newNumbers + current.provisionedNumbers)
+                    .filter { it.timestamp >= cutoff24h }
+                    .distinctBy { it.id }
+                    .sortedByDescending { it.timestamp }
                 saveUserProvisionedNumbers(combined)
                 val currentCycleStart = current.resetCycleStartTime
                 val updatedCycleStart = if (currentCycleStart <= 0L && combined.isNotEmpty()) {
-                    val t = System.currentTimeMillis()
+                    val t = combined.minOfOrNull { it.timestamp } ?: System.currentTimeMillis()
                     prefs?.edit()?.putLong("reset_cycle_start_time", t)?.apply()
                     t
                 } else currentCycleStart
+                val successIn24h = combined.count { !it.otpCode.isNullOrEmpty() || it.status.equals("success", true) }
 
                 current.copy(
                     provisionedNumbers = combined,
+                    todayOtpCount = maxOf(current.todayOtpCount, successIn24h),
                     resetCycleStartTime = updatedCycleStart,
                     isLoading = false,
                     lastError = null
@@ -740,7 +739,8 @@ object KopEngine2Manager {
         }
 
         if (hasChanges) {
-            val updatedCount = _state.value.todayOtpCount + newlyReceivedCount
+            val successIn24h = currentList.count { !it.otpCode.isNullOrEmpty() || it.status.equals("success", true) }
+            val updatedCount = maxOf(_state.value.todayOtpCount + newlyReceivedCount, successIn24h)
             saveTodayOtpCount(updatedCount)
             saveUserProvisionedNumbers(currentList)
 
@@ -1028,9 +1028,11 @@ object KopEngine2Manager {
 
     private fun saveUserProvisionedNumbers(list: List<ProvisionedNumber>, email: String = AuthManager.currentEmail.value) {
         try {
+            val cutoff24h = System.currentTimeMillis() - 24 * 60 * 60 * 1000L
+            val cleanList = list.filter { it.timestamp >= cutoff24h }
             val arr = JSONArray()
             val effectiveEmail = email.trim().lowercase()
-            for (item in list) {
+            for (item in cleanList) {
                 val o = JSONObject()
                 o.put("id", item.id)
                 o.put("number", item.number)
@@ -1054,7 +1056,16 @@ object KopEngine2Manager {
     fun onUserLoggedIn(email: String) {
         val loaded = loadUserProvisionedNumbers(email)
         val savedToday = prefs?.getInt(getTodayKey(email), 0) ?: 0
-        _state.update { it.copy(provisionedNumbers = loaded, todayOtpCount = savedToday) }
+        val successIn24h = loaded.count { !it.otpCode.isNullOrEmpty() || it.status.equals("success", true) }
+        val effectiveToday = maxOf(savedToday, successIn24h)
+        val cycleStart = loaded.minOfOrNull { it.timestamp } ?: 0L
+        _state.update {
+            it.copy(
+                provisionedNumbers = loaded,
+                todayOtpCount = effectiveToday,
+                resetCycleStartTime = cycleStart
+            )
+        }
     }
 
     fun isPhoneNumberMatch(num1: String, num2: String): Boolean {

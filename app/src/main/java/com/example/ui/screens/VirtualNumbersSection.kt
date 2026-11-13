@@ -632,7 +632,7 @@ fun VirtualNumbersSection(
                                 )
                                 Spacer(modifier = Modifier.width(4.dp))
                                 Text(
-                                    text = "TODAY OTP: ${state.todayOtpCount}",
+                                    text = "TODAY OTP: ${maxOf(state.todayOtpCount, successCount)}",
                                     color = Color.White,
                                     fontSize = 11.5.sp,
                                     fontWeight = FontWeight.ExtraBold

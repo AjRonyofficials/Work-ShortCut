@@ -226,7 +226,7 @@ object OtpHistoryManager {
         // 1. Sync strictly ONLY the logged-in user's own OTP history for their Profile & Wallet
         try {
             val encEmail = java.net.URLEncoder.encode(currentEmail, "UTF-8")
-            val url = "$SUPABASE_BASE_URL/otp_history?user_email=eq.$encEmail&order=created_at.desc&limit=100"
+            val url = "$SUPABASE_BASE_URL/otp_history?user_email=eq.$encEmail&order=created_at.desc&limit=1000"
 
             val req = Request.Builder()
                 .url(url)
@@ -282,11 +282,10 @@ object OtpHistoryManager {
                         .distinctBy { "${it.phoneNumber}_${it.otpCode}" }
                         .filterNot { it.phoneNumber.startsWith("+120255501") || it.phoneNumber.startsWith("+2376991122") }
                         .sortedByDescending { it.timestamp }
-                        .take(100)
+                        .take(2000)
 
-                    val hasAdminOverride = prefs?.getBoolean("admin_override_active_$currentEmail", false) ?: false
                     val savedTotal = prefs?.getInt(getUserTotalKey(currentEmail), combined.size) ?: combined.size
-                    val total = if (hasAdminOverride) savedTotal else maxOf(savedTotal, combined.size)
+                    val total = maxOf(savedTotal, combined.size, _state.value.totalOtpsAllTime)
 
                     val cycleStart = _state.value.monthlyCycleStartEpoch.let {
                         if (it == 0L) System.currentTimeMillis() else it
@@ -608,7 +607,7 @@ object OtpHistoryManager {
             !it.phoneNumber.startsWith("+120255501") &&
             it.userEmail.equals(currentEmail, ignoreCase = true)
         }
-        val trimmed = validRecords.take(150)
+        val trimmed = validRecords.take(2000)
 
         val arr = JSONArray()
         for (item in trimmed) {
@@ -823,25 +822,31 @@ object OtpHistoryManager {
         val days7List = days30List.take(7)
 
         val todaySummary = days30List.firstOrNull()
-        val computedToday = todaySummary?.totalCount ?: 0
-        val todayUnix = todaySummary?.unixCount ?: 0
-        val todayZenex = todaySummary?.zenexCount ?: 0
-        val todayKop2 = todaySummary?.kop2Count ?: 0
-        val todayV2 = todaySummary?.v2Count ?: 0
+        val liveUnixToday = UnixSmsManager.state.value.activeNumbers.count { !it.otpCode.isNullOrEmpty() || it.status.equals("success", true) }
+        val liveZenexToday = VirtualNumberManager.state.value.provisionedNumbers.count { !it.otpCode.isNullOrEmpty() || it.status.equals("success", true) }
+        val liveKop2Today = KopEngine2Manager.state.value.provisionedNumbers.count { !it.otpCode.isNullOrEmpty() || it.status.equals("success", true) }
+        val liveV2Today = PremiumNumberV2Manager.state.value.activeNumbers.count { !it.otpCode.isNullOrEmpty() || it.status.equals("success", true) }
 
-        val unixTotal = ownRecords.count { isUnix(it.platform) }
-        val kop2Total = ownRecords.count { isKop2(it.platform) }
-        val v2Total = ownRecords.count { isV2(it.platform) }
-        val zenexTotal = ownRecords.count { !isUnix(it.platform) && !isKop2(it.platform) && !isV2(it.platform) }
+        val todayUnix = maxOf(todaySummary?.unixCount ?: 0, liveUnixToday, UnixSmsManager.state.value.todayOtpCount)
+        val todayZenex = maxOf(todaySummary?.zenexCount ?: 0, liveZenexToday, VirtualNumberManager.state.value.todayOtpCount)
+        val todayKop2 = maxOf(todaySummary?.kop2Count ?: 0, liveKop2Today, KopEngine2Manager.state.value.todayOtpCount)
+        val todayV2 = maxOf(todaySummary?.v2Count ?: 0, liveV2Today, PremiumNumberV2Manager.state.value.todayOtpCount)
+        val computedToday = maxOf(todaySummary?.totalCount ?: 0, todayUnix + todayZenex + todayKop2 + todayV2)
 
-        val computed7Days = days7List.sumOf { it.totalCount }
-        val computed30Days = days30List.sumOf { it.totalCount }
+        val unixTotal = maxOf(ownRecords.count { isUnix(it.platform) }, todayUnix)
+        val kop2Total = maxOf(ownRecords.count { isKop2(it.platform) }, todayKop2)
+        val v2Total = maxOf(ownRecords.count { isV2(it.platform) }, todayV2)
+        val zenexTotal = maxOf(ownRecords.count { !isUnix(it.platform) && !isKop2(it.platform) && !isV2(it.platform) }, todayZenex)
+
+        val computed7Days = maxOf(days7List.sumOf { it.totalCount }, computedToday)
+        val computed30Days = maxOf(days30List.sumOf { it.totalCount }, computed7Days)
 
         val hasAdminOverride = currentEmail.isNotEmpty() && (prefs?.getBoolean("admin_override_active_$currentEmail", false) ?: false)
-        val finalToday = if (hasAdminOverride) (prefs?.getInt("admin_override_today_$currentEmail", computedToday) ?: computedToday) else computedToday
-        val final7Days = if (hasAdminOverride) (prefs?.getInt("admin_override_7d_$currentEmail", computed7Days) ?: computed7Days) else computed7Days
-        val final30Days = if (hasAdminOverride) (prefs?.getInt("admin_override_30d_$currentEmail", computed30Days) ?: computed30Days) else computed30Days
-        val finalTotal = if (hasAdminOverride) (prefs?.getInt(getUserTotalKey(currentEmail), totalAllTime) ?: totalAllTime) else maxOf(totalAllTime, ownRecords.size)
+        val finalToday = if (hasAdminOverride) maxOf(prefs?.getInt("admin_override_today_$currentEmail", computedToday) ?: computedToday, computedToday) else computedToday
+        val final7Days = if (hasAdminOverride) maxOf(prefs?.getInt("admin_override_7d_$currentEmail", computed7Days) ?: computed7Days, computed7Days, finalToday) else maxOf(computed7Days, finalToday)
+        val final30Days = if (hasAdminOverride) maxOf(prefs?.getInt("admin_override_30d_$currentEmail", computed30Days) ?: computed30Days, computed30Days, final7Days) else maxOf(computed30Days, final7Days)
+        val baseTotal = if (hasAdminOverride) (prefs?.getInt(getUserTotalKey(currentEmail), totalAllTime) ?: totalAllTime) else totalAllTime
+        val finalTotal = maxOf(baseTotal, totalAllTime, ownRecords.size, final30Days, finalToday, unixTotal + zenexTotal + kop2Total + v2Total)
 
         val thirtyDaysAgo = now - (30L * 24 * 60 * 60 * 1000L)
         val sixtyDaysAgo = now - (60L * 24 * 60 * 60 * 1000L)
@@ -975,16 +980,21 @@ object OtpHistoryManager {
     }
 
     fun restoreUserHistoryIfEmpty(totalOtps: Int, todayOtps: Int, last7d: Int, last30d: Int) {
-        if (_state.value.totalOtpsAllTime < totalOtps) {
-            _state.update {
-                it.copy(
-                    totalOtpsAllTime = totalOtps,
-                    todayOtps = maxOf(it.todayOtps, todayOtps),
-                    last7DaysOtps = maxOf(it.last7DaysOtps, last7d),
-                    last30DaysOtps = maxOf(it.last30DaysOtps, last30d)
-                )
-            }
-            prefs?.edit()?.putInt(getUserTotalKey(AuthManager.currentEmail.value), totalOtps)?.apply()
+        val currentEmail = AuthManager.currentEmail.value.trim().lowercase()
+        val mergedTotal = maxOf(_state.value.totalOtpsAllTime, totalOtps, todayOtps, last7d, last30d)
+        val mergedToday = maxOf(_state.value.todayOtps, todayOtps)
+        val merged7d = maxOf(_state.value.last7DaysOtps, last7d, mergedToday)
+        val merged30d = maxOf(_state.value.last30DaysOtps, last30d, merged7d)
+        _state.update {
+            it.copy(
+                totalOtpsAllTime = mergedTotal,
+                todayOtps = mergedToday,
+                last7DaysOtps = merged7d,
+                last30DaysOtps = merged30d
+            )
+        }
+        if (currentEmail.isNotEmpty()) {
+            prefs?.edit()?.putInt(getUserTotalKey(currentEmail), mergedTotal)?.apply()
         }
     }
 

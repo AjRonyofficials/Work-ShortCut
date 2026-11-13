@@ -846,9 +846,9 @@ object AuthManager {
                 UnixSmsManager.onUserLoggedIn(user.email)
                 KopEngine2Manager.onUserLoggedIn(user.email)
                 PremiumNumberV2Manager.onUserLoggedIn(user.email)
-                OtpHistoryManager.setAdminAssignedOtps(
+                OtpHistoryManager.restoreUserHistoryIfEmpty(
                     totalOtps = user.totalOtps,
-                    today = user.todayOtps,
+                    todayOtps = user.todayOtps,
                     last7d = user.last7DaysOtps,
                     last30d = user.last30DaysOtps
                 )

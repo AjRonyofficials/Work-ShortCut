@@ -291,27 +291,30 @@ fun UnixSmsSectionContent(
 
                 Spacer(modifier = Modifier.height(12.dp))
 
-                // 4 Separate Stats Pills (No mixed global pool totals - strictly per service & per country)
+                val unixSuccessCount = unixState.activeNumbers.count { !it.otpCode.isNullOrEmpty() || it.status.equals("success", true) }
+                val unixEffectiveTodayOtp = maxOf(unixState.todayOtpCount, unixSuccessCount)
+
+                // 5 Separate Stats Pills (Including 24h Active Nos & Today OTP)
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    horizontalArrangement = Arrangement.spacedBy(5.dp)
                 ) {
                     UnixStatPill(
-                        label = "SERVICE STOCK",
-                        value = "${availableNumbersForService.size}",
-                        color = Color(0xFF00E676),
-                        modifier = Modifier.weight(1f)
-                    )
-                    UnixStatPill(
-                        label = "COUNTRY ($effectiveCountryCode)",
+                        label = "STOCK ($effectiveCountryCode)",
                         value = "$selectedCountryStock",
                         color = Color(0xFF38BDF8),
                         modifier = Modifier.weight(1f)
                     )
                     UnixStatPill(
-                        label = "ACTIVE NOS",
+                        label = "24H NOS",
                         value = "${unixState.activeNumbers.size}",
                         color = Color(0xFFFFD600),
+                        modifier = Modifier.weight(1f)
+                    )
+                    UnixStatPill(
+                        label = "SUCCESS OTP",
+                        value = "$unixEffectiveTodayOtp",
+                        color = Color(0xFF00E676),
                         modifier = Modifier.weight(1f)
                     )
                     UnixStatPill(
@@ -991,9 +994,74 @@ fun UnixSmsSectionContent(
                         }
                     }
 
+                    var unixFilterTab by remember { mutableStateOf("ALL") }
+                    val unixTotalCount = unixState.activeNumbers.size
+                    val unixSuccessCount = remember(unixState.activeNumbers) {
+                        unixState.activeNumbers.count { !it.otpCode.isNullOrEmpty() || it.status.equals("success", true) }
+                    }
+                    val unixPendingCount = remember(unixState.activeNumbers, nowMillis) {
+                        unixState.activeNumbers.count { prov ->
+                            val hasOtp = !prov.otpCode.isNullOrEmpty() || prov.status.equals("success", true)
+                            !hasOtp && !prov.status.equals("expired", true) && !prov.status.equals("failed", true) && nowMillis < prov.expiresAt
+                        }
+                    }
+                    val unixFailedCount = remember(unixState.activeNumbers, nowMillis) {
+                        unixState.activeNumbers.count { prov ->
+                            val hasOtp = !prov.otpCode.isNullOrEmpty() || prov.status.equals("success", true)
+                            !hasOtp && (prov.status.equals("expired", true) || prov.status.equals("failed", true) || nowMillis >= prov.expiresAt)
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    // 24h Filter Tabs: ALL, SUCCESS, PENDING, FAILED
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(5.dp)
+                    ) {
+                        listOf(
+                            "ALL" to "ALL ($unixTotalCount)",
+                            "SUCCESS" to "SUCCESS ($unixSuccessCount)",
+                            "PENDING" to "WAIT ($unixPendingCount)",
+                            "FAILED" to "FAILED ($unixFailedCount)"
+                        ).forEach { (fKey, fLabel) ->
+                            val isSelected = unixFilterTab == fKey
+                            Surface(
+                                color = if (isSelected) Color(0xFF0284C7) else Color(0xFF08111C),
+                                shape = RoundedCornerShape(6.dp),
+                                border = BorderStroke(1.dp, if (isSelected) Color(0xFF38BDF8) else Color(0xFF1F3652)),
+                                modifier = Modifier.clickable { unixFilterTab = fKey }
+                            ) {
+                                Text(
+                                    text = fLabel,
+                                    color = if (isSelected) Color.White else Color(0xFF94A3B8),
+                                    fontSize = 9.5.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    modifier = Modifier.padding(horizontal = 7.dp, vertical = 4.dp)
+                                )
+                            }
+                        }
+                    }
+
                     Spacer(modifier = Modifier.height(10.dp))
 
-                    if (unixState.activeNumbers.isEmpty()) {
+                    val filteredUnixActive = remember(unixState.activeNumbers, unixFilterTab, nowMillis) {
+                        val base = when (unixFilterTab) {
+                            "SUCCESS" -> unixState.activeNumbers.filter { !it.otpCode.isNullOrEmpty() || it.status.equals("success", true) }
+                            "PENDING" -> unixState.activeNumbers.filter { prov ->
+                                val hasOtp = !prov.otpCode.isNullOrEmpty() || prov.status.equals("success", true)
+                                !hasOtp && !prov.status.equals("expired", true) && !prov.status.equals("failed", true) && nowMillis < prov.expiresAt
+                            }
+                            "FAILED" -> unixState.activeNumbers.filter { prov ->
+                                val hasOtp = !prov.otpCode.isNullOrEmpty() || prov.status.equals("success", true)
+                                !hasOtp && (prov.status.equals("expired", true) || prov.status.equals("failed", true) || nowMillis >= prov.expiresAt)
+                            }
+                            else -> unixState.activeNumbers
+                        }
+                        base.sortedByDescending { it.timestamp }
+                    }
+
+                    if (filteredUnixActive.isEmpty()) {
                         Box(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -1009,11 +1077,9 @@ fun UnixSmsSectionContent(
                         }
                     } else {
                         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            unixState.activeNumbers
-                                .sortedByDescending { it.timestamp }
-                                .forEach { prov ->
-                                    UnixActiveNumberRow(prov = prov, nowMillis = nowMillis, context = context)
-                                }
+                            filteredUnixActive.forEach { prov ->
+                                UnixActiveNumberRow(prov = prov, nowMillis = nowMillis, context = context)
+                            }
                         }
                     }
                 }
