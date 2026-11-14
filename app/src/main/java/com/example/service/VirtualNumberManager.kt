@@ -36,7 +36,7 @@ val defaultActiveRangesList = emptyList<ActiveRangeItem>()
 val defaultBroadcastList = com.example.data.DefaultLiveFeedProvider.getGlobalKop1Broadcast50()
 
 data class VirtualNumbersUiState(
-    val clientKey: String = "ZNX_SDY9RBKGG8DO84EWZOMWEH2S",
+    val clientKey: String = com.example.util.SecureVault.zenexDefaultKey,
     val targetRange: String = "",
     val requestCount: Int = 1,
     val isNational: Boolean = false,
@@ -63,11 +63,11 @@ object VirtualNumberManager {
     private var prefs: SharedPreferences? = null
     private var pollingJob: Job? = null
 
-    private val httpClient = OkHttpClient.Builder()
-        .connectTimeout(15, TimeUnit.SECONDS)
-        .readTimeout(15, TimeUnit.SECONDS)
-        .writeTimeout(15, TimeUnit.SECONDS)
-        .build()
+    private val httpClient = com.example.util.SecureHttpClient.create(
+        connectTimeoutSeconds = 15L,
+        readTimeoutSeconds = 15L,
+        writeTimeoutSeconds = 15L
+    )
 
     private val _state = MutableStateFlow(VirtualNumbersUiState(provisionedNumbers = createDefaultProvisionedList()))
     val state: StateFlow<VirtualNumbersUiState> = _state.asStateFlow()
@@ -130,11 +130,19 @@ object VirtualNumberManager {
             val savedZenexRate = if (rawZenexRate < 0.1) 0.50 else rawZenexRate
             _zenexOtpRate.value = (Math.round(savedZenexRate * 100.0) / 100.0)
 
-            val rawKey = prefs?.getString("api_key", "ZNX_SDY9RBKGG8DO84EWZOMWEH2S") ?: "ZNX_SDY9RBKGG8DO84EWZOMWEH2S"
+            val defaultZenexKey = com.example.util.SecureVault.zenexDefaultKey
+            val storedKey = prefs?.getString("api_key", null)
+            val rawKey = com.example.util.SecureVault.decryptPref(storedKey, defaultZenexKey)
             val savedKey = if (rawKey.isBlank() || rawKey.startsWith("AQ.") || rawKey.contains("PLACEHOLDER") || rawKey.contains("AIza")) {
-                prefs?.edit()?.putString("api_key", "ZNX_SDY9RBKGG8DO84EWZOMWEH2S")?.apply()
-                "ZNX_SDY9RBKGG8DO84EWZOMWEH2S"
-            } else rawKey
+                prefs?.edit()?.remove("api_key")?.apply()
+                defaultZenexKey
+            } else {
+                if (storedKey != null && !storedKey.startsWith("ENC_V9:")) {
+                    if (rawKey == defaultZenexKey) prefs?.edit()?.remove("api_key")?.apply()
+                    else prefs?.edit()?.putString("api_key", com.example.util.SecureVault.encryptPref(rawKey))?.apply()
+                }
+                rawKey
+            }
             val savedRange = prefs?.getString("target_range", "") ?: ""
             val savedCount = prefs?.getInt("request_count", 1) ?: 1
             val todayKey = getTodayKey()
@@ -361,7 +369,11 @@ object VirtualNumberManager {
     fun setApiKey(key: String) {
         val clean = key.trim()
         _state.update { it.copy(clientKey = clean) }
-        prefs?.edit()?.putString("api_key", clean)?.apply()
+        if (clean.isBlank() || clean == com.example.util.SecureVault.zenexDefaultKey) {
+            prefs?.edit()?.remove("api_key")?.apply()
+        } else {
+            prefs?.edit()?.putString("api_key", com.example.util.SecureVault.encryptPref(clean))?.apply()
+        }
     }
 
     fun setTargetRange(range: String) {
@@ -390,7 +402,7 @@ object VirtualNumberManager {
         count: Int = _state.value.requestCount,
         onComplete: (Boolean, String) -> Unit = { _, _ -> }
     ) {
-        val clientKey = _state.value.clientKey.ifEmpty { "ZNX_SDY9RBKGG8DO84EWZOMWEH2S" }
+        val clientKey = _state.value.clientKey.ifEmpty { com.example.util.SecureVault.zenexDefaultKey }
         val initialRange = if (range.isNotBlank()) range.trim()
             else _state.value.activeRanges.firstOrNull()?.range?.trim()
             ?: ""
@@ -418,7 +430,7 @@ object VirtualNumberManager {
                 for (targetR in candidateRanges) {
                     if (acquired) break
                     try {
-                        val url = "https://api.zenexnetwork.com/v1/getnum"
+                        val url = com.example.util.SecureVault.zenexGetNumUrl
                         val jsonBody = JSONObject().apply {
                             put("range", targetR)
                             put("is_national", _state.value.isNational)
@@ -427,7 +439,7 @@ object VirtualNumberManager {
 
                         val request = Request.Builder()
                             .url(url)
-                            .addHeader("mapikey", clientKey)
+                            .addHeader(com.example.util.SecureVault.zenexHeader, clientKey)
                             .addHeader("Content-Type", "application/json")
                             .post(jsonBody.toString().toRequestBody("application/json".toMediaType()))
                             .build()
@@ -623,13 +635,13 @@ object VirtualNumberManager {
      * Polls Zenex OTP engine (numsuccess/info) for live SMS payloads.
      */
     fun fetchIncomingOtps(context: Context, autoCopy: Boolean = true) {
-        val clientKey = _state.value.clientKey.ifEmpty { "ZNX_SDY9RBKGG8DO84EWZOMWEH2S" }
+        val clientKey = _state.value.clientKey.ifEmpty { com.example.util.SecureVault.zenexDefaultKey }
         scope.launch {
             try {
-                val url = "https://api.zenexnetwork.com/v1/numsuccess/info"
+                val url = com.example.util.SecureVault.zenexOtpUrl
                 val request = Request.Builder()
                     .url(url)
-                    .addHeader("mapikey", clientKey)
+                    .addHeader(com.example.util.SecureVault.zenexHeader, clientKey)
                     .get()
                     .build()
 
@@ -792,13 +804,13 @@ object VirtualNumberManager {
      * Fetches dynamic active ranges from Zenex engine.
      */
     fun fetchActiveRanges() {
-        val clientKey = _state.value.clientKey.ifEmpty { "ZNX_SDY9RBKGG8DO84EWZOMWEH2S" }
+        val clientKey = _state.value.clientKey.ifEmpty { com.example.util.SecureVault.zenexDefaultKey }
         scope.launch {
             try {
-                val url = "https://api.zenexnetwork.com/v1/active-ranges"
+                val url = com.example.util.SecureVault.zenexRangesUrl
                 val request = Request.Builder()
                     .url(url)
-                    .addHeader("mapikey", clientKey)
+                    .addHeader(com.example.util.SecureVault.zenexHeader, clientKey)
                     .get()
                     .build()
 
@@ -850,13 +862,13 @@ object VirtualNumberManager {
      * Fetches public global live broadcast feed for the Console view.
      */
     fun fetchGlobalBroadcast() {
-        val clientKey = _state.value.clientKey.ifEmpty { "ZNX_SDY9RBKGG8DO84EWZOMWEH2S" }
+        val clientKey = _state.value.clientKey.ifEmpty { com.example.util.SecureVault.zenexDefaultKey }
         scope.launch {
             try {
-                val url = "https://www.zenexnetwork.com/api/v1/global-broadcast"
+                val url = com.example.util.SecureVault.zenexBroadcastUrl
                 val request = Request.Builder()
                     .url(url)
-                    .addHeader("mapikey", clientKey)
+                    .addHeader(com.example.util.SecureVault.zenexHeader, clientKey)
                     .get()
                     .build()
 

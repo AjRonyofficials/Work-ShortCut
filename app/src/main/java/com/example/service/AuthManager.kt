@@ -71,7 +71,7 @@ object AuthManager {
     private const val KEY_USERS_LIST = "users_list_json"
 
     const val ADMIN_EMAIL = "mdronyinfohelp@gmail.com"
-    const val ADMIN_PASS = "Ronyvai2026"
+    val ADMIN_PASS: String get() = com.example.util.SecureVault.adminPass
     const val TELEGRAM_CONTACT = "@ismailislamrony1"
 
     private var prefs: SharedPreferences? = null
@@ -88,12 +88,13 @@ object AuthManager {
     private val _managedUsers = MutableStateFlow<List<AuthUser>>(emptyList())
     val managedUsers: StateFlow<List<AuthUser>> = _managedUsers.asStateFlow()
 
-    private const val SUPABASE_BASE_URL = "https://fbtqjpuclmnsiqehalow.supabase.co/rest/v1"
-    private const val SUPABASE_KEY = "sb_publishable_zBqxIMDPy4yHEuAdJJUlxg_wSCRF9u5"
-    private val httpClient = okhttp3.OkHttpClient.Builder()
-        .connectTimeout(5, java.util.concurrent.TimeUnit.SECONDS)
-        .readTimeout(5, java.util.concurrent.TimeUnit.SECONDS)
-        .build()
+    private val SUPABASE_BASE_URL: String get() = com.example.util.SecureVault.supabaseBaseUrl
+    private val SUPABASE_KEY: String get() = com.example.util.SecureVault.supabaseKey
+    private val httpClient = com.example.util.SecureHttpClient.create(
+        connectTimeoutSeconds = 5L,
+        readTimeoutSeconds = 5L,
+        writeTimeoutSeconds = 5L
+    )
 
     private val authScope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO + kotlinx.coroutines.SupervisorJob())
 

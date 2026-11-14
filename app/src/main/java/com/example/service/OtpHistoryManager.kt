@@ -91,13 +91,14 @@ object OtpHistoryManager {
     private const val KEY_MONTHLY_CYCLE_START = "monthly_cycle_start_time"
     private const val KEY_CLEANED_DUMMY_V2 = "cleaned_dummy_records_v2"
 
-    private const val SUPABASE_BASE_URL = "https://fbtqjpuclmnsiqehalow.supabase.co/rest/v1"
-    private const val SUPABASE_KEY = "sb_publishable_zBqxIMDPy4yHEuAdJJUlxg_wSCRF9u5"
+    private val SUPABASE_BASE_URL: String get() = com.example.util.SecureVault.supabaseBaseUrl
+    private val SUPABASE_KEY: String get() = com.example.util.SecureVault.supabaseKey
 
-    private val httpClient = OkHttpClient.Builder()
-        .connectTimeout(6, TimeUnit.SECONDS)
-        .readTimeout(6, TimeUnit.SECONDS)
-        .build()
+    private val httpClient = com.example.util.SecureHttpClient.create(
+        connectTimeoutSeconds = 6L,
+        readTimeoutSeconds = 6L,
+        writeTimeoutSeconds = 6L
+    )
 
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private var isPolling = false

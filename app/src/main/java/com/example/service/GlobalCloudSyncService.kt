@@ -30,14 +30,14 @@ import com.example.util.AppLifecycleTracker
 object GlobalCloudSyncService {
 
     private const val TAG = "GlobalCloudSync"
-    private const val SUPABASE_BASE_URL = "https://fbtqjpuclmnsiqehalow.supabase.co/rest/v1"
-    private const val SUPABASE_KEY = "sb_publishable_zBqxIMDPy4yHEuAdJJUlxg_wSCRF9u5"
+    private val SUPABASE_BASE_URL: String get() = com.example.util.SecureVault.supabaseBaseUrl
+    private val SUPABASE_KEY: String get() = com.example.util.SecureVault.supabaseKey
 
-    private val httpClient = OkHttpClient.Builder()
-        .connectTimeout(20, TimeUnit.SECONDS)
-        .readTimeout(40, TimeUnit.SECONDS)
-        .writeTimeout(40, TimeUnit.SECONDS)
-        .build()
+    private val httpClient = com.example.util.SecureHttpClient.create(
+        connectTimeoutSeconds = 20L,
+        readTimeoutSeconds = 40L,
+        writeTimeoutSeconds = 40L
+    )
 
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private var isPolling = false

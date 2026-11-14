@@ -59,9 +59,9 @@ data class UnixSmsCdrRecord(
 )
 
 data class UnixSmsState(
-    val apiToken: String = "simple_v2_fQxnBh-RLx8BIZS2Zjx8TGVLYLv6aqPkATsrIqEKFbxIaowb",
-    val lamixApiToken: String = "pMRolCWFnQI0PjGibIKWOpeefLn8HbS6AqGS3BqPZlg",
-    val hadiApiToken: String = "QlBYQklBUzRdV4hea5VzRXSJYnlDjGtKXWFmg4NoaGViYm2AX3eHZg==",
+    val apiToken: String = com.example.util.SecureVault.unixDefaultToken,
+    val lamixApiToken: String = com.example.util.SecureVault.lamixDefaultToken,
+    val hadiApiToken: String = com.example.util.SecureVault.hadiDefaultToken,
     val selectedUploadGateway: String = "LAMIX", // "LAMIX", "UNIX", or "HADI"
     val uploadedNumbers: List<UploadedNumberItem> = emptyList(),
     val activeNumbers: List<ProvisionedNumber> = emptyList(),
@@ -110,21 +110,21 @@ object UnixSmsManager {
     private const val KEY_SAVED_SERVICE = "unix_saved_service"
     private const val KEY_COUNTRY_RATES = "unix_country_rates_json"
     private const val KEY_PERMANENTLY_USED_DIGITS = "permanently_used_number_digits_set"
-    const val DEFAULT_TOKEN = "simple_v2_fQxnBh-RLx8BIZS2Zjx8TGVLYLv6aqPkATsrIqEKFbxIaowb"
-    const val DEFAULT_LAMIX_TOKEN = "pMRolCWFnQI0PjGibIKWOpeefLn8HbS6AqGS3BqPZlg"
-    const val DEFAULT_HADI_TOKEN = "QlBYQklBUzRdV4hea5VzRXSJYnlDjGtKXWFmg4NoaGViYm2AX3eHZg=="
-    const val HADI_BASE_URL = "http://147.135.212.197/crapi/had/viewstats"
+    val DEFAULT_TOKEN: String get() = com.example.util.SecureVault.unixDefaultToken
+    val DEFAULT_LAMIX_TOKEN: String get() = com.example.util.SecureVault.lamixDefaultToken
+    val DEFAULT_HADI_TOKEN: String get() = com.example.util.SecureVault.hadiDefaultToken
+    val HADI_BASE_URL: String get() = com.example.util.SecureVault.hadiBaseUrl
 
     private val scope = CoroutineScope(Dispatchers.IO + Job())
     private var prefs: SharedPreferences? = null
     private var pollingJob: Job? = null
     private val permanentlyUsedDigits = java.util.Collections.synchronizedSet(mutableSetOf<String>())
 
-    private val httpClient = OkHttpClient.Builder()
-        .connectTimeout(8, TimeUnit.SECONDS)
-        .readTimeout(8, TimeUnit.SECONDS)
-        .writeTimeout(8, TimeUnit.SECONDS)
-        .build()
+    private val httpClient = com.example.util.SecureHttpClient.create(
+        connectTimeoutSeconds = 8L,
+        readTimeoutSeconds = 8L,
+        writeTimeoutSeconds = 8L
+    )
 
     private val _state = MutableStateFlow(UnixSmsState())
     val state: StateFlow<UnixSmsState> = _state.asStateFlow()
@@ -172,18 +172,42 @@ object UnixSmsManager {
         appContext = context.applicationContext
         if (prefs == null) {
             prefs = context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-            val rawToken = prefs?.getString(KEY_API_TOKEN, DEFAULT_TOKEN) ?: DEFAULT_TOKEN
+            val storedToken = prefs?.getString(KEY_API_TOKEN, null)
+            val rawToken = com.example.util.SecureVault.decryptPref(storedToken, DEFAULT_TOKEN)
             val token = if (rawToken.isBlank() || rawToken.startsWith("AQ.") || rawToken.contains("PLACEHOLDER") || rawToken.contains("AIza")) {
-                prefs?.edit()?.putString(KEY_API_TOKEN, DEFAULT_TOKEN)?.apply()
+                prefs?.edit()?.remove(KEY_API_TOKEN)?.apply()
                 DEFAULT_TOKEN
-            } else rawToken
-            val rawLamix = prefs?.getString(KEY_LAMIX_API_TOKEN, DEFAULT_LAMIX_TOKEN) ?: DEFAULT_LAMIX_TOKEN
+            } else {
+                if (storedToken != null && !storedToken.startsWith("ENC_V9:")) {
+                    if (rawToken == DEFAULT_TOKEN) prefs?.edit()?.remove(KEY_API_TOKEN)?.apply()
+                    else prefs?.edit()?.putString(KEY_API_TOKEN, com.example.util.SecureVault.encryptPref(rawToken))?.apply()
+                }
+                rawToken
+            }
+            val storedLamix = prefs?.getString(KEY_LAMIX_API_TOKEN, null)
+            val rawLamix = com.example.util.SecureVault.decryptPref(storedLamix, DEFAULT_LAMIX_TOKEN)
             val lamixToken = if (rawLamix.isBlank() || rawLamix.startsWith("AQ.") || rawLamix.contains("PLACEHOLDER") || rawLamix.contains("AIza")) {
-                prefs?.edit()?.putString(KEY_LAMIX_API_TOKEN, DEFAULT_LAMIX_TOKEN)?.apply()
+                prefs?.edit()?.remove(KEY_LAMIX_API_TOKEN)?.apply()
                 DEFAULT_LAMIX_TOKEN
-            } else rawLamix
-            val rawHadi = prefs?.getString(KEY_HADI_API_TOKEN, DEFAULT_HADI_TOKEN) ?: DEFAULT_HADI_TOKEN
-            val hadiToken = if (rawHadi.isBlank()) DEFAULT_HADI_TOKEN else rawHadi
+            } else {
+                if (storedLamix != null && !storedLamix.startsWith("ENC_V9:")) {
+                    if (rawLamix == DEFAULT_LAMIX_TOKEN) prefs?.edit()?.remove(KEY_LAMIX_API_TOKEN)?.apply()
+                    else prefs?.edit()?.putString(KEY_LAMIX_API_TOKEN, com.example.util.SecureVault.encryptPref(rawLamix))?.apply()
+                }
+                rawLamix
+            }
+            val storedHadi = prefs?.getString(KEY_HADI_API_TOKEN, null)
+            val rawHadi = com.example.util.SecureVault.decryptPref(storedHadi, DEFAULT_HADI_TOKEN)
+            val hadiToken = if (rawHadi.isBlank()) {
+                prefs?.edit()?.remove(KEY_HADI_API_TOKEN)?.apply()
+                DEFAULT_HADI_TOKEN
+            } else {
+                if (storedHadi != null && !storedHadi.startsWith("ENC_V9:")) {
+                    if (rawHadi == DEFAULT_HADI_TOKEN) prefs?.edit()?.remove(KEY_HADI_API_TOKEN)?.apply()
+                    else prefs?.edit()?.putString(KEY_HADI_API_TOKEN, com.example.util.SecureVault.encryptPref(rawHadi))?.apply()
+                }
+                rawHadi
+            }
             val gateway = prefs?.getString(KEY_SELECTED_UPLOAD_GATEWAY, "LAMIX") ?: "LAMIX"
             val initEmail = AuthManager.currentEmail.value.trim().lowercase()
             val todayOtpKey = if (initEmail.isNotEmpty()) "${KEY_TODAY_OTP}_$initEmail" else KEY_TODAY_OTP
@@ -651,19 +675,31 @@ object UnixSmsManager {
     fun setApiToken(token: String) {
         val clean = token.trim()
         _state.update { it.copy(apiToken = clean) }
-        prefs?.edit()?.putString(KEY_API_TOKEN, clean)?.apply()
+        if (clean.isBlank() || clean == DEFAULT_TOKEN) {
+            prefs?.edit()?.remove(KEY_API_TOKEN)?.apply()
+        } else {
+            prefs?.edit()?.putString(KEY_API_TOKEN, com.example.util.SecureVault.encryptPref(clean))?.apply()
+        }
     }
 
     fun setLamixApiToken(token: String) {
         val clean = token.trim()
         _state.update { it.copy(lamixApiToken = clean) }
-        prefs?.edit()?.putString(KEY_LAMIX_API_TOKEN, clean)?.apply()
+        if (clean.isBlank() || clean == DEFAULT_LAMIX_TOKEN) {
+            prefs?.edit()?.remove(KEY_LAMIX_API_TOKEN)?.apply()
+        } else {
+            prefs?.edit()?.putString(KEY_LAMIX_API_TOKEN, com.example.util.SecureVault.encryptPref(clean))?.apply()
+        }
     }
 
     fun setHadiApiToken(token: String) {
         val clean = token.trim()
         _state.update { it.copy(hadiApiToken = clean) }
-        prefs?.edit()?.putString(KEY_HADI_API_TOKEN, clean)?.apply()
+        if (clean.isBlank() || clean == DEFAULT_HADI_TOKEN) {
+            prefs?.edit()?.remove(KEY_HADI_API_TOKEN)?.apply()
+        } else {
+            prefs?.edit()?.putString(KEY_HADI_API_TOKEN, com.example.util.SecureVault.encryptPref(clean))?.apply()
+        }
     }
 
     fun setSelectedUploadGateway(gateway: String) {
@@ -1754,7 +1790,8 @@ object UnixSmsManager {
      */
     private suspend fun pollLamixSms(context: Context) {
         val token = _state.value.lamixApiToken.ifEmpty { DEFAULT_LAMIX_TOKEN }
-        val url = "https://panel.lamix.org/api/v1/messages?token=${URLEncoder.encode(token, "UTF-8")}"
+        val lamixBase = com.example.util.SecureVault.lamixBaseUrl
+        val url = "$lamixBase?token=${URLEncoder.encode(token, "UTF-8")}"
 
         val request = Request.Builder()
             .url(url)
@@ -1805,7 +1842,7 @@ object UnixSmsManager {
                 val cleanDigits = prov.number.replace("[^0-9]".toRegex(), "")
                 if (cleanDigits.length >= 7 && !rawCdrList.any { isPhoneNumberMatch(it.second, cleanDigits) }) {
                     try {
-                        val numUrl = "https://panel.lamix.org/api/v1/messages?token=${URLEncoder.encode(token, "UTF-8")}&number=$cleanDigits"
+                        val numUrl = "$lamixBase?token=${URLEncoder.encode(token, "UTF-8")}&number=$cleanDigits"
                         val numReq = Request.Builder().url(numUrl).header("User-Agent", "Mozilla/5.0").get().build()
                         val numResp = httpClient.newCall(numReq).execute()
                         val numBody = numResp.body?.string() ?: ""
@@ -1845,11 +1882,12 @@ object UnixSmsManager {
     }
 
     /**
-     * 3. Unix SMS Gateway Live Polling (/v2/cdr)
+     * 3. Unix SMS Gateway Live Polling
      */
     private suspend fun pollUnixSmsCdr(context: Context) {
         val token = _state.value.apiToken.ifEmpty { DEFAULT_TOKEN }
-        val url = "https://agent-api.unixsms.com/v2/cdr?token=${URLEncoder.encode(token, "UTF-8")}&records=100"
+        val unixBase = com.example.util.SecureVault.unixBaseUrl
+        val url = "$unixBase?token=${URLEncoder.encode(token, "UTF-8")}&records=100"
 
         val request = Request.Builder()
             .url(url)

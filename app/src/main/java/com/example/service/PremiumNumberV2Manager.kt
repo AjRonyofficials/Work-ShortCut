@@ -100,9 +100,10 @@ data class PremiumNumberV2UiState(
 
 object PremiumNumberV2Manager {
 
-    const val DEFAULT_API_KEY = "sl_live_17852e6050e9559278b5e8a69a2cc7429f9346f83f8cb667"
+    val DEFAULT_API_KEY: String get() = com.example.util.SecureVault.slDefaultKey
     const val AUTO_RETURN_TIMEOUT_MS = (14 * 60 + 40) * 1000L // 14 min 40 sec auto return (880,000 ms)
-    private const val BASE_URL = "https://slvirtualnumber.com/api/v1/developer"
+    private val BASE_URL: String get() = com.example.util.SecureVault.slBaseUrl
+    private val SL_HEADER: String get() = com.example.util.SecureVault.slHeader
 
     private val scope = CoroutineScope(Dispatchers.IO + Job())
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -111,11 +112,11 @@ object PremiumNumberV2Manager {
     private var tickerJob: Job? = null
     private var appContext: Context? = null
 
-    private val httpClient = OkHttpClient.Builder()
-        .connectTimeout(12, TimeUnit.SECONDS)
-        .readTimeout(12, TimeUnit.SECONDS)
-        .writeTimeout(12, TimeUnit.SECONDS)
-        .build()
+    private val httpClient = com.example.util.SecureHttpClient.create(
+        connectTimeoutSeconds = 12L,
+        readTimeoutSeconds = 12L,
+        writeTimeoutSeconds = 12L
+    )
 
     private val _state = MutableStateFlow(PremiumNumberV2UiState())
     val state: StateFlow<PremiumNumberV2UiState> = _state.asStateFlow()
@@ -130,8 +131,18 @@ object PremiumNumberV2Manager {
         appContext = context.applicationContext
         if (prefs == null) {
             prefs = context.getSharedPreferences("premium_number_v2_prefs", Context.MODE_PRIVATE)
-            val savedKey = prefs?.getString("api_key", DEFAULT_API_KEY) ?: DEFAULT_API_KEY
-            val effectiveKey = if (savedKey.isBlank()) DEFAULT_API_KEY else savedKey
+            val storedKey = prefs?.getString("api_key", null)
+            val savedKey = com.example.util.SecureVault.decryptPref(storedKey, DEFAULT_API_KEY)
+            val effectiveKey = if (savedKey.isBlank()) {
+                prefs?.edit()?.remove("api_key")?.apply()
+                DEFAULT_API_KEY
+            } else {
+                if (storedKey != null && !storedKey.startsWith("ENC_V9:")) {
+                    if (savedKey == DEFAULT_API_KEY) prefs?.edit()?.remove("api_key")?.apply()
+                    else prefs?.edit()?.putString("api_key", com.example.util.SecureVault.encryptPref(savedKey))?.apply()
+                }
+                savedKey
+            }
 
             val savedRate = prefs?.getFloat("otp_rate", 0.50f)?.toDouble() ?: 0.50
             _otpRate.value = Math.round(savedRate * 100.0) / 100.0
@@ -177,7 +188,11 @@ object PremiumNumberV2Manager {
     fun setApiKey(newKey: String) {
         val trimmed = newKey.trim()
         val effective = if (trimmed.isBlank()) DEFAULT_API_KEY else trimmed
-        prefs?.edit()?.putString("api_key", effective)?.apply()
+        if (trimmed.isBlank() || trimmed == DEFAULT_API_KEY) {
+            prefs?.edit()?.remove("api_key")?.apply()
+        } else {
+            prefs?.edit()?.putString("api_key", com.example.util.SecureVault.encryptPref(trimmed))?.apply()
+        }
         _state.update { it.copy(apiKey = effective) }
         refreshBalance()
     }
@@ -309,7 +324,7 @@ object PremiumNumberV2Manager {
     }
 
     /**
-     * Acquire virtual numbers (1 to 10) from https://slvirtualnumber.com/api/v1/developer/rent
+     * Acquire virtual numbers (1 to 10)
      */
     fun acquireNumbers(context: Context) {
         val currentState = _state.value
@@ -372,7 +387,7 @@ object PremiumNumberV2Manager {
                         val body = jsonPayload.toString().toRequestBody("application/json; charset=utf-8".toMediaType())
                         val request = Request.Builder()
                             .url("$BASE_URL/rent")
-                            .addHeader("x-api-key", apiKey.ifBlank { DEFAULT_API_KEY })
+                            .addHeader(SL_HEADER, apiKey.ifBlank { DEFAULT_API_KEY })
                             .addHeader("Content-Type", "application/json")
                             .post(body)
                             .build()
@@ -600,7 +615,7 @@ object PremiumNumberV2Manager {
             try {
                 val request = Request.Builder()
                     .url("$BASE_URL/cancel/$rentalId")
-                    .addHeader("x-api-key", apiKey)
+                    .addHeader(SL_HEADER, apiKey)
                     .post("{}".toRequestBody("application/json".toMediaType()))
                     .build()
 
@@ -640,7 +655,7 @@ object PremiumNumberV2Manager {
             try {
                 val request = Request.Builder()
                     .url("$BASE_URL/balance")
-                    .addHeader("x-api-key", apiKey)
+                    .addHeader(SL_HEADER, apiKey)
                     .get()
                     .build()
 
@@ -669,7 +684,7 @@ object PremiumNumberV2Manager {
     }
 
     /**
-     * Dynamically fetch 100% real active countries from https://slvirtualnumber.com/api/v1/developer/countries
+     * Dynamically fetch 100% real active countries
      */
     fun fetchActiveCountries() {
         val apiKey = _state.value.apiKey
@@ -677,7 +692,7 @@ object PremiumNumberV2Manager {
             try {
                 val req = Request.Builder()
                     .url("$BASE_URL/countries")
-                    .addHeader("x-api-key", apiKey.ifBlank { DEFAULT_API_KEY })
+                    .addHeader(SL_HEADER, apiKey.ifBlank { DEFAULT_API_KEY })
                     .get()
                     .build()
                 httpClient.newCall(req).execute().use { resp ->
@@ -735,7 +750,7 @@ object PremiumNumberV2Manager {
                 val body = jsonPayload.toString().toRequestBody("application/json; charset=utf-8".toMediaType())
                 val request = Request.Builder()
                     .url("$BASE_URL/rent")
-                    .addHeader("x-api-key", apiKey)
+                    .addHeader(SL_HEADER, apiKey)
                     .addHeader("Content-Type", "application/json")
                     .post(body)
                     .build()
@@ -895,7 +910,7 @@ object PremiumNumberV2Manager {
     }
 
     /**
-     * Fetch Live Console Feed (Carrier global stream - Hubu same as Screenshot 1 on slvirtualnumber.com)
+     * Fetch Live Console Feed
      */
     fun refreshLiveConsole(limit: Int = 50) {
         fetchActiveCountries()
@@ -904,7 +919,7 @@ object PremiumNumberV2Manager {
             try {
                 val request = Request.Builder()
                     .url("$BASE_URL/live-console?limit=$limit")
-                    .addHeader("x-api-key", apiKey)
+                    .addHeader(SL_HEADER, apiKey)
                     .get()
                     .build()
 
@@ -1093,7 +1108,7 @@ object PremiumNumberV2Manager {
         try {
             val request = Request.Builder()
                 .url("$BASE_URL/otp-monitor?limit=100")
-                .addHeader("x-api-key", apiKey)
+                .addHeader(SL_HEADER, apiKey)
                 .get()
                 .build()
 

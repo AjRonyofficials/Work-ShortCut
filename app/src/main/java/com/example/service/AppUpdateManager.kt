@@ -49,13 +49,14 @@ sealed interface AppUpdateState {
 object AppUpdateManager {
 
     private const val TAG = "AppUpdateManager"
-    private const val SUPABASE_BASE_URL = "https://fbtqjpuclmnsiqehalow.supabase.co/rest/v1"
-    private const val SUPABASE_KEY = "sb_publishable_zBqxIMDPy4yHEuAdJJUlxg_wSCRF9u5"
+    private val SUPABASE_BASE_URL: String get() = com.example.util.SecureVault.supabaseBaseUrl
+    private val SUPABASE_KEY: String get() = com.example.util.SecureVault.supabaseKey
 
-    private val httpClient = OkHttpClient.Builder()
-        .connectTimeout(15, TimeUnit.SECONDS)
-        .readTimeout(60, TimeUnit.SECONDS)
-        .build()
+    private val httpClient = com.example.util.SecureHttpClient.create(
+        connectTimeoutSeconds = 15L,
+        readTimeoutSeconds = 60L,
+        writeTimeoutSeconds = 30L
+    )
 
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 

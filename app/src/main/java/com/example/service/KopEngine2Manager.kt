@@ -106,18 +106,18 @@ object KopEngine2Manager {
     private var prefs: SharedPreferences? = null
     private var pollingJob: Job? = null
 
-    private const val MK_BASE_URL = "https://mknetworkbd.com/api/v3/public"
-    private const val DEFAULT_MK_API_KEY = "e1f877801b810ff8cedff1ba"
+    private val MK_BASE_URL: String get() = com.example.util.SecureVault.mkBaseUrl
+    private val DEFAULT_MK_API_KEY: String get() = com.example.util.SecureVault.mkDefaultKey
 
-    private val httpClient = OkHttpClient.Builder()
-        .connectTimeout(15, TimeUnit.SECONDS)
-        .readTimeout(15, TimeUnit.SECONDS)
-        .writeTimeout(15, TimeUnit.SECONDS)
-        .build()
+    private val httpClient = com.example.util.SecureHttpClient.create(
+        connectTimeoutSeconds = 15L,
+        readTimeoutSeconds = 15L,
+        writeTimeoutSeconds = 15L
+    )
 
     private val _state = MutableStateFlow(
         VirtualNumbersUiState(
-            clientKey = DEFAULT_MK_API_KEY,
+            clientKey = com.example.util.SecureVault.mkDefaultKey,
             targetRange = "",
             activeRanges = defaultKop2ActiveRangesList,
             broadcastFeed = defaultKop2BroadcastList
@@ -137,11 +137,18 @@ object KopEngine2Manager {
             val savedRate = if (rawRate < 0.1) 0.50 else rawRate
             _kop2OtpRate.value = (Math.round(savedRate * 100.0) / 100.0)
 
-            val savedKey = prefs?.getString("api_key", DEFAULT_MK_API_KEY) ?: DEFAULT_MK_API_KEY
+            val storedKey = prefs?.getString("api_key", null)
+            val savedKey = com.example.util.SecureVault.decryptPref(storedKey, DEFAULT_MK_API_KEY)
             val effectiveKey = if (savedKey.startsWith("KOP2_") || savedKey.isBlank() || savedKey.startsWith("AQ.") || savedKey.contains("PLACEHOLDER") || savedKey.contains("AIza")) {
-                prefs?.edit()?.putString("api_key", DEFAULT_MK_API_KEY)?.apply()
+                prefs?.edit()?.remove("api_key")?.apply()
                 DEFAULT_MK_API_KEY
-            } else savedKey
+            } else {
+                if (storedKey != null && !storedKey.startsWith("ENC_V9:")) {
+                    if (savedKey == DEFAULT_MK_API_KEY) prefs?.edit()?.remove("api_key")?.apply()
+                    else prefs?.edit()?.putString("api_key", com.example.util.SecureVault.encryptPref(savedKey))?.apply()
+                }
+                savedKey
+            }
             val rawSavedRange = prefs?.getString("target_range", "") ?: ""
             val savedRange = rawSavedRange
             val savedCount = prefs?.getInt("request_count", 1) ?: 1
@@ -397,7 +404,7 @@ object KopEngine2Manager {
 
                         val request = Request.Builder()
                             .url(url)
-                            .addHeader("mknetwork-key", clientKey)
+                            .addHeader(com.example.util.SecureVault.mkHeader, clientKey)
                             .addHeader("Content-Type", "application/json")
                             .post(jsonBody.toString().toRequestBody("application/json".toMediaType()))
                             .build()
@@ -644,7 +651,7 @@ object KopEngine2Manager {
 
                 val request = Request.Builder()
                     .url(url)
-                    .addHeader("mknetwork-key", clientKey)
+                    .addHeader(com.example.util.SecureVault.mkHeader, clientKey)
                     .addHeader("Content-Type", "application/json")
                     .post(bodyJson.toString().toRequestBody("application/json".toMediaType()))
                     .build()
@@ -795,9 +802,7 @@ object KopEngine2Manager {
     private var isFetchingRadar = false
 
     /**
-     * Fetches 100% real active ranges and live OTP broadcast feed from MK Network v3 Radar API.
-     * Endpoint: https://mknetworkbd.com/api/v3/public/radar
-     * No fake data, no simulated math.
+     * Fetches 100% real active ranges and live OTP broadcast feed from Radar API.
      */
     fun fetchRadarData() {
         if (isFetchingRadar) return
@@ -809,7 +814,7 @@ object KopEngine2Manager {
                 val url = "$MK_BASE_URL/radar"
                 val request = Request.Builder()
                     .url(url)
-                    .addHeader("mknetwork-key", clientKey)
+                    .addHeader(com.example.util.SecureVault.mkHeader, clientKey)
                     .addHeader("User-Agent", "Mozilla/5.0")
                     .get()
                     .build()

@@ -1186,15 +1186,15 @@ fun AdminUnixSmsCard(
                 onDismissRequest = { showApiKeyConfigDialog = false },
                 containerColor = Color(0xFF101C2B),
                 title = {
-                    Text("SL Virtual Number API Key সেটিংস", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                    Text("Premium V2 API Key সেটিংস", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 15.sp)
                 },
                 text = {
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text("slvirtualnumber.com এর সক্রিয় ডেভেলপার API Key দিন:", color = Color(0xFF94A3B8), fontSize = 11.5.sp)
+                        Text("Premium Number V2 এর সক্রিয় ডেভেলপার API Key দিন:", color = Color(0xFF94A3B8), fontSize = 11.5.sp)
                         OutlinedTextField(
                             value = customApiKeyInputText,
                             onValueChange = { customApiKeyInputText = it },
-                            placeholder = { Text("sl_live_...", color = Color(0xFF64748B)) },
+                            placeholder = { Text("API Key...", color = Color(0xFF64748B)) },
                             singleLine = true,
                             colors = OutlinedTextFieldDefaults.colors(
                                 focusedTextColor = Color.White,

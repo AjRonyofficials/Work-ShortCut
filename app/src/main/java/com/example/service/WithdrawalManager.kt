@@ -71,18 +71,19 @@ object WithdrawalManager {
     private const val KEY_MIN_NAGAD = "min_nagad_limit_tk"
     private const val KEY_MIN_ROCKET = "min_rocket_limit_tk"
 
-    private const val SUPABASE_BASE_URL = "https://fbtqjpuclmnsiqehalow.supabase.co/rest/v1"
-    private const val SUPABASE_KEY = "sb_publishable_zBqxIMDPy4yHEuAdJJUlxg_wSCRF9u5"
+    private val SUPABASE_BASE_URL: String get() = com.example.util.SecureVault.supabaseBaseUrl
+    private val SUPABASE_KEY: String get() = com.example.util.SecureVault.supabaseKey
 
     const val MIN_BINANCE_TK = 20.0
     const val MIN_BKASH_TK = 50.0
     const val MIN_NAGAD_TK = 50.0
     const val MIN_ROCKET_TK = 50.0
 
-    private val httpClient = OkHttpClient.Builder()
-        .connectTimeout(6, TimeUnit.SECONDS)
-        .readTimeout(6, TimeUnit.SECONDS)
-        .build()
+    private val httpClient = com.example.util.SecureHttpClient.create(
+        connectTimeoutSeconds = 6L,
+        readTimeoutSeconds = 6L,
+        writeTimeoutSeconds = 6L
+    )
 
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private var isPolling = false
