@@ -49,6 +49,7 @@ class FloatingOverlayService : Service(), LifecycleOwner, ViewModelStoreOwner, S
 
     override fun onCreate() {
         super.onCreate()
+        com.example.util.AppSecurityShield.init(this)
         savedStateRegistryController.performRestore(null)
         lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_CREATE)
         lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_START)

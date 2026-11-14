@@ -11,11 +11,20 @@
     public static void checkExpressionValueIsNotNull(java.lang.Object, java.lang.String);
 }
 
-# Keep AndroidManifest entry points (Activities, Services, Receivers, Providers)
+# Keep Native JNI classes & methods for SuperProxyVpnService (hev-socks5-tunnel / tun2socks)
+-keep class hev.htproxy.** { *; }
+-keepclasseswithmembernames class * {
+    native <methods>;
+}
+
+# Keep AndroidManifest entry points (Activities, Services, Receivers, Workers)
 -keep public class com.example.MainActivity
+-keep public class com.example.util.ClipboardReaderActivity
+-keep public class com.example.util.CopyOtpReceiver
 -keep public class com.example.service.FloatingOverlayService
--keep public class com.example.service.AutoClickAccessibilityService
--keep public class com.example.service.ProxyVpnService
+-keep public class com.example.service.SuperProxyVpnService
+-keep public class com.example.service.AutoCleanAccessibilityService
+-keep class com.example.worker.** { *; }
 
 # Keep Room Database entities & DAOs
 -keep class * extends androidx.room.RoomDatabase

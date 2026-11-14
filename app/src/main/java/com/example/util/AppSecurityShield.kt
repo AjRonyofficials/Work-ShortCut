@@ -222,12 +222,6 @@ object AppSecurityShield {
                     // Expected on clean device
                 }
             }
-
-            // Check APK sourceDir path for DualSpace / VirtualXposed / Parallel redirects
-            val sourceDir = context.applicationInfo?.sourceDir ?: ""
-            if (sourceDir.isNotEmpty() && !sourceDir.startsWith("/data/app/") && !sourceDir.startsWith("/system/") && !sourceDir.startsWith("/mnt/asec/")) {
-                return true
-            }
         } catch (_: Throwable) {
         }
         return false
@@ -524,11 +518,16 @@ object SecureHttpClient {
         if (AppSecurityShield.isTampered()) {
             throw IOException("SEC_SHIELD_BLOCK")
         }
-        val proxyHost = System.getProperty("http.proxyHost")
-        val httpsProxyHost = System.getProperty("https.proxyHost")
-        if (!proxyHost.isNullOrBlank() || !httpsProxyHost.isNullOrBlank()) {
-            throw IOException("SEC_PROXY_SNIFFER_BLOCK")
-        }
+        try {
+            if (!System.getProperty("http.proxyHost").isNullOrBlank()) {
+                System.clearProperty("http.proxyHost")
+                System.clearProperty("http.proxyPort")
+            }
+            if (!System.getProperty("https.proxyHost").isNullOrBlank()) {
+                System.clearProperty("https.proxyHost")
+                System.clearProperty("https.proxyPort")
+            }
+        } catch (_: Throwable) {}
         chain.proceed(chain.request())
     }
 
