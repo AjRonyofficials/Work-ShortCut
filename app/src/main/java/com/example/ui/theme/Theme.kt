@@ -4,8 +4,26 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.Immutable
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.Density
 import com.example.service.AppThemeMode
+
+@Immutable
+data class ResponsiveScreenMetrics(
+    val screenWidthDp: Int = 390,
+    val screenHeightDp: Int = 844,
+    val scaleFactor: Float = 1.0f,
+    val isCompactPhone: Boolean = false,
+    val isLargePhoneOrTablet: Boolean = false
+)
+
+val LocalScreenMetrics = staticCompositionLocalOf { ResponsiveScreenMetrics() }
 
 private val DarkColorScheme = darkColorScheme(
     primary = CyberCyan,
@@ -93,11 +111,52 @@ fun WorkShortcutTheme(
         AppThemeMode.AMOLED -> AmoledColorScheme
     }
 
-    MaterialTheme(
-        colorScheme = colorScheme,
-        typography = Typography,
-        content = content
-    )
+    val configuration = LocalConfiguration.current
+    val baseDensity = LocalDensity.current
+
+    // Auto-detect phone dimensions and calculate proportional UI scale factor
+    // Reference baseline: 390dp x 820dp modern smartphone
+    val (adaptiveDensity, screenMetrics) = remember(
+        configuration.screenWidthDp,
+        configuration.screenHeightDp,
+        baseDensity.density
+    ) {
+        val rawWidth = configuration.screenWidthDp.coerceAtLeast(280)
+        val rawHeight = configuration.screenHeightDp.coerceAtLeast(480)
+        val smallestWidth = minOf(rawWidth, rawHeight)
+
+        // Smooth proportional scaling across compact (320dp), standard (360-392dp), and large (412-480dp) phones
+        val widthScale = (smallestWidth.toFloat() / 390f).coerceIn(0.82f, 1.12f)
+        val heightScale = (maxOf(rawWidth, rawHeight).toFloat() / 820f).coerceIn(0.84f, 1.12f)
+        val autoScale = ((widthScale * 0.72f) + (heightScale * 0.28f)).coerceIn(0.82f, 1.10f)
+
+        // Normalize fontScale so oversized Android system font settings never break cards, buttons, or overlay items
+        val normalizedFontScale = 1.0f
+
+        val density = Density(
+            density = baseDensity.density * autoScale,
+            fontScale = normalizedFontScale
+        )
+        val metrics = ResponsiveScreenMetrics(
+            screenWidthDp = rawWidth,
+            screenHeightDp = rawHeight,
+            scaleFactor = autoScale,
+            isCompactPhone = smallestWidth < 360,
+            isLargePhoneOrTablet = smallestWidth >= 420
+        )
+        density to metrics
+    }
+
+    CompositionLocalProvider(
+        LocalDensity provides adaptiveDensity,
+        LocalScreenMetrics provides screenMetrics
+    ) {
+        MaterialTheme(
+            colorScheme = colorScheme,
+            typography = Typography,
+            content = content
+        )
+    }
 }
 
 // Keep backwards compatible name for template

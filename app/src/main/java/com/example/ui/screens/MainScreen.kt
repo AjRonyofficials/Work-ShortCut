@@ -203,7 +203,7 @@ fun MainScreen(
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Box(
                                 modifier = Modifier
-                                    .size(34.dp)
+                                    .size(32.dp)
                                     .clip(RoundedCornerShape(9.dp))
                                     .background(
                                         Brush.linearGradient(
@@ -216,17 +216,19 @@ fun MainScreen(
                                     imageVector = Icons.Default.Bolt,
                                     contentDescription = null,
                                     tint = Color(0xFF080C14),
-                                    modifier = Modifier.size(20.dp)
+                                    modifier = Modifier.size(19.dp)
                                 )
                             }
-                            Spacer(modifier = Modifier.width(8.dp))
+                            Spacer(modifier = Modifier.width(7.dp))
                             Column {
                                 Text(
                                     text = "Work ShortCut",
                                     fontWeight = FontWeight.ExtraBold,
-                                    fontSize = 16.sp,
+                                    fontSize = 15.sp,
                                     color = Color.White,
-                                    letterSpacing = 0.3.sp
+                                    letterSpacing = 0.2.sp,
+                                    maxLines = 1,
+                                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
                                 )
                                 Surface(
                                     color = CyberCyan.copy(alpha = 0.12f),
@@ -237,8 +239,10 @@ fun MainScreen(
                                         text = selectedTab.title.uppercase(),
                                         color = CyberCyan,
                                         fontWeight = FontWeight.Bold,
-                                        fontSize = 9.sp,
-                                        letterSpacing = 0.5.sp,
+                                        fontSize = 8.5.sp,
+                                        letterSpacing = 0.4.sp,
+                                        maxLines = 1,
+                                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
                                         modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
                                     )
                                 }
@@ -261,11 +265,11 @@ fun MainScreen(
                         ) {
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                                modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp)
                             ) {
                                 Box(
                                     modifier = Modifier
-                                        .size(20.dp)
+                                        .size(19.dp)
                                         .clip(CircleShape)
                                         .background(NeonEmerald.copy(alpha = 0.22f)),
                                     contentAlignment = Alignment.Center
@@ -274,15 +278,16 @@ fun MainScreen(
                                         imageVector = Icons.Default.Person,
                                         contentDescription = "Profile",
                                         tint = NeonEmerald,
-                                        modifier = Modifier.size(13.dp)
+                                        modifier = Modifier.size(12.dp)
                                     )
                                 }
-                                Spacer(modifier = Modifier.width(5.dp))
+                                Spacer(modifier = Modifier.width(4.dp))
                                 Text(
                                     text = "৳ ${String.format(java.util.Locale.US, "%.2f", withdrawalState.availableBalanceTk)}",
-                                    fontSize = 11.sp,
+                                    fontSize = 10.5.sp,
                                     fontWeight = FontWeight.Black,
                                     color = NeonEmerald,
+                                    maxLines = 1,
                                     fontFamily = FontFamily.Monospace
                                 )
                             }
@@ -311,7 +316,7 @@ fun MainScreen(
                                 }
                             },
                             modifier = Modifier
-                                .size(36.dp)
+                                .size(34.dp)
                                 .testTag("appbar_bubble_toggle")
                         ) {
                             BadgedBox(
@@ -325,7 +330,7 @@ fun MainScreen(
                             ) {
                                 Box(
                                     modifier = Modifier
-                                        .size(32.dp)
+                                        .size(31.dp)
                                         .clip(RoundedCornerShape(8.dp))
                                         .background(Color(0xFF131F33))
                                         .border(BorderStroke(1.dp, Color(0x3300F0FF)), RoundedCornerShape(8.dp)),
@@ -335,7 +340,7 @@ fun MainScreen(
                                         imageVector = Icons.Default.Bolt,
                                         contentDescription = "Floating Bubble",
                                         tint = if (state.isOverlayActive) CyberCyan else Color(0xFF94A3B8),
-                                        modifier = Modifier.size(17.dp)
+                                        modifier = Modifier.size(16.dp)
                                     )
                                 }
                             }
@@ -358,20 +363,21 @@ fun MainScreen(
                                 .testTag("appbar_3dot_menu")
                         ) {
                             Row(
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp),
+                                modifier = Modifier.padding(horizontal = 7.dp, vertical = 5.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Icon(
                                     imageVector = Icons.Default.Apps,
                                     contentDescription = "Menu",
                                     tint = CyberCyan,
-                                    modifier = Modifier.size(15.dp)
+                                    modifier = Modifier.size(14.dp)
                                 )
-                                Spacer(modifier = Modifier.width(4.dp))
+                                Spacer(modifier = Modifier.width(3.dp))
                                 Text(
                                     text = "Menu",
-                                    fontSize = 11.5.sp,
+                                    fontSize = 11.sp,
                                     fontWeight = FontWeight.Bold,
+                                    maxLines = 1,
                                     color = Color.White
                                 )
                                 Spacer(modifier = Modifier.width(2.dp))
@@ -379,7 +385,7 @@ fun MainScreen(
                                     imageVector = Icons.Default.MoreVert,
                                     contentDescription = null,
                                     tint = Color(0xFF94A3B8),
-                                    modifier = Modifier.size(13.dp)
+                                    modifier = Modifier.size(12.dp)
                                 )
                             }
                         }

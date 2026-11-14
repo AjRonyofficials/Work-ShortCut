@@ -390,12 +390,16 @@ fun FloatingOverlayWindowContent(
                         }
                     }
 
+                    val config = androidx.compose.ui.platform.LocalConfiguration.current
+                    val safeScreenMaxHeightDp = (config.screenHeightDp * 0.80f).toInt().coerceAtLeast(340)
+                    val effectiveMaxHeightDp = minOf(state.overlayMaxHeightDp, safeScreenMaxHeightDp).dp
+
                     Column(
                         verticalArrangement = Arrangement.spacedBy(3.dp),
                         horizontalAlignment = Alignment.CenterHorizontally,
                         modifier = Modifier
                             .fillMaxWidth()
-                            .heightIn(max = state.overlayMaxHeightDp.dp)
+                            .heightIn(max = effectiveMaxHeightDp)
                             .verticalScroll(rememberScrollState())
                             .testTag("floating_edge_tabs_column")
                     ) {

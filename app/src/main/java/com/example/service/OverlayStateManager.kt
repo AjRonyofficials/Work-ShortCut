@@ -345,7 +345,16 @@ object OverlayStateManager {
                     otpSoundVibrationEnabled = p.getBoolean("otp_sound_vibration_enabled", true),
                     uploadNumberTxtLocked = p.getBoolean("upload_number_txt_locked", true),
                     overlayScale = p.getFloat("overlay_scale_factor", 1.0f).coerceIn(0.20f, 2.00f),
-                    overlayMaxHeightDp = p.getInt("overlay_max_height_dp", 680).coerceIn(300, 1000),
+                    overlayMaxHeightDp = run {
+                        val dm = context.resources.displayMetrics
+                        val screenHeightDp = (dm.heightPixels / dm.density).toInt().coerceAtLeast(540)
+                        val autoHeightDp = (screenHeightDp * 0.78f).toInt().coerceIn(420, 820)
+                        if (p.contains("overlay_max_height_dp")) {
+                            p.getInt("overlay_max_height_dp", autoHeightDp).coerceIn(300, 1000)
+                        } else {
+                            autoHeightDp
+                        }
+                    },
                     maxOverlayNumbersCount = p.getInt("max_overlay_numbers_count", 10).coerceIn(1, 10),
                     customAppTitle = p.getString("custom_app_title", "Work ShortCut") ?: "Work ShortCut",
                     isOverlayActive = p.getBoolean("overlay_persistent_enabled", false),
