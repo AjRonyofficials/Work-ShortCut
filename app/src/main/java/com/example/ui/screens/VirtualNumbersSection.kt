@@ -129,7 +129,11 @@ fun VirtualNumbersSection(
     var consoleFilter by remember { mutableStateOf("") }
     var quantityDropdownExpanded by remember { mutableStateOf(false) }
     val selectedPanel by VirtualNumberManager.selectedPanel.collectAsState()
-    val zenexOtpRate by VirtualNumberManager.zenexOtpRate.collectAsState()
+    val baseZenexOtpRate by VirtualNumberManager.zenexOtpRate.collectAsState()
+    val managedUsersForRate by com.example.service.AuthManager.managedUsers.collectAsState()
+    val zenexOtpRate = remember(baseZenexOtpRate, managedUsersForRate) {
+        com.example.service.AuthManager.getEffectiveKop1Rate(baseZenexOtpRate)
+    }
     var panelDropdownExpanded by remember { mutableStateOf(false) }
     var showProfileHistoryDialog by remember { mutableStateOf(false) }
     var showFreshCheckerDialog by remember { mutableStateOf(false) }

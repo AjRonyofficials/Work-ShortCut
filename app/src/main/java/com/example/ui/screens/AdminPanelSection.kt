@@ -158,6 +158,7 @@ fun AdminPanelSection(
     val isAdmin = AuthManager.isAdmin()
     val isPrimeAdmin = AuthManager.isPrimeAdmin()
     val isSubAdmin = AuthManager.isSubAdmin()
+    val isAgent = AuthManager.isAgent()
     val subAdminPerms = AuthManager.getCurrentSubAdminPermissions()
     val currentAdminEmail by AuthManager.currentEmail.collectAsState()
 
@@ -169,7 +170,7 @@ fun AdminPanelSection(
     val kop2OtpRate by KopEngine2Manager.kop2OtpRate.collectAsState()
     val premiumV2OtpRate by com.example.service.PremiumNumberV2Manager.otpRate.collectAsState()
 
-    var selectedTab by remember { mutableIntStateOf(0) } // 0: SMS Panels, 1: Withdrawals, 2: Users, 3: Live CDR/DLR
+    var selectedTab by remember { mutableIntStateOf(0) } // 0: SMS Panels, 1: Withdrawals, 2: Users, 3: Agents, 4: Sessions, 5: App Update
     var isLiveSyncing by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
@@ -187,7 +188,7 @@ fun AdminPanelSection(
         OtpHistoryManager.syncFromCloud(context)
         AuthManager.syncFromCloud()
 
-        // 4-5s real-time live sync loop for Admin Panel
+        // 4-5s real-time live sync loop for Admin / Agent Panel
         while (isActive) {
             delay(4000L)
             try {
@@ -197,6 +198,16 @@ fun AdminPanelSection(
                 AuthManager.syncFromCloud()
             } catch (_: Exception) {}
         }
+    }
+
+    if (!isAdmin && isAgent) {
+        AgentDashboardView(
+            context = context,
+            agentEmail = currentAdminEmail,
+            managedUsers = managedUsers,
+            modifier = modifier
+        )
+        return
     }
 
     if (!isAdmin) {
@@ -226,14 +237,14 @@ fun AdminPanelSection(
                     )
                     Spacer(modifier = Modifier.height(14.dp))
                     Text(
-                        text = "🔒 এডমিন এক্সেস সংরক্ষিত",
+                        text = "🔒 এডমিন / এজেন্ট এক্সেস সংরক্ষিত",
                         fontSize = 18.sp,
                         fontWeight = FontWeight.Bold,
                         color = Color.White
                     )
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
-                        text = "এই সেকশনটি শুধুমাত্র মাস্টার এডমিন (${AuthManager.ADMIN_EMAIL}) এবং অনুমোদিত সাব এডমিনদের জন্য নির্ধারিত।",
+                        text = "এই সেকশনটি শুধুমাত্র মাস্টার এডমিন (${AuthManager.ADMIN_EMAIL}), অনুমোদিত সাব এডমিন এবং অনুমোদিত এজেন্টদের জন্য নির্ধারিত।",
                         fontSize = 12.sp,
                         color = Color(0xFF90A4AE),
                         lineHeight = 18.sp
@@ -246,7 +257,7 @@ fun AdminPanelSection(
                     ) {
                         Icon(Icons.Default.Logout, contentDescription = null, modifier = Modifier.size(16.dp))
                         Spacer(modifier = Modifier.width(6.dp))
-                        Text("লগআউট করে এডমিন লগইন করুন", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        Text("লগআউট করে পুনরায় লগইন করুন", fontSize = 12.sp, fontWeight = FontWeight.Bold)
                     }
                 }
             }
@@ -388,89 +399,50 @@ fun AdminPanelSection(
         }
 
         item {
-            // Modern Tabs
-            TabRow(
-                selectedTabIndex = selectedTab,
-                containerColor = Color(0xFF0D1522),
-                contentColor = Color(0xFF818CF8),
-                indicator = { tabPositions ->
-                    TabRowDefaults.SecondaryIndicator(
-                        Modifier.tabIndicatorOffset(tabPositions[selectedTab]),
-                        color = Color(0xFF818CF8),
-                        height = 3.dp
-                    )
-                },
-                divider = { HorizontalDivider(color = Color(0xFF1E2D42)) }
+            // Modern Scrollable Tabs Pill Bar
+            val agentsCount = managedUsers.count { it.isAgent }
+            val pendingCount = withdrawState.allRequests.count { it.status == "PENDING" }
+            val onlineUsersCount = managedUsers.count { it.isOnline || (System.currentTimeMillis() - it.lastActive) < 120_000L }
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
-                Tab(
-                    selected = selectedTab == 0,
-                    onClick = { selectedTab = 0 },
-                    text = {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Default.Phone, contentDescription = null, modifier = Modifier.size(13.dp))
-                            Spacer(modifier = Modifier.width(3.dp))
-                            Text("SMS Panels (${unixState.uploadedNumbers.size})", fontSize = 10.sp, fontWeight = FontWeight.Bold)
-                        }
+                val tabs = buildList {
+                    add(Triple(0, "📱 SMS Panels (${unixState.uploadedNumbers.size})", Color(0xFF818CF8)))
+                    if (isPrimeAdmin || subAdminPerms.canManageWithdrawals) {
+                        add(Triple(1, if (pendingCount > 0) "💰 Withdraw ($pendingCount)" else "💰 Withdraw", if (pendingCount > 0) Color(0xFFFFD600) else Color(0xFF818CF8)))
                     }
-                )
-                if (isPrimeAdmin || subAdminPerms.canManageWithdrawals) {
-                    Tab(
-                        selected = selectedTab == 1,
-                        onClick = { selectedTab = 1 },
-                        text = {
-                            val pendingCount = withdrawState.allRequests.count { it.status == "PENDING" }
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(Icons.Default.AccountBalanceWallet, contentDescription = null, modifier = Modifier.size(13.dp), tint = if (pendingCount > 0) Color(0xFFFFD600) else Color(0xFF818CF8))
-                                Spacer(modifier = Modifier.width(3.dp))
-                                Text(
-                                    text = if (pendingCount > 0) "Withdraw ($pendingCount)" else "Withdraw",
-                                    fontSize = 10.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = if (pendingCount > 0) Color(0xFFFFD600) else Color.Unspecified
-                                )
-                            }
-                        }
-                    )
+                    if (isPrimeAdmin) {
+                        add(Triple(2, "👤 Users (${managedUsers.size})", Color(0xFF38BDF8)))
+                        add(Triple(5, "🤝 Agents ($agentsCount)", Color(0xFF34D399)))
+                    }
+                    if (isPrimeAdmin || subAdminPerms.canViewLiveCdr) {
+                        add(Triple(3, "🟢 Sessions ($onlineUsersCount)", Color(0xFF00E676)))
+                    }
+                    if (isPrimeAdmin) {
+                        add(Triple(4, "🚀 App Update", Color(0xFFF472B6)))
+                    }
                 }
-                if (isPrimeAdmin) {
-                    Tab(
-                        selected = selectedTab == 2,
-                        onClick = { selectedTab = 2 },
-                        text = {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(Icons.Default.Person, contentDescription = null, modifier = Modifier.size(13.dp))
-                                Spacer(modifier = Modifier.width(3.dp))
-                                Text("Users (${managedUsers.size})", fontSize = 10.sp, fontWeight = FontWeight.Bold)
-                            }
-                        }
-                    )
-                }
-                if (isPrimeAdmin || subAdminPerms.canViewLiveCdr) {
-                    val onlineUsersCount = managedUsers.count { it.isOnline || (System.currentTimeMillis() - it.lastActive) < 120_000L }
-                    Tab(
-                        selected = selectedTab == 3,
-                        onClick = { selectedTab = 3 },
-                        text = {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(Icons.Default.Phone, contentDescription = null, modifier = Modifier.size(13.dp), tint = Color(0xFF00E676))
-                                Spacer(modifier = Modifier.width(3.dp))
-                                Text("Sessions ($onlineUsersCount Online)", fontSize = 10.sp, fontWeight = FontWeight.Bold)
-                            }
-                        }
-                    )
-                }
-                if (isPrimeAdmin) {
-                    Tab(
-                        selected = selectedTab == 4,
-                        onClick = { selectedTab = 4 },
-                        text = {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(Icons.Default.RocketLaunch, contentDescription = null, modifier = Modifier.size(13.dp), tint = Color(0xFF00E676))
-                                Spacer(modifier = Modifier.width(3.dp))
-                                Text("App Update", fontSize = 10.sp, fontWeight = FontWeight.Bold)
-                            }
-                        }
-                    )
+
+                tabs.forEach { (tabIdx, tabTitle, tabColor) ->
+                    val isSel = selectedTab == tabIdx
+                    Surface(
+                        color = if (isSel) tabColor.copy(alpha = 0.22f) else Color(0xFF0D1522),
+                        shape = RoundedCornerShape(10.dp),
+                        border = BorderStroke(1.2.dp, if (isSel) tabColor else Color(0xFF1E2D42)),
+                        modifier = Modifier.clickable { selectedTab = tabIdx }
+                    ) {
+                        Text(
+                            text = tabTitle,
+                            color = if (isSel) Color.White else Color(0xFF94A3B8),
+                            fontSize = 10.5.sp,
+                            fontWeight = if (isSel) FontWeight.ExtraBold else FontWeight.SemiBold,
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
+                        )
+                    }
                 }
             }
         }
@@ -518,13 +490,17 @@ fun AdminPanelSection(
                     item {
                         AdminUserManagerCard(
                             context = context,
-                            managedUsers = managedUsers
+                            managedUsers = managedUsers,
+                            defaultUnixRate = unixState.otpRatePerSms,
+                            defaultPremiumV2Rate = premiumV2OtpRate,
+                            defaultKop1Rate = zenexOtpRate,
+                            defaultKop2Rate = kop2OtpRate
                         )
                     }
                 }
             }
             3 -> {
-                // TAB 3: LIVE DEVICE SESSIONS & SYSTEM HEALTH (REPLACING OLD LIVE CDR)
+                // TAB 3: LIVE DEVICE SESSIONS & SYSTEM HEALTH
                 if (isPrimeAdmin || subAdminPerms.canViewLiveCdr) {
                     item {
                         AdminDeviceAndSystemMonitorCard(
@@ -540,6 +516,17 @@ fun AdminPanelSection(
                     item {
                         AdminAppUpdateCard(
                             context = context
+                        )
+                    }
+                }
+            }
+            5 -> {
+                // TAB 5: DEDICATED AGENT MANAGEMENT & COMMISSION TAB (PRIME ADMIN)
+                if (isPrimeAdmin) {
+                    item {
+                        AdminAgentManagerCard(
+                            context = context,
+                            managedUsers = managedUsers
                         )
                     }
                 }
@@ -5114,11 +5101,16 @@ fun AdminWithdrawalItemRow(
 @Composable
 fun AdminUserManagerCard(
     context: Context,
-    managedUsers: List<AuthUser>
+    managedUsers: List<AuthUser>,
+    defaultUnixRate: Double = 0.50,
+    defaultPremiumV2Rate: Double = 0.50,
+    defaultKop1Rate: Double = 0.50,
+    defaultKop2Rate: Double = 0.50
 ) {
     var newUserEmail by remember { mutableStateOf("") }
     var newUserPass by remember { mutableStateOf("") }
     var newUserName by remember { mutableStateOf("") }
+    var autoGeneratedCredsMode by remember { mutableStateOf(true) }
     var createdSuccessCredentials by remember { mutableStateOf<Pair<String, String>?>(null) }
     var broadcastMsg by remember { mutableStateOf("") }
     val coroutineScope = rememberCoroutineScope()
@@ -5347,7 +5339,7 @@ fun AdminUserManagerCard(
             }
         }
 
-        // Create User Card
+        // Create User Card (Name -> Auto Random Gmail + Password)
         Card(
             colors = CardDefaults.cardColors(containerColor = Color(0xFF111B29)),
             shape = RoundedCornerShape(16.dp),
@@ -5355,31 +5347,70 @@ fun AdminUserManagerCard(
             modifier = Modifier.fillMaxWidth()
         ) {
             Column(modifier = Modifier.padding(14.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.PersonAdd, contentDescription = null, tint = Color(0xFF818CF8), modifier = Modifier.size(18.dp))
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(
-                        text = "CREATE USER LOGIN CREDENTIALS",
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Color.White
-                    )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.PersonAdd, contentDescription = null, tint = Color(0xFF818CF8), modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = "CREATE USER LOGIN CREDENTIALS",
+                            fontSize = 12.5.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White
+                        )
+                    }
+
+                    Surface(
+                        color = Color(0xFF1E293B),
+                        shape = RoundedCornerShape(6.dp),
+                        border = BorderStroke(1.dp, Color(0xFF38BDF8)),
+                        modifier = Modifier.clickable {
+                            val (genEm, genPw) = AuthManager.generateRandomCredentialsFromName(newUserName.ifBlank { "user" })
+                            newUserEmail = genEm
+                            newUserPass = genPw
+                            autoGeneratedCredsMode = true
+                        }
+                    ) {
+                        Text(
+                            text = "🎲 নতুন র‍্যান্ডম Gmail",
+                            color = Color(0xFF38BDF8),
+                            fontSize = 9.5.sp,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                        )
+                    }
                 }
 
-                Spacer(modifier = Modifier.height(8.dp))
+                Spacer(modifier = Modifier.height(6.dp))
                 Text(
-                    text = "ইউজাররা নিজে রেজিস্টার করতে পারবে না। আপনি এখান থেকে ইমেইল ও পাসওয়ার্ড তৈরি করে তাদের দিলে তারা লগইন করতে পারবে।",
+                    text = "শুধুমাত্র ইউজারের নাম (Name) দিলেই অটোমেটিক র‍্যান্ডম @gmail.com ও পাসওয়ার্ড তৈরি হয়ে যাবে!",
                     fontSize = 11.sp,
-                    color = Color(0xFF94A3B8),
-                    lineHeight = 16.sp
+                    color = Color(0xFF34D399),
+                    lineHeight = 16.sp,
+                    fontWeight = FontWeight.SemiBold
                 )
 
-                Spacer(modifier = Modifier.height(12.dp))
+                Spacer(modifier = Modifier.height(10.dp))
 
                 OutlinedTextField(
                     value = newUserName,
-                    onValueChange = { newUserName = it },
-                    label = { Text("ইউজারের নাম (User Name)") },
+                    onValueChange = { inputName ->
+                        newUserName = inputName
+                        if (autoGeneratedCredsMode) {
+                            if (inputName.isNotBlank()) {
+                                val (genEm, genPw) = AuthManager.generateRandomCredentialsFromName(inputName)
+                                newUserEmail = genEm
+                                newUserPass = genPw
+                            } else {
+                                newUserEmail = ""
+                                newUserPass = ""
+                            }
+                        }
+                    },
+                    label = { Text("ইউজারের নাম লিখুন (যেমন: Rahim / Rony)") },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(10.dp),
@@ -5395,57 +5426,74 @@ fun AdminUserManagerCard(
 
                 Spacer(modifier = Modifier.height(8.dp))
 
-                OutlinedTextField(
-                    value = newUserEmail,
-                    onValueChange = { newUserEmail = it },
-                    label = { Text("ইমেইল (Email)") },
-                    singleLine = true,
+                Row(
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(10.dp),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedTextColor = Color.White,
-                        unfocusedTextColor = Color.White,
-                        focusedBorderColor = Color(0xFF818CF8),
-                        unfocusedBorderColor = Color(0xFF243B55),
-                        focusedContainerColor = Color(0xFF090E17),
-                        unfocusedContainerColor = Color(0xFF090E17)
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    OutlinedTextField(
+                        value = newUserEmail,
+                        onValueChange = {
+                            newUserEmail = it
+                            autoGeneratedCredsMode = false
+                        },
+                        label = { Text("অটো র‍্যান্ডম Gmail (ঐচ্ছিক)") },
+                        singleLine = true,
+                        modifier = Modifier.weight(1.25f),
+                        shape = RoundedCornerShape(10.dp),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = Color(0xFF38BDF8),
+                            unfocusedTextColor = Color(0xFF38BDF8),
+                            focusedBorderColor = Color(0xFF818CF8),
+                            unfocusedBorderColor = Color(0xFF243B55),
+                            focusedContainerColor = Color(0xFF090E17),
+                            unfocusedContainerColor = Color(0xFF090E17)
+                        )
                     )
-                )
 
-                Spacer(modifier = Modifier.height(8.dp))
-
-                OutlinedTextField(
-                    value = newUserPass,
-                    onValueChange = { newUserPass = it },
-                    label = { Text("পাসওয়ার্ড (Password)") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(10.dp),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedTextColor = Color.White,
-                        unfocusedTextColor = Color.White,
-                        focusedBorderColor = Color(0xFF818CF8),
-                        unfocusedBorderColor = Color(0xFF243B55),
-                        focusedContainerColor = Color(0xFF090E17),
-                        unfocusedContainerColor = Color(0xFF090E17)
+                    OutlinedTextField(
+                        value = newUserPass,
+                        onValueChange = {
+                            newUserPass = it
+                            autoGeneratedCredsMode = false
+                        },
+                        label = { Text("অটো পাসওয়ার্ড") },
+                        singleLine = true,
+                        modifier = Modifier.weight(0.9f),
+                        shape = RoundedCornerShape(10.dp),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = Color(0xFFFBBF24),
+                            unfocusedTextColor = Color(0xFFFBBF24),
+                            focusedBorderColor = Color(0xFF818CF8),
+                            unfocusedBorderColor = Color(0xFF243B55),
+                            focusedContainerColor = Color(0xFF090E17),
+                            unfocusedContainerColor = Color(0xFF090E17)
+                        )
                     )
-                )
+                }
 
                 Spacer(modifier = Modifier.height(12.dp))
 
                 Button(
                     onClick = {
+                        if (newUserName.isBlank() && newUserEmail.isBlank()) {
+                            Toast.makeText(context, "ইউজারের নাম লিখুন!", Toast.LENGTH_SHORT).show()
+                            return@Button
+                        }
                         val (success, msg) = AuthManager.createManagedUser(
                             emailInput = newUserEmail,
                             passInput = newUserPass,
                             nameInput = newUserName
                         )
                         if (success) {
-                            createdSuccessCredentials = Pair(newUserEmail.trim().lowercase(), newUserPass.trim())
-                            Toast.makeText(context, "✓ $msg", Toast.LENGTH_SHORT).show()
+                            val parts = msg.split("|||")
+                            val createdEm = parts.getOrNull(0) ?: newUserEmail.trim().lowercase()
+                            val createdPw = parts.getOrNull(1) ?: newUserPass.trim()
+                            createdSuccessCredentials = Pair(createdEm, createdPw)
+                            Toast.makeText(context, "✓ ইউজার অ্যাকাউন্ট তৈরি সফল: $createdEm", Toast.LENGTH_SHORT).show()
                             newUserEmail = ""
                             newUserPass = ""
                             newUserName = ""
+                            autoGeneratedCredsMode = true
                             VibrationHelper.vibrateSuccess(context)
                         } else {
                             Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
@@ -5459,7 +5507,7 @@ fun AdminUserManagerCard(
                 ) {
                     Icon(Icons.Default.PersonAdd, contentDescription = null, modifier = Modifier.size(16.dp))
                     Spacer(modifier = Modifier.width(6.dp))
-                    Text("GENERATE & CREATE USER ACCOUNT", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    Text("AUTO GENERATE & CREATE USER ACCOUNT", fontSize = 11.sp, fontWeight = FontWeight.Bold)
                 }
 
                 // Show Success Copy Box
@@ -5499,7 +5547,13 @@ fun AdminUserManagerCard(
             }
         }
 
-        // List of Created Users with ACTIVE vs INACTIVE Filter
+        // Dedicated Agent Setup & Today OTP Commission Manager Card right inside Users section
+        AdminAgentManagerCard(
+            context = context,
+            managedUsers = managedUsers
+        )
+
+        // List of Created Users with Search, Role Filters & Collapsible Dropdown User Cards
         Card(
             colors = CardDefaults.cardColors(containerColor = Color(0xFF101824)),
             shape = RoundedCornerShape(16.dp),
@@ -5559,9 +5613,9 @@ fun AdminUserManagerCard(
                     }
 
                     val activeCount = managedUsers.count { it.isActive && !it.isBanned }
-                    val inactiveCount = managedUsers.count { !it.isActive && !it.isBanned }
+                    val agentCount = managedUsers.count { it.isAgent }
                     Text(
-                        text = "🟢 $activeCount Active  |  ⚪ $inactiveCount Inactive",
+                        text = "🟢 $activeCount Active  |  🤝 $agentCount Agents",
                         fontSize = 10.sp,
                         color = Color(0xFF81D4FA),
                         fontWeight = FontWeight.SemiBold
@@ -5737,21 +5791,58 @@ fun AdminUserManagerCard(
                     Text("🗑️ প্রাইম এডমিন বাদে সকল ইউজার ও ডাটা ডিলিট করুন", fontSize = 11.sp, color = Color(0xFFEF4444), fontWeight = FontWeight.Bold)
                 }
 
-                Spacer(modifier = Modifier.height(10.dp))
+                Spacer(modifier = Modifier.height(12.dp))
 
-                var userFilterTab by remember { mutableStateOf("ALL") } // "ALL", "ACTIVE", "INACTIVE", "BANNED"
+                var userFilterTab by remember { mutableStateOf("ALL") } // "ALL", "ACTIVE", "AGENTS", "AGENT_USERS", "INACTIVE", "BANNED"
+                var userSearchQuery by remember { mutableStateOf("") }
+
+                // Prominent Search Box for Users
+                OutlinedTextField(
+                    value = userSearchQuery,
+                    onValueChange = { userSearchQuery = it },
+                    placeholder = { Text("🔍 যেকোনো ইউজার সার্চ করুন (নাম, ইমেইল বা এজেন্ট ইমেইল)...", fontSize = 11.5.sp, color = Color(0xFF94A3B8)) },
+                    leadingIcon = {
+                        Icon(Icons.Default.Search, contentDescription = "Search User", tint = Color(0xFF38BDF8), modifier = Modifier.size(18.dp))
+                    },
+                    trailingIcon = {
+                        if (userSearchQuery.isNotEmpty()) {
+                            IconButton(onClick = { userSearchQuery = "" }, modifier = Modifier.size(24.dp)) {
+                                Icon(Icons.Default.Close, contentDescription = "Clear", tint = Color(0xFFF87171), modifier = Modifier.size(15.dp))
+                            }
+                        }
+                    },
+                    singleLine = true,
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = Color.White,
+                        unfocusedTextColor = Color.White,
+                        focusedBorderColor = Color(0xFF38BDF8),
+                        unfocusedBorderColor = Color(0xFF0284C7).copy(alpha = 0.7f),
+                        focusedContainerColor = Color(0xFF090E17),
+                        unfocusedContainerColor = Color(0xFF090E17)
+                    ),
+                    shape = RoundedCornerShape(10.dp),
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                Spacer(modifier = Modifier.height(8.dp))
 
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
                     horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
                     val activeCount = managedUsers.count { it.isActive && !it.isBanned }
+                    val agentsCount = managedUsers.count { it.isAgent }
+                    val agentCreatedCount = managedUsers.count { it.createdByAgent.isNotBlank() }
                     val inactiveCount = managedUsers.count { !it.isActive && !it.isBanned }
                     val bannedCount = managedUsers.count { it.isBanned }
 
                     listOf(
                         Triple("ALL", "ALL (${managedUsers.size})", Color(0xFF38BDF8)),
                         Triple("ACTIVE", "🟢 ACTIVE ($activeCount)", Color(0xFF10B981)),
+                        Triple("AGENTS", "🤝 AGENTS ($agentsCount)", Color(0xFF34D399)),
+                        Triple("AGENT_USERS", "👥 BY AGENT ($agentCreatedCount)", Color(0xFF818CF8)),
                         Triple("INACTIVE", "⚪ INACTIVE ($inactiveCount)", Color(0xFFF59E0B)),
                         Triple("BANNED", "🚫 BANNED ($bannedCount)", Color(0xFFEF4444))
                     ).forEach { (tabKey, tabLabel, tabColor) ->
@@ -5760,56 +5851,46 @@ fun AdminUserManagerCard(
                             color = if (isTabSelected) tabColor.copy(alpha = 0.25f) else Color(0xFF0B1420),
                             shape = RoundedCornerShape(8.dp),
                             border = BorderStroke(1.dp, if (isTabSelected) tabColor else Color(0xFF1E2D40)),
-                            modifier = Modifier
-                                .weight(1f)
-                                .clickable { userFilterTab = tabKey }
+                            modifier = Modifier.clickable { userFilterTab = tabKey }
                         ) {
                             Text(
                                 text = tabLabel,
                                 color = if (isTabSelected) Color.White else Color(0xFF94A3B8),
-                                fontSize = 9.sp,
+                                fontSize = 9.5.sp,
                                 fontWeight = if (isTabSelected) FontWeight.Bold else FontWeight.Medium,
                                 textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                                modifier = Modifier.padding(vertical = 6.dp, horizontal = 2.dp)
+                                modifier = Modifier.padding(vertical = 6.dp, horizontal = 10.dp)
                             )
                         }
                     }
                 }
 
-                Spacer(modifier = Modifier.height(10.dp))
+                Spacer(modifier = Modifier.height(8.dp))
 
-                var userSearchQuery by remember { mutableStateOf("") }
-
-                // Search Bar for Users
-                OutlinedTextField(
-                    value = userSearchQuery,
-                    onValueChange = { userSearchQuery = it },
-                    placeholder = { Text("ইউজার সার্চ করুন (ইমেইল বা নাম)...", fontSize = 11.sp, color = Color(0xFF64748B)) },
-                    singleLine = true,
-                    colors = androidx.compose.material3.OutlinedTextFieldDefaults.colors(
-                        focusedTextColor = Color.White,
-                        unfocusedTextColor = Color.White,
-                        focusedBorderColor = Color(0xFF38BDF8),
-                        unfocusedBorderColor = Color(0xFF1E2D40),
-                        focusedContainerColor = Color(0xFF090E17),
-                        unfocusedContainerColor = Color(0xFF090E17)
-                    ),
-                    shape = RoundedCornerShape(8.dp),
-                    modifier = Modifier.fillMaxWidth()
+                Text(
+                    text = "💡 যেকোনো ইউজারের ডানপাশের '▼ ড্রপডাউন' বাটনে চাপ দিলে তার সকল ডাটা ও প্যানেল রেট অপশন ওপেন হবে:",
+                    fontSize = 10.sp,
+                    color = Color(0xFF38BDF8),
+                    fontWeight = FontWeight.SemiBold
                 )
 
-                Spacer(modifier = Modifier.height(10.dp))
+                Spacer(modifier = Modifier.height(8.dp))
 
                 val displayedUsers = remember(managedUsers, userFilterTab, userSearchQuery) {
                     val q = userSearchQuery.trim().lowercase()
                     managedUsers.filter { u ->
                         val matchesStatus = when (userFilterTab) {
                             "ACTIVE" -> u.isActive && !u.isBanned
+                            "AGENTS" -> u.isAgent
+                            "AGENT_USERS" -> u.createdByAgent.isNotBlank()
                             "INACTIVE" -> !u.isActive && !u.isBanned
                             "BANNED" -> u.isBanned
                             else -> true
                         }
-                        val matchesQuery = q.isEmpty() || u.email.lowercase().contains(q) || u.name.lowercase().contains(q)
+                        val matchesQuery = q.isEmpty() ||
+                                u.email.lowercase().contains(q) ||
+                                u.name.lowercase().contains(q) ||
+                                u.createdByAgent.lowercase().contains(q)
                         matchesStatus && matchesQuery
                     }
                 }
@@ -5823,7 +5904,7 @@ fun AdminUserManagerCard(
                     ) {
                         Text(
                             text = if (managedUsers.isEmpty()) "কোনো ইউজার অ্যাকাউন্ট তৈরি করা হয়নি। উপরে ইউজার তৈরি করুন।"
-                            else "এই ফিল্টারে কোনো ইউজার নেই।",
+                            else "এই ফিল্টার বা সার্চে কোনো ইউজার পাওয়া যায়নি।",
                             color = Color(0xFF64748B),
                             fontSize = 11.sp
                         )
@@ -5833,6 +5914,10 @@ fun AdminUserManagerCard(
                         displayedUsers.take(100).forEach { user ->
                             AdminUserItemRow(
                                 user = user,
+                                defaultUnixRate = defaultUnixRate,
+                                defaultPremiumV2Rate = defaultPremiumV2Rate,
+                                defaultKop1Rate = defaultKop1Rate,
+                                defaultKop2Rate = defaultKop2Rate,
                                 onToggleStatus = { AuthManager.toggleUserStatus(user.email) },
                                 onToggleBan = { AuthManager.toggleUserBan(user.email) },
                                 onResetLogins = { AuthManager.resetUserLogins(user.email) },
@@ -5891,6 +5976,10 @@ fun AdminUserManagerCard(
 @Composable
 fun AdminUserItemRow(
     user: AuthUser,
+    defaultUnixRate: Double = 0.50,
+    defaultPremiumV2Rate: Double = 0.50,
+    defaultKop1Rate: Double = 0.50,
+    defaultKop2Rate: Double = 0.50,
     onToggleStatus: () -> Unit,
     onToggleBan: () -> Unit,
     onResetLogins: () -> Unit,
@@ -5902,6 +5991,7 @@ fun AdminUserItemRow(
     onResetDeviceLock: (() -> Unit)? = null
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
+    var isUserDropdownExpanded by androidx.compose.runtime.saveable.rememberSaveable(user.email) { mutableStateOf(false) }
     var passwordVisible by remember { mutableStateOf(false) }
     var showPermissionsDialog by remember { mutableStateOf(false) }
     var showEditStatsDialog by remember { mutableStateOf(false) }
@@ -5910,6 +6000,10 @@ fun AdminUserItemRow(
     var showResetDeviceConfirmDialog by remember { mutableStateOf(false) }
 
     val isSubAdmin = user.role == "SUB_ADMIN"
+    val hasCustomRate = user.customUnixRate != null ||
+            user.customPremiumV2Rate != null ||
+            user.customKop1Rate != null ||
+            user.customKop2Rate != null
 
     Surface(
         color = if (user.isBanned) Color(0xFF180A0A)
@@ -5919,6 +6013,7 @@ fun AdminUserItemRow(
         border = BorderStroke(
             1.dp,
             if (user.isBanned) Color(0xFFEF4444)
+            else if (user.isAgent) Color(0xFF34D399)
             else if (isSubAdmin) Color(0xFF818CF8)
             else if (user.isActive) Color(0xFF10B981).copy(alpha = 0.6f)
             else Color(0xFFF59E0B).copy(alpha = 0.6f)
@@ -5930,190 +6025,378 @@ fun AdminUserItemRow(
                 .fillMaxWidth()
                 .padding(10.dp)
         ) {
+            // COLLAPSED HEADER (Always visible; clicking expands/collapses dropdown)
             Row(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { isUserDropdownExpanded = !isUserDropdownExpanded },
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        text = user.name,
-                        color = Color.White,
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Spacer(modifier = Modifier.width(6.dp))
-
-                    // Role Badge
-                    if (isSubAdmin) {
-                        Surface(
-                            color = Color(0xFF6366F1).copy(alpha = 0.25f),
-                            shape = RoundedCornerShape(4.dp),
-                            border = BorderStroke(1.dp, Color(0xFF818CF8))
-                        ) {
-                            Text(
-                                text = "🛡️ SUB ADMIN",
-                                color = Color(0xFFA5B4FC),
-                                fontSize = 8.sp,
-                                fontWeight = FontWeight.ExtraBold,
-                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
-                            )
-                        }
-                    } else {
-                        Surface(
-                            color = Color(0xFF334155).copy(alpha = 0.35f),
-                            shape = RoundedCornerShape(4.dp)
-                        ) {
-                            Text(
-                                text = "👤 USER",
-                                color = Color(0xFF94A3B8),
-                                fontSize = 8.sp,
-                                fontWeight = FontWeight.Bold,
-                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
-                            )
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.width(4.dp))
-
-                    if (user.isBanned) {
-                        Surface(
-                            color = Color(0xFFEF4444).copy(alpha = 0.25f),
-                            shape = RoundedCornerShape(4.dp),
-                            border = BorderStroke(1.dp, Color(0xFFEF4444))
-                        ) {
-                            Text(
-                                text = "🚫 BANNED",
-                                color = Color(0xFFF87171),
-                                fontSize = 8.sp,
-                                fontWeight = FontWeight.ExtraBold,
-                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
-                            )
-                        }
-                    } else if (user.isActive) {
-                        Surface(
-                            color = Color(0xFF10B981).copy(alpha = 0.2f),
-                            shape = RoundedCornerShape(4.dp),
-                            border = BorderStroke(1.dp, Color(0xFF10B981))
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.5.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Box(modifier = Modifier.size(5.dp).clip(CircleShape).background(Color(0xFF00E676)))
-                                Spacer(modifier = Modifier.width(3.dp))
-                                Text(
-                                    text = "🟢 ACTIVE",
-                                    color = Color(0xFF34D399),
-                                    fontSize = 8.5.sp,
-                                    fontWeight = FontWeight.ExtraBold
-                                )
-                            }
-                        }
-                    } else {
-                        Surface(
-                            color = Color(0xFFF59E0B).copy(alpha = 0.2f),
-                            shape = RoundedCornerShape(4.dp),
-                            border = BorderStroke(1.dp, Color(0xFFF59E0B))
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.5.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Box(modifier = Modifier.size(5.dp).clip(CircleShape).background(Color(0xFFF59E0B)))
-                                Spacer(modifier = Modifier.width(3.dp))
-                                Text(
-                                    text = "⚪ INACTIVE",
-                                    color = Color(0xFFFBBF24),
-                                    fontSize = 8.5.sp,
-                                    fontWeight = FontWeight.ExtraBold
-                                )
-                            }
-                        }
-                    }
-                }
-
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    IconButton(onClick = onCopy, modifier = Modifier.size(28.dp)) {
-                        Icon(Icons.Default.ContentCopy, contentDescription = "Copy", tint = Color(0xFF38BDF8), modifier = Modifier.size(14.dp))
-                    }
-                    IconButton(onClick = onToggleBan, modifier = Modifier.size(28.dp)) {
-                        Text(
-                            text = if (user.isBanned) "Unban" else "Ban",
-                            color = if (user.isBanned) Color(0xFF34D399) else Color(0xFFF87171),
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
-                    // Status Toggle Button with Clear Bengali / English Label
-                    Surface(
-                        color = if (user.isActive) Color(0xFFF59E0B).copy(alpha = 0.15f) else Color(0xFF10B981).copy(alpha = 0.15f),
-                        shape = RoundedCornerShape(6.dp),
-                        border = BorderStroke(1.dp, if (user.isActive) Color(0xFFF59E0B) else Color(0xFF10B981)),
-                        modifier = Modifier.clickable { onToggleStatus() }
+                Column(modifier = Modifier.weight(1f)) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.horizontalScroll(rememberScrollState())
                     ) {
                         Text(
-                            text = if (user.isActive) "নিষ্ক্রিয়" else "সক্রিয়",
-                            color = if (user.isActive) Color(0xFFFBBF24) else Color(0xFF34D399),
-                            fontSize = 9.5.sp,
-                            fontWeight = FontWeight.Bold,
-                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp)
+                            text = user.name,
+                            color = Color.White,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Bold
                         )
-                    }
-                    if (user.isBanned) {
-                        Surface(
-                            color = Color(0xFFDC2626).copy(alpha = 0.25f),
-                            shape = RoundedCornerShape(6.dp),
-                            border = BorderStroke(1.dp, Color(0xFFEF4444)),
-                            modifier = Modifier.clickable { onDelete() }
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp),
-                                verticalAlignment = Alignment.CenterVertically
+                        Spacer(modifier = Modifier.width(6.dp))
+
+                        // Role Badge
+                        if (isSubAdmin) {
+                            Surface(
+                                color = Color(0xFF6366F1).copy(alpha = 0.25f),
+                                shape = RoundedCornerShape(4.dp),
+                                border = BorderStroke(1.dp, Color(0xFF818CF8))
                             ) {
-                                Icon(Icons.Default.Delete, contentDescription = "Delete All User Data", tint = Color(0xFFF87171), modifier = Modifier.size(12.dp))
-                                Spacer(modifier = Modifier.width(3.dp))
-                                Text("Delete User Data", color = Color(0xFFF87171), fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                                Text(
+                                    text = "🛡️ SUB ADMIN",
+                                    color = Color(0xFFA5B4FC),
+                                    fontSize = 8.sp,
+                                    fontWeight = FontWeight.ExtraBold,
+                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                                )
+                            }
+                        } else if (user.isAgent) {
+                            Surface(
+                                color = Color(0xFF10B981).copy(alpha = 0.25f),
+                                shape = RoundedCornerShape(4.dp),
+                                border = BorderStroke(1.dp, Color(0xFF34D399))
+                            ) {
+                                Text(
+                                    text = "🤝 AGENT",
+                                    color = Color(0xFF34D399),
+                                    fontSize = 8.sp,
+                                    fontWeight = FontWeight.ExtraBold,
+                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                                )
+                            }
+                        } else {
+                            Surface(
+                                color = Color(0xFF334155).copy(alpha = 0.35f),
+                                shape = RoundedCornerShape(4.dp)
+                            ) {
+                                Text(
+                                    text = "👤 USER",
+                                    color = Color(0xFF94A3B8),
+                                    fontSize = 8.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                                )
                             }
                         }
-                    } else {
-                        IconButton(onClick = onDelete, modifier = Modifier.size(28.dp)) {
-                            Icon(Icons.Default.Delete, contentDescription = "Delete", tint = Color(0xFFEF4444), modifier = Modifier.size(14.dp))
+
+                        if (user.createdByAgent.isNotBlank()) {
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Surface(
+                                color = Color(0xFF0284C7).copy(alpha = 0.22f),
+                                shape = RoundedCornerShape(4.dp),
+                                border = BorderStroke(0.8.dp, Color(0xFF38BDF8))
+                            ) {
+                                Text(
+                                    text = "🤝 By: ${user.createdByAgent.substringBefore("@")}",
+                                    color = Color(0xFF38BDF8),
+                                    fontSize = 8.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                                )
+                            }
+                        }
+
+                        if (hasCustomRate) {
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Surface(
+                                color = Color(0xFFF59E0B).copy(alpha = 0.22f),
+                                shape = RoundedCornerShape(4.dp),
+                                border = BorderStroke(0.8.dp, Color(0xFFFBBF24))
+                            ) {
+                                Text(
+                                    text = "⚡ কাস্টম রেট",
+                                    color = Color(0xFFFBBF24),
+                                    fontSize = 8.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.width(4.dp))
+
+                        if (user.isBanned) {
+                            Surface(
+                                color = Color(0xFFEF4444).copy(alpha = 0.25f),
+                                shape = RoundedCornerShape(4.dp),
+                                border = BorderStroke(1.dp, Color(0xFFEF4444))
+                            ) {
+                                Text(
+                                    text = "🚫 BANNED",
+                                    color = Color(0xFFF87171),
+                                    fontSize = 8.sp,
+                                    fontWeight = FontWeight.ExtraBold,
+                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                                )
+                            }
+                        } else if (user.isActive) {
+                            Surface(
+                                color = Color(0xFF10B981).copy(alpha = 0.2f),
+                                shape = RoundedCornerShape(4.dp),
+                                border = BorderStroke(1.dp, Color(0xFF10B981))
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.5.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Box(modifier = Modifier.size(5.dp).clip(CircleShape).background(Color(0xFF00E676)))
+                                    Spacer(modifier = Modifier.width(3.dp))
+                                    Text(
+                                        text = "🟢 ACTIVE",
+                                        color = Color(0xFF34D399),
+                                        fontSize = 8.5.sp,
+                                        fontWeight = FontWeight.ExtraBold
+                                    )
+                                }
+                            }
+                        } else {
+                            Surface(
+                                color = Color(0xFFF59E0B).copy(alpha = 0.2f),
+                                shape = RoundedCornerShape(4.dp),
+                                border = BorderStroke(1.dp, Color(0xFFF59E0B))
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.5.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Box(modifier = Modifier.size(5.dp).clip(CircleShape).background(Color(0xFFF59E0B)))
+                                    Spacer(modifier = Modifier.width(3.dp))
+                                    Text(
+                                        text = "⚪ INACTIVE",
+                                        color = Color(0xFFFBBF24),
+                                        fontSize = 8.5.sp,
+                                        fontWeight = FontWeight.ExtraBold
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(3.dp))
+                    Text(
+                        text = user.email,
+                        color = Color(0xFF94A3B8),
+                        fontSize = 10.5.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Surface(color = Color(0xFF064E3B).copy(alpha = 0.5f), shape = RoundedCornerShape(4.dp)) {
+                            Text(
+                                text = "Today: ${user.todayOtps} OTP",
+                                color = Color(0xFF34D399),
+                                fontSize = 9.sp,
+                                fontWeight = FontWeight.ExtraBold,
+                                modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
+                            )
+                        }
+                        Surface(color = Color(0xFF1E293B), shape = RoundedCornerShape(4.dp)) {
+                            Text(
+                                text = "Total: ${user.totalOtps}",
+                                color = Color(0xFFFBBF24),
+                                fontSize = 9.sp,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
+                            )
+                        }
+                        Surface(color = Color(0xFF0C2A44), shape = RoundedCornerShape(4.dp)) {
+                            Text(
+                                text = "৳${String.format(Locale.US, "%.2f", user.balanceTk)}",
+                                color = Color(0xFF38BDF8),
+                                fontSize = 9.sp,
+                                fontWeight = FontWeight.ExtraBold,
+                                modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
+                            )
                         }
                     }
                 }
+
+                Spacer(modifier = Modifier.width(8.dp))
+
+                // Prominent Dropdown Toggle Button
+                Surface(
+                    color = if (isUserDropdownExpanded) Color(0xFF0284C7).copy(alpha = 0.3f) else Color(0xFF1E293B),
+                    shape = RoundedCornerShape(8.dp),
+                    border = BorderStroke(1.dp, if (isUserDropdownExpanded) Color(0xFF38BDF8) else Color(0xFF475569)),
+                    modifier = Modifier.clickable { isUserDropdownExpanded = !isUserDropdownExpanded }
+                ) {
+                    Text(
+                        text = if (isUserDropdownExpanded) "▲ লুকান" else "▼ ড্রপডাউন",
+                        color = if (isUserDropdownExpanded) Color(0xFF38BDF8) else Color.White,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                        modifier = Modifier.padding(horizontal = 9.dp, vertical = 6.dp)
+                    )
+                }
             }
 
-            Spacer(modifier = Modifier.height(3.dp))
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = user.email,
-                    color = Color(0xFF94A3B8),
-                    fontSize = 11.sp
-                )
+            // EXPANDABLE DROPDOWN CONTENT (Only shown when Dropdown is clicked)
+            AnimatedVisibility(visible = isUserDropdownExpanded) {
+                Column(modifier = Modifier.padding(top = 8.dp)) {
+                    HorizontalDivider(color = Color(0xFF1E293B))
+                    Spacer(modifier = Modifier.height(6.dp))
 
-                Text(
-                    text = if (user.isBanned) "🚫 অ্যাকাউন্ট ব্লকড"
-                           else if (user.isActive) "🟢 ইউজার সক্রিয় (লগইন সচল)"
-                           else "⚪ ইউজার নিষ্ক্রিয় (লগইন বন্ধ)",
-                    color = if (user.isBanned) Color(0xFFF87171)
-                            else if (user.isActive) Color(0xFF34D399)
-                            else Color(0xFFFBBF24),
-                    fontSize = 10.sp,
-                    fontWeight = FontWeight.SemiBold
-                )
-            }
+                    // Action Buttons Row (Copy, Ban/Unban, Active/Inactive, Delete)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = if (user.isBanned) "🚫 অ্যাকাউন্ট ব্লকড"
+                                   else if (user.isActive) "🟢 ইউজার সক্রিয় (লগইন সচল)"
+                                   else "⚪ ইউজার নিষ্ক্রিয় (লগইন বন্ধ)",
+                            color = if (user.isBanned) Color(0xFFF87171)
+                                    else if (user.isActive) Color(0xFF34D399)
+                                    else Color(0xFFFBBF24),
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
 
-            Spacer(modifier = Modifier.height(4.dp))
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            IconButton(onClick = onCopy, modifier = Modifier.size(28.dp)) {
+                                Icon(Icons.Default.ContentCopy, contentDescription = "Copy", tint = Color(0xFF38BDF8), modifier = Modifier.size(14.dp))
+                            }
+                            IconButton(onClick = onToggleBan, modifier = Modifier.size(34.dp)) {
+                                Text(
+                                    text = if (user.isBanned) "Unban" else "Ban",
+                                    color = if (user.isBanned) Color(0xFF34D399) else Color(0xFFF87171),
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                            Surface(
+                                color = if (user.isActive) Color(0xFFF59E0B).copy(alpha = 0.15f) else Color(0xFF10B981).copy(alpha = 0.15f),
+                                shape = RoundedCornerShape(6.dp),
+                                border = BorderStroke(1.dp, if (user.isActive) Color(0xFFF59E0B) else Color(0xFF10B981)),
+                                modifier = Modifier.clickable { onToggleStatus() }
+                            ) {
+                                Text(
+                                    text = if (user.isActive) "নিষ্ক্রিয়" else "সক্রিয়",
+                                    color = if (user.isActive) Color(0xFFFBBF24) else Color(0xFF34D399),
+                                    fontSize = 9.5.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp)
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(4.dp))
+                            if (user.isBanned) {
+                                Surface(
+                                    color = Color(0xFFDC2626).copy(alpha = 0.25f),
+                                    shape = RoundedCornerShape(6.dp),
+                                    border = BorderStroke(1.dp, Color(0xFFEF4444)),
+                                    modifier = Modifier.clickable { onDelete() }
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Icon(Icons.Default.Delete, contentDescription = "Delete All User Data", tint = Color(0xFFF87171), modifier = Modifier.size(12.dp))
+                                        Spacer(modifier = Modifier.width(3.dp))
+                                        Text("Delete User Data", color = Color(0xFFF87171), fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                                    }
+                                }
+                            } else {
+                                IconButton(onClick = onDelete, modifier = Modifier.size(28.dp)) {
+                                    Icon(Icons.Default.Delete, contentDescription = "Delete", tint = Color(0xFFEF4444), modifier = Modifier.size(14.dp))
+                                }
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(6.dp))
+
+                    // Per-User All-Panel Custom OTP Rate Adjuster Card (All 4 Panels including Premium Number V2)
+                    UserPanelRatesAdjusterCard(
+                        context = context,
+                        user = user,
+                        defaultUnixRate = defaultUnixRate,
+                        defaultPremiumV2Rate = defaultPremiumV2Rate,
+                        defaultKop1Rate = defaultKop1Rate,
+                        defaultKop2Rate = defaultKop2Rate
+                    )
+
+                    Spacer(modifier = Modifier.height(6.dp))
+
+                    // Quick Agent Role Toggle Row inside User Dropdown
+                    Surface(
+                        color = Color(0xFF0A1624),
+                        shape = RoundedCornerShape(6.dp),
+                        border = BorderStroke(1.dp, if (user.isAgent) Color(0xFF10B981) else Color(0xFF1E293B)),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 8.dp, vertical = 5.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = if (user.isAgent) "🤝 এজেন্ট স্ট্যাটাস: সক্রিয় (${user.agentCommissionOtpTarget} Today OTP = ৳${user.agentCommissionTkPerTarget})"
+                                           else "🤝 এজেন্ট রোল (ইউজার তৈরি ও কমিশন সিস্টেম)",
+                                    fontSize = 9.5.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (user.isAgent) Color(0xFF34D399) else Color(0xFF94A3B8)
+                                )
+                                if (user.createdByAgent.isNotBlank()) {
+                                    Text(
+                                        text = "তৈরি করেছেন এজেন্ট: ${user.createdByAgent}",
+                                        fontSize = 8.5.sp,
+                                        color = Color(0xFF38BDF8)
+                                    )
+                                }
+                            }
+                            Button(
+                                onClick = {
+                                    val (_, msg) = AuthManager.setAgentRoleByEmail(
+                                        emailInput = user.email,
+                                        isAgent = !user.isAgent,
+                                        commissionOtpTarget = user.agentCommissionOtpTarget,
+                                        commissionTkPerTarget = user.agentCommissionTkPerTarget
+                                    )
+                                    Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                                },
+                                shape = RoundedCornerShape(5.dp),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = if (user.isAgent) Color(0xFFDC2626) else Color(0xFF059669)
+                                ),
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                                modifier = Modifier.height(24.dp)
+                            ) {
+                                Text(
+                                    text = if (user.isAgent) "এজেন্ট বাতিল" else "🤝 Make Agent",
+                                    fontSize = 8.5.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color.White
+                                )
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
                         text = if (passwordVisible) "Pass: ${user.passwordHash}" else "Pass: ••••••••",
@@ -6749,6 +7032,8 @@ fun AdminUserItemRow(
                         }
                         Spacer(modifier = Modifier.height(4.dp))
                     }
+                }
+            }
                 }
             }
         }

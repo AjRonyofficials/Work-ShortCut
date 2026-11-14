@@ -420,9 +420,12 @@ fun PremiumNavigationMenu(
                         Spacer(modifier = Modifier.height(10.dp))
 
                         // Category Chips Filter
-                        val isAdminUser = com.example.service.AuthManager.isAdmin()
-                        val categories = remember(isAdminUser) {
-                            if (isAdminUser) listOf("ALL", "COMMUNICATION", "SECURITY", "PRODUCTIVITY", "SYSTEM", "ADMIN")
+                        val managedUsers by com.example.service.AuthManager.managedUsers.collectAsStateWithLifecycle()
+                        val canAccessAdminOrAgent = remember(managedUsers) {
+                            com.example.service.AuthManager.canAccessAdminOrAgentPanel()
+                        }
+                        val categories = remember(canAccessAdminOrAgent) {
+                            if (canAccessAdminOrAgent) listOf("ALL", "COMMUNICATION", "SECURITY", "PRODUCTIVITY", "SYSTEM", "ADMIN")
                             else listOf("ALL", "COMMUNICATION", "SECURITY", "PRODUCTIVITY", "SYSTEM")
                         }
                         Row(
@@ -457,9 +460,9 @@ fun PremiumNavigationMenu(
 
                         Spacer(modifier = Modifier.height(10.dp))
 
-                        // Filtered Tabs: strictly hide ADMIN_PANEL if not admin
+                        // Filtered Tabs: strictly hide ADMIN_PANEL if neither admin nor agent
                         val filteredTabs = AppNavTab.entries.filter { tab ->
-                            if (tab == AppNavTab.ADMIN_PANEL && !isAdminUser) {
+                            if (tab == AppNavTab.ADMIN_PANEL && !canAccessAdminOrAgent) {
                                 return@filter false
                             }
                             val matchSearch = searchQuery.isBlank() ||

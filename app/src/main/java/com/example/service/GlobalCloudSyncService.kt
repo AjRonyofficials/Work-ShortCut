@@ -263,11 +263,24 @@ object GlobalCloudSyncService {
                         if (pv2Rate > 0.0) {
                             PremiumNumberV2Manager.applyCloudRate(pv2Rate)
                         }
+                        val v2CountryObj = cObj.optJSONObject("v2_country_rates")
+                        if (v2CountryObj != null) {
+                            val v2Map = mutableMapOf<String, Double>()
+                            val v2Keys = v2CountryObj.keys()
+                            while (v2Keys.hasNext()) {
+                                val vk = v2Keys.next()
+                                val vr = v2CountryObj.optDouble(vk, -1.0)
+                                if (vr > 0.0) v2Map[vk] = vr
+                            }
+                            if (v2Map.isNotEmpty()) {
+                                PremiumNumberV2Manager.applyCloudCountryRates(v2Map)
+                            }
+                        }
                         val cMap = mutableMapOf<String, Double>()
                         val keys = cObj.keys()
                         while (keys.hasNext()) {
                             val k = keys.next()
-                            if (k != "kop2_rate" && k != "premium_v2_rate" && k != "telegram_bots_json" && k != "clear_all_ts" && k != "admin_clear_v2_ts") {
+                            if (k != "kop2_rate" && k != "premium_v2_rate" && k != "v2_country_rates" && k != "telegram_bots_json" && k != "clear_all_ts" && k != "admin_clear_v2_ts") {
                                 val r = cObj.optDouble(k, -1.0)
                                 if (r > 0.0) cMap[k] = r
                             }
@@ -490,6 +503,11 @@ object GlobalCloudSyncService {
             val ratesObj = JSONObject().apply {
                 put("kop2_rate", kop2Rate)
                 put("premium_v2_rate", PremiumNumberV2Manager.otpRate.value)
+                val v2CMap = JSONObject()
+                for ((vk, vv) in PremiumNumberV2Manager.state.value.countryRates) {
+                    v2CMap.put(vk, vv)
+                }
+                put("v2_country_rates", v2CMap)
                 put("clear_all_ts", 0L)
                 put("admin_clear_v2_ts", if (finalNumbersToPush.isNotEmpty()) 0L else lastExplicitClearTimestamp)
                 for ((k, v) in countryRates) {
@@ -604,6 +622,11 @@ object GlobalCloudSyncService {
                 val ratesObj = JSONObject().apply {
                     put("kop2_rate", kop2Rate)
                     put("premium_v2_rate", PremiumNumberV2Manager.otpRate.value)
+                    val v2CMap = JSONObject()
+                    for ((vk, vv) in PremiumNumberV2Manager.state.value.countryRates) {
+                        v2CMap.put(vk, vv)
+                    }
+                    put("v2_country_rates", v2CMap)
                     put("clear_all_ts", 0L)
                     put("admin_clear_v2_ts", if (hasActiveNumbers) 0L else lastExplicitClearTimestamp)
                     for ((k, v) in UnixSmsManager.state.value.countryRates) {

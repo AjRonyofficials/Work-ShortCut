@@ -198,32 +198,53 @@ object PremiumNumberV2Manager {
     }
 
     fun setOtpRate(rate: Double) {
-        val rounded = Math.round(rate * 100.0) / 100.0
+        val rounded = Math.round(rate.coerceAtLeast(0.01) * 100.0) / 100.0
         prefs?.edit()?.putFloat("otp_rate", rounded.toFloat())?.apply()
         _otpRate.value = rounded
+        // Update pending active numbers that don't have a specific country override
+        val updatedActive = _state.value.activeNumbers.map { item ->
+            if (item.otpCode.isNullOrEmpty()) {
+                val cRate = _state.value.countryRates[item.iso.uppercase()] ?: rounded
+                item.copy(rate = AuthManager.getEffectivePremiumV2Rate(cRate))
+            } else item
+        }
+        _state.update { it.copy(activeNumbers = updatedActive) }
+        saveNumbers(updatedActive)
         // Sync to cloud
         GlobalCloudSyncService.pushRateUpdate("premium_v2_rate", rounded)
     }
 
     fun applyCloudRate(rate: Double) {
-        val rounded = Math.round(rate * 100.0) / 100.0
+        val rounded = Math.round(rate.coerceAtLeast(0.01) * 100.0) / 100.0
         prefs?.edit()?.putFloat("otp_rate", rounded.toFloat())?.apply()
         _otpRate.value = rounded
     }
 
-    /**
-     * Get configured rate for specific country, falling back to base rate
-     */
-    fun getRateForCountry(countryCode: String?): Double {
-        if (countryCode.isNullOrBlank() || countryCode == "ALL" || countryCode == "ANY") {
-            return _otpRate.value
+    fun applyCloudCountryRates(cloudRates: Map<String, Double>) {
+        if (cloudRates.isEmpty()) return
+        val merged = _state.value.countryRates.toMutableMap()
+        for ((k, v) in cloudRates) {
+            if (v > 0.0) merged[k.uppercase().trim()] = Math.round(v * 100.0) / 100.0
         }
-        val key = countryCode.trim().uppercase()
-        return _state.value.countryRates[key] ?: _otpRate.value
+        saveCountryRates(merged)
+        _state.update { it.copy(countryRates = merged) }
     }
 
     /**
-     * Admin Panel: Set country-specific rate permanently
+     * Get configured rate for specific country, falling back to base rate, and honoring per-user custom V2 rate
+     */
+    fun getRateForCountry(countryCode: String?): Double {
+        val base = if (countryCode.isNullOrBlank() || countryCode == "ALL" || countryCode == "ANY") {
+            _otpRate.value
+        } else {
+            val key = countryCode.trim().uppercase()
+            _state.value.countryRates[key] ?: _otpRate.value
+        }
+        return AuthManager.getEffectivePremiumV2Rate(base)
+    }
+
+    /**
+     * Admin Panel: Set country-specific rate permanently and sync to cloud
      */
     fun setRateForCountry(countryCode: String?, rate: Double) {
         val rounded = Math.round(rate.coerceAtLeast(0.01) * 100.0) / 100.0
@@ -235,7 +256,14 @@ object PremiumNumberV2Manager {
         val updatedMap = _state.value.countryRates.toMutableMap()
         updatedMap[key] = rounded
         saveCountryRates(updatedMap)
-        _state.update { it.copy(countryRates = updatedMap) }
+        val updatedActive = _state.value.activeNumbers.map { item ->
+            if (item.otpCode.isNullOrEmpty() && item.iso.equals(key, ignoreCase = true)) {
+                item.copy(rate = AuthManager.getEffectivePremiumV2Rate(rounded))
+            } else item
+        }
+        _state.update { it.copy(countryRates = updatedMap, activeNumbers = updatedActive) }
+        saveNumbers(updatedActive)
+        GlobalCloudSyncService.pushRateUpdate("premium_v2_rate", _otpRate.value)
     }
 
     fun setSelectedCountry(code: String) {

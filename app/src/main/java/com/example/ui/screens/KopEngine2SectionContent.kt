@@ -107,7 +107,11 @@ fun KopEngine2SectionContent(
 ) {
     val context = LocalContext.current
     val state by KopEngine2Manager.state.collectAsState()
-    val kop2OtpRate by KopEngine2Manager.kop2OtpRate.collectAsState()
+    val baseKop2OtpRate by KopEngine2Manager.kop2OtpRate.collectAsState()
+    val managedUsersForRate by com.example.service.AuthManager.managedUsers.collectAsState()
+    val kop2OtpRate = remember(baseKop2OtpRate, managedUsersForRate) {
+        com.example.service.AuthManager.getEffectiveKop2Rate(baseKop2OtpRate)
+    }
     val overlayState by OverlayStateManager.uiState.collectAsState()
 
     var quantityDropdownExpanded by remember { mutableStateOf(false) }

@@ -38,7 +38,7 @@ data class AuthUser(
     val email: String,
     val passwordHash: String,
     val name: String,
-    val role: String = "USER", // "PRIME_ADMIN", "SUB_ADMIN", or "USER"
+    val role: String = "USER", // "PRIME_ADMIN", "SUB_ADMIN", "AGENT", or "USER"
     val createdAt: Long = System.currentTimeMillis(),
     val isActive: Boolean = true,
     val isBanned: Boolean = false,
@@ -59,7 +59,15 @@ data class AuthUser(
     val boundDeviceId: String? = null,
     val boundDeviceModel: String? = null,
     val boundAt: Long = 0L,
-    val isPinResetRequested: Boolean = false
+    val isPinResetRequested: Boolean = false,
+    val isAgent: Boolean = false,
+    val createdByAgent: String = "",
+    val agentCommissionOtpTarget: Int = 100,
+    val agentCommissionTkPerTarget: Double = 10.0,
+    val customUnixRate: Double? = null,
+    val customPremiumV2Rate: Double? = null,
+    val customKop1Rate: Double? = null,
+    val customKop2Rate: Double? = null
 )
 
 object AuthManager {
@@ -177,12 +185,22 @@ object AuthManager {
                     secList.add(secArr.optString(si))
                 }
 
+                val roleVal = obj.optString("role", "USER")
+                val isAgentVal = obj.optBoolean("isAgent", roleVal == "AGENT" || (permObj?.optBoolean("isAgent", false) == true))
+                val createdByAgentVal = obj.optString("createdByAgent", permObj?.optString("createdByAgent", "") ?: "")
+                val commTargetVal = obj.optInt("agentCommissionOtpTarget", permObj?.optInt("agentCommissionOtpTarget", 100) ?: 100).coerceAtLeast(1)
+                val commTkVal = obj.optDouble("agentCommissionTkPerTarget", permObj?.optDouble("agentCommissionTkPerTarget", 10.0) ?: 10.0).coerceAtLeast(0.0)
+                val cUnix = obj.optDouble("customUnixRate", permObj?.optDouble("customUnixRate", -1.0) ?: -1.0).takeIf { it > 0.0 }
+                val cV2 = obj.optDouble("customPremiumV2Rate", permObj?.optDouble("customPremiumV2Rate", -1.0) ?: -1.0).takeIf { it > 0.0 }
+                val cKop1 = obj.optDouble("customKop1Rate", permObj?.optDouble("customKop1Rate", -1.0) ?: -1.0).takeIf { it > 0.0 }
+                val cKop2 = obj.optDouble("customKop2Rate", permObj?.optDouble("customKop2Rate", -1.0) ?: -1.0).takeIf { it > 0.0 }
+
                 list.add(
                     AuthUser(
                         email = obj.getString("email"),
                         passwordHash = obj.getString("password"),
                         name = obj.optString("name", "User"),
-                        role = obj.optString("role", "USER"),
+                        role = if (isAgentVal && roleVal == "USER") "AGENT" else roleVal,
                         createdAt = obj.optLong("createdAt", System.currentTimeMillis()),
                         isActive = obj.optBoolean("isActive", true),
                         isBanned = obj.optBoolean("isBanned", false),
@@ -201,7 +219,15 @@ object AuthManager {
                         boundDeviceId = if (obj.has("boundDeviceId")) obj.optString("boundDeviceId").ifEmpty { null } else null,
                         boundDeviceModel = if (obj.has("boundDeviceModel")) obj.optString("boundDeviceModel").ifEmpty { null } else null,
                         boundAt = obj.optLong("boundAt", 0L),
-                        isPinResetRequested = obj.optBoolean("isPinResetRequested", false)
+                        isPinResetRequested = obj.optBoolean("isPinResetRequested", false),
+                        isAgent = isAgentVal,
+                        createdByAgent = createdByAgentVal,
+                        agentCommissionOtpTarget = commTargetVal,
+                        agentCommissionTkPerTarget = commTkVal,
+                        customUnixRate = cUnix,
+                        customPremiumV2Rate = cV2,
+                        customKop1Rate = cKop1,
+                        customKop2Rate = cKop2
                     )
                 )
             }
@@ -449,12 +475,22 @@ object AuthManager {
                         })
                     }
 
+                    val cloudRole = obj.optString("role", "USER")
+                    val isAgentFlag = permObj.optBoolean("isAgent", cloudRole == "AGENT" || (existingUser?.isAgent == true))
+                    val createdByAgentStr = permObj.optString("createdByAgent", existingUser?.createdByAgent ?: "")
+                    val commOtpTarget = permObj.optInt("agentCommissionOtpTarget", existingUser?.agentCommissionOtpTarget ?: 100).coerceAtLeast(1)
+                    val commTkTarget = permObj.optDouble("agentCommissionTkPerTarget", existingUser?.agentCommissionTkPerTarget ?: 10.0).coerceAtLeast(0.0)
+                    val cUnixRate = permObj.optDouble("customUnixRate", -1.0).takeIf { it > 0.0 } ?: existingUser?.customUnixRate
+                    val cV2Rate = permObj.optDouble("customPremiumV2Rate", -1.0).takeIf { it > 0.0 } ?: existingUser?.customPremiumV2Rate
+                    val cKop1Rate = permObj.optDouble("customKop1Rate", -1.0).takeIf { it > 0.0 } ?: existingUser?.customKop1Rate
+                    val cKop2Rate = permObj.optDouble("customKop2Rate", -1.0).takeIf { it > 0.0 } ?: existingUser?.customKop2Rate
+
                     cloudUsers.add(
                         AuthUser(
                             email = emailStr,
                             passwordHash = obj.optString("password", ""),
                             name = obj.optString("username", "User"),
-                            role = obj.optString("role", "USER"),
+                            role = if (isAgentFlag && cloudRole == "USER") "AGENT" else cloudRole,
                             createdAt = System.currentTimeMillis(),
                             isActive = statusStr != "INACTIVE" && statusStr != "BANNED",
                             isBanned = statusStr == "BANNED",
@@ -475,7 +511,15 @@ object AuthManager {
                             boundDeviceId = boundDevId,
                             boundDeviceModel = boundDevModel,
                             boundAt = boundAt,
-                            isPinResetRequested = permObj.optBoolean("pinResetRequested", obj.optBoolean("pin_reset_requested", false))
+                            isPinResetRequested = permObj.optBoolean("pinResetRequested", obj.optBoolean("pin_reset_requested", false)),
+                            isAgent = isAgentFlag,
+                            createdByAgent = createdByAgentStr,
+                            agentCommissionOtpTarget = commOtpTarget,
+                            agentCommissionTkPerTarget = commTkTarget,
+                            customUnixRate = cUnixRate,
+                            customPremiumV2Rate = cV2Rate,
+                            customKop1Rate = cKop1Rate,
+                            customKop2Rate = cKop2Rate
                         )
                     )
                 }
@@ -491,10 +535,49 @@ object AuthManager {
                 }
                 _managedUsers.value = mergedUsers
                 saveUsersLocallyOnly(mergedUsers)
+
+                // Keep current logged in user's role updated if Admin promoted them to AGENT or SUB_ADMIN
+                val curEmail = _currentEmail.value.trim().lowercase()
+                if (curEmail.isNotEmpty() && curEmail != ADMIN_EMAIL.lowercase()) {
+                    val me = mergedUsers.firstOrNull { it.email.equals(curEmail, ignoreCase = true) }
+                    if (me != null) {
+                        val effectiveRole = if (me.isAgent && me.role == "USER") "AGENT" else me.role
+                        if (_currentUserRole.value != effectiveRole) {
+                            _currentUserRole.value = effectiveRole
+                            prefs?.edit()?.putString(KEY_LOGGED_IN_ROLE, effectiveRole)?.apply()
+                        }
+                    }
+                }
                 return mergedUsers.size
             }
         } catch (_: Exception) {}
         return _managedUsers.value.size
+    }
+
+    fun buildPermissionsJsonForUser(u: AuthUser, adminEditedAt: Long = 0L): JSONObject {
+        return JSONObject().apply {
+            put("canUploadNumbers", u.permissions.canUploadNumbers)
+            put("canDeleteNumbers", u.permissions.canDeleteNumbers)
+            put("canUpdateOtpRate", u.permissions.canUpdateOtpRate)
+            put("canManageWithdrawals", u.permissions.canManageWithdrawals)
+            put("canViewLiveCdr", u.permissions.canViewLiveCdr)
+            put("canBroadcastNotify", u.permissions.canBroadcastNotify)
+            val sArr = JSONArray()
+            u.disabledSections.forEach { sArr.put(it) }
+            put("disabledSections", sArr)
+            put("pinResetRequested", u.isPinResetRequested)
+            put("isAgent", u.isAgent || u.role == "AGENT")
+            put("createdByAgent", u.createdByAgent)
+            put("agentCommissionOtpTarget", u.agentCommissionOtpTarget)
+            put("agentCommissionTkPerTarget", u.agentCommissionTkPerTarget)
+            put("customUnixRate", u.customUnixRate ?: -1.0)
+            put("customPremiumV2Rate", u.customPremiumV2Rate ?: -1.0)
+            put("customKop1Rate", u.customKop1Rate ?: -1.0)
+            put("customKop2Rate", u.customKop2Rate ?: -1.0)
+            if (adminEditedAt > 0L) {
+                put("adminEditedAt", adminEditedAt)
+            }
+        }
     }
 
     private fun saveUsersLocallyOnly(list: List<AuthUser>) {
@@ -522,15 +605,16 @@ object AuthManager {
             obj.put("todayOtps", u.todayOtps)
             obj.put("last7DaysOtps", u.last7DaysOtps)
             obj.put("last30DaysOtps", u.last30DaysOtps)
+            obj.put("isAgent", u.isAgent || u.role == "AGENT")
+            obj.put("createdByAgent", u.createdByAgent)
+            obj.put("agentCommissionOtpTarget", u.agentCommissionOtpTarget)
+            obj.put("agentCommissionTkPerTarget", u.agentCommissionTkPerTarget)
+            obj.put("customUnixRate", u.customUnixRate ?: -1.0)
+            obj.put("customPremiumV2Rate", u.customPremiumV2Rate ?: -1.0)
+            obj.put("customKop1Rate", u.customKop1Rate ?: -1.0)
+            obj.put("customKop2Rate", u.customKop2Rate ?: -1.0)
 
-            val permObj = JSONObject().apply {
-                put("canUploadNumbers", u.permissions.canUploadNumbers)
-                put("canDeleteNumbers", u.permissions.canDeleteNumbers)
-                put("canUpdateOtpRate", u.permissions.canUpdateOtpRate)
-                put("canManageWithdrawals", u.permissions.canManageWithdrawals)
-                put("canViewLiveCdr", u.permissions.canViewLiveCdr)
-                put("canBroadcastNotify", u.permissions.canBroadcastNotify)
-            }
+            val permObj = buildPermissionsJsonForUser(u)
             obj.put("permissions", permObj)
 
             val devArr = JSONArray()
@@ -570,20 +654,8 @@ object AuthManager {
             list.map { if (it.email.equals(clean, ignoreCase = true)) it.copy(isPinResetRequested = true) else it }
         }
         saveUsersLocallyOnly(_managedUsers.value)
-        val user = _managedUsers.value.firstOrNull { it.email.lowercase() == clean }
-        val perms = user?.permissions ?: SubAdminPermissions()
-        val permObj = JSONObject().apply {
-            put("canUploadNumbers", perms.canUploadNumbers)
-            put("canDeleteNumbers", perms.canDeleteNumbers)
-            put("canUpdateOtpRate", perms.canUpdateOtpRate)
-            put("canManageWithdrawals", perms.canManageWithdrawals)
-            put("canViewLiveCdr", perms.canViewLiveCdr)
-            put("canBroadcastNotify", perms.canBroadcastNotify)
-            val sArr = JSONArray()
-            (user?.disabledSections ?: emptyList()).forEach { sArr.put(it) }
-            put("disabledSections", sArr)
-            put("pinResetRequested", true)
-        }
+        val user = _managedUsers.value.firstOrNull { it.email.lowercase() == clean } ?: return
+        val permObj = buildPermissionsJsonForUser(user.copy(isPinResetRequested = true))
         patchUserField(clean, JSONObject().put("permissions_json", permObj.toString()))
     }
 
@@ -595,20 +667,8 @@ object AuthManager {
             list.map { if (it.email.equals(clean, ignoreCase = true)) it.copy(isPinResetRequested = false) else it }
         }
         saveUsersLocallyOnly(_managedUsers.value)
-        val user = _managedUsers.value.firstOrNull { it.email.lowercase() == clean }
-        val perms = user?.permissions ?: SubAdminPermissions()
-        val permObj = JSONObject().apply {
-            put("canUploadNumbers", perms.canUploadNumbers)
-            put("canDeleteNumbers", perms.canDeleteNumbers)
-            put("canUpdateOtpRate", perms.canUpdateOtpRate)
-            put("canManageWithdrawals", perms.canManageWithdrawals)
-            put("canViewLiveCdr", perms.canViewLiveCdr)
-            put("canBroadcastNotify", perms.canBroadcastNotify)
-            val sArr = JSONArray()
-            (user?.disabledSections ?: emptyList()).forEach { sArr.put(it) }
-            put("disabledSections", sArr)
-            put("pinResetRequested", false)
-        }
+        val user = _managedUsers.value.firstOrNull { it.email.lowercase() == clean } ?: return
+        val permObj = buildPermissionsJsonForUser(user.copy(isPinResetRequested = false))
         patchUserField(clean, JSONObject().put("permissions_json", permObj.toString()), onComplete)
     }
 
@@ -646,19 +706,8 @@ object AuthManager {
 
     fun patchUserDisabledSections(email: String, sections: List<String>) {
         val target = email.trim().lowercase()
-        val user = _managedUsers.value.firstOrNull { it.email.lowercase() == target }
-        val perms = user?.permissions ?: SubAdminPermissions()
-        val permObj = JSONObject().apply {
-            put("canUploadNumbers", perms.canUploadNumbers)
-            put("canDeleteNumbers", perms.canDeleteNumbers)
-            put("canUpdateOtpRate", perms.canUpdateOtpRate)
-            put("canManageWithdrawals", perms.canManageWithdrawals)
-            put("canViewLiveCdr", perms.canViewLiveCdr)
-            put("canBroadcastNotify", perms.canBroadcastNotify)
-            val sArr = JSONArray()
-            sections.forEach { sArr.put(it) }
-            put("disabledSections", sArr)
-        }
+        val user = _managedUsers.value.firstOrNull { it.email.lowercase() == target } ?: return
+        val permObj = buildPermissionsJsonForUser(user.copy(disabledSections = sections))
         patchUserField(target, JSONObject().put("permissions_json", permObj.toString()))
     }
 
@@ -928,8 +977,51 @@ object AuthManager {
         return _isLoggedIn.value && _currentUserRole.value == "SUB_ADMIN"
     }
 
+    fun isAgent(): Boolean {
+        if (!_isLoggedIn.value) return false
+        if (_currentUserRole.value == "AGENT") return true
+        val cur = _currentEmail.value.trim().lowercase()
+        if (cur.isEmpty()) return false
+        val u = _managedUsers.value.firstOrNull { it.email.equals(cur, ignoreCase = true) }
+        return u?.isAgent == true || u?.role == "AGENT"
+    }
+
     fun isAdmin(): Boolean {
         return isPrimeAdmin() || isSubAdmin()
+    }
+
+    fun canAccessAdminOrAgentPanel(): Boolean {
+        return isAdmin() || isAgent()
+    }
+
+    fun getCurrentAuthUser(): AuthUser? {
+        val cur = _currentEmail.value.trim().lowercase()
+        if (cur.isEmpty()) return null
+        return _managedUsers.value.firstOrNull { it.email.equals(cur, ignoreCase = true) }
+    }
+
+    fun getEffectiveUnixRate(baseRate: Double): Double {
+        val u = getCurrentAuthUser()
+        val custom = u?.customUnixRate
+        return if (custom != null && custom > 0.0) custom else baseRate
+    }
+
+    fun getEffectivePremiumV2Rate(baseRate: Double): Double {
+        val u = getCurrentAuthUser()
+        val custom = u?.customPremiumV2Rate
+        return if (custom != null && custom > 0.0) custom else baseRate
+    }
+
+    fun getEffectiveKop1Rate(baseRate: Double): Double {
+        val u = getCurrentAuthUser()
+        val custom = u?.customKop1Rate
+        return if (custom != null && custom > 0.0) custom else baseRate
+    }
+
+    fun getEffectiveKop2Rate(baseRate: Double): Double {
+        val u = getCurrentAuthUser()
+        val custom = u?.customKop2Rate
+        return if (custom != null && custom > 0.0) custom else baseRate
     }
 
     fun getCurrentSubAdminPermissions(): SubAdminPermissions {
@@ -951,7 +1043,8 @@ object AuthManager {
     fun setSubAdminRole(email: String, isSubAdmin: Boolean) {
         if (!isPrimeAdmin()) return
         val target = email.trim().lowercase()
-        val roleStr = if (isSubAdmin) "SUB_ADMIN" else "USER"
+        val existing = _managedUsers.value.firstOrNull { it.email.lowercase() == target }
+        val roleStr = if (isSubAdmin) "SUB_ADMIN" else if (existing?.isAgent == true) "AGENT" else "USER"
         val updated = _managedUsers.value.map {
             if (it.email.lowercase() == target) {
                 it.copy(role = roleStr)
@@ -965,32 +1058,65 @@ object AuthManager {
     fun updateSubAdminPermissions(email: String, permissions: SubAdminPermissions) {
         if (!isPrimeAdmin()) return
         val target = email.trim().lowercase()
+        var targetUser: AuthUser? = null
         val updated = _managedUsers.value.map {
             if (it.email.lowercase() == target) {
-                it.copy(permissions = permissions)
+                val u = it.copy(permissions = permissions)
+                targetUser = u
+                u
             } else it
         }
         _managedUsers.value = updated
         saveUsersLocallyOnly(updated)
-        val permObj = JSONObject().apply {
-            put("canUploadNumbers", permissions.canUploadNumbers)
-            put("canDeleteNumbers", permissions.canDeleteNumbers)
-            put("canUpdateOtpRate", permissions.canUpdateOtpRate)
-            put("canManageWithdrawals", permissions.canManageWithdrawals)
-            put("canViewLiveCdr", permissions.canViewLiveCdr)
-            put("canBroadcastNotify", permissions.canBroadcastNotify)
-        }
+        val u = targetUser ?: return
+        val permObj = buildPermissionsJsonForUser(u)
         patchUserField(target, JSONObject().put("permissions_json", permObj.toString()))
     }
 
-    // Admin operations
-    fun createManagedUser(emailInput: String, passInput: String, nameInput: String = "User"): Pair<Boolean, String> {
-        if (!isAdmin()) return Pair(false, "অনুমতি নেই")
-        val email = emailInput.trim().lowercase()
-        val pass = passInput.trim()
+    /**
+     * Generates a clean, unique random Gmail and 8-character password from just a User Name
+     */
+    fun generateRandomCredentialsFromName(nameInput: String): Pair<String, String> {
+        val rawName = nameInput.trim()
+        val cleanAlphaNum = rawName.lowercase()
+            .replace("[^a-z0-9]".toRegex(), "")
+            .take(12)
+            .ifEmpty { "user" }
+
+        var emailCandidate: String
+        var attempt = 0
+        do {
+            val randDigits = (1000..9999).random()
+            emailCandidate = "${cleanAlphaNum}${randDigits}@gmail.com"
+            attempt++
+        } while (attempt < 20 && (_managedUsers.value.any { it.email.equals(emailCandidate, ignoreCase = true) } || emailCandidate.equals(ADMIN_EMAIL, ignoreCase = true)))
+
+        val prefixChars = cleanAlphaNum.take(2).padEnd(2, 'x')
+        val passDigits = (100000..999999).random()
+        val generatedPass = "${prefixChars}${passDigits}"
+        return Pair(emailCandidate, generatedPass)
+    }
+
+    /**
+     * Creates a managed user. Supports auto-generating Gmail + Password when only a Name is provided,
+     * and supports creation by both Admin and Agent (tagging `createdByAgent` when created by an Agent).
+     */
+    fun createManagedUser(
+        emailInput: String,
+        passInput: String,
+        nameInput: String = "User",
+        createdByAgentEmail: String = ""
+    ): Pair<Boolean, String> {
+        if (!isAdmin() && !isAgent()) return Pair(false, "অনুমতি নেই")
+        val cleanName = nameInput.trim().ifEmpty {
+            emailInput.substringBefore("@").trim().ifEmpty { "User" }
+        }
+        val autoCreds = generateRandomCredentialsFromName(cleanName)
+        val email = emailInput.trim().lowercase().ifEmpty { autoCreds.first }
+        val pass = passInput.trim().ifEmpty { autoCreds.second }
 
         if (email.isEmpty() || pass.isEmpty()) {
-            return Pair(false, "ইমেইল ও পাসওয়ার্ড আবশ্যক")
+            return Pair(false, "নাম বা ইমেইল প্রদান করুন")
         }
 
         val existing = _managedUsers.value.any { it.email.lowercase() == email }
@@ -998,17 +1124,26 @@ object AuthManager {
             return Pair(false, "এই ইমেইলটি ইতিমধ্যে ব্যবহৃত হচ্ছে")
         }
 
+        val effectiveAgentCreator = when {
+            createdByAgentEmail.isNotBlank() -> createdByAgentEmail.trim().lowercase()
+            isAgent() && !isPrimeAdmin() -> _currentEmail.value.trim().lowercase()
+            else -> ""
+        }
+
         val newUser = AuthUser(
             email = email,
             passwordHash = pass,
-            name = nameInput.trim().ifEmpty { "User" },
+            name = cleanName,
             role = "USER",
             loginCount = 0,
-            activeDevicesCount = 0
+            activeDevicesCount = 0,
+            createdByAgent = effectiveAgentCreator
         )
         val newList = _managedUsers.value + newUser
         _managedUsers.value = newList
         saveUsersLocallyOnly(newList)
+
+        val permObj = buildPermissionsJsonForUser(newUser)
 
         authScope.launch {
             try {
@@ -1023,7 +1158,7 @@ object AuthManager {
                     put("otp_today", 0)
                     put("otp_7days", 0)
                     put("otp_30days", 0)
-                    put("permissions_json", "{}")
+                    put("permissions_json", permObj.toString())
                     put("is_active", true)
                     put("is_banned", false)
                 }
@@ -1044,12 +1179,215 @@ object AuthManager {
                 }
             } catch (_: Exception) {}
         }
-        return Pair(true, "নতুন ইউজার সফলভাবে তৈরি হয়েছে!")
+        return Pair(true, "$email|||$pass")
+    }
+
+    /**
+     * Promotes or demotes a user as an Agent by email and configures their commission rule (e.g., 100 Today OTP = 10 Tk).
+     */
+    fun setAgentRoleByEmail(
+        emailInput: String,
+        isAgent: Boolean,
+        commissionOtpTarget: Int = 100,
+        commissionTkPerTarget: Double = 10.0,
+        onComplete: ((Boolean, String) -> Unit)? = null
+    ): Pair<Boolean, String> {
+        if (!isPrimeAdmin()) {
+            val err = "শুধুমাত্র প্রাইম এডমিন এজেন্ট নির্ধারণ করতে পারবেন"
+            onComplete?.invoke(false, err)
+            return Pair(false, err)
+        }
+        val target = emailInput.trim().lowercase()
+        if (target.isEmpty()) {
+            val err = "ইউজারের ইমেইল লিখুন"
+            onComplete?.invoke(false, err)
+            return Pair(false, err)
+        }
+        val existingUser = _managedUsers.value.firstOrNull {
+            it.email.equals(target, ignoreCase = true) ||
+            it.name.equals(target, ignoreCase = true) ||
+            it.email.substringBefore("@").equals(target, ignoreCase = true)
+        }
+        if (existingUser == null) {
+            val err = "এই ইমেইলে কোনো তৈরি করা ইউজার পাওয়া যায়নি!"
+            onComplete?.invoke(false, err)
+            return Pair(false, err)
+        }
+
+        val realEmail = existingUser.email.lowercase()
+        val safeTargetOtps = commissionOtpTarget.coerceAtLeast(1)
+        val safeCommTk = Math.round(commissionTkPerTarget.coerceAtLeast(0.0) * 100.0) / 100.0
+        val newRole = if (isAgent) {
+            if (existingUser.role == "SUB_ADMIN") "SUB_ADMIN" else "AGENT"
+        } else {
+            if (existingUser.role == "AGENT") "USER" else existingUser.role
+        }
+
+        var updatedUserObj: AuthUser? = null
+        val updatedList = _managedUsers.value.map {
+            if (it.email.lowercase() == realEmail) {
+                val u = it.copy(
+                    role = newRole,
+                    isAgent = isAgent,
+                    agentCommissionOtpTarget = safeTargetOtps,
+                    agentCommissionTkPerTarget = safeCommTk
+                )
+                updatedUserObj = u
+                u
+            } else it
+        }
+        _managedUsers.value = updatedList
+        saveUsersLocallyOnly(updatedList)
+
+        val u = updatedUserObj ?: return Pair(false, "ইউজার আপডেট ব্যর্থ হয়েছে")
+        val msg = if (isAgent) {
+            "✓ ${u.name} (${u.email}) এখন এজেন্ট! কমিশন: $safeTargetOtps OTP = ৳${String.format(java.util.Locale.US, "%.2f", safeCommTk)}"
+        } else {
+            "✓ ${u.name}-এর এজেন্ট স্ট্যাটাস বাতিল করা হয়েছে"
+        }
+        val permObj = buildPermissionsJsonForUser(u)
+        patchUserField(
+            realEmail,
+            JSONObject().apply {
+                put("role", newRole)
+                put("permissions_json", permObj.toString())
+            }
+        ) { _ ->
+            onComplete?.invoke(true, msg)
+        }
+        return Pair(true, msg)
+    }
+
+    fun updateAgentCommissionRule(
+        agentEmail: String,
+        otpTarget: Int,
+        commissionTk: Double,
+        onComplete: ((Boolean) -> Unit)? = null
+    ) {
+        if (!isPrimeAdmin()) {
+            onComplete?.invoke(false)
+            return
+        }
+        val target = agentEmail.trim().lowercase()
+        val safeOtpTarget = otpTarget.coerceAtLeast(1)
+        val safeCommTk = Math.round(commissionTk.coerceAtLeast(0.0) * 100.0) / 100.0
+        var updatedUserObj: AuthUser? = null
+        val updatedList = _managedUsers.value.map {
+            if (it.email.lowercase() == target) {
+                val u = it.copy(
+                    isAgent = true,
+                    role = if (it.role == "USER") "AGENT" else it.role,
+                    agentCommissionOtpTarget = safeOtpTarget,
+                    agentCommissionTkPerTarget = safeCommTk
+                )
+                updatedUserObj = u
+                u
+            } else it
+        }
+        _managedUsers.value = updatedList
+        saveUsersLocallyOnly(updatedList)
+        val u = updatedUserObj ?: run {
+            onComplete?.invoke(false)
+            return
+        }
+        val permObj = buildPermissionsJsonForUser(u)
+        patchUserField(
+            target,
+            JSONObject().apply {
+                put("role", u.role)
+                put("permissions_json", permObj.toString())
+            },
+            onComplete
+        )
+    }
+
+    fun creditAgentCommissionToBalance(
+        agentEmail: String,
+        commissionAmountTk: Double,
+        onComplete: ((Boolean) -> Unit)? = null
+    ) {
+        if (!isPrimeAdmin()) {
+            onComplete?.invoke(false)
+            return
+        }
+        val target = agentEmail.trim().lowercase()
+        val agent = _managedUsers.value.firstOrNull { it.email.lowercase() == target } ?: run {
+            onComplete?.invoke(false)
+            return
+        }
+        val addAmt = Math.round(commissionAmountTk.coerceAtLeast(0.0) * 100.0) / 100.0
+        if (addAmt <= 0.0) {
+            onComplete?.invoke(false)
+            return
+        }
+        val newBal = Math.round((agent.balanceTk + addAmt) * 100.0) / 100.0
+        updateUserOtpAndBalance(
+            email = agent.email,
+            totalOtps = agent.totalOtps,
+            balanceTk = newBal,
+            today = agent.todayOtps,
+            last7d = agent.last7DaysOtps,
+            last30d = agent.last30DaysOtps,
+            onComplete = onComplete
+        )
+    }
+
+    /**
+     * Updates per-user custom OTP rates across all 4 panels (Premium Numbers, Premium V2, Kop Engine 1, Kop Engine 2)
+     */
+    fun updateUserPanelRates(
+        email: String,
+        unixRate: Double?,
+        premiumV2Rate: Double?,
+        kop1Rate: Double?,
+        kop2Rate: Double?,
+        onComplete: ((Boolean) -> Unit)? = null
+    ) {
+        if (!isAdmin()) {
+            onComplete?.invoke(false)
+            return
+        }
+        val target = email.trim().lowercase()
+        val cleanUnix = unixRate?.takeIf { it > 0.0 }?.let { Math.round(it * 100.0) / 100.0 }
+        val cleanV2 = premiumV2Rate?.takeIf { it > 0.0 }?.let { Math.round(it * 100.0) / 100.0 }
+        val cleanKop1 = kop1Rate?.takeIf { it > 0.0 }?.let { Math.round(it * 100.0) / 100.0 }
+        val cleanKop2 = kop2Rate?.takeIf { it > 0.0 }?.let { Math.round(it * 100.0) / 100.0 }
+
+        var updatedTargetUser: AuthUser? = null
+        val newList = _managedUsers.value.map {
+            if (it.email.lowercase() == target) {
+                val u = it.copy(
+                    customUnixRate = cleanUnix,
+                    customPremiumV2Rate = cleanV2,
+                    customKop1Rate = cleanKop1,
+                    customKop2Rate = cleanKop2
+                )
+                updatedTargetUser = u
+                u
+            } else it
+        }
+        _managedUsers.value = newList
+        saveUsersLocallyOnly(newList)
+
+        val u = updatedTargetUser ?: run {
+            onComplete?.invoke(false)
+            return
+        }
+        val permObj = buildPermissionsJsonForUser(u, adminEditedAt = System.currentTimeMillis())
+        patchUserField(
+            target,
+            JSONObject().put("permissions_json", permObj.toString()),
+            onComplete
+        )
     }
 
     fun deleteManagedUser(email: String) {
-        if (!isAdmin()) return
         val targetEmail = email.trim().lowercase()
+        val targetUser = _managedUsers.value.firstOrNull { it.email.lowercase() == targetEmail }
+        val currentLoggedIn = _currentEmail.value.trim().lowercase()
+        val canAgentDelete = isAgent() && targetUser != null && targetUser.createdByAgent.equals(currentLoggedIn, ignoreCase = true)
+        if (!isAdmin() && !canAgentDelete) return
+
         val newList = _managedUsers.value.filter { it.email.lowercase() != targetEmail }
         saveUsersLocallyOnly(newList)
         _managedUsers.value = newList
@@ -1107,8 +1445,12 @@ object AuthManager {
     }
 
     fun toggleUserBan(email: String) {
-        if (!isAdmin()) return
         val target = email.trim().lowercase()
+        val targetUser = _managedUsers.value.firstOrNull { it.email.lowercase() == target }
+        val currentLoggedIn = _currentEmail.value.trim().lowercase()
+        val canAgentBan = isAgent() && targetUser != null && targetUser.createdByAgent.equals(currentLoggedIn, ignoreCase = true)
+        if (!isAdmin() && !canAgentBan) return
+
         var newStatus = "ACTIVE"
         val newList = _managedUsers.value.map {
             if (it.email.lowercase() == target) {
@@ -1123,8 +1465,12 @@ object AuthManager {
     }
 
     fun toggleUserStatus(email: String) {
-        if (!isAdmin()) return
         val target = email.trim().lowercase()
+        val targetUser = _managedUsers.value.firstOrNull { it.email.lowercase() == target }
+        val currentLoggedIn = _currentEmail.value.trim().lowercase()
+        val canAgentToggle = isAgent() && targetUser != null && targetUser.createdByAgent.equals(currentLoggedIn, ignoreCase = true)
+        if (!isAdmin() && !canAgentToggle) return
+
         var newStatus = "ACTIVE"
         val newList = _managedUsers.value.map {
             if (it.email.lowercase() == target) {
@@ -1215,21 +1561,8 @@ object AuthManager {
             OtpHistoryManager.setAdminAssignedOtps(cleanTotal, cleanToday, clean7d, clean30d)
         }
 
-        val userForPerms = updatedTargetUser
-        val perms = userForPerms?.permissions ?: SubAdminPermissions()
-        val permObj = JSONObject().apply {
-            put("canUploadNumbers", perms.canUploadNumbers)
-            put("canDeleteNumbers", perms.canDeleteNumbers)
-            put("canUpdateOtpRate", perms.canUpdateOtpRate)
-            put("canManageWithdrawals", perms.canManageWithdrawals)
-            put("canViewLiveCdr", perms.canViewLiveCdr)
-            put("canBroadcastNotify", perms.canBroadcastNotify)
-            val sArr = JSONArray()
-            (userForPerms?.disabledSections ?: emptyList()).forEach { sArr.put(it) }
-            put("disabledSections", sArr)
-            put("pinResetRequested", userForPerms?.isPinResetRequested ?: false)
-            put("adminEditedAt", nowTs)
-        }
+        val userForPerms = updatedTargetUser ?: return
+        val permObj = buildPermissionsJsonForUser(userForPerms, adminEditedAt = nowTs)
 
         patchUserField(target, JSONObject().apply {
             put("total_otps", cleanTotal)
@@ -1269,6 +1602,17 @@ object AuthManager {
                     val cloud7d = obj.optInt("otp_7days", 0)
                     val cloud30d = obj.optInt("otp_30days", 0)
                     val statusStr = obj.optString("status", "ACTIVE")
+                    val cloudRole = obj.optString("role", "USER")
+                    val permObj = try {
+                        JSONObject(obj.optString("permissions_json", "{}"))
+                    } catch (_: Exception) { JSONObject() }
+                    val isAgentFlag = permObj.optBoolean("isAgent", cloudRole == "AGENT")
+                    val commOtpTarget = permObj.optInt("agentCommissionOtpTarget", 100).coerceAtLeast(1)
+                    val commTkTarget = permObj.optDouble("agentCommissionTkPerTarget", 10.0).coerceAtLeast(0.0)
+                    val cUnix = permObj.optDouble("customUnixRate", -1.0).takeIf { it > 0.0 }
+                    val cV2 = permObj.optDouble("customPremiumV2Rate", -1.0).takeIf { it > 0.0 }
+                    val cKop1 = permObj.optDouble("customKop1Rate", -1.0).takeIf { it > 0.0 }
+                    val cKop2 = permObj.optDouble("customKop2Rate", -1.0).takeIf { it > 0.0 }
 
                     withContext(Dispatchers.Main) {
                         if ((statusStr == "BANNED" || statusStr == "INACTIVE") && !isPrimeAdmin()) {
@@ -1276,9 +1620,23 @@ object AuthManager {
                             return@withContext
                         }
 
+                        val effectiveRole = if (isAgentFlag && cloudRole == "USER") "AGENT" else cloudRole
+                        if (!isPrimeAdmin() && _currentUserRole.value != effectiveRole) {
+                            _currentUserRole.value = effectiveRole
+                            prefs?.edit()?.putString(KEY_LOGGED_IN_ROLE, effectiveRole)?.apply()
+                        }
+
                         _managedUsers.value = _managedUsers.value.map { u ->
                             if (u.email.equals(email, ignoreCase = true)) {
                                 u.copy(
+                                    role = effectiveRole,
+                                    isAgent = isAgentFlag,
+                                    agentCommissionOtpTarget = commOtpTarget,
+                                    agentCommissionTkPerTarget = commTkTarget,
+                                    customUnixRate = cUnix,
+                                    customPremiumV2Rate = cV2,
+                                    customKop1Rate = cKop1,
+                                    customKop2Rate = cKop2,
                                     balanceTk = cloudBalance,
                                     totalOtps = cloudTotalOtps,
                                     todayOtps = cloudToday,

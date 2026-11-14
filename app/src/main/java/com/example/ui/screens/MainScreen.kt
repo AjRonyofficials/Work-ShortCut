@@ -297,6 +297,35 @@ fun MainScreen(
 
                         Spacer(modifier = Modifier.width(4.dp))
 
+                        val isCurrentUserAgent = remember(managedUsers) {
+                            com.example.service.AuthManager.isAgent() && !com.example.service.AuthManager.isAdmin()
+                        }
+                        if (isCurrentUserAgent) {
+                            Surface(
+                                color = if (selectedTab == AppNavTab.ADMIN_PANEL) Color(0xFF065F46) else Color(0xFF131F33),
+                                shape = RoundedCornerShape(8.dp),
+                                border = BorderStroke(1.dp, Color(0xFF10B981)),
+                                modifier = Modifier
+                                    .height(32.dp)
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .clickable { selectedTab = AppNavTab.ADMIN_PANEL }
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 7.dp, vertical = 5.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = "🤝 Agent",
+                                        fontSize = 10.5.sp,
+                                        fontWeight = FontWeight.ExtraBold,
+                                        color = Color(0xFF34D399),
+                                        maxLines = 1
+                                    )
+                                }
+                            }
+                            Spacer(modifier = Modifier.width(4.dp))
+                        }
+
                         // Quick Toggle for Floating Bubble Overlay
                         IconButton(
                             onClick = {
@@ -419,7 +448,7 @@ fun MainScreen(
                         AppNavTab.PROXY -> com.example.service.AuthManager.isSectionAllowedForCurrentUser("PROXY")
                         AppNavTab.CLEAR_DATA -> com.example.service.AuthManager.isSectionAllowedForCurrentUser("CLEAR_DATA")
                         AppNavTab.SETTINGS -> true
-                        AppNavTab.ADMIN_PANEL -> com.example.service.AuthManager.isAdmin()
+                        AppNavTab.ADMIN_PANEL -> com.example.service.AuthManager.canAccessAdminOrAgentPanel()
                     }
                 }
 

@@ -286,7 +286,8 @@ object UnixSmsManager {
 
     fun getRateForCountry(countryCode: String): Double {
         val upper = countryCode.uppercase().trim()
-        return _state.value.countryRates[upper] ?: _state.value.otpRatePerSms
+        val base = _state.value.countryRates[upper] ?: _state.value.otpRatePerSms
+        return AuthManager.getEffectiveUnixRate(base)
     }
 
     fun setCountryRate(countryCode: String, rate: Double) {

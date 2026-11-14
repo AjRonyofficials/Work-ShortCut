@@ -153,7 +153,11 @@ fun PremiumNumberV2SectionContent(
 ) {
     val context = LocalContext.current
     val state by PremiumNumberV2Manager.state.collectAsState()
-    val otpRate by PremiumNumberV2Manager.otpRate.collectAsState()
+    val baseOtpRate by PremiumNumberV2Manager.otpRate.collectAsState()
+    val managedUsersForRate by com.example.service.AuthManager.managedUsers.collectAsState()
+    val otpRate = remember(baseOtpRate, managedUsersForRate, state.selectedCountryCode, state.countryRates) {
+        PremiumNumberV2Manager.getRateForCountry(state.selectedCountryCode)
+    }
 
     var selectedSubTab by remember { mutableIntStateOf(0) } // 0: Get Number (Operator Desk), 1: Live Console / Live OTP
     var filterTab by remember { mutableStateOf("ALL") } // "ALL", "WAITING", "RECEIVED", "EXPIRED"
@@ -168,7 +172,7 @@ fun PremiumNumberV2SectionContent(
     var liveFeedSearchQuery by remember { mutableStateOf("") }
 
     // Dynamically derive ONLY real active countries from API & Live Pool
-    val livePoolCountries = remember(state.liveConsoleFeed, state.activeApiCountries, state.countryRates) {
+    val livePoolCountries = remember(state.liveConsoleFeed, state.activeApiCountries, state.countryRates, baseOtpRate, managedUsersForRate) {
         val list = mutableListOf<V2CountryPreset>()
         val seen = mutableSetOf<String>()
         val baseRate = PremiumNumberV2Manager.getRateForCountry("ANY")
@@ -213,7 +217,10 @@ fun PremiumNumberV2SectionContent(
             }
         }
         if (list.size <= 1) {
-            ALLOCATION_COUNTRIES
+            ALLOCATION_COUNTRIES.map { preset ->
+                val cRate = PremiumNumberV2Manager.getRateForCountry(preset.code)
+                preset.copy(rateText = String.format(Locale.US, "%.2f৳", cRate))
+            }
         } else list
     }
 

@@ -661,7 +661,17 @@ object OtpHistoryManager {
         }
         if (isDuplicate) return
 
-        val effectiveRate = if (rate < 0.05) 0.50 else rate
+        val rawRate = if (rate < 0.05) 0.50 else rate
+        val effectiveRate = when {
+            platform.contains("V2", ignoreCase = true) || platform.contains("Premium Number V2", ignoreCase = true) || platform.contains("Premium V2", ignoreCase = true) ->
+                AuthManager.getEffectivePremiumV2Rate(rawRate)
+            platform.contains("Unix", ignoreCase = true) || platform.contains("Lamix", ignoreCase = true) || platform.contains("Hadi", ignoreCase = true) || (platform.contains("Premium", ignoreCase = true) && !platform.contains("V2", ignoreCase = true)) ->
+                AuthManager.getEffectiveUnixRate(rawRate)
+            platform.contains("Kop Engine 2", ignoreCase = true) || platform.contains("Kop2", ignoreCase = true) || platform.contains("Kop 2", ignoreCase = true) ->
+                AuthManager.getEffectiveKop2Rate(rawRate)
+            else ->
+                AuthManager.getEffectiveKop1Rate(rawRate)
+        }
 
         val record = OtpHistoryRecord(
             phoneNumber = phoneNumber,
@@ -775,10 +785,10 @@ object OtpHistoryManager {
 
         val targetMonthlyEpoch = cycleStartEpoch + ONE_MONTH_MS
 
-        val currentUnixRate = UnixSmsManager.state.value.otpRatePerSms
-        val currentZenexRate = VirtualNumberManager.zenexOtpRate.value
-        val currentKop2Rate = KopEngine2Manager.kop2OtpRate.value
-        val currentV2Rate = PremiumNumberV2Manager.otpRate.value
+        val currentUnixRate = AuthManager.getEffectiveUnixRate(UnixSmsManager.state.value.otpRatePerSms)
+        val currentZenexRate = AuthManager.getEffectiveKop1Rate(VirtualNumberManager.zenexOtpRate.value)
+        val currentKop2Rate = AuthManager.getEffectiveKop2Rate(KopEngine2Manager.kop2OtpRate.value)
+        val currentV2Rate = AuthManager.getEffectivePremiumV2Rate(PremiumNumberV2Manager.otpRate.value)
 
         // Helper to check platform types
         fun isUnix(p: String) = (p.contains("Unix", ignoreCase = true) || p.contains("Lamix", ignoreCase = true) || p.contains("Hadi", ignoreCase = true) || p.contains("Premium", ignoreCase = true)) && !p.contains("V2", ignoreCase = true)
