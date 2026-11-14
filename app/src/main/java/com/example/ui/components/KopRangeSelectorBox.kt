@@ -6,6 +6,7 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -271,9 +272,12 @@ fun KopRangeSelectorBox(
             Text(
                 text = title,
                 color = Color(0xFF90A4AE),
-                fontSize = 11.sp,
+                fontSize = 10.5.sp,
                 fontWeight = FontWeight.Bold,
-                letterSpacing = 0.5.sp
+                letterSpacing = 0.4.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f).padding(end = 6.dp)
             )
 
             // Auto-Detected Country Badge
@@ -286,13 +290,16 @@ fun KopRangeSelectorBox(
                     modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.5.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text(text = flag, fontSize = 11.5.sp)
+                    Text(text = flag, fontSize = 11.sp, maxLines = 1, softWrap = false)
                     Spacer(modifier = Modifier.width(4.dp))
                     Text(
                         text = "$countryName [$isoShort] $dialCode",
                         color = Color.White,
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.Bold
+                        fontSize = 9.5.sp,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        softWrap = false,
+                        overflow = TextOverflow.Ellipsis
                     )
                 }
             }
@@ -351,7 +358,9 @@ fun KopRangeSelectorBox(
                             text = pill.first,
                             fontSize = 11.sp,
                             fontWeight = FontWeight.Bold,
-                            color = if (isCurrent) Color.White else pill.second
+                            color = if (isCurrent) Color.White else pill.second,
+                            maxLines = 1,
+                            softWrap = false
                         )
                     }
                 }
@@ -377,41 +386,40 @@ fun KopRangeSelectorBox(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.weight(1f).padding(end = 8.dp)
+                ) {
                     Surface(
                         color = accentColor.copy(alpha = 0.2f),
                         shape = CircleShape,
                         modifier = Modifier.size(32.dp)
                     ) {
                         Box(contentAlignment = Alignment.Center) {
-                            Text(text = flag, fontSize = 16.sp)
+                            Text(text = flag, fontSize = 16.sp, maxLines = 1, softWrap = false)
                         }
                     }
                     Spacer(modifier = Modifier.width(10.dp))
-                    Column {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(
-                                text = "$countryName [$isoShort]",
-                                color = Color.White,
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.ExtraBold
-                            )
-                            if (dialCode.isNotBlank()) {
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text(
-                                    text = "($dialCode)",
-                                    color = accentColor,
-                                    fontSize = 10.sp,
-                                    fontWeight = FontWeight.Bold
-                                )
-                            }
-                        }
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = if (dialCode.isNotBlank()) "$countryName [$isoShort] ($dialCode)" else "$countryName [$isoShort]",
+                            color = Color.White,
+                            fontSize = 11.5.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            maxLines = 1,
+                            softWrap = false,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Spacer(modifier = Modifier.height(2.dp))
                         Text(
                             text = if (currentRange.isNotBlank()) currentRange else "রেঞ্জ সিলেক্ট করুন বা পেস্ট করুন...",
                             color = if (currentRange.isNotBlank()) accentColor else Color(0xFF64748B),
-                            fontSize = 13.sp,
+                            fontSize = 12.5.sp,
                             fontWeight = FontWeight.Bold,
-                            fontFamily = FontFamily.Monospace
+                            fontFamily = FontFamily.Monospace,
+                            maxLines = 1,
+                            softWrap = false,
+                            overflow = TextOverflow.Ellipsis
                         )
                     }
                 }
@@ -435,8 +443,10 @@ fun KopRangeSelectorBox(
                         Text(
                             text = if (livePoolEntries.isNotEmpty()) "রেঞ্জ লিস্ট (${livePoolEntries.size}) ▾" else "রেঞ্জ লিস্ট ▾",
                             color = Color.White,
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold
+                            fontSize = 10.5.sp,
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1,
+                            softWrap = false
                         )
                     }
                 }

@@ -125,13 +125,16 @@ fun WorkShortcutTheme(
         val rawHeight = configuration.screenHeightDp.coerceAtLeast(480)
         val smallestWidth = minOf(rawWidth, rawHeight)
 
-        // Smooth proportional scaling across compact (320dp), standard (360-392dp), and large (412-480dp) phones
-        val widthScale = (smallestWidth.toFloat() / 390f).coerceIn(0.82f, 1.12f)
-        val heightScale = (maxOf(rawWidth, rawHeight).toFloat() / 820f).coerceIn(0.84f, 1.12f)
-        val autoScale = ((widthScale * 0.72f) + (heightScale * 0.28f)).coerceIn(0.82f, 1.10f)
+        // Never inflate density above 0.95f on phones; slightly compacting dp/sp gives every row generous horizontal breathing room
+        val autoScale = when {
+            smallestWidth < 340 -> (smallestWidth.toFloat() / 395f).coerceIn(0.80f, 0.88f)
+            smallestWidth < 380 -> (smallestWidth.toFloat() / 400f).coerceIn(0.88f, 0.93f)
+            smallestWidth < 420 -> 0.94f
+            else -> 0.96f
+        }
 
-        // Normalize fontScale so oversized Android system font settings never break cards, buttons, or overlay items
-        val normalizedFontScale = 1.0f
+        // Slightly compact fontScale (0.93f) prevents system large-font settings or long country/badge labels from wrapping
+        val normalizedFontScale = 0.93f
 
         val density = Density(
             density = baseDensity.density * autoScale,

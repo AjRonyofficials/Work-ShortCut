@@ -6,6 +6,8 @@ import com.example.ui.components.KopRangeSelectorBox
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -509,19 +511,25 @@ fun KopEngine2SectionContent(
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.weight(1f, fill = false).padding(end = 6.dp)
+                        ) {
                             Icon(Icons.Default.Schedule, contentDescription = null, tint = ThemeSkyBright, modifier = Modifier.size(14.dp))
-                            Spacer(modifier = Modifier.width(6.dp))
+                            Spacer(modifier = Modifier.width(5.dp))
                             Text(
-                                text = "24h Auto Reset: ${KopEngine2Manager.getFormattedCycleCountdown()}",
+                                text = "Reset: ${KopEngine2Manager.getFormattedCycleCountdown()}",
                                 color = Color(0xFFE2E8F0),
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.SemiBold
+                                fontSize = 10.5.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                maxLines = 1,
+                                softWrap = false
                             )
                         }
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            horizontalArrangement = Arrangement.spacedBy(5.dp),
+                            modifier = Modifier.horizontalScroll(rememberScrollState())
                         ) {
                             val kop2TopFailedCount = state.provisionedNumbers.count {
                                 it.otpCode.isNullOrEmpty() && (it.status.equals("failed", true) || it.status.equals("expired", true) || System.currentTimeMillis() >= it.expiresAt)
@@ -537,9 +545,11 @@ fun KopEngine2SectionContent(
                                 Text(
                                     text = if (kop2TopFailedCount > 0) "🗑️ Clear Failed ($kop2TopFailedCount)" else "🗑️ Clear Failed",
                                     color = Color.White,
-                                    fontSize = 10.sp,
+                                    fontSize = 9.5.sp,
                                     fontWeight = FontWeight.ExtraBold,
-                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                                    maxLines = 1,
+                                    softWrap = false,
+                                    modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp)
                                 )
                             }
                             Surface(
@@ -553,9 +563,11 @@ fun KopEngine2SectionContent(
                                 Text(
                                     text = "🔄 Reset Now",
                                     color = Color(0xFFFCA5A5),
-                                    fontSize = 10.sp,
+                                    fontSize = 9.5.sp,
                                     fontWeight = FontWeight.Bold,
-                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                                    maxLines = 1,
+                                    softWrap = false,
+                                    modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp)
                                 )
                             }
                         }
@@ -766,64 +778,88 @@ fun KopEngine2SectionContent(
                 }
             }
 
-            // ACTIVE NUMBERS HEADER
+            // ACTIVE NUMBERS HEADER (Split into clean non-wrapping rows)
+            val activeExportItems = remember(state.provisionedNumbers, kop2OtpRate) {
+                state.provisionedNumbers
+                    .filter { !it.otpCode.isNullOrEmpty() || it.status.equals("success", true) }
+                    .map { num ->
+                        val cInfo = com.example.util.AllCountriesProvider.detectCountry(num.number)
+                            ?: com.example.util.AllCountriesProvider.detectCountry(num.range ?: "")
+                            ?: com.example.util.AllCountriesProvider.detectCountry(num.country)
+                        com.example.util.ExportOtpItem(
+                            phoneNumber = num.number,
+                            country = cInfo?.name ?: num.country,
+                            iso = (cInfo?.code ?: num.iso).uppercase(),
+                            flag = cInfo?.flag ?: "🌐",
+                            serviceOrRange = num.range ?: "Kop 2",
+                            otpCode = num.otpCode ?: "",
+                            otpMessage = num.otpMessage,
+                            timestamp = num.timestamp,
+                            rate = kop2OtpRate
+                        )
+                    }
+            }
+            val kop2ExpiredCount = remember(state.provisionedNumbers, nowTick) {
+                state.provisionedNumbers.count { prov ->
+                    val hasOtp = !prov.otpCode.isNullOrEmpty() || prov.status.equals("success", true)
+                    !hasOtp && (prov.status.equals("expired", true) || prov.status.equals("failed", true) || nowTick >= prov.expiresAt)
+                }
+            }
+            val merged24hKop2Otps = remember(activeExportItems, state.resetCycleStartTime, state.todayOtpCount) {
+                com.example.util.OtpExportHelper.getMerged24hOtps("Kop Engine 2", activeExportItems)
+            }
+
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.weight(1f, fill = false).padding(end = 6.dp)
+                ) {
                     Box(
                         modifier = Modifier
                             .size(7.dp)
                             .clip(CircleShape)
                             .background(ThemeEmerald)
                     )
-                    Spacer(modifier = Modifier.width(7.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
                     Text(
-                        text = "ALLOCATED NUMBERS (${state.provisionedNumbers.size})",
+                        text = "NUMBERS (${state.provisionedNumbers.size})",
                         color = ThemeSkyBright,
-                        fontSize = 12.5.sp,
+                        fontSize = 12.sp,
                         fontWeight = FontWeight.ExtraBold,
-                        letterSpacing = 0.5.sp
+                        maxLines = 1,
+                        softWrap = false
                     )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Surface(
+                        color = ThemeEmerald.copy(alpha = 0.15f),
+                        shape = RoundedCornerShape(6.dp),
+                        border = BorderStroke(1.dp, ThemeEmerald.copy(alpha = 0.5f))
+                    ) {
+                        Text(
+                            text = "⚡ 1.2s Poll",
+                            color = ThemeEmerald,
+                            fontSize = 9.sp,
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1,
+                            softWrap = false,
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                        )
+                    }
                 }
 
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    val activeExportItems = remember(state.provisionedNumbers, kop2OtpRate) {
-                        state.provisionedNumbers
-                            .filter { !it.otpCode.isNullOrEmpty() || it.status.equals("success", true) }
-                            .map { num ->
-                                val cInfo = com.example.util.AllCountriesProvider.detectCountry(num.number)
-                                    ?: com.example.util.AllCountriesProvider.detectCountry(num.range ?: "")
-                                    ?: com.example.util.AllCountriesProvider.detectCountry(num.country)
-                                com.example.util.ExportOtpItem(
-                                    phoneNumber = num.number,
-                                    country = cInfo?.name ?: num.country,
-                                    iso = (cInfo?.code ?: num.iso).uppercase(),
-                                    flag = cInfo?.flag ?: "🌐",
-                                    serviceOrRange = num.range ?: "Kop 2",
-                                    otpCode = num.otpCode ?: "",
-                                    otpMessage = num.otpMessage,
-                                    timestamp = num.timestamp,
-                                    rate = kop2OtpRate
-                                )
-                            }
-                    }
-                    val kop2ExpiredCount = remember(state.provisionedNumbers, nowTick) {
-                        state.provisionedNumbers.count { prov ->
-                            val hasOtp = !prov.otpCode.isNullOrEmpty() || prov.status.equals("success", true)
-                            !hasOtp && (prov.status.equals("expired", true) || prov.status.equals("failed", true) || nowTick >= prov.expiresAt)
-                        }
-                    }
-                    val merged24hKop2Otps = remember(activeExportItems, state.resetCycleStartTime, state.todayOtpCount) {
-                        com.example.util.OtpExportHelper.getMerged24hOtps("Kop Engine 2", activeExportItems)
-                    }
-
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(5.dp),
+                    modifier = Modifier.horizontalScroll(rememberScrollState())
+                ) {
                     // Red Clear Failed / Expired Button
                     Surface(
                         color = if (kop2ExpiredCount > 0) Color(0xFFEF4444).copy(alpha = 0.25f) else Color(0xFFEF4444).copy(alpha = 0.14f),
-                        shape = RoundedCornerShape(8.dp),
+                        shape = RoundedCornerShape(7.dp),
                         border = BorderStroke(1.dp, Color(0xFFEF4444).copy(alpha = if (kop2ExpiredCount > 0) 0.85f else 0.45f)),
                         modifier = Modifier.clickable {
                             KopEngine2Manager.clearExpiredAndFailedNumbers(context)
@@ -833,22 +869,22 @@ fun KopEngine2SectionContent(
                             modifier = Modifier.padding(horizontal = 7.dp, vertical = 4.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Icon(Icons.Default.Delete, contentDescription = null, tint = Color(0xFFF87171), modifier = Modifier.size(12.dp))
+                            Icon(Icons.Default.Delete, contentDescription = null, tint = Color(0xFFF87171), modifier = Modifier.size(11.dp))
                             Spacer(modifier = Modifier.width(3.dp))
                             Text(
                                 text = if (kop2ExpiredCount > 0) "Clear Failed ($kop2ExpiredCount)" else "Clear Failed",
-                                fontSize = 9.5.sp,
+                                fontSize = 9.sp,
                                 color = Color(0xFFFCA5A5),
-                                fontWeight = FontWeight.ExtraBold
+                                fontWeight = FontWeight.ExtraBold,
+                                maxLines = 1,
+                                softWrap = false
                             )
                         }
                     }
 
-                    Spacer(modifier = Modifier.width(5.dp))
-
                     Surface(
                         color = if (merged24hKop2Otps.isNotEmpty()) Color(0xFF0284C7).copy(alpha = 0.25f) else Color(0xFF1E293B),
-                        shape = RoundedCornerShape(8.dp),
+                        shape = RoundedCornerShape(7.dp),
                         border = BorderStroke(1.dp, if (merged24hKop2Otps.isNotEmpty()) Color(0xFF38BDF8) else Color(0xFF475569)),
                         modifier = Modifier.clickable {
                             val currentExportList = com.example.util.OtpExportHelper.getMerged24hOtps("Kop Engine 2", activeExportItems)
@@ -860,34 +896,22 @@ fun KopEngine2SectionContent(
                         }
                     ) {
                         Row(
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                            modifier = Modifier.padding(horizontal = 7.dp, vertical = 4.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Icon(Icons.Default.Download, contentDescription = null, tint = if (merged24hKop2Otps.isNotEmpty()) Color(0xFF38BDF8) else Color(0xFF94A3B8), modifier = Modifier.size(13.dp))
+                            Icon(Icons.Default.Download, contentDescription = null, tint = if (merged24hKop2Otps.isNotEmpty()) Color(0xFF38BDF8) else Color(0xFF94A3B8), modifier = Modifier.size(11.dp))
                             Spacer(modifier = Modifier.width(3.dp))
                             Text(
-                                text = if (merged24hKop2Otps.isNotEmpty()) "📥 24h OTP (${merged24hKop2Otps.size})" else "📥 24h OTP",
-                                fontSize = 10.sp,
+                                text = if (merged24hKop2Otps.isNotEmpty()) "24h OTP (${merged24hKop2Otps.size})" else "24h OTP",
+                                fontSize = 9.sp,
                                 color = if (merged24hKop2Otps.isNotEmpty()) Color.White else Color(0xFF94A3B8),
-                                fontWeight = FontWeight.Bold
+                                fontWeight = FontWeight.Bold,
+                                maxLines = 1,
+                                softWrap = false
                             )
                         }
                     }
-                    Spacer(modifier = Modifier.width(5.dp))
-                    Surface(
-                        color = ThemeEmerald.copy(alpha = 0.15f),
-                        shape = RoundedCornerShape(8.dp),
-                        border = BorderStroke(1.dp, ThemeEmerald.copy(alpha = 0.5f))
-                    ) {
-                        Text(
-                            text = "Auto Poll: 1.2s",
-                            color = ThemeEmerald,
-                            fontSize = 10.5.sp,
-                            fontWeight = FontWeight.Bold,
-                            modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp)
-                        )
-                    }
-                    Spacer(modifier = Modifier.width(4.dp))
+
                     IconButton(
                         onClick = {
                             KopEngine2Manager.fetchIncomingOtps(context, autoCopy = true)
@@ -906,7 +930,9 @@ fun KopEngine2SectionContent(
 
             // 24h Filter Chips Row: ALL, SUCCESS, PENDING, FAILED
             Row(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState()),
                 horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
                 listOf(
@@ -927,7 +953,9 @@ fun KopEngine2SectionContent(
                             color = if (isSelected) Color.White else ThemeMuted,
                             fontSize = 10.sp,
                             fontWeight = FontWeight.Bold,
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                            maxLines = 1,
+                            softWrap = false,
+                            modifier = Modifier.padding(horizontal = 9.dp, vertical = 5.dp)
                         )
                     }
                 }
@@ -1031,19 +1059,33 @@ private fun Kop2ProvisionedNumberCard(
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+                verticalAlignment = Alignment.Top
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        text = item.number,
-                        color = Color.White,
-                        fontSize = 15.sp,
-                        fontWeight = FontWeight.ExtraBold,
-                        fontFamily = FontFamily.Monospace,
-                        modifier = Modifier.clickable {
-                            KopEngine2Manager.copyAndRemovePlus(context, item.number)
+                Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = item.number,
+                            color = Color.White,
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            fontFamily = FontFamily.Monospace,
+                            maxLines = 1,
+                            softWrap = false,
+                            modifier = Modifier.clickable {
+                                KopEngine2Manager.copyAndRemovePlus(context, item.number)
+                            }
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        IconButton(
+                            onClick = {
+                                KopEngine2Manager.copyAndRemovePlus(context, item.number)
+                            },
+                            modifier = Modifier.size(24.dp)
+                        ) {
+                            Icon(Icons.Default.ContentCopy, contentDescription = "Copy", tint = ThemeSkyBright, modifier = Modifier.size(13.dp))
                         }
-                    )
+                    }
+
                     val countryInfo = remember(item.number, item.range, item.country, item.iso) {
                         com.example.util.AllCountriesProvider.detectCountry(item.number)
                             ?: com.example.util.AllCountriesProvider.detectCountry(item.range ?: "")
@@ -1054,88 +1096,92 @@ private fun Kop2ProvisionedNumberCard(
                     val countryName = countryInfo?.name ?: item.country
                     val isoShort = (countryInfo?.code ?: item.iso).uppercase()
 
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Surface(
-                        color = ThemeSurfaceDark,
-                        shape = RoundedCornerShape(4.dp),
-                        border = BorderStroke(0.8.dp, ThemeBorder)
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        modifier = Modifier
+                            .padding(top = 4.dp)
+                            .horizontalScroll(rememberScrollState())
                     ) {
-                        Row(
-                            modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp),
-                            verticalAlignment = Alignment.CenterVertically
+                        Surface(
+                            color = ThemeSurfaceDark,
+                            shape = RoundedCornerShape(4.dp),
+                            border = BorderStroke(0.8.dp, ThemeBorder)
                         ) {
-                            Text(text = flag, fontSize = 11.sp)
-                            Spacer(modifier = Modifier.width(3.dp))
-                            Text(
-                                text = "$countryName [$isoShort]",
-                                color = ThemeSkyBright,
-                                fontSize = 9.sp,
-                                fontWeight = FontWeight.Bold
-                            )
+                            Row(
+                                modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(text = flag, fontSize = 11.sp, maxLines = 1, softWrap = false)
+                                Spacer(modifier = Modifier.width(3.dp))
+                                Text(
+                                    text = "$countryName [$isoShort]",
+                                    color = ThemeSkyBright,
+                                    fontSize = 9.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    maxLines = 1,
+                                    softWrap = false
+                                )
+                            }
                         }
-                    }
 
-                    // Fresh / Taken Tag Badge
-                    when (item.fbTagType) {
-                        com.example.service.PhoneItem.TagType.FRESH -> {
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Surface(
-                                color = Color(0xFF0F3B20),
-                                shape = RoundedCornerShape(4.dp),
-                                border = BorderStroke(0.8.dp, Color(0xFF00E676))
-                            ) {
-                                Text(
-                                    text = "✨ FRESH",
-                                    color = Color(0xFF00E676),
-                                    fontSize = 8.5.sp,
-                                    fontWeight = FontWeight.ExtraBold,
-                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.5.dp)
-                                )
-                            }
-                        }
-                        com.example.service.PhoneItem.TagType.TAKEN -> {
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Surface(
-                                color = Color(0xFF381515),
-                                shape = RoundedCornerShape(4.dp),
-                                border = BorderStroke(0.8.dp, Color(0xFFFF5252))
-                            ) {
-                                Text(
-                                    text = "👥 TAKEN",
-                                    color = Color(0xFFFF5252),
-                                    fontSize = 8.5.sp,
-                                    fontWeight = FontWeight.ExtraBold,
-                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.5.dp)
-                                )
-                            }
-                        }
-                        com.example.service.PhoneItem.TagType.PENDING -> {
-                            if (item.fbStatus == "Checking...") {
-                                Spacer(modifier = Modifier.width(4.dp))
+                        // Fresh / Taken Tag Badge
+                        when (item.fbTagType) {
+                            com.example.service.PhoneItem.TagType.FRESH -> {
                                 Surface(
-                                    color = Color(0xFF1E293B),
+                                    color = Color(0xFF0F3B20),
                                     shape = RoundedCornerShape(4.dp),
-                                    border = BorderStroke(0.6.dp, Color(0xFF38BDF8))
+                                    border = BorderStroke(0.8.dp, Color(0xFF00E676))
                                 ) {
                                     Text(
-                                        text = "⏳ CHECKING...",
-                                        color = Color(0xFF38BDF8),
-                                        fontSize = 8.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                                        text = "✨ FRESH",
+                                        color = Color(0xFF00E676),
+                                        fontSize = 8.5.sp,
+                                        fontWeight = FontWeight.ExtraBold,
+                                        maxLines = 1,
+                                        softWrap = false,
+                                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.5.dp)
                                     )
                                 }
                             }
+                            com.example.service.PhoneItem.TagType.TAKEN -> {
+                                Surface(
+                                    color = Color(0xFF381515),
+                                    shape = RoundedCornerShape(4.dp),
+                                    border = BorderStroke(0.8.dp, Color(0xFFFF5252))
+                                ) {
+                                    Text(
+                                        text = "👥 TAKEN",
+                                        color = Color(0xFFFF5252),
+                                        fontSize = 8.5.sp,
+                                        fontWeight = FontWeight.ExtraBold,
+                                        maxLines = 1,
+                                        softWrap = false,
+                                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.5.dp)
+                                    )
+                                }
+                            }
+                            com.example.service.PhoneItem.TagType.PENDING -> {
+                                if (item.fbStatus == "Checking...") {
+                                    Surface(
+                                        color = Color(0xFF1E293B),
+                                        shape = RoundedCornerShape(4.dp),
+                                        border = BorderStroke(0.6.dp, Color(0xFF38BDF8))
+                                    ) {
+                                        Text(
+                                            text = "⏳ CHECKING...",
+                                            color = Color(0xFF38BDF8),
+                                            fontSize = 8.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            maxLines = 1,
+                                            softWrap = false,
+                                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                                        )
+                                    }
+                                }
+                            }
+                            else -> {}
                         }
-                        else -> {}
-                    }
-                    IconButton(
-                        onClick = {
-                            KopEngine2Manager.copyAndRemovePlus(context, item.number)
-                        },
-                        modifier = Modifier.size(28.dp)
-                    ) {
-                        Icon(Icons.Default.ContentCopy, contentDescription = "Copy", tint = ThemeSkyBright, modifier = Modifier.size(14.dp))
                     }
                 }
 
@@ -1166,10 +1212,12 @@ private fun Kop2ProvisionedNumberCard(
                             color = when {
                                 isSuccess -> ThemeEmerald
                                 isExpired -> ThemeMuted
-                                else -> ThemeSkyBright // NOT RED
+                                else -> ThemeSkyBright
                             },
                             fontSize = 9.5.sp,
                             fontWeight = FontWeight.ExtraBold,
+                            maxLines = 1,
+                            softWrap = false,
                             modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                         )
                     }
@@ -1604,10 +1652,12 @@ private fun MkLiveOtpFeedCard(
                     }
                 }
 
-                // Tags / Chips Row: [Service] [Country] [Operator] [• NEW]
+                // Tags / Chips Row: [Service] [Country] [Operator] [• NEW] (Scrollable & non-wrapping)
+                Spacer(modifier = Modifier.width(6.dp))
                 Row(
                     horizontalArrangement = Arrangement.spacedBy(4.dp),
-                    verticalAlignment = Alignment.CenterVertically
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.horizontalScroll(rememberScrollState())
                 ) {
                     // Service Chip with Emoji Platform Tag
                     val liveServiceTag = when {
@@ -1628,6 +1678,8 @@ private fun MkLiveOtpFeedCard(
                             color = ThemeCyan,
                             fontSize = 9.5.sp,
                             fontWeight = FontWeight.Bold,
+                            maxLines = 1,
+                            softWrap = false,
                             modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                         )
                     }
@@ -1649,13 +1701,15 @@ private fun MkLiveOtpFeedCard(
                             modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text(text = flagEmoji, fontSize = 11.sp)
+                            Text(text = flagEmoji, fontSize = 11.sp, maxLines = 1, softWrap = false)
                             Spacer(modifier = Modifier.width(4.dp))
                             Text(
                                 text = if (isoCode.isNotBlank()) "$countryName $isoCode" else countryName,
                                 color = Color(0xFF2DD4BF),
                                 fontSize = 9.5.sp,
-                                fontWeight = FontWeight.Bold
+                                fontWeight = FontWeight.Bold,
+                                maxLines = 1,
+                                softWrap = false
                             )
                         }
                     }
@@ -1671,6 +1725,8 @@ private fun MkLiveOtpFeedCard(
                             color = ThemeAmber,
                             fontSize = 9.5.sp,
                             fontWeight = FontWeight.Bold,
+                            maxLines = 1,
+                            softWrap = false,
                             modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                         )
                     }
@@ -1687,6 +1743,8 @@ private fun MkLiveOtpFeedCard(
                                 color = ThemeEmerald,
                                 fontSize = 9.sp,
                                 fontWeight = FontWeight.Black,
+                                maxLines = 1,
+                                softWrap = false,
                                 modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
                             )
                         }

@@ -224,10 +224,11 @@ fun MainScreen(
                                 Text(
                                     text = "Work ShortCut",
                                     fontWeight = FontWeight.ExtraBold,
-                                    fontSize = 15.sp,
+                                    fontSize = 14.5.sp,
                                     color = Color.White,
                                     letterSpacing = 0.2.sp,
                                     maxLines = 1,
+                                    softWrap = false,
                                     overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
                                 )
                                 Surface(
@@ -239,9 +240,10 @@ fun MainScreen(
                                         text = selectedTab.title.uppercase(),
                                         color = CyberCyan,
                                         fontWeight = FontWeight.Bold,
-                                        fontSize = 8.5.sp,
-                                        letterSpacing = 0.4.sp,
+                                        fontSize = 8.sp,
+                                        letterSpacing = 0.3.sp,
                                         maxLines = 1,
+                                        softWrap = false,
                                         overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
                                         modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
                                     )

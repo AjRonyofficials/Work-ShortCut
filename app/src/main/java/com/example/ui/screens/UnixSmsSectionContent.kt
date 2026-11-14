@@ -877,65 +877,77 @@ fun UnixSmsSectionContent(
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(modifier = Modifier.padding(14.dp)) {
+                    val expiredOrFailedCount = remember(unixState.activeNumbers, nowMillis) {
+                        unixState.activeNumbers.count { prov ->
+                            val hasOtp = !prov.otpCode.isNullOrEmpty() || prov.status.equals("success", true)
+                            !hasOtp && (prov.status.equals("expired", true) || prov.status.equals("failed", true) || nowMillis >= prov.expiresAt)
+                        }
+                    }
+
+                    val unix24hExportItems = remember(unixState.activeNumbers, nowMillis) {
+                        val activeOtpItems = unixState.activeNumbers
+                            .filter { !it.otpCode.isNullOrEmpty() || it.status.equals("success", true) }
+                            .map { num ->
+                                val cInfo = com.example.util.AllCountriesProvider.detectCountry(num.number)
+                                    ?: com.example.util.AllCountriesProvider.detectCountry(num.country)
+                                com.example.util.ExportOtpItem(
+                                    phoneNumber = num.number,
+                                    country = cInfo?.name ?: num.country,
+                                    iso = (cInfo?.code ?: num.iso).uppercase(),
+                                    flag = cInfo?.flag ?: "🌐",
+                                    serviceOrRange = num.range.ifEmpty { "Premium Number" },
+                                    otpCode = num.otpCode ?: "",
+                                    otpMessage = num.otpMessage,
+                                    timestamp = num.timestamp,
+                                    rate = num.rate
+                                )
+                            }
+                        com.example.util.OtpExportHelper.getMerged24hOtps("Premium Numbers", activeOtpItems)
+                    }
+
+                    // Top Header Row: Title + Live Capture Badge on left, Action buttons in scrollable row
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.weight(1f, fill = false)
+                        ) {
                             Text(
                                 text = "ACTIVE NUMBERS (${unixState.activeNumbers.size})",
                                 fontSize = 12.sp,
                                 fontWeight = FontWeight.ExtraBold,
-                                color = Color.White
+                                color = Color.White,
+                                maxLines = 1,
+                                softWrap = false
                             )
                             if (unixState.activeNumbers.isNotEmpty()) {
-                                Spacer(modifier = Modifier.width(8.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
                                 Surface(
                                     color = Color(0xFF00E676).copy(alpha = 0.14f),
                                     shape = RoundedCornerShape(6.dp)
                                 ) {
                                     Text(
-                                        text = "⚡ 1s Live Capture",
+                                        text = "⚡ 1s Live",
                                         color = Color(0xFF00E676),
-                                        fontSize = 9.sp,
+                                        fontSize = 8.5.sp,
                                         fontWeight = FontWeight.Bold,
+                                        maxLines = 1,
+                                        softWrap = false,
                                         modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                                     )
                                 }
                             }
                         }
 
-                        val expiredOrFailedCount = remember(unixState.activeNumbers, nowMillis) {
-                            unixState.activeNumbers.count { prov ->
-                                val hasOtp = !prov.otpCode.isNullOrEmpty() || prov.status.equals("success", true)
-                                !hasOtp && (prov.status.equals("expired", true) || prov.status.equals("failed", true) || nowMillis >= prov.expiresAt)
-                            }
-                        }
-
-                        val unix24hExportItems = remember(unixState.activeNumbers, nowMillis) {
-                            val activeOtpItems = unixState.activeNumbers
-                                .filter { !it.otpCode.isNullOrEmpty() || it.status.equals("success", true) }
-                                .map { num ->
-                                    val cInfo = com.example.util.AllCountriesProvider.detectCountry(num.number)
-                                        ?: com.example.util.AllCountriesProvider.detectCountry(num.country)
-                                    com.example.util.ExportOtpItem(
-                                        phoneNumber = num.number,
-                                        country = cInfo?.name ?: num.country,
-                                        iso = (cInfo?.code ?: num.iso).uppercase(),
-                                        flag = cInfo?.flag ?: "🌐",
-                                        serviceOrRange = num.range.ifEmpty { "Premium Number" },
-                                        otpCode = num.otpCode ?: "",
-                                        otpMessage = num.otpMessage,
-                                        timestamp = num.timestamp,
-                                        rate = num.rate
-                                    )
-                                }
-                            com.example.util.OtpExportHelper.getMerged24hOtps("Premium Numbers", activeOtpItems)
-                        }
-
-                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            // Red Clear Failed / Expired Button (just like other panels)
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(5.dp),
+                            modifier = Modifier.horizontalScroll(rememberScrollState())
+                        ) {
+                            // Red Clear Failed / Expired Button
                             Surface(
                                 color = if (expiredOrFailedCount > 0) Color(0xFFEF4444).copy(alpha = 0.25f) else Color(0xFFEF4444).copy(alpha = 0.14f),
                                 shape = RoundedCornerShape(6.dp),
@@ -952,14 +964,16 @@ fun UnixSmsSectionContent(
                                         Icons.Default.Delete,
                                         contentDescription = null,
                                         tint = Color(0xFFF87171),
-                                        modifier = Modifier.size(12.dp)
+                                        modifier = Modifier.size(11.dp)
                                     )
                                     Spacer(modifier = Modifier.width(3.dp))
                                     Text(
                                         text = if (expiredOrFailedCount > 0) "Clear Failed ($expiredOrFailedCount)" else "Clear Failed",
                                         fontSize = 9.sp,
                                         color = Color(0xFFFCA5A5),
-                                        fontWeight = FontWeight.ExtraBold
+                                        fontWeight = FontWeight.ExtraBold,
+                                        maxLines = 1,
+                                        softWrap = false
                                     )
                                 }
                             }
@@ -973,21 +987,23 @@ fun UnixSmsSectionContent(
                                 }
                             ) {
                                 Row(
-                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                    modifier = Modifier.padding(horizontal = 7.dp, vertical = 4.dp),
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     Icon(
                                         Icons.Default.Download,
                                         contentDescription = null,
                                         tint = if (unix24hExportItems.isNotEmpty()) Color(0xFF38BDF8) else Color(0xFF94A3B8),
-                                        modifier = Modifier.size(12.dp)
+                                        modifier = Modifier.size(11.dp)
                                     )
-                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Spacer(modifier = Modifier.width(3.dp))
                                     Text(
                                         text = if (unix24hExportItems.isNotEmpty()) "24h OTP (${unix24hExportItems.size})" else "24h OTP",
                                         fontSize = 9.sp,
                                         color = if (unix24hExportItems.isNotEmpty()) Color.White else Color(0xFF94A3B8),
-                                        fontWeight = FontWeight.Bold
+                                        fontWeight = FontWeight.Bold,
+                                        maxLines = 1,
+                                        softWrap = false
                                     )
                                 }
                             }
@@ -1014,10 +1030,12 @@ fun UnixSmsSectionContent(
 
                     Spacer(modifier = Modifier.height(8.dp))
 
-                    // 24h Filter Tabs: ALL, SUCCESS, PENDING, FAILED
+                    // 24h Filter Tabs: ALL, SUCCESS, PENDING, FAILED (Horizontally scrollable, never squeezed)
                     Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(5.dp)
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
                         listOf(
                             "ALL" to "ALL ($unixTotalCount)",
@@ -1037,7 +1055,9 @@ fun UnixSmsSectionContent(
                                     color = if (isSelected) Color.White else Color(0xFF94A3B8),
                                     fontSize = 9.5.sp,
                                     fontWeight = FontWeight.Bold,
-                                    modifier = Modifier.padding(horizontal = 7.dp, vertical = 4.dp)
+                                    maxLines = 1,
+                                    softWrap = false,
+                                    modifier = Modifier.padding(horizontal = 9.dp, vertical = 5.dp)
                                 )
                             }
                         }
@@ -1435,7 +1455,8 @@ fun UnixActiveNumberRow(
 
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(5.dp)
+                        horizontalArrangement = Arrangement.spacedBy(5.dp),
+                        modifier = Modifier.horizontalScroll(rememberScrollState())
                     ) {
                         val countryInfo = remember(prov.iso, prov.country) {
                             com.example.util.AllCountriesProvider.findByCode(prov.iso)
@@ -1455,13 +1476,15 @@ fun UnixActiveNumberRow(
                                 modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Text(text = flag, fontSize = 11.sp)
+                                Text(text = flag, fontSize = 11.sp, maxLines = 1, softWrap = false)
                                 Spacer(modifier = Modifier.width(3.dp))
                                 Text(
                                     text = "$countryName [$isoShort]",
                                     color = Color(0xFFE2E8F0),
                                     fontSize = 9.sp,
-                                    fontWeight = FontWeight.Bold
+                                    fontWeight = FontWeight.Bold,
+                                    maxLines = 1,
+                                    softWrap = false
                                 )
                             }
                         }
@@ -1485,6 +1508,8 @@ fun UnixActiveNumberRow(
                                 color = srvColor,
                                 fontSize = 8.5.sp,
                                 fontWeight = FontWeight.ExtraBold,
+                                maxLines = 1,
+                                softWrap = false,
                                 modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
                             )
                         }
@@ -1499,6 +1524,8 @@ fun UnixActiveNumberRow(
                                 color = Color(0xFF00E676),
                                 fontSize = 8.5.sp,
                                 fontWeight = FontWeight.ExtraBold,
+                                maxLines = 1,
+                                softWrap = false,
                                 modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
                             )
                         }
@@ -1746,7 +1773,8 @@ fun UnixCdrMessageCard(
 
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(5.dp)
+                    horizontalArrangement = Arrangement.spacedBy(5.dp),
+                    modifier = Modifier.horizontalScroll(rememberScrollState())
                 ) {
                     // Service Badge
                     Surface(
@@ -1759,6 +1787,8 @@ fun UnixCdrMessageCard(
                             color = Color.White,
                             fontSize = 10.sp,
                             fontWeight = FontWeight.ExtraBold,
+                            maxLines = 1,
+                            softWrap = false,
                             modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp)
                         )
                     }
@@ -1773,14 +1803,15 @@ fun UnixCdrMessageCard(
                             modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text(text = countryFlag, fontSize = 11.5.sp)
+                            Text(text = countryFlag, fontSize = 11.5.sp, maxLines = 1, softWrap = false)
                             Spacer(modifier = Modifier.width(4.dp))
                             Text(
                                 text = if (isoCode.isNotBlank()) "$countryName $isoCode" else countryName,
                                 color = Color(0xFFE2E8F0),
                                 fontSize = 10.sp,
                                 fontWeight = FontWeight.Bold,
-                                maxLines = 1
+                                maxLines = 1,
+                                softWrap = false
                             )
                         }
                     }

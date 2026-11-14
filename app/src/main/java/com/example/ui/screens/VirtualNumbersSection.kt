@@ -7,6 +7,7 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -769,7 +770,9 @@ fun VirtualNumbersSection(
                                         text = if (failedCount > 0) "Clear Failed ($failedCount)" else "Clear Failed",
                                         fontSize = 9.5.sp,
                                         fontWeight = FontWeight.ExtraBold,
-                                        color = Color(0xFFFCA5A5)
+                                        color = Color(0xFFFCA5A5),
+                                        maxLines = 1,
+                                        softWrap = false
                                     )
                                 }
                             }
@@ -892,7 +895,7 @@ fun VirtualNumbersSection(
                         ) {
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier.weight(1f)
+                                modifier = Modifier.weight(1f).padding(end = 6.dp)
                             ) {
                                 Icon(
                                     imageVector = Icons.Default.AccessTime,
@@ -907,21 +910,25 @@ fun VirtualNumbersSection(
                                         color = if (isCycleRunning) Color(0xFF00E5FF) else Color(0xFF90A4AE),
                                         fontSize = 10.sp,
                                         fontWeight = FontWeight.Bold,
-                                        letterSpacing = 0.5.sp
+                                        letterSpacing = 0.5.sp,
+                                        maxLines = 1,
+                                        softWrap = false
                                     )
                                     Text(
                                         text = if (isCycleRunning) {
-                                            "নম্বর ও OTP ২৪ ঘণ্টা পর মুছে যাবে • রিসেট করতে ট্যাপ করুন"
+                                            "নম্বর ও OTP ২৪ ঘণ্টা পর মুছে যাবে • রিসেট"
                                         } else {
-                                            "১ম নম্বর/OTP নেওয়ার পর থেকে ২৪ ঘণ্টার টাইমার চালু হবে"
+                                            "১ম নম্বর নেওয়ার পর ২৪ ঘণ্টার টাইমার চালু হবে"
                                         },
                                         color = Color(0xFF78909C),
-                                        fontSize = 9.5.sp
+                                        fontSize = 9.sp,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
                                     )
                                 }
                             }
 
-                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
                                 if (isCycleRunning) {
                                     Surface(
                                         color = Color(0xFF00E5FF).copy(alpha = 0.15f),
@@ -931,8 +938,10 @@ fun VirtualNumbersSection(
                                         Text(
                                             text = String.format(Locale.US, "%02dh %02dm %02ds", resetHours, resetMinutes, resetSeconds),
                                             color = Color(0xFF00E5FF),
-                                            fontSize = 10.5.sp,
+                                            fontSize = 10.sp,
                                             fontWeight = FontWeight.ExtraBold,
+                                            maxLines = 1,
+                                            softWrap = false,
                                             modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp)
                                         )
                                     }
@@ -946,9 +955,11 @@ fun VirtualNumbersSection(
                                     Text(
                                         text = "🔄 Reset",
                                         color = Color(0xFFFCA5A5),
-                                        fontSize = 10.sp,
+                                        fontSize = 9.5.sp,
                                         fontWeight = FontWeight.ExtraBold,
-                                        modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp)
+                                        maxLines = 1,
+                                        softWrap = false,
+                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp)
                                     )
                                 }
                             }
@@ -1222,142 +1233,170 @@ fun VirtualNumbersSection(
                 }
             }
 
-            // 3. FEED HEADER & FILTERS
+            // 3. FEED HEADER & FILTERS (Split into 2 clean rows so FRESH and filter tabs never wrap vertically)
             item {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Box(
-                            modifier = Modifier
-                                .size(6.dp)
-                                .clip(CircleShape)
-                                .background(Color(0xFF00B0FF))
-                        )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text(
-                            text = "FEED (${filteredList.size})",
-                            color = Color.White,
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.Bold
-                        )
+                val activeExportItems = remember(state.provisionedNumbers, zenexOtpRate) {
+                    state.provisionedNumbers
+                        .filter { !it.otpCode.isNullOrEmpty() || it.status.equals("success", true) }
+                        .map { num ->
+                            val cInfo = com.example.util.AllCountriesProvider.detectCountry(num.number)
+                                ?: com.example.util.AllCountriesProvider.detectCountry(num.range ?: "")
+                                ?: com.example.util.AllCountriesProvider.detectCountry(num.country)
+                            com.example.util.ExportOtpItem(
+                                phoneNumber = num.number,
+                                country = cInfo?.name ?: num.country,
+                                iso = (cInfo?.code ?: num.iso).uppercase(),
+                                flag = cInfo?.flag ?: "🌐",
+                                serviceOrRange = num.range ?: "Kop 1",
+                                otpCode = num.otpCode ?: "",
+                                otpMessage = num.otpMessage,
+                                timestamp = num.timestamp,
+                                rate = zenexOtpRate
+                            )
+                        }
+                }
+                val merged24hKop1Otps = remember(activeExportItems, state.resetCycleStartTime, state.todayOtpCount) {
+                    com.example.util.OtpExportHelper.getMerged24hOtps("Kop Engine 1", activeExportItems)
+                }
+                val kop1ExpiredCount = remember(state.provisionedNumbers, nowTick) {
+                    state.provisionedNumbers.count { prov ->
+                        val hasOtp = !prov.otpCode.isNullOrEmpty() || prov.status.equals("success", true)
+                        !hasOtp && (prov.status.equals("expired", true) || prov.status.equals("failed", true) || nowTick >= prov.expiresAt)
+                    }
+                }
 
-                        val activeExportItems = remember(state.provisionedNumbers, zenexOtpRate) {
-                            state.provisionedNumbers
-                                .filter { !it.otpCode.isNullOrEmpty() || it.status.equals("success", true) }
-                                .map { num ->
-                                    val cInfo = com.example.util.AllCountriesProvider.detectCountry(num.number)
-                                        ?: com.example.util.AllCountriesProvider.detectCountry(num.range ?: "")
-                                        ?: com.example.util.AllCountriesProvider.detectCountry(num.country)
-                                    com.example.util.ExportOtpItem(
-                                        phoneNumber = num.number,
-                                        country = cInfo?.name ?: num.country,
-                                        iso = (cInfo?.code ?: num.iso).uppercase(),
-                                        flag = cInfo?.flag ?: "🌐",
-                                        serviceOrRange = num.range ?: "Kop 1",
-                                        otpCode = num.otpCode ?: "",
-                                        otpMessage = num.otpMessage,
-                                        timestamp = num.timestamp,
-                                        rate = zenexOtpRate
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    // Row 1: FEED (count) on left | Clear Failed + 24h OTP + Refresh on right
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Box(
+                                modifier = Modifier
+                                    .size(7.dp)
+                                    .clip(CircleShape)
+                                    .background(Color(0xFF00B0FF))
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "FEED (${filteredList.size})",
+                                color = Color.White,
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.ExtraBold,
+                                maxLines = 1,
+                                softWrap = false
+                            )
+                        }
+
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(5.dp),
+                            modifier = Modifier.horizontalScroll(rememberScrollState())
+                        ) {
+                            // Red Clear Failed / Expired Button
+                            Surface(
+                                color = if (kop1ExpiredCount > 0) Color(0xFFEF4444).copy(alpha = 0.25f) else Color(0xFFEF4444).copy(alpha = 0.14f),
+                                shape = RoundedCornerShape(6.dp),
+                                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFEF4444).copy(alpha = if (kop1ExpiredCount > 0) 0.85f else 0.45f)),
+                                modifier = Modifier.clickable {
+                                    VirtualNumberManager.clearExpiredAndFailedNumbers(context)
+                                }
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 7.dp, vertical = 4.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(Icons.Default.Delete, contentDescription = null, tint = Color(0xFFF87171), modifier = Modifier.size(11.dp))
+                                    Spacer(modifier = Modifier.width(3.dp))
+                                    Text(
+                                        text = if (kop1ExpiredCount > 0) "Clear Failed ($kop1ExpiredCount)" else "Clear Failed",
+                                        fontSize = 9.sp,
+                                        color = Color(0xFFFCA5A5),
+                                        fontWeight = FontWeight.ExtraBold,
+                                        maxLines = 1,
+                                        softWrap = false
                                     )
                                 }
-                        }
-                        val merged24hKop1Otps = remember(activeExportItems, state.resetCycleStartTime, state.todayOtpCount) {
-                            com.example.util.OtpExportHelper.getMerged24hOtps("Kop Engine 1", activeExportItems)
-                        }
-                        val kop1ExpiredCount = remember(state.provisionedNumbers, nowTick) {
-                            state.provisionedNumbers.count { prov ->
-                                val hasOtp = !prov.otpCode.isNullOrEmpty() || prov.status.equals("success", true)
-                                !hasOtp && (prov.status.equals("expired", true) || prov.status.equals("failed", true) || nowTick >= prov.expiresAt)
                             }
-                        }
-                        Spacer(modifier = Modifier.width(6.dp))
-                        // Red Clear Failed / Expired Button
-                        Surface(
-                            color = if (kop1ExpiredCount > 0) Color(0xFFEF4444).copy(alpha = 0.25f) else Color(0xFFEF4444).copy(alpha = 0.14f),
-                            shape = RoundedCornerShape(6.dp),
-                            border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFEF4444).copy(alpha = if (kop1ExpiredCount > 0) 0.85f else 0.45f)),
-                            modifier = Modifier.clickable {
-                                VirtualNumberManager.clearExpiredAndFailedNumbers(context)
-                            }
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.5.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Icon(Icons.Default.Delete, contentDescription = null, tint = Color(0xFFF87171), modifier = Modifier.size(11.dp))
-                                Spacer(modifier = Modifier.width(2.dp))
-                                Text(
-                                    text = if (kop1ExpiredCount > 0) "Clear Failed ($kop1ExpiredCount)" else "Clear Failed",
-                                    fontSize = 8.5.sp,
-                                    color = Color(0xFFFCA5A5),
-                                    fontWeight = FontWeight.ExtraBold
-                                )
-                            }
-                        }
 
-                        Spacer(modifier = Modifier.width(5.dp))
-                        Surface(
-                            color = if (merged24hKop1Otps.isNotEmpty()) Color(0xFF0091EA).copy(alpha = 0.25f) else Color(0xFF142434),
-                            shape = RoundedCornerShape(6.dp),
-                            border = androidx.compose.foundation.BorderStroke(1.dp, if (merged24hKop1Otps.isNotEmpty()) Color(0xFF00B0FF) else Color(0xFF26415E)),
-                            modifier = Modifier.clickable {
-                                val currentExportList = com.example.util.OtpExportHelper.getMerged24hOtps("Kop Engine 1", activeExportItems)
-                                if (currentExportList.isEmpty()) {
-                                    Toast.makeText(context, "গত ২৪ ঘণ্টায় ডাউনলোড করার মতো কোনো সফল OTP নম্বর পাওয়া যায়নি", Toast.LENGTH_SHORT).show()
-                                } else {
-                                    com.example.util.OtpExportHelper.exportOtps(context, "Kop Engine 1", currentExportList)
+                            Surface(
+                                color = if (merged24hKop1Otps.isNotEmpty()) Color(0xFF0091EA).copy(alpha = 0.25f) else Color(0xFF142434),
+                                shape = RoundedCornerShape(6.dp),
+                                border = androidx.compose.foundation.BorderStroke(1.dp, if (merged24hKop1Otps.isNotEmpty()) Color(0xFF00B0FF) else Color(0xFF26415E)),
+                                modifier = Modifier.clickable {
+                                    val currentExportList = com.example.util.OtpExportHelper.getMerged24hOtps("Kop Engine 1", activeExportItems)
+                                    if (currentExportList.isEmpty()) {
+                                        Toast.makeText(context, "গত ২৪ ঘণ্টায় ডাউনলোড করার মতো কোনো সফল OTP নম্বর পাওয়া যায়নি", Toast.LENGTH_SHORT).show()
+                                    } else {
+                                        com.example.util.OtpExportHelper.exportOtps(context, "Kop Engine 1", currentExportList)
+                                    }
+                                }
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 7.dp, vertical = 4.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(Icons.Default.Download, contentDescription = null, tint = if (merged24hKop1Otps.isNotEmpty()) Color(0xFF00B0FF) else Color(0xFF90A4AE), modifier = Modifier.size(11.dp))
+                                    Spacer(modifier = Modifier.width(3.dp))
+                                    Text(
+                                        text = if (merged24hKop1Otps.isNotEmpty()) "24h OTP (${merged24hKop1Otps.size})" else "24h OTP",
+                                        fontSize = 9.sp,
+                                        color = if (merged24hKop1Otps.isNotEmpty()) Color.White else Color(0xFF90A4AE),
+                                        fontWeight = FontWeight.Bold,
+                                        maxLines = 1,
+                                        softWrap = false
+                                    )
                                 }
                             }
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.5.dp),
-                                verticalAlignment = Alignment.CenterVertically
+
+                            IconButton(
+                                onClick = {
+                                    VirtualNumberManager.fetchIncomingOtps(context, autoCopy = true)
+                                },
+                                modifier = Modifier.size(28.dp)
                             ) {
-                                Icon(Icons.Default.Download, contentDescription = null, tint = if (merged24hKop1Otps.isNotEmpty()) Color(0xFF00B0FF) else Color(0xFF90A4AE), modifier = Modifier.size(11.dp))
-                                Spacer(modifier = Modifier.width(3.dp))
-                                Text(
-                                    text = if (merged24hKop1Otps.isNotEmpty()) "📥 24h OTP (${merged24hKop1Otps.size})" else "📥 24h OTP",
-                                    fontSize = 9.sp,
-                                    color = if (merged24hKop1Otps.isNotEmpty()) Color.White else Color(0xFF90A4AE),
-                                    fontWeight = FontWeight.Bold
+                                Icon(
+                                    Icons.Default.Refresh,
+                                    contentDescription = "Refresh",
+                                    tint = Color(0xFF00B0FF),
+                                    modifier = Modifier.size(16.dp)
                                 )
                             }
-                        }
-
-                        IconButton(
-                            onClick = {
-                                VirtualNumberManager.fetchIncomingOtps(context, autoCopy = true)
-                            },
-                            modifier = Modifier.size(28.dp)
-                        ) {
-                            Icon(
-                                Icons.Default.Refresh,
-                                contentDescription = "Refresh",
-                                tint = Color(0xFF00B0FF),
-                                modifier = Modifier.size(16.dp)
-                            )
                         }
                     }
 
-                    // Feed Filters: ALL, FRESH, SUCCESS, PENDING, FAILED
-                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    // Row 2: Feed Filters: ALL, FRESH, SUCCESS, PENDING, FAILED (Full-width horizontal row)
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
                         listOf("ALL", "FRESH", "SUCCESS", "PENDING", "FAILED").forEach { filter ->
                             val isSelected = filterTab == filter
                             val filterColor = if (filter == "FRESH") Color(0xFF00E676) else Color(0xFF0091EA)
                             Surface(
                                 color = if (isSelected) filterColor else Color(0xFF142434),
-                                shape = RoundedCornerShape(6.dp),
+                                shape = RoundedCornerShape(7.dp),
+                                border = androidx.compose.foundation.BorderStroke(
+                                    1.dp,
+                                    if (isSelected) filterColor else Color(0xFF26415E)
+                                ),
                                 modifier = Modifier.clickable { filterTab = filter }
                             ) {
                                 Text(
                                     text = filter,
                                     color = if (isSelected) (if (filter == "FRESH") Color.Black else Color.White) else (if (filter == "FRESH") Color(0xFF00E676) else Color(0xFF90A4AE)),
                                     fontSize = 10.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    modifier = Modifier.padding(horizontal = 7.dp, vertical = 4.dp)
+                                    fontWeight = FontWeight.ExtraBold,
+                                    maxLines = 1,
+                                    softWrap = false,
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
                                 )
                             }
                         }
@@ -1662,18 +1701,34 @@ fun VirtualNumbersSection(
                 }
             }
 
-            // 2. Search & Auto-Sync Bar (SS Style)
+            // 2. Search & Auto-Sync Bar (Full-width Search Input + Clean Action Row so placeholder never wraps into 3 lines)
             item {
-                Row(
+                Column(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     OutlinedTextField(
                         value = consoleFilter,
                         onValueChange = { consoleFilter = it },
-                        placeholder = { Text("Search country, range, number or code...", color = Color(0xFF546E7A), fontSize = 12.sp) },
-                        leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = Color(0xFF546E7A), modifier = Modifier.size(18.dp)) },
+                        placeholder = {
+                            Text(
+                                "Search country, range, number or code...",
+                                color = Color(0xFF546E7A),
+                                fontSize = 12.sp,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        },
+                        leadingIcon = {
+                            Icon(Icons.Default.Search, contentDescription = null, tint = Color(0xFF00B0FF), modifier = Modifier.size(18.dp))
+                        },
+                        trailingIcon = {
+                            if (consoleFilter.isNotEmpty()) {
+                                IconButton(onClick = { consoleFilter = "" }, modifier = Modifier.size(24.dp)) {
+                                    Icon(Icons.Default.Close, contentDescription = "Clear", tint = Color(0xFF90A4AE), modifier = Modifier.size(15.dp))
+                                }
+                            }
+                        },
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedTextColor = Color.White,
                             unfocusedTextColor = Color.White,
@@ -1684,28 +1739,41 @@ fun VirtualNumbersSection(
                         ),
                         shape = RoundedCornerShape(10.dp),
                         singleLine = true,
-                        modifier = Modifier.weight(1f)
+                        modifier = Modifier.fillMaxWidth()
                     )
 
-                    LiveConsoleSyncBadge()
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        LiveConsoleSyncBadge()
 
-                    if (AuthManager.isAdmin()) {
-                        Surface(
-                            color = Color(0xFFEF4444).copy(alpha = 0.15f),
-                            shape = RoundedCornerShape(8.dp),
-                            border = BorderStroke(1.dp, Color(0xFFEF4444).copy(alpha = 0.4f)),
-                            modifier = Modifier.clickable {
-                                VirtualNumberManager.clearBroadcastFeed()
-                                Toast.makeText(context, "🧹 Kop Engine Live Console ক্লিয়ার হয়েছে", Toast.LENGTH_SHORT).show()
-                            }
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp),
-                                verticalAlignment = Alignment.CenterVertically
+                        if (AuthManager.isAdmin()) {
+                            Surface(
+                                color = Color(0xFFEF4444).copy(alpha = 0.15f),
+                                shape = RoundedCornerShape(8.dp),
+                                border = BorderStroke(1.dp, Color(0xFFEF4444).copy(alpha = 0.4f)),
+                                modifier = Modifier.clickable {
+                                    VirtualNumberManager.clearBroadcastFeed()
+                                    Toast.makeText(context, "🧹 Kop Engine Live Console ক্লিয়ার হয়েছে", Toast.LENGTH_SHORT).show()
+                                }
                             ) {
-                                Icon(Icons.Default.Delete, contentDescription = "Clear", tint = Color(0xFFEF4444), modifier = Modifier.size(14.dp))
-                                Spacer(modifier = Modifier.width(3.dp))
-                                Text("Clear", color = Color(0xFFEF4444), fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(Icons.Default.Delete, contentDescription = "Clear", tint = Color(0xFFEF4444), modifier = Modifier.size(14.dp))
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text(
+                                        "Clear Console",
+                                        color = Color(0xFFEF4444),
+                                        fontSize = 10.5.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        maxLines = 1,
+                                        softWrap = false
+                                    )
+                                }
                             }
                         }
                     }
@@ -1846,7 +1914,7 @@ private fun ProvisionedNumberCard(
                 verticalAlignment = Alignment.Top
             ) {
                 // Left: Number & Country Badge & Status subtext
-                Column(modifier = Modifier.weight(1f)) {
+                Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
                             text = item.number,
@@ -1854,40 +1922,13 @@ private fun ProvisionedNumberCard(
                             fontSize = 15.sp,
                             fontWeight = FontWeight.ExtraBold,
                             fontFamily = FontFamily.Monospace,
+                            maxLines = 1,
+                            softWrap = false,
                             modifier = Modifier.clickable {
                                 ClipboardHelper.copyToClipboard(context, item.number, "Phone Number")
                             }
                         )
-                        val countryInfo = remember(item.number, item.range, item.country, item.iso) {
-                            com.example.util.AllCountriesProvider.detectCountry(item.number)
-                                ?: com.example.util.AllCountriesProvider.detectCountry(item.range ?: "")
-                                ?: com.example.util.AllCountriesProvider.findCountry(item.iso)
-                                ?: com.example.util.AllCountriesProvider.detectCountry(item.country)
-                        }
-                        val flag = countryInfo?.flag ?: "🌐"
-                        val countryName = countryInfo?.name ?: item.country
-                        val isoShort = (countryInfo?.code ?: item.iso).uppercase()
-
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Surface(
-                            color = Color(0xFF1E2D3B),
-                            shape = RoundedCornerShape(4.dp),
-                            border = androidx.compose.foundation.BorderStroke(0.6.dp, Color(0xFF26415E))
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text(text = flag, fontSize = 11.sp)
-                                Spacer(modifier = Modifier.width(3.dp))
-                                Text(
-                                    text = "$countryName [$isoShort]",
-                                    color = Color(0xFF81D4FA),
-                                    fontSize = 9.sp,
-                                    fontWeight = FontWeight.Bold
-                                )
-                            }
-                        }
+                        Spacer(modifier = Modifier.width(4.dp))
                         IconButton(
                             onClick = {
                                 ClipboardHelper.copyToClipboard(context, item.number, "Phone Number")
@@ -1903,7 +1944,17 @@ private fun ProvisionedNumberCard(
                         }
                     }
 
-                    // Facebook Fresh / Taken Badge
+                    val countryInfo = remember(item.number, item.range, item.country, item.iso) {
+                        com.example.util.AllCountriesProvider.detectCountry(item.number)
+                            ?: com.example.util.AllCountriesProvider.detectCountry(item.range ?: "")
+                            ?: com.example.util.AllCountriesProvider.findCountry(item.iso)
+                            ?: com.example.util.AllCountriesProvider.detectCountry(item.country)
+                    }
+                    val flag = countryInfo?.flag ?: "🌐"
+                    val countryName = countryInfo?.name ?: item.country
+                    val isoShort = (countryInfo?.code ?: item.iso).uppercase()
+
+                    // Facebook Fresh / Taken Badge + Country Badge in a clean horizontal row
                     val fbTag = item.fbTagType
                     val isChecking = item.fbStatus == "Checking..."
                     val (chipBg, chipFg, chipBorder, chipText) = when (fbTag) {
@@ -1950,8 +2001,33 @@ private fun ProvisionedNumberCard(
 
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.padding(top = 3.dp)
+                        horizontalArrangement = Arrangement.spacedBy(5.dp),
+                        modifier = Modifier
+                            .padding(top = 4.dp)
+                            .horizontalScroll(rememberScrollState())
                     ) {
+                        Surface(
+                            color = Color(0xFF1E2D3B),
+                            shape = RoundedCornerShape(4.dp),
+                            border = androidx.compose.foundation.BorderStroke(0.6.dp, Color(0xFF26415E))
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(text = flag, fontSize = 11.sp, maxLines = 1, softWrap = false)
+                                Spacer(modifier = Modifier.width(3.dp))
+                                Text(
+                                    text = "$countryName [$isoShort]",
+                                    color = Color(0xFF81D4FA),
+                                    fontSize = 9.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    maxLines = 1,
+                                    softWrap = false
+                                )
+                            }
+                        }
+
                         Surface(
                             color = chipBg as Color,
                             shape = RoundedCornerShape(4.dp),
@@ -1984,7 +2060,9 @@ private fun ProvisionedNumberCard(
                                     text = chipText as String,
                                     color = chipFg as Color,
                                     fontSize = 9.sp,
-                                    fontWeight = FontWeight.ExtraBold
+                                    fontWeight = FontWeight.ExtraBold,
+                                    maxLines = 1,
+                                    softWrap = false
                                 )
                             }
                         }
@@ -2197,10 +2275,12 @@ private fun BroadcastTerminalCard(
                     }
                 }
 
-                // Chips Row: [Service] [Country] [Operator] [• NEW]
+                // Chips Row: [Service] [Country] [Operator] [• NEW] (Scrollable & non-wrapping so • NEW never wraps vertically)
+                Spacer(modifier = Modifier.width(6.dp))
                 Row(
                     horizontalArrangement = Arrangement.spacedBy(4.dp),
-                    verticalAlignment = Alignment.CenterVertically
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.horizontalScroll(rememberScrollState())
                 ) {
                     val cleanSrv = when {
                         feed.service.contains("facebook", ignoreCase = true) || feed.service.contains("fb", ignoreCase = true) -> "Facebook"
@@ -2220,6 +2300,8 @@ private fun BroadcastTerminalCard(
                             color = Color(0xFF38BDF8),
                             fontSize = 9.5.sp,
                             fontWeight = FontWeight.Bold,
+                            maxLines = 1,
+                            softWrap = false,
                             modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                         )
                     }
@@ -2241,13 +2323,15 @@ private fun BroadcastTerminalCard(
                             modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text(text = flagEmoji, fontSize = 11.sp)
+                            Text(text = flagEmoji, fontSize = 11.sp, maxLines = 1, softWrap = false)
                             Spacer(modifier = Modifier.width(4.dp))
                             Text(
                                 text = if (isoCode.isNotBlank()) "$countryName $isoCode" else countryName,
                                 color = Color(0xFF2DD4BF),
                                 fontSize = 9.5.sp,
-                                fontWeight = FontWeight.Bold
+                                fontWeight = FontWeight.Bold,
+                                maxLines = 1,
+                                softWrap = false
                             )
                         }
                     }
@@ -2263,6 +2347,8 @@ private fun BroadcastTerminalCard(
                             color = Color(0xFFFBBF24),
                             fontSize = 9.5.sp,
                             fontWeight = FontWeight.Bold,
+                            maxLines = 1,
+                            softWrap = false,
                             modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                         )
                     }
@@ -2279,6 +2365,8 @@ private fun BroadcastTerminalCard(
                                 color = Color(0xFF34D399),
                                 fontSize = 9.sp,
                                 fontWeight = FontWeight.Black,
+                                maxLines = 1,
+                                softWrap = false,
                                 modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
                             )
                         }
