@@ -834,9 +834,9 @@ fun GlossyTactileButton(
 }
 
 /**
- * Proxy Tactile Button with 3-Second Press-and-Hold Gesture:
+ * Proxy Tactile Button with 1.5-Second Press-and-Hold Gesture:
  * - Short Tap: Toggles Proxy Connect / Disconnect.
- * - Hold (~3 seconds): Shows live progress fill and opens Selected Profile's Username & Password + Update Profile panel!
+ * - Hold (1.5 seconds): Shows live progress fill and opens Selected Profile's Username or Password (whichever is selected in the app) + Update Profile panel!
  */
 @Composable
 fun ProxyHoldableTactileButton(
@@ -877,10 +877,10 @@ fun ProxyHoldableTactileButton(
                         holdProgress = 0f
                         var holdTriggered = false
                         val startTime = System.currentTimeMillis()
-                        val holdDurationMs = 2800L // ~3 seconds hold feel
+                        val holdDurationMs = 1500L // Exact 1.5 seconds hold
                         val job = scope.launch {
                             while (true) {
-                                delay(50L)
+                                delay(40L)
                                 val elapsed = System.currentTimeMillis() - startTime
                                 holdProgress = (elapsed.toFloat() / holdDurationMs).coerceIn(0f, 1f)
                                 if (elapsed >= holdDurationMs && !holdTriggered) {
@@ -904,7 +904,7 @@ fun ProxyHoldableTactileButton(
             .padding(horizontal = horizontalPadding, vertical = 2.dp)
             .testTag(testTag)
     ) {
-        // Hold progress bar overlay while user is pressing and holding (~3s)
+        // Hold progress bar overlay while user is pressing and holding (1.5s)
         if (holdProgress > 0.08f) {
             Box(
                 modifier = Modifier
@@ -946,9 +946,9 @@ fun ProxyHoldableTactileButton(
                 Spacer(modifier = Modifier.width(4.dp))
             }
 
-            val displayText = if (holdProgress > 0.18f) {
-                val remainSec = (((1f - holdProgress) * 3f) + 0.9f).toInt().coerceIn(1, 3)
-                "Hold ${remainSec}s..."
+            val displayText = if (holdProgress > 0.15f) {
+                val remainSec = ((1f - holdProgress) * 1.5f).coerceIn(0.1f, 1.5f)
+                String.format(java.util.Locale.US, "Hold %.1fs...", remainSec)
             } else {
                 title
             }
@@ -970,7 +970,7 @@ fun ProxyHoldableTactileButton(
 /**
  * Expandable Selected Proxy Profile Editor inside the Floating Overlay:
  * - Automatically loads the currently selected Proxy Profile (`profileName`, `username`, `password`).
- * - Shows ONLY Username OR ONLY Password based on Proxy Section's setting (`state.proxyOverlayEditField`).
+ * - Strictly shows ONLY Username OR ONLY Password based on what is selected in the App's Proxy Section (`state.proxyOverlayEditField`).
  * - Places `📋 Paste` & `Clear` in the CENTER/MIDDLE with a wide empty right-side zone and extra vertical
  *   spacing so tapping/editing the right end of the text (e.g. `__cr.DE`) never hits Paste or Cross (`✕`).
  */
@@ -983,7 +983,7 @@ fun ProxyOverlayQuickEditPanel(
     val proxy = state.proxyState
     val isPasswordMode = state.proxyOverlayEditField.equals("PASSWORD", ignoreCase = true)
 
-    // Ensure the latest selected profile from Room DB is loaded whenever this panel opens
+    // Ensure the latest selected profile & selected edit field from Room DB / Prefs are loaded whenever this panel opens
     LaunchedEffect(Unit) {
         OverlayStateManager.loadSelectedProxyProfileFromDb(context)
     }
@@ -1012,7 +1012,7 @@ fun ProxyOverlayQuickEditPanel(
                 .fillMaxWidth()
                 .padding(horizontal = 8.dp, vertical = 7.dp)
         ) {
-            // 1. Selected Profile Header Row + Mode Switcher + Close (✕)
+            // 1. Selected Profile Header Row + Close (✕)
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -1034,64 +1034,16 @@ fun ProxyOverlayQuickEditPanel(
                     )
                 }
 
-                // Quick mode indicator/toggle (synced with Proxy Section: USER vs PASS)
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(3.dp),
-                    verticalAlignment = Alignment.CenterVertically
+                Surface(
+                    shape = RoundedCornerShape(4.dp),
+                    color = Color(0xFF1E293B),
+                    border = androidx.compose.foundation.BorderStroke(0.5.dp, Color(0xFF64748B)),
+                    modifier = Modifier
+                        .size(16.dp)
+                        .clickable { OverlayStateManager.closeProxyOverlayEdit() }
                 ) {
-                    Surface(
-                        shape = RoundedCornerShape(4.dp),
-                        color = if (!isPasswordMode) cyanAccent.copy(alpha = 0.22f) else Color(0xFF152234),
-                        border = androidx.compose.foundation.BorderStroke(
-                            0.6.dp,
-                            if (!isPasswordMode) cyanAccent else Color(0xFF334155)
-                        ),
-                        modifier = Modifier.clickable {
-                            OverlayStateManager.setProxyOverlayEditField("USERNAME")
-                        }
-                    ) {
-                        Text(
-                            text = "USER",
-                            color = if (!isPasswordMode) cyanAccent else Color(0xFF94A3B8),
-                            fontSize = 7.5.sp,
-                            fontWeight = FontWeight.ExtraBold,
-                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.5.dp)
-                        )
-                    }
-
-                    Surface(
-                        shape = RoundedCornerShape(4.dp),
-                        color = if (isPasswordMode) cyanAccent.copy(alpha = 0.22f) else Color(0xFF152234),
-                        border = androidx.compose.foundation.BorderStroke(
-                            0.6.dp,
-                            if (isPasswordMode) cyanAccent else Color(0xFF334155)
-                        ),
-                        modifier = Modifier.clickable {
-                            OverlayStateManager.setProxyOverlayEditField("PASSWORD")
-                        }
-                    ) {
-                        Text(
-                            text = "PASS",
-                            color = if (isPasswordMode) cyanAccent else Color(0xFF94A3B8),
-                            fontSize = 7.5.sp,
-                            fontWeight = FontWeight.ExtraBold,
-                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.5.dp)
-                        )
-                    }
-
-                    Spacer(modifier = Modifier.width(2.dp))
-
-                    Surface(
-                        shape = RoundedCornerShape(4.dp),
-                        color = Color(0xFF1E293B),
-                        border = androidx.compose.foundation.BorderStroke(0.5.dp, Color(0xFF64748B)),
-                        modifier = Modifier
-                            .size(16.dp)
-                            .clickable { OverlayStateManager.closeProxyOverlayEdit() }
-                    ) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Text("✕", color = Color.White, fontSize = 8.5.sp, fontWeight = FontWeight.Bold)
-                        }
+                    Box(contentAlignment = Alignment.Center) {
+                        Text("✕", color = Color.White, fontSize = 8.5.sp, fontWeight = FontWeight.Bold)
                     }
                 }
             }

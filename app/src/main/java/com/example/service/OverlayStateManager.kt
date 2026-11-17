@@ -1330,6 +1330,13 @@ object OverlayStateManager {
                 val pPrefs = proxySettingsPrefs ?: context?.getSharedPreferences("proxy_settings_prefs", Context.MODE_PRIVATE)
                 val lastId = pPrefs?.getLong("last_selected_proxy_id", -1L) ?: -1L
 
+                val savedField = pPrefs?.getString("proxy_overlay_edit_field", null)
+                    ?: prefs?.getString("proxy_overlay_edit_field", null)
+                if (!savedField.isNullOrBlank()) {
+                    val cleanField = if (savedField.uppercase() == "PASSWORD") "PASSWORD" else "USERNAME"
+                    _uiState.update { it.copy(proxyOverlayEditField = cleanField) }
+                }
+
                 val savedList = repo.allProxies.firstOrNull() ?: emptyList()
                 if (savedList.isNotEmpty()) {
                     val currentName = _uiState.value.proxyState.profileName.trim()
@@ -1355,9 +1362,19 @@ object OverlayStateManager {
     }
 
     fun openProxyOverlayEdit(context: Context) {
+        val pPrefs = proxySettingsPrefs ?: context.getSharedPreferences("proxy_settings_prefs", Context.MODE_PRIVATE)
+        val savedField = pPrefs.getString("proxy_overlay_edit_field", null)
+            ?: prefs?.getString("proxy_overlay_edit_field", null)
+            ?: _uiState.value.proxyOverlayEditField
+        val cleanField = if (savedField.uppercase() == "PASSWORD") "PASSWORD" else "USERNAME"
+        _uiState.update {
+            it.copy(
+                proxyOverlayEditField = cleanField,
+                isProxyOverlayEditExpanded = true
+            )
+        }
         loadSelectedProxyProfileFromDb(context)
         VibrationHelper.vibrateSuccess(context)
-        _uiState.update { it.copy(isProxyOverlayEditExpanded = true) }
     }
 
     fun closeProxyOverlayEdit() {

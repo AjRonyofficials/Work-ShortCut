@@ -957,7 +957,7 @@ fun ProxySection(
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Text(
-                                    text = "OVERLAY 3s HOLD EDIT BOX",
+                                    text = "OVERLAY 1.5s HOLD EDIT BOX",
                                     fontSize = 10.5.sp,
                                     fontWeight = FontWeight.ExtraBold,
                                     color = cyanAccent,
