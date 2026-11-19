@@ -125,7 +125,8 @@ data class OverlayUiState(
     val overlayScale: Float = 1.0f,
     val overlayMaxHeightDp: Int = 680,
     val maxOverlayNumbersCount: Int = 10,
-    val customAppTitle: String = "Work ShortCut"
+    val customAppTitle: String = "Work ShortCut",
+    val postCleanAction: String = "HOME_SCREEN"
 )
 
 object OverlayStateManager {
@@ -357,6 +358,7 @@ object OverlayStateManager {
                     },
                     maxOverlayNumbersCount = p.getInt("max_overlay_numbers_count", 10).coerceIn(1, 10),
                     customAppTitle = p.getString("custom_app_title", "Work ShortCut") ?: "Work ShortCut",
+                    postCleanAction = p.getString("post_clean_action", "HOME_SCREEN") ?: "HOME_SCREEN",
                     isOverlayActive = p.getBoolean("overlay_persistent_enabled", false),
                     proxyOverlayEditField = proxyPrefs.getString("proxy_overlay_edit_field", null)
                         ?: p.getString("proxy_overlay_edit_field", "USERNAME") ?: "USERNAME",
@@ -679,6 +681,17 @@ object OverlayStateManager {
 
     fun setClearDataOverlayExpanded(expanded: Boolean) {
         _uiState.update { it.copy(isClearDataOverlayExpanded = expanded) }
+    }
+
+    fun setPostCleanAction(action: String) {
+        val clean = if (action.uppercase() == "AUTO_OPEN_APP") "AUTO_OPEN_APP" else "HOME_SCREEN"
+        _uiState.update { it.copy(postCleanAction = clean) }
+        prefs?.edit()?.putString("post_clean_action", clean)?.apply()
+    }
+
+    fun getPostCleanAction(): String {
+        val saved = prefs?.getString("post_clean_action", null)
+        return if (!saved.isNullOrBlank()) saved else _uiState.value.postCleanAction
     }
 
     fun executeClearDataForApp(context: Context, item: com.example.util.AppInfoItem) {

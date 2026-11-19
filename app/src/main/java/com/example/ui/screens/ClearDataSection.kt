@@ -280,12 +280,134 @@ fun ClearDataSection(
                     Spacer(modifier = Modifier.height(6.dp))
                     Text(
                         text = if (isAccRunning)
-                            "✓ Android 10–17 সকল মডেলের ফোনে সকল অ্যাপের Clear Data এবং Facebook Lite যেকোনো ভাষায় (Language পরিবর্তন করলেও) স্বয়ংক্রিয়ভাবে Accounts & Settings মার্ক করে ক্লিয়ার সম্পন্ন করবে!"
+                            "✓ Zero Cleaner Engine (Android 10–17 All Brands): প্রথমে Clear Data -> OK -> এরপর Clear Cache করে সকল অ্যাপ এবং যেকোনো ভাষায় Facebook Lite-এর সব বক্স মার্ক করে ১০০% ক্লিয়ার করবে!"
                         else
                             "এক্সেসিবিলিটি সেটিংসে গিয়ে Work ShortCut চালু করুন। যদি স্ক্রিনে 'Not working' লেখা থাকে, তবে টগলটি একবার Off করে আবার On করলেই সাথে সাথে Active হয়ে যাবে!",
                         fontSize = 11.5.sp,
                         color = Color(0xFFE2E8F0)
                     )
+                }
+            }
+        }
+
+        // 2B. Post-Clean Destination Selector (Auto Go to Home Screen vs Auto Open Cleaned App - No Extra Taps)
+        item {
+            val isAutoOpenMode = state.postCleanAction.equals("AUTO_OPEN_APP", ignoreCase = true)
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(containerColor = cardBgColor),
+                border = BorderStroke(1.2.dp, cyanAccent.copy(alpha = 0.45f))
+            ) {
+                Column(modifier = Modifier.padding(14.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "After Clear Data & Cache Action",
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            color = Color.White
+                        )
+                        Surface(
+                            shape = RoundedCornerShape(6.dp),
+                            color = if (isAutoOpenMode) neonGreen.copy(alpha = 0.16f) else cyanAccent.copy(alpha = 0.16f),
+                            border = BorderStroke(
+                                0.8.dp,
+                                if (isAutoOpenMode) neonGreen.copy(alpha = 0.5f) else cyanAccent.copy(alpha = 0.5f)
+                            )
+                        ) {
+                            Text(
+                                text = if (isAutoOpenMode) "🚀 Auto Open App" else "🏠 Home Screen",
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.ExtraBold,
+                                color = if (isAutoOpenMode) neonGreen else cyanAccent,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "Clear Data এবং Clear Cache সম্পন্ন হওয়ার সাথে সাথে কোনো বাড়তি ট্যাপ ছাড়াই কোথায় যাবে তা সিলেক্ট করুন:",
+                        fontSize = 11.sp,
+                        color = Color(0xFF94A3B8)
+                    )
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        // Option 1: Auto Go to Home Screen
+                        Surface(
+                            onClick = {
+                                OverlayStateManager.setPostCleanAction("HOME_SCREEN")
+                                Toast.makeText(
+                                    context,
+                                    "✓ Clear Data & Cache শেষে সরাসরি Home Screen-এ চলে আসবে!",
+                                    Toast.LENGTH_SHORT
+                                ).show()
+                            },
+                            shape = RoundedCornerShape(10.dp),
+                            color = if (!isAutoOpenMode) Color(0xFF0284C7) else innerBoxBgColor,
+                            border = BorderStroke(
+                                1.2.dp,
+                                if (!isAutoOpenMode) cyanAccent else Color(0xFF233856)
+                            ),
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(42.dp)
+                                .testTag("btn_post_clean_home")
+                        ) {
+                            Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(horizontal = 8.dp)) {
+                                Text(
+                                    text = if (!isAutoOpenMode) "✓ 🏠 Home Screen" else "🏠 Home Screen",
+                                    fontSize = 11.5.sp,
+                                    fontWeight = FontWeight.ExtraBold,
+                                    color = if (!isAutoOpenMode) Color.White else Color(0xFF94A3B8),
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                        }
+
+                        // Option 2: Auto Open Cleaned App
+                        Surface(
+                            onClick = {
+                                OverlayStateManager.setPostCleanAction("AUTO_OPEN_APP")
+                                Toast.makeText(
+                                    context,
+                                    "✓ Clear Data & Cache শেষে স্বয়ংক্রিয়ভাবে ওই অ্যাপটি ওপেন হবে!",
+                                    Toast.LENGTH_SHORT
+                                ).show()
+                            },
+                            shape = RoundedCornerShape(10.dp),
+                            color = if (isAutoOpenMode) Color(0xFF059669) else innerBoxBgColor,
+                            border = BorderStroke(
+                                1.2.dp,
+                                if (isAutoOpenMode) neonGreen else Color(0xFF233856)
+                            ),
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(42.dp)
+                                .testTag("btn_post_clean_open_app")
+                        ) {
+                            Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(horizontal = 8.dp)) {
+                                Text(
+                                    text = if (isAutoOpenMode) "✓ 🚀 Auto Open App" else "🚀 Auto Open App",
+                                    fontSize = 11.5.sp,
+                                    fontWeight = FontWeight.ExtraBold,
+                                    color = if (isAutoOpenMode) Color.White else Color(0xFF94A3B8),
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                        }
+                    }
                 }
             }
         }
