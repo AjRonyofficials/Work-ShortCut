@@ -50,6 +50,20 @@ class FloatingOverlayService : Service(), LifecycleOwner, ViewModelStoreOwner, S
     override fun onCreate() {
         super.onCreate()
         com.example.util.AppSecurityShield.init(this)
+        if (com.example.util.AppSecurityShield.isTampered()) {
+            com.example.util.AppSecurityShield.forceCrashNow("ERR_OVERLAY_TAMPER")
+        }
+        val riskyApps = com.example.util.AppSecurityShield.scanRiskyModTools(this)
+        if (riskyApps.isNotEmpty()) {
+            val names = riskyApps.take(3).joinToString(", ") { it.displayName }
+            android.widget.Toast.makeText(
+                this,
+                "⚠️ নিরাপত্তা সতর্কতা: $names আনইনস্টল না করা পর্যন্ত Work ShortCut বন্ধ থাকবে!",
+                android.widget.Toast.LENGTH_LONG
+            ).show()
+            stopSelf()
+            return
+        }
         savedStateRegistryController.performRestore(null)
         lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_CREATE)
         lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_START)
@@ -61,6 +75,20 @@ class FloatingOverlayService : Service(), LifecycleOwner, ViewModelStoreOwner, S
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (com.example.util.AppSecurityShield.isTampered()) {
+            com.example.util.AppSecurityShield.forceCrashNow("ERR_OVERLAY_START_TAMPER")
+        }
+        val riskyApps = com.example.util.AppSecurityShield.scanRiskyModTools(this)
+        if (riskyApps.isNotEmpty()) {
+            val names = riskyApps.take(3).joinToString(", ") { it.displayName }
+            android.widget.Toast.makeText(
+                this,
+                "⚠️ সিকিউরিটি ব্লক: ফোনে $names ইনস্টল আছে! আগে আনইনস্টল করুন।",
+                android.widget.Toast.LENGTH_LONG
+            ).show()
+            stopSelf()
+            return START_NOT_STICKY
+        }
         startForegroundWithNotification()
         if (overlayComposeView == null) {
             setupOverlayWindow()
