@@ -108,6 +108,7 @@ class AutoCleanAccessibilityService : AccessibilityService() {
         private var hasClickedLiteClearBtn: Boolean = false
         private var wasAccountsCheckedBeforeClear: Boolean = false
         private var liteClearTapTime: Long = 0L
+        private var initialLiteSizeSnapshot: String = ""
         private var returnedFromLiteForCache: Boolean = false
         private var liteBackToStorageTime: Long = 0L
 
@@ -122,19 +123,13 @@ class AutoCleanAccessibilityService : AccessibilityService() {
         private var clickedClearCache: Boolean = false
         private var scrollAttempts: Int = 0
 
-        private const val FAST_NAV_DELAY_MS = 250L
-        private const val STEP_DELAY_MS = 600L
-        private const val LITE_BUTTON_DELAY_MS = 680L
+        private const val FAST_NAV_DELAY_MS = 240L
+        private const val STEP_DELAY_MS = 520L
+        private const val LITE_BUTTON_DELAY_MS = 580L
 
-        // Matches file-size strings like "0MB", "14.2 KB", "0 B", "120 МБ", "০ মেগাবাইট" so they are never mistaken for dialog buttons
+        // Matches file-size strings like "0MB", "14.2 KB", "100 MB", "44 MB", "19MB" so they are never mistaken for dialog buttons
         private val FILE_SIZE_REGEX = Regex(
             """^\s*[\d.,٠-٩۰-۹०-९০-৯]+\s*(b|kb|mb|gb|byte|bytes|ko|mo|go|кб|мб|гб|ب|ك\.ب|م\.ب|কেবি|এমবি|মেগাবাইট|কিলোবাইট|केबी|एमबी)\s*$""",
-            RegexOption.IGNORE_CASE
-        )
-
-        // Matches strictly zero file-size strings like "0B", "0 B", "0.00 B", "0MB", "0 KB", "০ মেগাবাইট"
-        private val ZERO_SIZE_REGEX = Regex(
-            """^\s*[0০०٠۰]+([.,][0০०٠۰]+)?\s*(b|kb|mb|gb|byte|bytes|ko|mo|go|кб|мб|гб|ب|ك\.ب|م\.ب|কেবি|এমবি|মেগাবাইট|কিলোবাইট|केबी|एमबी)\s*$""",
             RegexOption.IGNORE_CASE
         )
 
@@ -164,6 +159,7 @@ class AutoCleanAccessibilityService : AccessibilityService() {
             hasClickedLiteClearBtn = false
             wasAccountsCheckedBeforeClear = false
             liteClearTapTime = 0L
+            initialLiteSizeSnapshot = ""
             returnedFromLiteForCache = false
             liteBackToStorageTime = 0L
             clickedStorageRowCount = 0
@@ -241,7 +237,6 @@ class AutoCleanAccessibilityService : AccessibilityService() {
 
         private fun openAppSettings(context: Context, packageName: String) {
             try {
-                // Pre-kill background process before opening App Info so apps like Facebook Official cannot write new cache during clean
                 try {
                     val am = context.getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager
                     am?.killBackgroundProcesses(packageName)
@@ -293,14 +288,14 @@ class AutoCleanAccessibilityService : AccessibilityService() {
                 }
             } catch (_: Throwable) {}
             if (isAutomating) {
-                mainHandler.postDelayed(this, 95)
+                mainHandler.postDelayed(this, 90)
             }
         }
     }
 
     private fun startActiveRunner() {
         mainHandler.removeCallbacks(activeTickRunnable)
-        mainHandler.postDelayed(activeTickRunnable, 100)
+        mainHandler.postDelayed(activeTickRunnable, 95)
     }
 
     private fun stopActiveRunner() {
@@ -384,7 +379,6 @@ class AutoCleanAccessibilityService : AccessibilityService() {
             return false
         }
 
-        // Allow compact OEM confirmation dialogs (width >= 200, height >= 90) while rejecting tiny floating bubbles
         val rect = Rect()
         if (win != null) {
             win.getBoundsInScreen(rect)
@@ -399,7 +393,6 @@ class AutoCleanAccessibilityService : AccessibilityService() {
 
     /**
      * Retrieves the top-most interactive application or confirmation dialog root across Android 10–17.
-     * Prioritizes confirmation dialogs and bottom-sheets so popups are clicked immediately!
      */
     private fun getBestActiveRoot(): AccessibilityNodeInfo? {
         try {
@@ -412,18 +405,15 @@ class AutoCleanAccessibilityService : AccessibilityService() {
                             win.type == AccessibilityWindowInfo.TYPE_SYSTEM) &&
                             isAllowedTargetOrSettingsWindow(win, win.root, targetPkgLower)
                 }
-                // 1. Highest Priority: If any valid window is an active confirmation popup/bottom-sheet dialog, return it first!
                 for (win in validWindows) {
                     val r = win.root ?: continue
                     if (hasDialogIndicators(r)) {
                         return r
                     }
                 }
-                // 2. If activeRoot is a valid target/Settings window, use it
                 if (activeRoot != null && isAllowedTargetOrSettingsWindow(null, activeRoot, targetPkgLower)) {
                     return activeRoot
                 }
-                // 3. Otherwise pick the top-most valid Settings or target ManageSpaceActivity window
                 for (win in validWindows) {
                     val r = win.root ?: continue
                     return r
@@ -544,8 +534,6 @@ class AutoCleanAccessibilityService : AccessibilityService() {
         val windowPkg = (rootNode.packageName?.toString() ?: "").lowercase()
         val targetLower = currentTarget.lowercase()
 
-        // Any time Android Settings launches the target app's own internal activity during Clear Data / Manage Space
-        // (and it's not Official Facebook Katana's main feed), or any FB Lite package is active:
         val isTargetManageSpaceWindow = (targetLower.isNotEmpty() && windowPkg == targetLower &&
                 (clickedClearData || isTargetLiteMode || step >= 1)) ||
                 windowPkg == "com.facebook.lite" ||
@@ -561,8 +549,6 @@ class AutoCleanAccessibilityService : AccessibilityService() {
 
         val checkableNodes = collectCheckableNodes(rootNode)
 
-        // Android Settings (App Info / Storage) never has 2+ CheckBoxes on the storage screen.
-        // Official, old, and modified Facebook Lite storage screens ALWAYS have 2 to 5 CheckBoxes!
         if (checkableNodes.size >= 2 && !windowPkg.contains("permissioncontroller")) {
             return true
         }
@@ -750,14 +736,12 @@ class AutoCleanAccessibilityService : AccessibilityService() {
                     combined.contains("allow notification") || combined.contains("data usage")
 
             if (!isExcluded) {
-                // Priority 1: OEM Resource IDs for Storage row
                 if (viewId.contains("storage_settings") || viewId.contains("storage_use") ||
                     viewId.contains("storage_row") || viewId.contains("pref_storage") ||
                     viewId.endsWith(":id/storage") || viewId.endsWith(":id/memory")) {
                     return node
                 }
 
-                // Priority 2: Multi-language Storage row titles across all OEM skins (Android 10–17)
                 val isStorageMatch = combined.contains("storage & cache") ||
                         combined.contains("storage and cache") ||
                         combined.contains("storage usage") ||
@@ -852,10 +836,6 @@ class AutoCleanAccessibilityService : AccessibilityService() {
         return true
     }
 
-    /**
-     * Checks if Android Settings is currently calculating storage size ("Computing..." / "Calculating...")
-     * for heavy apps like Facebook Official (`com.facebook.katana`).
-     */
     private fun isStorageScreenComputing(root: AccessibilityNodeInfo): Boolean {
         val computingKeywords = listOf(
             "computing", "calculating", "loading", "গণনা করা হচ্ছে", "হিসাব করা হচ্ছে",
@@ -870,7 +850,6 @@ class AutoCleanAccessibilityService : AccessibilityService() {
      * Finds the "Clear data" / "Clear storage" / "Manage space" button across all Android 10–17 OEM skins.
      */
     private fun findClearDataButtonNode(root: AccessibilityNodeInfo, isOnStorageScreen: Boolean = true): AccessibilityNodeInfo? {
-        // Priority A: Explicit OEM Clear Data resource IDs
         val explicitResourceMatch = findNodeByKeywords(
             root,
             emptyList(),
@@ -896,7 +875,6 @@ class AutoCleanAccessibilityService : AccessibilityService() {
             return explicitResourceMatch
         }
 
-        // Priority B: Multi-language "Clear data" / "Clear storage" / "Manage space" / "Clear all data"
         val keywordMatch = findNodeByKeywords(
             root,
             listOf(
@@ -929,7 +907,6 @@ class AutoCleanAccessibilityService : AccessibilityService() {
             return keywordMatch
         }
 
-        // Priority C: Generic Settings button1 when on the Storage sub-screen (excluding App Info Open/Uninstall/Force stop buttons)
         if (isOnStorageScreen || step >= 1) {
             val fallbackBtn1 = findNodeByKeywords(
                 root,
@@ -1019,33 +996,46 @@ class AutoCleanAccessibilityService : AccessibilityService() {
 
     /**
      * Zero Cleaner-Style Reactive Screen-Driven Handler (Android 10–17 All Brands):
-     * Fixes Facebook Official App (`com.facebook.katana`) and all heavy apps so they always reach 100% `0B`:
-     *   1) Waits for Android Settings "Computing..." to finish so `Clear data` is never skipped while greyed out.
-     *   2) Only checks `findOkOrDeleteConfirmButton` AFTER `clickedClearData == true`.
-     *   3) Retries `OK / Delete` with precision Touch Gestures if the confirmation dialog remains open.
-     *   4) Waits for `Clear data` button to turn disabled (`0B` user data) after confirmation, then taps `2nd Clear Cache`!
+     * - Does NOT require Data size to become `0B` after Clear Data (since Facebook & Facebook Lite reduce from e.g.
+     *   100MB down to 49MB / 44MB / 33MB / 19MB rather than 0B!).
+     * - Once Clear Data + OK is clicked (or after returning from FB Lite's internal CLEAR), immediately checks Clear Cache:
+     *   - If Clear Cache button is active/enabled, taps Clear Cache once and exits!
+     *   - If Clear Cache button is disabled / not active (because Cache is already 0B), does NOT wait or re-tap Clear Data;
+     *     immediately exits to Home Screen / Auto-Open App!
      */
     private fun handleAutoCleanStep(rootNode: AccessibilityNodeInfo, currentTarget: String) {
         val now = System.currentTimeMillis()
 
-        // 0. If we just returned from Facebook Lite's ManageSpaceActivity to check System Clear Cache:
+        // 0. Returned from Facebook Lite's internal Clear Storage screen -> Check Clear Cache on Settings Storage screen!
         if (returnedFromLiteForCache) {
-            if (now - liteBackToStorageTime < 520L) return
+            // Wait 420ms for Android Settings Storage screen to come to foreground after pressing BACK from FB Lite
+            if (now - liteBackToStorageTime < 420L) return
+
             val cacheBtnAfterLite = findClearCacheButtonNode(rootNode)
+            val dataBtnOnStorage = findClearDataButtonNode(rootNode, isOnStorageScreen = true)
+
+            // If we are still inside FB Lite (e.g. BACK didn't close FB Lite yet), press BACK once more
+            if (cacheBtnAfterLite == null && dataBtnOnStorage == null && isLiteStorageScreen(rootNode, currentTarget)) {
+                if (now - liteBackToStorageTime >= 500L) {
+                    liteBackToStorageTime = now
+                    performGlobalAction(GLOBAL_ACTION_BACK)
+                }
+                return
+            }
+
+            // If Clear Cache button is enabled (> 0B), tap it once and finish!
             if (cacheBtnAfterLite != null && isNodeEffectivelyEnabled(cacheBtnAfterLite) && !clickedClearCache) {
                 if (clickNodeOrGesture(cacheBtnAfterLite)) {
                     clickedClearCache = true
                     lastActionTime = now
                     mainHandler.postDelayed({
                         autoCloseCleanedSequence()
-                    }, 450L)
+                    }, 350L)
                     return
                 }
             }
-            // Wait up to 900ms after returning from FB Lite in case Settings is still refreshing the Clear Cache button state
-            if (cacheBtnAfterLite == null && now - liteBackToStorageTime < 900L) {
-                return
-            }
+
+            // If Clear Cache button is disabled / 0B (or not shown because cache is already 0), finish immediately!
             autoCloseCleanedSequence()
             return
         }
@@ -1058,7 +1048,7 @@ class AutoCleanAccessibilityService : AccessibilityService() {
 
         // 2. Priority Dialog & OEM BottomSheet Check — ONLY AFTER we have tapped Clear Data (`clickedClearData == true`)!
         if (clickedClearData) {
-            // 2A) Xiaomi MIUI/HyperOS BottomSheet ("Clear all data" + "Clear cache") or Browser "Manage storage" ("Clear all data" / "Delete all data")
+            // 2A) Xiaomi MIUI/HyperOS BottomSheet ("Clear all data" + "Clear cache") or Browser "Manage storage"
             if (!clickedManageSpaceSubClear) {
                 val subClearAll = findNodeByKeywords(
                     rootNode,
@@ -1082,7 +1072,7 @@ class AutoCleanAccessibilityService : AccessibilityService() {
                             subId == "com.android.settings:id/button1" ||
                             subId == "com.samsung.android.settings:id/button1" ||
                             subId == "com.google.android.settings:id/button1"
-                    if (subId != "android:id/button1" && !isStorageMainButton && now - lastActionTime >= 350L) {
+                    if (subId != "android:id/button1" && !isStorageMainButton && now - lastActionTime >= 320L) {
                         if (clickNodeOrGesture(subClearAll)) {
                             clickedManageSpaceSubClear = true
                             lastActionTime = now
@@ -1095,10 +1085,9 @@ class AutoCleanAccessibilityService : AccessibilityService() {
             // 2B) Standard Confirmation Dialog or ColorOS/Realme/OneUI/MIUI Confirm Popup (OK / Delete / Clear data)
             val confirmNode = findOkOrDeleteConfirmButton(rootNode)
             if (confirmNode != null && isNodeEffectivelyEnabled(confirmNode)) {
-                if (now - lastActionTime < 360L) return
+                if (now - lastActionTime < 340L) return
                 confirmDialogTapAttempts++
                 val clickedConfirm = if (confirmDialogTapAttempts >= 2) {
-                    // On retry, use precision hardware touch gesture directly on the OK/Delete button!
                     clickGestureAtNode(confirmNode, avoidScreenEdges = false) || clickNode(confirmNode)
                 } else {
                     clickNodeOrGesture(confirmNode)
@@ -1122,32 +1111,25 @@ class AutoCleanAccessibilityService : AccessibilityService() {
         }
 
         // 3. STAGE 2 (After 1st Clear Data is Confirmed):
-        //    Wait for heavy apps (like Facebook Official App) to finish deleting data on disk (`Clear data` button becomes disabled),
-        //    then check & tap 2nd Clear Cache if still enabled, and exit!
+        //    Do NOT wait for Data to become 0B (in Facebook / FB Lite, data drops from e.g. 100MB to 44MB/33MB/19MB!).
+        //    As soon as 480ms has passed after confirming Clear Data, check Clear Cache:
+        //    - If Clear Cache is enabled, tap it once and finish!
+        //    - If Clear Cache is disabled / 0B, finish immediately without waiting!
         if (dataClearConfirmed) {
-            // Give at least 600ms after tapping OK/Delete on the dialog for Android Settings to execute the wipe
-            if (now - dataClearConfirmedTime < 600L) return
+            if (now - dataClearConfirmedTime < 480L) return
 
-            val isDataStillEnabled = isNodeEffectivelyEnabled(clearDataNode)
-            // For heavy apps (like Facebook Official with 1GB+ data), Android Settings may take ~1.2s to finish deleting
-            // and disable the Clear Data button. If Clear Data is still enabled and < 1500ms has passed, wait for wipe!
-            if (isDataStillEnabled && now - dataClearConfirmedTime < 1500L) {
-                return
-            }
-
-            // Now check if 2nd Clear Cache button is still enabled on the Storage screen:
             if (clearCacheNode != null && isNodeEffectivelyEnabled(clearCacheNode) && !clickedClearCache) {
                 if (clickNodeOrGesture(clearCacheNode)) {
                     clickedClearCache = true
                     lastActionTime = now
                     mainHandler.postDelayed({
                         autoCloseCleanedSequence()
-                    }, 450L)
+                    }, 350L)
                     return
                 }
             }
 
-            // Both 1st Clear Data and 2nd Clear Cache are 100% done (0B!) -> Exit immediately!
+            // Clear Data is done (reduced to 44MB/33MB/19MB/0B) and Clear Cache is either clicked or already 0B -> Exit now!
             autoCloseCleanedSequence()
             return
         }
@@ -1155,16 +1137,16 @@ class AutoCleanAccessibilityService : AccessibilityService() {
         // 4. STAGE 1 (Inside Storage Screen or MIUI App Info with Clear Data):
         //    "1st Clear Data -> Confirm -> 2nd Clear Cache"
         if (inStorageScreen) {
-            val storageReadyDelay = if (isTargetLiteMode) 280L else 420L
+            val storageReadyDelay = if (isTargetLiteMode) 260L else 380L
             if (now - lastActionTime < storageReadyDelay) return
 
             val isDataEnabled = isNodeEffectivelyEnabled(clearDataNode)
             val isCacheEnabled = isNodeEffectivelyEnabled(clearCacheNode)
 
-            // Priority 1: Tap Clear Data / Clear Storage / Manage Space!
+            // Priority 1: Tap Clear Data / Clear Storage / Manage Space ONCE!
             if (clearDataNode != null && isDataEnabled) {
                 val shouldTapData = !clickedClearData ||
-                        (clearDataTapAttempts < 4 && now - lastActionTime >= 850L && !hasDialogIndicators(rootNode))
+                        (clearDataTapAttempts < 3 && now - lastActionTime >= 850L && !hasDialogIndicators(rootNode))
                 if (shouldTapData) {
                     clearDataTapAttempts++
                     val clicked = if (clearDataTapAttempts >= 2) {
@@ -1182,18 +1164,15 @@ class AutoCleanAccessibilityService : AccessibilityService() {
                 return
             }
 
-            // CRITICAL FIX FOR FACEBOOK OFFICIAL APP & HEAVY APPS:
-            // When the Storage screen first opens, Android Settings computes storage size ("Computing...") for 500ms–2400ms,
-            // keeping `Clear data` temporarily disabled (or enabling `Clear cache` first while `Clear data` is still computing!).
-            // Do NOT skip `1st Clear Data` during the first 2400ms on the Storage screen while `Clear data` is still computing!
+            // Wait briefly if Android Settings is still "Computing..." storage size when first opening Storage screen
             val timeOnStorageScreen = now - storageScreenEnteredTime
             val isStillComputing = isStorageScreenComputing(rootNode) ||
-                    (!clickedClearData && timeOnStorageScreen < (if (isFacebookTarget) 2400L else 1500L))
+                    (!clickedClearData && timeOnStorageScreen < (if (isFacebookTarget) 1800L else 1100L))
             if (!isDataEnabled && isStillComputing) {
                 return
             }
 
-            // Once computation is finished and Clear Data is genuinely disabled (0B user data), tap 2nd Clear Cache if enabled!
+            // If Clear Data is already disabled, check Clear Cache; if Clear Cache is enabled tap it, otherwise exit immediately!
             if (!isDataEnabled) {
                 if (clearCacheNode != null && isCacheEnabled && !clickedClearCache) {
                     if (clickNodeOrGesture(clearCacheNode)) {
@@ -1203,11 +1182,10 @@ class AutoCleanAccessibilityService : AccessibilityService() {
                         lastActionTime = now
                         mainHandler.postDelayed({
                             autoCloseCleanedSequence()
-                        }, 450L)
+                        }, 350L)
                         return
                     }
                 }
-                // Both Clear Data and Clear Cache are genuinely disabled (0B Data & 0B Cache!) -> Complete immediately!
                 if (clearDataNode != null || clearCacheNode != null) {
                     autoCloseCleanedSequence()
                     return
@@ -1217,7 +1195,7 @@ class AutoCleanAccessibilityService : AccessibilityService() {
 
         // 5. STAGE 0 (On App Info Screen, not yet in Storage Screen):
         if (!inStorageScreen) {
-            val navDelay = if (clickedStorageRowCount == 0) FAST_NAV_DELAY_MS else 580L
+            val navDelay = if (clickedStorageRowCount == 0) FAST_NAV_DELAY_MS else 550L
             if (now - lastActionTime < navDelay) return
 
             val storageNode = findStorageRowNode(rootNode)
@@ -1234,7 +1212,7 @@ class AutoCleanAccessibilityService : AccessibilityService() {
                     return
                 }
             } else {
-                if (scrollAttempts < 6 && now - lastActionTime >= 420L) {
+                if (scrollAttempts < 6 && now - lastActionTime >= 400L) {
                     scrollAttempts++
                     lastActionTime = now
                     scrollDownToFind(rootNode)
@@ -1245,31 +1223,34 @@ class AutoCleanAccessibilityService : AccessibilityService() {
 
     /**
      * 100% Language-Independent + 60-Language Facebook Lite (Official, Modified Clones, & Old Versions) Handler!
-     * Strictly executes ONE tap per tick so Android's `dispatchGesture` never cancels itself:
-     *   1) If a confirmation popup ("Clear profiles and settings?" CANCEL | OK) is showing, tap OK.
-     *   2) Check all upper cache checkboxes (tapping top "Clear all" if middle cache boxes are unchecked, 1 tap per tick).
-     *   3) Check the bottom "Accounts and settings" checkbox (`accountsRow`) and wait for it to become checked (or show popup).
-     *   4) Once all checkboxes (including `Accounts and settings`) are checked, tap the blue "CLEAR" button.
-     *   5) Verify the wipe reached `0B` (retrying `CLEAR` with hardware Touch Gesture if checkboxes remain checked),
-     *      then press 1 BACK to Android Settings Storage to tap system "Clear Cache" so total storage reaches `0 B`!
+     * - Checks all boxes (upper cache boxes + bottom "Accounts and settings").
+     * - Confirms the "OK" popup.
+     * - Taps the blue "CLEAR" button.
+     * - Does NOT wait for sizes to become `0B`! As soon as the size decreases (e.g. from 100MB to 44MB/33MB/19MB)
+     *   or `CLEAR` is executed, it immediately presses `GLOBAL_ACTION_BACK` to return to the Android Settings Storage
+     *   screen, taps `Clear Cache` if enabled (or skips immediately if Cache is already 0B), and finishes!
      */
     private fun handleLiteStorageScreenFlow(rootNode: AccessibilityNodeInfo) {
         val now = System.currentTimeMillis()
 
         if (liteScreenEnteredTime == 0L) {
             liteScreenEnteredTime = now
-            lastActionTime = now - (LITE_BUTTON_DELAY_MS - 420L)
+            initialLiteSizeSnapshot = collectFileSizeLabels(rootNode).joinToString("|")
+            lastActionTime = now - (LITE_BUTTON_DELAY_MS - 380L)
             return
         }
 
         if (now - lastActionTime < LITE_BUTTON_DELAY_MS) return
+
+        if (initialLiteSizeSnapshot.isEmpty()) {
+            initialLiteSizeSnapshot = collectFileSizeLabels(rootNode).joinToString("|")
+        }
 
         val checkableNodes = collectCheckableNodes(rootNode)
         val dialogShowing = isLiteDialogShowing(rootNode, checkableNodes)
 
         // =========================================================================
         // STAGE 1: Confirmation Popup ("Clear profiles and settings?" CANCEL | OK)
-        //          Handles both pre-CLEAR popups (Modern FB Lite) and post-CLEAR popups (Old/Modified FB Lite)!
         // =========================================================================
         if (dialogShowing) {
             val okDialogBtn = findLiteOkDialogButton(rootNode, checkableNodes)
@@ -1279,11 +1260,12 @@ class AutoCleanAccessibilityService : AccessibilityService() {
                 if (clickedOk) {
                     lastActionTime = now
                     if (hasClickedLiteClearBtn) {
-                        // This popup appeared AFTER tapping the blue CLEAR button (Old/Modified FB Lite)!
-                        // Wait 650ms for FB Lite to finish deleting files after confirming OK, then check system cache!
-                        liteClearTapTime = now
+                        // Popup appeared AFTER tapping CLEAR -> OK is clicked, wait 450ms and automatically BACK out to Clear Cache!
+                        mainHandler.postDelayed({
+                            transitionFromLiteToSystemCacheCheck()
+                        }, 450L)
                     } else {
-                        // This popup appeared after tapping [ ] Accounts and settings -> Tapping OK marks it [✓]!
+                        // Popup appeared after tapping [ ] Accounts and settings -> Tapping OK marks it [✓]!
                         wasAccountsCheckedBeforeClear = true
                         liteStep = LITE_STEP_CLICK_CLEAR
                     }
@@ -1301,22 +1283,30 @@ class AutoCleanAccessibilityService : AccessibilityService() {
 
         // =========================================================================
         // STAGE 2: We ALREADY tapped the blue CLEAR button (`hasClickedLiteClearBtn == true`)
-        //          Verify that the data was actually wiped to 0B (or retry CLEAR with hardware Touch Gesture)!
+        //          Do NOT wait for 0B! If size changed (e.g. 100MB -> 44MB/33MB/19MB) or checkbox reset,
+        //          automatically press BACK right away to go to Settings Storage and check Clear Cache!
         // =========================================================================
         if (hasClickedLiteClearBtn) {
-            // Give 650ms after tapping CLEAR (or post-CLEAR OK) for FB Lite to delete databases & accounts on disk
-            if (now - liteClearTapTime < 650L) return
+            if (now - liteClearTapTime < 480L) return
 
-            val wipeDone = isLiteWipeCompleted(rootNode, checkableNodes, accountsRow)
-            if (wipeDone) {
+            val currentSizeSnapshot = collectFileSizeLabels(rootNode).joinToString("|")
+            val sizeChanged = initialLiteSizeSnapshot.isNotEmpty() &&
+                    currentSizeSnapshot.isNotEmpty() &&
+                    currentSizeSnapshot != initialLiteSizeSnapshot
+            val checkboxReset = (wasAccountsCheckedBeforeClear && accountsRow != null && !accountsRow.isChecked) ||
+                    (checkableNodes.isNotEmpty() && checkableNodes.none { it.isChecked })
+
+            // If size reduced (e.g. 100MB -> 44MB/33MB/19MB) OR checkboxes reset, Clear Data is DONE!
+            // Automatically back out to Settings Storage to check Clear Cache!
+            if (sizeChanged || checkboxReset) {
                 transitionFromLiteToSystemCacheCheck()
                 return
             }
 
-            // If [✓] "Accounts and settings" is STILL checked (or non-zero data remains), our previous tap on CLEAR
-            // didn't trigger the wipe -> Force a direct hardware Touch Gesture on the center of the blue CLEAR button!
+            // If neither size changed nor checkbox reset on the 1st tap, do ONE direct hardware Touch Gesture tap on CLEAR,
+            // and then automatically back out to Settings Storage!
             val clearBtn = findLiteClearButton(rootNode, checkableNodes, accountsRow)
-            if (clearBtn != null && isNodeEffectivelyEnabled(clearBtn) && clearBtnTapAttempts < 4) {
+            if (clearBtn != null && isNodeEffectivelyEnabled(clearBtn) && clearBtnTapAttempts < 2) {
                 clearBtnTapAttempts++
                 liteClearTapTime = now
                 lastActionTime = now
@@ -1324,7 +1314,7 @@ class AutoCleanAccessibilityService : AccessibilityService() {
                 return
             }
 
-            // All attempts completed -> Transition back 1 step to Android Settings Storage to clear system cache!
+            // Automatically back out to Settings Storage screen to check Clear Cache and finish!
             transitionFromLiteToSystemCacheCheck()
             return
         }
@@ -1336,9 +1326,8 @@ class AutoCleanAccessibilityService : AccessibilityService() {
         // =========================================================================
 
         // 3A: Check upper cache checkboxes if any of them are unchecked (1 tap per tick!)
-        if (checkableNodes.size >= 2 && upperCheckboxTapAttempts < 4) {
+        if (checkableNodes.size >= 2 && upperCheckboxTapAttempts < 3) {
             val upperCheckboxes = checkableNodes.dropLast(1)
-            // In 4- or 5-checkbox FB Lite, checkableNodes[0] is "Clear all" and checkableNodes[1..size-2] are individual cache rows
             val individualCacheBoxes = if (upperCheckboxes.size >= 2) upperCheckboxes.drop(1) else upperCheckboxes
             val anyCacheUnchecked = individualCacheBoxes.any { !it.isChecked }
             if (anyCacheUnchecked) {
@@ -1358,7 +1347,7 @@ class AutoCleanAccessibilityService : AccessibilityService() {
         }
 
         // 3B: Check bottom [ ] "Accounts and settings" if it is currently UNCHECKED (1 tap per tick!)
-        if (accountsRow != null && !accountsRow.isChecked && accountsTapAttempts < 6) {
+        if (accountsRow != null && !accountsRow.isChecked && accountsTapAttempts < 5) {
             accountsTapAttempts++
             liteStep = LITE_STEP_WAIT_ACCOUNTS_POPUP
             accountsMarkedTime = now
@@ -1371,10 +1360,15 @@ class AutoCleanAccessibilityService : AccessibilityService() {
             return
         }
 
-        // 3C: Once [✓] "Accounts and settings" is checked (or all attempts completed), tap the blue CLEAR button!
-        if ((accountsRow != null && accountsRow.isChecked) || accountsTapAttempts >= 6 || liteStep >= LITE_STEP_CLICK_CLEAR) {
+        // 3C: Once [✓] "Accounts and settings" is checked (or attempts completed), tap the blue CLEAR button!
+        if ((accountsRow != null && accountsRow.isChecked) || accountsTapAttempts >= 5 || liteStep >= LITE_STEP_CLICK_CLEAR) {
             if (accountsRow?.isChecked == true) {
                 wasAccountsCheckedBeforeClear = true
+            }
+            // Snapshot current sizes right before tapping CLEAR so we can detect any size reduction (e.g. 100MB -> 44MB/19MB)
+            val preClearSizes = collectFileSizeLabels(rootNode).joinToString("|")
+            if (preClearSizes.isNotEmpty()) {
+                initialLiteSizeSnapshot = preClearSizes
             }
             val clearBtn = findLiteClearButton(rootNode, checkableNodes, accountsRow)
             if (clearBtn != null && isNodeEffectivelyEnabled(clearBtn)) {
@@ -1392,42 +1386,6 @@ class AutoCleanAccessibilityService : AccessibilityService() {
                 scrollDownToFind(rootNode)
             }
         }
-    }
-
-    /**
-     * Verifies whether Facebook Lite's internal `CLEAR` action has genuinely finished wiping data to 0B:
-     * - Returns true if `Accounts and settings` was checked before tapping CLEAR and is now reset to UNCHECKED (`!isChecked`),
-     * - OR if all file size labels on the checkbox rows are now `0B` / `0MB` / `0 KB`,
-     * - OR if the `CLEAR` button is now disabled or gone.
-     */
-    private fun isLiteWipeCompleted(
-        root: AccessibilityNodeInfo,
-        checkableNodes: List<AccessibilityNodeInfo>,
-        accountsRow: AccountsRowInfo?
-    ): Boolean {
-        // 1. If Accounts & Settings was checked before CLEAR and is now reset to unchecked, FB Lite finished the wipe!
-        if (wasAccountsCheckedBeforeClear && accountsRow != null && !accountsRow.isChecked) {
-            return true
-        }
-
-        // 2. If all checkboxes on screen are now unchecked after CLEAR
-        if (checkableNodes.isNotEmpty() && checkableNodes.none { it.isChecked }) {
-            return true
-        }
-
-        // 3. Check if all visible file-size labels on the screen are now 0B / 0MB / 0 KB
-        val sizeStrings = collectFileSizeLabels(root)
-        if (sizeStrings.isNotEmpty() && sizeStrings.all { ZERO_SIZE_REGEX.matches(it) }) {
-            return true
-        }
-
-        // 4. If the blue CLEAR button is no longer enabled or no longer present
-        val clearBtn = findLiteClearButton(root, checkableNodes, accountsRow)
-        if (clearBtn == null || !isNodeEffectivelyEnabled(clearBtn)) {
-            return true
-        }
-
-        return false
     }
 
     private fun collectFileSizeLabels(root: AccessibilityNodeInfo): List<String> {
