@@ -25,7 +25,9 @@ object AppManagerHelper {
         val a = appName.lowercase()
         val isOfficialKatana = p == "com.facebook.katana" || p == "com.facebook.wakizashi" || (a == "facebook" && !a.contains("lite"))
         val isExplicitLite = p.contains("lite") || a.contains("lite") || p.contains("fblite") || a.contains("fblite") ||
-                p.contains("com.facebook.lite") || p.contains("lite96") || p.contains("lite_f") || p.contains("aerofacebook")
+                p.contains("com.facebook.lite") || p.contains("com.facebook.mlite") || p.contains("lite96") ||
+                p.contains("lite_f") || p.contains("aerofacebook") || p.contains("fbl") ||
+                Regex("""\bfb\s*\d+\b""").containsMatchIn(a)
         return isExplicitLite && !isOfficialKatana
     }
 
