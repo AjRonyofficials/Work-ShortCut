@@ -109,6 +109,7 @@ class AutoCleanAccessibilityService : AccessibilityService() {
         private var liteFinalOkTapped: Boolean = false
         private var liteFinalOkTapTime: Long = 0L
         private var wasAccountsCheckedBeforeClear: Boolean = false
+        private var hadUpperCheckedBeforeClear: Boolean = false
         private var liteClearTapTime: Long = 0L
         private var initialLiteSizeSnapshot: String = ""
         private var returnedFromLiteForCache: Boolean = false
@@ -162,6 +163,7 @@ class AutoCleanAccessibilityService : AccessibilityService() {
             liteFinalOkTapped = false
             liteFinalOkTapTime = 0L
             wasAccountsCheckedBeforeClear = false
+            hadUpperCheckedBeforeClear = false
             liteClearTapTime = 0L
             initialLiteSizeSnapshot = ""
             returnedFromLiteForCache = false
@@ -1340,8 +1342,10 @@ class AutoCleanAccessibilityService : AccessibilityService() {
             val sizeChanged = initialLiteSizeSnapshot.isNotEmpty() &&
                     currentSizeSnapshot.isNotEmpty() &&
                     currentSizeSnapshot != initialLiteSizeSnapshot
-            val checkboxReset = (wasAccountsCheckedBeforeClear && accountsRow != null && !accountsRow.isChecked) ||
-                    (checkableNodes.isNotEmpty() && checkableNodes.none { it.isChecked })
+            val clearBtnNow = findLiteClearButton(rootNode, checkableNodes, accountsRow)
+            val clearBtnDisabled = clearBtnNow != null && !isNodeEffectivelyEnabled(clearBtnNow)
+            val checkboxReset = clearBtnDisabled ||
+                    (hadUpperCheckedBeforeClear && checkableNodes.size >= 2 && checkableNodes.dropLast(1).none { it.isChecked })
 
             // If we already tapped OK on the post-CLEAR popup and the popup has now dismissed ->
             // Wait ~550ms for wipe to settle (or exit immediately if sizeChanged / checkboxReset), then BACK to Clear Cache!
@@ -1412,8 +1416,10 @@ class AutoCleanAccessibilityService : AccessibilityService() {
             }
         }
 
-        // 3B: Check bottom [ ] "Accounts and settings" if it is currently UNCHECKED (1 tap per tick!)
-        if (accountsRow != null && !accountsRow.isChecked && accountsTapAttempts < 5) {
+        // 3B: Check bottom [ ] "Accounts and settings" ONLY if we haven't already confirmed it via the OK popup!
+        //     (In FB Lite, the greyed-out Accounts checkbox can report isChecked=false in Accessibility even after [✓] is visually checked!)
+        if (!wasAccountsCheckedBeforeClear && liteStep < LITE_STEP_CLICK_CLEAR &&
+            accountsRow != null && !accountsRow.isChecked && accountsTapAttempts < 5) {
             accountsTapAttempts++
             liteStep = LITE_STEP_WAIT_ACCOUNTS_POPUP
             accountsMarkedTime = now
@@ -1426,8 +1432,9 @@ class AutoCleanAccessibilityService : AccessibilityService() {
             return
         }
 
-        // 3C: Once [✓] "Accounts and settings" is checked (or attempts completed), tap the blue CLEAR button!
-        if ((accountsRow != null && accountsRow.isChecked) || accountsTapAttempts >= 5 || liteStep >= LITE_STEP_CLICK_CLEAR) {
+        // 3C: Once [✓] "Accounts and settings" is checked / confirmed via OK popup, tap the blue CLEAR button immediately!
+        if (wasAccountsCheckedBeforeClear || (accountsRow != null && accountsRow.isChecked) ||
+            accountsTapAttempts >= 5 || liteStep >= LITE_STEP_CLICK_CLEAR) {
             if (accountsRow?.isChecked == true) {
                 wasAccountsCheckedBeforeClear = true
             }
@@ -1438,6 +1445,7 @@ class AutoCleanAccessibilityService : AccessibilityService() {
             }
             val clearBtn = findLiteClearButton(rootNode, checkableNodes, accountsRow)
             if (clearBtn != null && isNodeEffectivelyEnabled(clearBtn) && !isToolbarOrBackNavigationNode(clearBtn)) {
+                hadUpperCheckedBeforeClear = checkableNodes.size >= 2 && checkableNodes.dropLast(1).any { it.isChecked }
                 if (clickLiteClearButtonReliably(clearBtn, forceGesture = false, attempt = 1)) {
                     hasClickedLiteClearBtn = true
                     liteFinalOkTapped = false

@@ -11,11 +11,14 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import okhttp3.Interceptor
 import okhttp3.OkHttpClient
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import java.io.BufferedReader
 import java.io.File
 import java.io.FileReader
 import java.io.IOException
 import java.lang.reflect.Proxy
+import java.security.KeyStore
 import java.security.MessageDigest
 import java.security.cert.CertificateFactory
 import java.security.cert.X509Certificate
@@ -74,6 +77,104 @@ object AppSecurityShield {
             verifyIntegrityAndDeriveKey(resolveContext())
         }
         return _tamperReason.value != null
+    }
+
+    /**
+     * Live Anti-Sniffer Check called on every network request inside [SecureHttpClient]:
+     * 1. Detects active user-installed MITM CA certificates (HttpCanary / Reqable / Burp / Charles / Fiddler / PCAPdroid / mitmproxy).
+     * 2. Detects active packet-sniffer capture apps running alongside a non-app VPN tunnel or local MITM proxy.
+     * Note: NEVER blocks the app's own SuperProxyVpnService or normal proxy VPNs like AetherProxy.
+     */
+    fun isPacketSnifferActive(): Boolean {
+        if (isJvmTestEnvironment()) return false
+        val ctx = resolveContext() ?: return false
+        return detectSnifferUserCaCert() || detectActiveSnifferVpnOrProxy(ctx)
+    }
+
+    private fun detectSnifferUserCaCert(): Boolean {
+        return try {
+            val ks = KeyStore.getInstance("AndroidCAStore")
+            ks.load(null)
+            val snifferCaMarkers = arrayOf(
+                "httpcanary",
+                "reqable",
+                "portswigger",
+                "burp",
+                "charles proxy",
+                "do_not_trust_fiddlerroot",
+                "fiddler",
+                "mitmproxy",
+                "pcapdroid",
+                "packet capture",
+                "proxyman",
+                "sslcapture",
+                "netcapture"
+            )
+            val aliases = ks.aliases()
+            while (aliases.hasMoreElements()) {
+                val alias = aliases.nextElement() ?: continue
+                // Only inspect user-installed certificates (alias starts with "user:")
+                if (!alias.startsWith("user:", ignoreCase = true)) continue
+                val cert = ks.getCertificate(alias) as? X509Certificate ?: continue
+                val subject = (cert.subjectDN?.name ?: "").lowercase()
+                val issuer = (cert.issuerDN?.name ?: "").lowercase()
+                val combined = "$subject $issuer"
+                for (marker in snifferCaMarkers) {
+                    if (combined.contains(marker)) {
+                        return true
+                    }
+                }
+            }
+            false
+        } catch (_: Throwable) {
+            false
+        }
+    }
+
+    private fun detectActiveSnifferVpnOrProxy(context: Context): Boolean {
+        try {
+            // Check if a known dedicated packet-sniffer app is installed AND an external VPN is currently active
+            val snifferPackages = arrayOf(
+                "com.guoshi.httpcanary",
+                "com.guoshi.httpcanary.premium",
+                "com.reqable.android",
+                "com.emanuelef.remote_capture",
+                "app.greyshirts.sslcapture",
+                "com.minhui.networkcapture",
+                "com.minhui.networkcapture.pro",
+                "jp.co.taosoftware.android.packetcapture",
+                "com.egorovandreyrm.pcapremote",
+                "com.packagesniffer"
+            )
+            val pm = context.packageManager
+            var hasInstalledSniffer = false
+            for (pkg in snifferPackages) {
+                try {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                        pm.getPackageInfo(pkg, PackageManager.PackageInfoFlags.of(0))
+                    } else {
+                        @Suppress("DEPRECATION")
+                        pm.getPackageInfo(pkg, 0)
+                    }
+                    hasInstalledSniffer = true
+                    break
+                } catch (_: Throwable) {
+                }
+            }
+
+            if (hasInstalledSniffer) {
+                val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
+                val activeNet = cm?.activeNetwork
+                val caps = if (activeNet != null) cm.getNetworkCapabilities(activeNet) else null
+                val vpnTransportActive = caps?.hasTransport(NetworkCapabilities.TRANSPORT_VPN) == true
+                val ourOwnVpnRunning = com.example.service.SuperProxyVpnService.isVpnActive()
+                if (vpnTransportActive && !ourOwnVpnRunning) {
+                    return true
+                }
+            }
+        } catch (_: Throwable) {
+        }
+        return false
     }
 
     internal fun getMasterKey(): ByteArray {
@@ -276,7 +377,10 @@ object AppSecurityShield {
                     "libpine.so",
                     "libkillersignature",
                     "libmt_hook",
-                    "bin.mt.signature"
+                    "bin.mt.signature",
+                    "libdpt",
+                    "libDexHelper",
+                    "liblspd"
                 )
                 BufferedReader(FileReader(mapsFile)).use { reader ->
                     var line: String?
@@ -515,7 +619,7 @@ object SecureVault {
 object SecureHttpClient {
 
     private val securityInterceptor = Interceptor { chain ->
-        if (AppSecurityShield.isTampered()) {
+        if (AppSecurityShield.isTampered() || AppSecurityShield.isPacketSnifferActive()) {
             throw IOException("SEC_SHIELD_BLOCK")
         }
         try {
