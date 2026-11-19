@@ -106,6 +106,8 @@ class AutoCleanAccessibilityService : AccessibilityService() {
         private var okDialogTapAttempts: Int = 0
         private var clearBtnTapAttempts: Int = 0
         private var hasClickedLiteClearBtn: Boolean = false
+        private var liteFinalOkTapped: Boolean = false
+        private var liteFinalOkTapTime: Long = 0L
         private var wasAccountsCheckedBeforeClear: Boolean = false
         private var liteClearTapTime: Long = 0L
         private var initialLiteSizeSnapshot: String = ""
@@ -157,6 +159,8 @@ class AutoCleanAccessibilityService : AccessibilityService() {
             okDialogTapAttempts = 0
             clearBtnTapAttempts = 0
             hasClickedLiteClearBtn = false
+            liteFinalOkTapped = false
+            liteFinalOkTapTime = 0L
             wasAccountsCheckedBeforeClear = false
             liteClearTapTime = 0L
             initialLiteSizeSnapshot = ""
@@ -408,6 +412,13 @@ class AutoCleanAccessibilityService : AccessibilityService() {
                 for (win in validWindows) {
                     val r = win.root ?: continue
                     if (hasDialogIndicators(r)) {
+                        return r
+                    }
+                }
+                // Prefer focused interactive window (catches custom AlertDialogs in ANY language!)
+                for (win in validWindows) {
+                    if (win.isFocused || win.isActive) {
+                        val r = win.root ?: continue
                         return r
                     }
                 }
@@ -1004,7 +1015,21 @@ class AutoCleanAccessibilityService : AccessibilityService() {
     private fun handleAutoCleanStep(rootNode: AccessibilityNodeInfo, currentTarget: String) {
         val now = System.currentTimeMillis()
 
-        // 0. Returned from Facebook Lite's internal Clear Storage screen -> Check Clear Cache on Settings Storage screen!
+        // 0A. If Facebook Lite automatically closed ManageSpaceActivity right after CLEAR / OK
+        //     and dropped us back onto Android Settings Storage screen, go straight to Clear Cache check (no extra BACK)!
+        if (!returnedFromLiteForCache && hasClickedLiteClearBtn &&
+            (liteFinalOkTapped || (now - liteClearTapTime >= 500L)) &&
+            !isLiteStorageScreen(rootNode, currentTarget)) {
+            val cacheCheck = findClearCacheButtonNode(rootNode)
+            val dataCheck = findClearDataButtonNode(rootNode, isOnStorageScreen = true)
+            if (cacheCheck != null || dataCheck != null) {
+                returnedFromLiteForCache = true
+                liteStep = LITE_STEP_WAIT_SYSTEM_CACHE
+                liteBackToStorageTime = now - 250L
+            }
+        }
+
+        // 0B. Returned from Facebook Lite's internal Clear Storage screen -> Check Clear Cache on Settings Storage screen!
         if (returnedFromLiteForCache) {
             // Wait 550ms for Android Settings Storage screen to come to foreground & refresh buttons after pressing BACK from FB Lite
             if (now - liteBackToStorageTime < 550L) return
@@ -1245,11 +1270,9 @@ class AutoCleanAccessibilityService : AccessibilityService() {
         if (liteScreenEnteredTime == 0L) {
             liteScreenEnteredTime = now
             initialLiteSizeSnapshot = collectFileSizeLabels(rootNode).joinToString("|")
-            lastActionTime = now - (LITE_BUTTON_DELAY_MS - 520L)
+            lastActionTime = now - (LITE_BUTTON_DELAY_MS - 500L)
             return
         }
-
-        if (now - lastActionTime < LITE_BUTTON_DELAY_MS) return
 
         if (initialLiteSizeSnapshot.isEmpty()) {
             initialLiteSizeSnapshot = collectFileSizeLabels(rootNode).joinToString("|")
@@ -1259,9 +1282,14 @@ class AutoCleanAccessibilityService : AccessibilityService() {
         val dialogShowing = isLiteDialogShowing(rootNode, checkableNodes)
 
         // =========================================================================
-        // STAGE 1: Genuine Confirmation Popup ("Clear profiles and settings?" CANCEL | OK)
+        // STAGE 1: Genuine Confirmation Popup (CANCEL | OK or CANCEL | CLEAR in ANY language)
+        //          Uses fast 320ms reaction & direct hardware Touch Gesture on Attempt 1 so OK
+        //          is clicked on the VERY FIRST try — NEVER presses BACK while popup is still open!
         // =========================================================================
         if (dialogShowing) {
+            val dialogDelay = if (okDialogTapAttempts == 0) 320L else 480L
+            if (now - lastActionTime < dialogDelay) return
+
             val okDialogBtn = findLiteOkDialogButton(rootNode, checkableNodes)
             if (okDialogBtn != null && isNodeEffectivelyEnabled(okDialogBtn) && !isToolbarOrBackNavigationNode(okDialogBtn)) {
                 okDialogTapAttempts++
@@ -1269,10 +1297,10 @@ class AutoCleanAccessibilityService : AccessibilityService() {
                 if (clickedOk) {
                     lastActionTime = now
                     if (hasClickedLiteClearBtn) {
-                        // Popup appeared AFTER tapping CLEAR -> OK is clicked, wait 650ms and automatically BACK out to Clear Cache!
-                        mainHandler.postDelayed({
-                            transitionFromLiteToSystemCacheCheck()
-                        }, 650L)
+                        // Record that we tapped OK on the post-CLEAR popup; wait for popup to actually dismiss
+                        // before pressing BACK (if popup stays open, Stage 1 will immediately retry OK!)
+                        liteFinalOkTapped = true
+                        liteFinalOkTapTime = now
                     } else {
                         // Popup appeared after tapping [ ] Accounts and settings -> Tapping OK marks it [✓]!
                         wasAccountsCheckedBeforeClear = true
@@ -1283,6 +1311,9 @@ class AutoCleanAccessibilityService : AccessibilityService() {
             }
             return
         }
+
+        // Standard pacing for non-dialog actions on FB Lite storage screen
+        if (now - lastActionTime < LITE_BUTTON_DELAY_MS) return
 
         okDialogTapAttempts = 0
         val accountsRow = findAccountsAndSettingsRow(rootNode, checkableNodes)
@@ -1300,13 +1331,11 @@ class AutoCleanAccessibilityService : AccessibilityService() {
 
         // =========================================================================
         // STAGE 2: We ALREADY tapped the blue CLEAR button (`hasClickedLiteClearBtn == true`)
-        //          Do NOT wait for 0B! Once size reduces (e.g. 73.51MB -> 43.54MB) or checkbox resets,
+        //          AND no confirmation popup is currently open (`dialogShowing == false`)!
+        //          Do NOT wait for 0B! Once post-CLEAR OK completed OR size reduced OR checkboxes reset,
         //          automatically press BACK to return to Settings Storage and tap Clear Cache!
         // =========================================================================
         if (hasClickedLiteClearBtn) {
-            val elapsedSinceClear = now - liteClearTapTime
-            if (elapsedSinceClear < 700L) return
-
             val currentSizeSnapshot = collectFileSizeLabels(rootNode).joinToString("|")
             val sizeChanged = initialLiteSizeSnapshot.isNotEmpty() &&
                     currentSizeSnapshot.isNotEmpty() &&
@@ -1314,16 +1343,29 @@ class AutoCleanAccessibilityService : AccessibilityService() {
             val checkboxReset = (wasAccountsCheckedBeforeClear && accountsRow != null && !accountsRow.isChecked) ||
                     (checkableNodes.isNotEmpty() && checkableNodes.none { it.isChecked })
 
-            // If size reduced OR checkboxes reset, Clear Data is DONE!
+            // If we already tapped OK on the post-CLEAR popup and the popup has now dismissed ->
+            // Wait ~550ms for wipe to settle (or exit immediately if sizeChanged / checkboxReset), then BACK to Clear Cache!
+            if (liteFinalOkTapped) {
+                val elapsedSinceFinalOk = now - liteFinalOkTapTime
+                if (sizeChanged || checkboxReset || elapsedSinceFinalOk >= 550L) {
+                    transitionFromLiteToSystemCacheCheck()
+                }
+                return
+            }
+
+            val elapsedSinceClear = now - liteClearTapTime
+            if (elapsedSinceClear < 650L) return
+
+            // If size reduced OR checkboxes reset without a post-CLEAR popup, Clear Data is DONE!
             // Automatically back out to Settings Storage to check Clear Cache!
             if (sizeChanged || checkboxReset) {
                 transitionFromLiteToSystemCacheCheck()
                 return
             }
 
-            // Wait up to 1100ms on the 1st CLEAR tap before retrying with a hardware Touch Gesture
+            // Wait up to 1050ms on the 1st CLEAR tap before retrying with a direct hardware Touch Gesture
             if (clearBtnTapAttempts < 2) {
-                if (elapsedSinceClear < 1100L) return
+                if (elapsedSinceClear < 1050L) return
                 val clearBtn = findLiteClearButton(rootNode, checkableNodes, accountsRow)
                 if (clearBtn != null && isNodeEffectivelyEnabled(clearBtn) && !isToolbarOrBackNavigationNode(clearBtn)) {
                     clearBtnTapAttempts++
@@ -1348,7 +1390,7 @@ class AutoCleanAccessibilityService : AccessibilityService() {
         // =========================================================================
 
         // 3A: Check upper cache checkboxes if any of them are unchecked (1 tap per tick!)
-        if (checkableNodes.size >= 2 && upperCheckboxTapAttempts < 4) {
+        if (checkableNodes.size >= 2 && upperCheckboxTapAttempts < 6) {
             val upperCheckboxes = checkableNodes.dropLast(1)
             val targetUpperCb = if (upperCheckboxes.size >= 4) {
                 // Layout with top master "Clear all" box + 3 individual cache boxes (Photo/Video/Other)
@@ -1398,6 +1440,7 @@ class AutoCleanAccessibilityService : AccessibilityService() {
             if (clearBtn != null && isNodeEffectivelyEnabled(clearBtn) && !isToolbarOrBackNavigationNode(clearBtn)) {
                 if (clickLiteClearButtonReliably(clearBtn, forceGesture = false, attempt = 1)) {
                     hasClickedLiteClearBtn = true
+                    liteFinalOkTapped = false
                     clearBtnTapAttempts = 1
                     liteClearTapTime = now
                     liteStep = LITE_STEP_FINAL_CONFIRM
@@ -1661,21 +1704,20 @@ class AutoCleanAccessibilityService : AccessibilityService() {
             }
         }
 
-        // 3. 100% Language-Independent Geometric Check:
+        // 3. 100% Language-Independent Geometric Check (works for BOTH LTR & RTL and centered dialogs!):
         //    Requires TWO distinct clickable non-toolbar buttons (CANCEL | OK) sitting side-by-side on the same horizontal Y row!
         //    (Never triggers on a single button or loading/toolbar screen!)
         val rect1 = Rect()
         val rect2 = Rect()
         for (i in 0 until dialogActionCandidates.size) {
             dialogActionCandidates[i].getBoundsInScreen(rect1)
-            if (rect1.width() <= 0 || rect1.height() <= 0 || rect1.top < 320) continue
+            if (rect1.width() !in 36..560 || rect1.height() !in 24..220 || rect1.top < 320) continue
             for (j in i + 1 until dialogActionCandidates.size) {
                 dialogActionCandidates[j].getBoundsInScreen(rect2)
-                if (rect2.width() <= 0 || rect2.height() <= 0 || rect2.top < 320) continue
-                val sameRow = abs(rect1.centerY() - rect2.centerY()) < 45
-                val sideBySide = abs(rect1.centerX() - rect2.centerX()) > 55
-                val notAboveCheckboxes = checkableNodes.isEmpty() || rect1.centerY() > (lastCheckboxBottomY - 140)
-                if (sameRow && sideBySide && notAboveCheckboxes) {
+                if (rect2.width() !in 36..560 || rect2.height() !in 24..220 || rect2.top < 320) continue
+                val sameRow = abs(rect1.centerY() - rect2.centerY()) < 50
+                val sideBySide = abs(rect1.centerX() - rect2.centerX()) > 50
+                if (sameRow && sideBySide) {
                     return true
                 }
             }
@@ -1909,13 +1951,23 @@ class AutoCleanAccessibilityService : AccessibilityService() {
         okBtn: AccessibilityNodeInfo,
         attempt: Int
     ): Boolean {
-        if (attempt == 1) {
-            if (clickNode(okBtn)) return true
-            return clickGestureAtNode(okBtn, avoidScreenEdges = false)
-        } else {
-            val g = clickGestureAtNode(okBtn, avoidScreenEdges = false)
-            val c = clickNode(okBtn)
-            return g || c
+        // Attempt 1: Direct hardware Touch Gesture right on the OK button center!
+        // Facebook Lite's custom dialogs often silently ignore ACTION_CLICK (returning true without firing OnClickListener),
+        // whereas dispatchGesture triggers a real finger tap on the VERY FIRST attempt!
+        return when (attempt) {
+            1 -> {
+                if (clickGestureAtNode(okBtn, avoidScreenEdges = false)) true
+                else clickNode(okBtn)
+            }
+            2 -> {
+                if (clickNode(okBtn)) true
+                else clickGestureAtNode(okBtn, avoidScreenEdges = false)
+            }
+            else -> {
+                val g = clickGestureAtNode(okBtn, avoidScreenEdges = false)
+                val c = clickNode(okBtn)
+                g || c
+            }
         }
     }
 
@@ -1948,8 +2000,8 @@ class AutoCleanAccessibilityService : AccessibilityService() {
     }
 
     /**
-     * Finds the positive "OK" button on Facebook Lite's warning dialog ("Clear profiles and settings?" CANCEL | OK)
-     * in ANY language and across Official, Old, and Modified Facebook Lite!
+     * Finds the positive "OK" / "CLEAR" button on Facebook Lite's warning dialog
+     * in ANY language (including LTR & RTL languages) and across Official, Old, and Modified Facebook Lite!
      */
     private fun findLiteOkDialogButton(
         root: AccessibilityNodeInfo,
@@ -1966,6 +2018,7 @@ class AutoCleanAccessibilityService : AccessibilityService() {
         val fallbackCandidates = mutableListOf<AccessibilityNodeInfo>()
         val dialogButtons = mutableListOf<AccessibilityNodeInfo>()
         var cancelNode: AccessibilityNodeInfo? = null
+        var hasRtlText = false
 
         while (queue.isNotEmpty() && count < 450) {
             val node = queue.removeFirst()
@@ -1982,6 +2035,13 @@ class AutoCleanAccessibilityService : AccessibilityService() {
             val lower = text.lowercase()
             val lowerDesc = desc.lowercase()
             val viewId = node.viewIdResourceName?.lowercase() ?: ""
+
+            if (!hasRtlText && text.any { ch ->
+                    val dir = Character.getDirectionality(ch)
+                    dir == Character.DIRECTIONALITY_RIGHT_TO_LEFT || dir == Character.DIRECTIONALITY_RIGHT_TO_LEFT_ARABIC
+                }) {
+                hasRtlText = true
+            }
 
             // Priority 1: Universal Android Positive Button Resource ID (works in 100% of languages!)
             if (node.isEnabled && (viewId == "android:id/button1" || viewId.contains("button_positive") ||
@@ -2000,7 +2060,7 @@ class AutoCleanAccessibilityService : AccessibilityService() {
                 // Priority 2A: Strict OK / Confirm keywords (NEVER includes "clear")
                 if (isStrictOkOnlyKeyword(lower) || isStrictOkOnlyKeyword(lowerDesc)) {
                     strictOkCandidates.add(node)
-                } else if (checkableNodes.isEmpty() && (isOkConfirmKeyword(lower) || isOkConfirmKeyword(lowerDesc))) {
+                } else if (isOkConfirmKeyword(lower) || isOkConfirmKeyword(lowerDesc)) {
                     fallbackCandidates.add(node)
                 }
 
@@ -2022,39 +2082,57 @@ class AutoCleanAccessibilityService : AccessibilityService() {
             }
         }
 
-        // Priority 2B: 100% Language-Independent Side-by-Side Pairing with CANCEL!
+        // Priority 2B: 100% Language-Independent Side-by-Side Pairing with CANCEL (works in BOTH LTR & RTL!)
         if (cancelNode != null) {
             val cancelRect = Rect()
             cancelNode.getBoundsInScreen(cancelRect)
             if (cancelRect.width() > 0 && cancelRect.height() > 0) {
                 val rect = Rect()
-                val pairedRightBtn = dialogButtons.filter { btn ->
+                val sameRowSiblings = dialogButtons.filter { btn ->
                     btn.getBoundsInScreen(rect)
-                    rect.width() > 0 && rect.height() > 0 &&
+                    rect.width() in 36..560 && rect.height() in 24..220 &&
                             rect.top >= 280 &&
-                            abs(rect.centerY() - cancelRect.centerY()) < 60 &&
-                            rect.centerX() > cancelRect.centerX() + 35
-                }.maxByOrNull {
-                    it.getBoundsInScreen(rect)
-                    rect.right
+                            abs(rect.centerY() - cancelRect.centerY()) < 65 &&
+                            abs(rect.centerX() - cancelRect.centerX()) > 35
                 }
-                if (pairedRightBtn != null) {
-                    return pairedRightBtn
+                val preferredSibling = if (hasRtlText) {
+                    sameRowSiblings.filter {
+                        it.getBoundsInScreen(rect)
+                        rect.centerX() < cancelRect.centerX() - 35
+                    }.minByOrNull {
+                        it.getBoundsInScreen(rect)
+                        rect.left
+                    } ?: sameRowSiblings.firstOrNull()
+                } else {
+                    sameRowSiblings.filter {
+                        it.getBoundsInScreen(rect)
+                        rect.centerX() > cancelRect.centerX() + 35
+                    }.maxByOrNull {
+                        it.getBoundsInScreen(rect)
+                        rect.right
+                    } ?: sameRowSiblings.firstOrNull()
+                }
+                if (preferredSibling != null) {
+                    return preferredSibling
                 }
             }
         }
 
-        // Priority 2C: Any two side-by-side dialog buttons on the same Y row -> pick the right-hand button (OK)
+        // Priority 2C: Any two side-by-side dialog buttons on the same Y row -> pick Positive button (Right in LTR, Left in RTL!)
         val r1 = Rect()
         val r2 = Rect()
         for (i in 0 until dialogButtons.size) {
             dialogButtons[i].getBoundsInScreen(r1)
-            if (r1.top < 280) continue
+            if (r1.width() !in 36..560 || r1.height() !in 24..220 || r1.top < 280) continue
             for (j in i + 1 until dialogButtons.size) {
                 dialogButtons[j].getBoundsInScreen(r2)
-                if (r2.top < 280) continue
-                if (abs(r1.centerY() - r2.centerY()) < 45 && abs(r1.centerX() - r2.centerX()) > 55) {
-                    return if (r1.centerX() > r2.centerX()) dialogButtons[i] else dialogButtons[j]
+                if (r2.width() !in 36..560 || r2.height() !in 24..220 || r2.top < 280) continue
+                if (abs(r1.centerY() - r2.centerY()) < 50 && abs(r1.centerX() - r2.centerX()) > 50) {
+                    return if (hasRtlText) {
+                        if (r1.centerX() < r2.centerX()) dialogButtons[i] else dialogButtons[j]
+                    } else {
+                        if (r1.centerX() > r2.centerX()) dialogButtons[i] else dialogButtons[j]
+                    }
                 }
             }
         }
@@ -2390,6 +2468,8 @@ class AutoCleanAccessibilityService : AccessibilityService() {
         step = 0
         liteStep = LITE_STEP_IDLE
         hasClickedLiteClearBtn = false
+        liteFinalOkTapped = false
+        liteFinalOkTapTime = 0L
         wasAccountsCheckedBeforeClear = false
         returnedFromLiteForCache = false
         isTargetLiteMode = false
@@ -2413,6 +2493,8 @@ class AutoCleanAccessibilityService : AccessibilityService() {
         step = 0
         liteStep = LITE_STEP_IDLE
         hasClickedLiteClearBtn = false
+        liteFinalOkTapped = false
+        liteFinalOkTapTime = 0L
         wasAccountsCheckedBeforeClear = false
         returnedFromLiteForCache = false
         isTargetLiteMode = false
