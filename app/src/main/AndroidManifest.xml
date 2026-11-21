@@ -18,80 +18,11 @@
             <action android:name="android.intent.action.MAIN" />
             <category android:name="android.intent.category.LAUNCHER" />
         </intent>
-        <!-- APK / DEX / XML Editors & Unpackers -->
-        <package android:name="bin.mt.plus" />
-        <package android:name="bin.mt.plus.canary" />
-        <package android:name="bin.mt.termex" />
-        <package android:name="cc.binmt.plus" />
-        <package android:name="com.mt.manager" />
-        <package android:name="np.manager" />
-        <package android:name="np.manager.pro" />
-        <package android:name="com.np.manager" />
-        <package android:name="com.nm.manager" />
-        <package android:name="ru.maximoff.apktool" />
-        <package android:name="com.gmail.heagoo.apkeditor" />
-        <package android:name="com.gmail.heagoo.apkeditor.pro" />
-        <package android:name="com.gmail.heagoo.apkeditor.parser" />
-        <package android:name="com.steelworks.apke" />
-        <package android:name="com.apkeditor.pro" />
-        <package android:name="com.apkeditor.plus" />
-        <package android:name="com.abdurazaaqmohammed.AntiSplit" />
-        <package android:name="com.abdurazaaqmohammed.antisplit" />
-        <package android:name="io.github.muntashirakon.AppManager" />
-        <package android:name="io.github.muntashirakon.AppManager.debug" />
-        <package android:name="com.njlabs.showjava" />
-        <package android:name="com.mrikso.apkrepacker" />
-        <package android:name="com.reandroid.apkeditor" />
-        <package android:name="com.luoye.dpt" />
-        <package android:name="com.dpt.shell" />
-        <package android:name="com.fart.unpacker" />
-        <package android:name="com.wrbug.dumpdex" />
-        <package android:name="com.android.dumpdex" />
-        <package android:name="com.blackdex.app" />
-        <package android:name="top.niunaijun.blackdexa32" />
-        <package android:name="top.niunaijun.blackdexa64" />
-        <!-- Patchers, Cloners & Hook Frameworks -->
-        <package android:name="com.chelpus.lackypatch" />
-        <package android:name="com.dimonvideo.luckypatcher" />
-        <package android:name="com.forpda.lp" />
-        <package android:name="ru.aaaaacay.installer" />
-        <package android:name="ru.gxbx.installer" />
-        <package android:name="com.android.vending.billing.InAppBillingService.COIN" />
-        <package android:name="com.android.vending.billing.InAppBillingService.LACK" />
-        <package android:name="com.android.vending.billing.InAppBillingService.CLON" />
-        <package android:name="com.android.vending.billing.InAppBillingService.LOCK" />
-        <package android:name="com.applisto.appcloner" />
-        <package android:name="com.applisto.appcloner.premium" />
-        <package android:name="org.lsposed.lspatch" />
-        <package android:name="org.lsposed.manager" />
-        <package android:name="io.github.lsposed.manager" />
-        <package android:name="de.robv.android.xposed.installer" />
-        <package android:name="org.meowcat.edxposed.manager" />
-        <package android:name="me.weishu.exp" />
-        <package android:name="io.va.exposed" />
-        <package android:name="io.va.exposed64" />
-        <package android:name="catch_.me_.if_.you_.can_" />
-        <!-- Packet Sniffers & HTTPS MITM Tools -->
-        <package android:name="com.guoshi.httpcanary" />
-        <package android:name="com.guoshi.httpcanary.premium" />
-        <package android:name="com.guoshi.httpcanary.x" />
-        <package android:name="com.reqable.android" />
-        <package android:name="com.emanuelef.remote_capture" />
-        <package android:name="com.emanuelef.remote_capture.debug" />
-        <package android:name="app.greyshirts.sslcapture" />
-        <package android:name="com.minhui.networkcapture" />
-        <package android:name="com.minhui.networkcapture.pro" />
-        <package android:name="jp.co.taosoftware.android.packetcapture" />
-        <package android:name="com.egorovandreyrm.pcapremote" />
-        <package android:name="com.packagesniffer" />
-        <package android:name="com.telerik.fiddler" />
-        <package android:name="com.charlesproxy.android" />
     </queries>
 
     <application
-        android:allowBackup="false"
+        android:allowBackup="true"
         android:usesCleartextTraffic="true"
-        android:networkSecurityConfig="@xml/network_security_config"
         android:dataExtractionRules="@xml/data_extraction_rules"
         android:fullBackupContent="@xml/backup_rules"
         android:icon="@mipmap/ic_launcher"

@@ -2,13 +2,9 @@ package com.example.util
 
 import android.annotation.SuppressLint
 import android.content.Context
-import android.content.Intent
 import android.content.pm.PackageManager
-import android.net.ConnectivityManager
-import android.net.NetworkCapabilities
 import android.os.Build
 import android.os.Debug
-import android.os.Process
 import android.util.Base64
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -20,39 +16,26 @@ import java.io.File
 import java.io.FileReader
 import java.io.IOException
 import java.lang.reflect.Proxy
-import java.security.KeyStore
 import java.security.MessageDigest
 import java.security.cert.CertificateFactory
 import java.security.cert.X509Certificate
 import java.util.concurrent.TimeUnit
 import java.util.zip.ZipFile
-import kotlin.system.exitProcess
-
-data class BlockedModTool(
-    val displayName: String,
-    val packageName: String,
-    val riskCategory: String
-)
 
 /**
- * Multi-layer Anti-Tamper, Anti-Signature-Killer, Anti-Hook, Risky Mod-Tool Blocker,
- * Developer/API Cryptographic Integrity Seal, and Certificate-Bound Cryptographic Vault.
+ * Multi-layer Anti-Tamper, Anti-Signature-Killer, Anti-Hook, and Certificate-Bound Cryptographic Vault.
  *
  * Security Architecture:
- * 1. Zero plaintext API URLs, endpoints, headers, tokens, or developer branding in classes.dex or shared_prefs.
+ * 1. Zero plaintext API URLs, endpoints, headers, or tokens in classes.dex or shared_prefs.
  * 2. Decryption key is mathematically derived at runtime from the live APK X.509 signing certificate
  *    SHA-256 digest + package name. Re-signing the APK in MT Manager / NP Manager / APKTool changes
  *    the certificate digest, causing all decrypted URLs and API keys to turn into unusable garbage
  *    even if an attacker patches boolean checks in smali/dex.
- * 3. Cryptographic Integrity Seal verifies EVERY API URL, API key, Developer Name, Developer Telegram,
- *    App Display Title, strings.xml app_name, and AndroidManifest label against SHA-256 digests.
- *    Changing even ONE single character or byte anywhere triggers an immediate hard crash.
- * 4. Defeats Signature Killers (KillerApplication / PMS Dynamic Proxy / Xposed / LSPosed / Frida / DPT)
+ * 3. Defeats Signature Killers (KillerApplication / PMS Dynamic Proxy / Xposed / LSPosed / Frida)
  *    by cross-checking PackageManager signatures against raw APK ZIP META-INF X.509 certificates,
  *    inspecting ActivityThread.sPackageManager for Proxy classes, and scanning /proc/self/maps.
- * 5. Continuously scans and blocks risky APK/DEX/XML editors, unpackers, patchers, hookers, and
- *    packet sniffers (MT Manager, NP Manager, DPT Kill, APKTool M, APK Editor, Lucky Patcher,
- *    HttpCanary, Reqable, PCAPdroid, LSPatch, LSPosed, BlackDex, AntiSplit M, GameGuardian, etc.).
+ * 4. Blocks packet sniffers (HttpCanary / Reqable / Burp / Charles / Fiddler) via Proxy.NO_PROXY
+ *    and system proxy property inspection on every OkHttpClient.
  */
 object AppSecurityShield {
 
@@ -72,33 +55,6 @@ object AppSecurityShield {
             '7','0','9','b','9','4','6','7','f','5','c','c','8','0','8','9'
         ).concatToString()
 
-    // SHA-256 Seal over ALL 21 decrypted API URLs/keys + ALL 5 Developer/Branding strings + strings.xml + Manifest label
-    private val EXPECTED_INTEGRITY_SEAL_SHA256: String
-        get() = charArrayOf(
-            '0','2','4','7','b','f','4','a','7','a','a','1','5','b','8','e',
-            'd','a','3','1','6','8','6','8','0','4','9','f','6','c','6','7',
-            '4','b','c','0','a','a','9','b','3','0','a','6','7','c','5','e',
-            '4','6','5','c','8','b','9','a','f','f','3','c','0','8','9','c'
-        ).concatToString()
-
-    // SHA-256 of rendered MainScreen branding ("Work ShortCut" + 0x1F + "Developed By Ismail Islam Rony")
-    private val EXPECTED_MAIN_BRAND_SHA256: String
-        get() = charArrayOf(
-            '7','e','3','d','1','6','8','8','c','8','b','6','a','4','a','e',
-            'f','6','9','5','e','8','a','2','a','d','4','4','3','1','0','3',
-            '9','c','f','a','0','8','0','0','f','1','e','f','d','a','5','2',
-            'e','6','6','f','4','3','9','c','f','f','1','2','a','e','9','c'
-        ).concatToString()
-
-    // SHA-256 of rendered LoginScreen developer branding ("Contact Developer: @ismailislamrony1" + 0x1F + "@ismailislamrony1" + 0x1F + "https://t.me/ismailislamrony1")
-    private val EXPECTED_LOGIN_BRAND_SHA256: String
-        get() = charArrayOf(
-            'e','f','f','2','6','4','d','e','9','6','c','e','6','3','5','0',
-            'f','d','5','2','f','6','0','6','4','b','f','5','f','5','e','9',
-            '5','d','3','a','c','0','b','6','0','3','2','3','c','c','1','d',
-            '3','6','a','7','b','a','d','0','6','3','8','1','7','d','0','0'
-        ).concatToString()
-
     @Volatile
     private var appContext: Context? = null
 
@@ -108,141 +64,9 @@ object AppSecurityShield {
     private val _tamperReason = MutableStateFlow<String?>(null)
     val tamperReason: StateFlow<String?> = _tamperReason.asStateFlow()
 
-    private val _blockedModTools = MutableStateFlow<List<BlockedModTool>>(emptyList())
-    val blockedModTools: StateFlow<List<BlockedModTool>> = _blockedModTools.asStateFlow()
-
-    // Exact package registry of risky APK/DEX/XML editors, unpackers, patchers, hookers & packet sniffers
-    private data class RiskyPkgRule(
-        val packageName: String,
-        val defaultName: String,
-        val category: String
-    )
-
-    private val RISKY_PACKAGE_RULES = arrayOf(
-        // APK / DEX / XML Editors & Decompilers
-        RiskyPkgRule("bin.mt.plus", "MT Manager", "APK / DEX / XML Editor"),
-        RiskyPkgRule("bin.mt.plus.canary", "MT Manager Canary", "APK / DEX / XML Editor"),
-        RiskyPkgRule("bin.mt.termex", "MT Manager Ext", "APK / DEX / XML Editor"),
-        RiskyPkgRule("cc.binmt.plus", "MT Manager VIP", "APK / DEX / XML Editor"),
-        RiskyPkgRule("com.mt.manager", "MT Manager", "APK / DEX / XML Editor"),
-        RiskyPkgRule("np.manager", "NP Manager", "APK / DEX / XML Editor"),
-        RiskyPkgRule("np.manager.pro", "NP Manager Pro", "APK / DEX / XML Editor"),
-        RiskyPkgRule("com.np.manager", "NP Manager", "APK / DEX / XML Editor"),
-        RiskyPkgRule("com.nm.manager", "NP Manager", "APK / DEX / XML Editor"),
-        RiskyPkgRule("ru.maximoff.apktool", "APKTool M", "APK Decompiler / Editor"),
-        RiskyPkgRule("com.gmail.heagoo.apkeditor", "APK Editor", "APK / DEX / XML Editor"),
-        RiskyPkgRule("com.gmail.heagoo.apkeditor.pro", "APK Editor Pro", "APK / DEX / XML Editor"),
-        RiskyPkgRule("com.gmail.heagoo.apkeditor.parser", "APK Parser / Editor", "APK / DEX / XML Editor"),
-        RiskyPkgRule("com.steelworks.apke", "APK Editor", "APK / DEX / XML Editor"),
-        RiskyPkgRule("com.apkeditor.pro", "APK Editor Pro", "APK / DEX / XML Editor"),
-        RiskyPkgRule("com.apkeditor.plus", "APK Editor+", "APK / DEX / XML Editor"),
-        RiskyPkgRule("com.abdurazaaqmohammed.AntiSplit", "AntiSplit M", "APK Split / Mod Tool"),
-        RiskyPkgRule("com.abdurazaaqmohammed.antisplit", "AntiSplit M", "APK Split / Mod Tool"),
-        RiskyPkgRule("io.github.muntashirakon.AppManager", "App Manager", "APK / Component Inspector"),
-        RiskyPkgRule("io.github.muntashirakon.AppManager.debug", "App Manager", "APK / Component Inspector"),
-        RiskyPkgRule("com.njlabs.showjava", "Show Java", "DEX Decompiler"),
-        RiskyPkgRule("com.mrikso.apkrepacker", "APK Repacker", "APK Decompiler / Repacker"),
-        RiskyPkgRule("com.reandroid.apkeditor", "APKEditor", "APK / DEX / XML Editor"),
-
-        // DPT / Unpackers / DEX Dumpers
-        RiskyPkgRule("com.luoye.dpt", "DPT Shell / Kill", "DEX Unpacker / Mod Tool"),
-        RiskyPkgRule("com.dpt.shell", "DPT Shell / Kill", "DEX Unpacker / Mod Tool"),
-        RiskyPkgRule("com.fart.unpacker", "FART Unpacker", "DEX Unpacker"),
-        RiskyPkgRule("com.wrbug.dumpdex", "DumpDex", "DEX Dumper"),
-        RiskyPkgRule("com.android.dumpdex", "DumpDex", "DEX Dumper"),
-        RiskyPkgRule("com.blackdex.app", "BlackDex", "DEX Unpacker / Dumper"),
-        RiskyPkgRule("top.niunaijun.blackdexa32", "BlackDex 32", "DEX Unpacker / Dumper"),
-        RiskyPkgRule("top.niunaijun.blackdexa64", "BlackDex 64", "DEX Unpacker / Dumper"),
-
-        // Patchers, Cloners & Runtime Hooking Frameworks
-        RiskyPkgRule("com.chelpus.lackypatch", "Lucky Patcher", "APK Patcher / Cracker"),
-        RiskyPkgRule("com.dimonvideo.luckypatcher", "Lucky Patcher", "APK Patcher / Cracker"),
-        RiskyPkgRule("com.forpda.lp", "Lucky Patcher", "APK Patcher / Cracker"),
-        RiskyPkgRule("ru.aaaaacay.installer", "LP Installer", "APK Patcher / Cracker"),
-        RiskyPkgRule("ru.gxbx.installer", "LP Installer", "APK Patcher / Cracker"),
-        RiskyPkgRule("com.android.vending.billing.InAppBillingService.COIN", "Lucky Patcher Proxy", "APK Patcher / Cracker"),
-        RiskyPkgRule("com.android.vending.billing.InAppBillingService.LACK", "Lucky Patcher Proxy", "APK Patcher / Cracker"),
-        RiskyPkgRule("com.android.vending.billing.InAppBillingService.CLON", "Lucky Patcher Proxy", "APK Patcher / Cracker"),
-        RiskyPkgRule("com.android.vending.billing.InAppBillingService.LOCK", "Lucky Patcher Proxy", "APK Patcher / Cracker"),
-        RiskyPkgRule("com.applisto.appcloner", "App Cloner", "APK Cloner / Modder"),
-        RiskyPkgRule("com.applisto.appcloner.premium", "App Cloner Premium", "APK Cloner / Modder"),
-        RiskyPkgRule("org.lsposed.lspatch", "LSPatch", "APK Hook Patcher"),
-        RiskyPkgRule("org.lsposed.manager", "LSPosed", "Runtime Hook Framework"),
-        RiskyPkgRule("io.github.lsposed.manager", "LSPosed", "Runtime Hook Framework"),
-        RiskyPkgRule("de.robv.android.xposed.installer", "Xposed Installer", "Runtime Hook Framework"),
-        RiskyPkgRule("org.meowcat.edxposed.manager", "EdXposed", "Runtime Hook Framework"),
-        RiskyPkgRule("me.weishu.exp", "TaiChi", "Runtime Hook Framework"),
-        RiskyPkgRule("io.va.exposed", "VirtualXposed", "Runtime Hook Framework"),
-        RiskyPkgRule("io.va.exposed64", "VirtualXposed 64", "Runtime Hook Framework"),
-        RiskyPkgRule("catch_.me_.if_.you_.can_", "GameGuardian", "Memory Hacker"),
-
-        // Packet Sniffers & HTTPS MITM Capture Tools
-        RiskyPkgRule("com.guoshi.httpcanary", "HttpCanary", "Packet Sniffer / MITM"),
-        RiskyPkgRule("com.guoshi.httpcanary.premium", "HttpCanary Premium", "Packet Sniffer / MITM"),
-        RiskyPkgRule("com.guoshi.httpcanary.x", "HttpCanary X", "Packet Sniffer / MITM"),
-        RiskyPkgRule("com.reqable.android", "Reqable", "Packet Sniffer / MITM"),
-        RiskyPkgRule("com.emanuelef.remote_capture", "PCAPdroid", "Packet Sniffer / MITM"),
-        RiskyPkgRule("com.emanuelef.remote_capture.debug", "PCAPdroid", "Packet Sniffer / MITM"),
-        RiskyPkgRule("app.greyshirts.sslcapture", "Packet Capture", "Packet Sniffer / MITM"),
-        RiskyPkgRule("com.minhui.networkcapture", "NetCapture", "Packet Sniffer / MITM"),
-        RiskyPkgRule("com.minhui.networkcapture.pro", "NetCapture Pro", "Packet Sniffer / MITM"),
-        RiskyPkgRule("jp.co.taosoftware.android.packetcapture", "tPacketCapture", "Packet Sniffer / MITM"),
-        RiskyPkgRule("com.egorovandreyrm.pcapremote", "PCAP Remote", "Packet Sniffer / MITM"),
-        RiskyPkgRule("com.packagesniffer", "Package Sniffer", "Packet Sniffer / MITM"),
-        RiskyPkgRule("com.telerik.fiddler", "Fiddler", "Packet Sniffer / MITM"),
-        RiskyPkgRule("com.charlesproxy.android", "Charles Proxy", "Packet Sniffer / MITM")
-    )
-
-    // Keyword/prefix matchers to catch modded, renamed, VIP, or randomized-package clones (e.g. DPT Kill, NP Manager VIP, Lucky Patcher clones)
-    private val RISKY_PACKAGE_PREFIXES = arrayOf(
-        "bin.mt.",
-        "cc.binmt.",
-        "np.manager",
-        "com.np.manager",
-        "com.nm.manager",
-        "com.guoshi.httpcanary",
-        "com.reqable.",
-        "org.lsposed.",
-        "com.gmail.heagoo.apkeditor",
-        "top.niunaijun.blackdex",
-        "com.luoye.dpt",
-        "com.dpt."
-    )
-
-    private val RISKY_LABEL_KEYWORDS = arrayOf(
-        "mt manager",
-        "np manager",
-        "dpt kill",
-        "dpt-kill",
-        "dptkill",
-        "dpt shell",
-        "apktool m",
-        "apk editor",
-        "apkeditor",
-        "antisplit",
-        "lucky patcher",
-        "lp installer",
-        "httpcanary",
-        "reqable",
-        "pcapdroid",
-        "packet capture",
-        "ssl capture",
-        "netcapture",
-        "lspatch",
-        "lsposed",
-        "edxposed",
-        "virtualxposed",
-        "blackdex",
-        "dumpdex",
-        "gameguardian",
-        "app cloner"
-    )
-
     fun init(context: Context) {
-        val ctx = context.applicationContext ?: context
-        appContext = ctx
-        verifyIntegrityAndDeriveKey(ctx)
-        scanRiskyModTools(ctx)
+        appContext = context.applicationContext ?: context
+        verifyIntegrityAndDeriveKey(appContext)
     }
 
     fun isTampered(): Boolean {
@@ -250,271 +74,6 @@ object AppSecurityShield {
             verifyIntegrityAndDeriveKey(resolveContext())
         }
         return _tamperReason.value != null
-    }
-
-    fun hasBlockedModTools(): Boolean {
-        val ctx = resolveContext()
-        if (ctx != null && !isJvmTestEnvironment()) {
-            return scanRiskyModTools(ctx).isNotEmpty()
-        }
-        return _blockedModTools.value.isNotEmpty()
-    }
-
-    /**
-     * Scans installed apps for any APK/DEX/XML editor, DPT unpacker, signature killer,
-     * hook framework, or packet sniffer (both exact package match and renamed-clone launcher label match).
-     * Never blocks normal proxy VPNs (SuperProxy / AetherProxy) or regular user apps.
-     */
-    fun scanRiskyModTools(context: Context): List<BlockedModTool> {
-        if (isJvmTestEnvironment()) {
-            _blockedModTools.value = emptyList()
-            return emptyList()
-        }
-        val detectedMap = LinkedHashMap<String, BlockedModTool>()
-        val pm = context.packageManager
-
-        // 1. Direct package lookup (catches even non-launcher background packages like LSPosed / LP Proxy)
-        for (rule in RISKY_PACKAGE_RULES) {
-            try {
-                val pkgInfo = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                    pm.getPackageInfo(rule.packageName, PackageManager.PackageInfoFlags.of(0))
-                } else {
-                    @Suppress("DEPRECATION")
-                    pm.getPackageInfo(rule.packageName, 0)
-                }
-                val label = try {
-                    pkgInfo.applicationInfo?.loadLabel(pm)?.toString()?.trim()?.takeIf { it.isNotEmpty() }
-                        ?: rule.defaultName
-                } catch (_: Throwable) {
-                    rule.defaultName
-                }
-                detectedMap[rule.packageName] = BlockedModTool(
-                    displayName = label,
-                    packageName = rule.packageName,
-                    riskCategory = rule.category
-                )
-            } catch (_: Throwable) {
-                // Not installed
-            }
-        }
-
-        // 2. Launcher intent scan (catches renamed/VIP/randomized-package clones like DPT Kill, NP Manager VIP, Lucky Patcher)
-        try {
-            val launcherIntent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
-            val resolvedApps = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                pm.queryIntentActivities(launcherIntent, PackageManager.ResolveInfoFlags.of(0))
-            } else {
-                @Suppress("DEPRECATION")
-                pm.queryIntentActivities(launcherIntent, 0)
-            }
-            for (ri in resolvedApps) {
-                val pkg = ri.activityInfo?.packageName ?: continue
-                if (pkg == EXPECTED_PKG || detectedMap.containsKey(pkg)) continue
-                val pkgLower = pkg.lowercase()
-                val label = try {
-                    ri.loadLabel(pm)?.toString()?.trim() ?: ""
-                } catch (_: Throwable) {
-                    ""
-                }
-                val labelLower = label.lowercase()
-
-                val prefixHit = RISKY_PACKAGE_PREFIXES.any { pkgLower.startsWith(it) }
-                val labelHit = RISKY_LABEL_KEYWORDS.any { labelLower.contains(it) }
-                val dptHit = pkgLower.contains("dptkill") || pkgLower.contains("dpt_kill") ||
-                    (pkgLower.contains("dpt") && (pkgLower.contains("kill") || pkgLower.contains("shell") || pkgLower.contains("unpack")))
-
-                if (prefixHit || labelHit || dptHit) {
-                    val category = when {
-                        labelLower.contains("canary") || labelLower.contains("reqable") ||
-                            labelLower.contains("pcap") || labelLower.contains("capture") -> "Packet Sniffer / MITM"
-                        labelLower.contains("dpt") || dptHit || labelLower.contains("dex") -> "DEX Unpacker / Mod Tool"
-                        labelLower.contains("patch") || labelLower.contains("xposed") ||
-                            labelLower.contains("lsposed") || labelLower.contains("guardian") -> "Patcher / Hook Tool"
-                        else -> "APK / DEX / XML Editor"
-                    }
-                    detectedMap[pkg] = BlockedModTool(
-                        displayName = label.ifBlank { pkg },
-                        packageName = pkg,
-                        riskCategory = category
-                    )
-                }
-            }
-        } catch (_: Throwable) {
-        }
-
-        val result = detectedMap.values.toList()
-        _blockedModTools.value = result
-        return result
-    }
-
-    /**
-     * Immediately kills the tampered process using multiple un-catchable termination paths.
-     * Never triggered on clean unmodified official builds or JVM tests.
-     */
-    fun forceCrashNow(reason: String = "ERR_TAMPER"): Nothing {
-        _tamperReason.value = reason
-        // Poison master key so even if crash calls are patched out in smali, Vault returns garbage
-        cachedMasterKey = sha256("POISONED_${System.nanoTime()}_$reason".toByteArray(Charsets.UTF_8))
-
-        if (isJvmTestEnvironment()) {
-            throw SecurityException(reason)
-        }
-
-        // Fire an uncaught fatal Error on a separate daemon thread so Activity try/catch blocks cannot swallow it
-        try {
-            val killerThread = Thread {
-                try {
-                    Thread.sleep(120L)
-                } catch (_: Throwable) {}
-                try {
-                    Process.killProcess(Process.myPid())
-                } catch (_: Throwable) {}
-                try {
-                    Runtime.getRuntime().halt(1)
-                } catch (_: Throwable) {}
-                throw AssertionError(reason)
-            }
-            killerThread.isDaemon = false
-            killerThread.start()
-        } catch (_: Throwable) {}
-
-        try {
-            Process.killProcess(Process.myPid())
-        } catch (_: Throwable) {}
-        try {
-            Runtime.getRuntime().halt(1)
-        } catch (_: Throwable) {}
-        exitProcess(1)
-    }
-
-    /**
-     * Verifies rendered MainScreen App Title + Developer Credit text against cryptographic SHA-256 hash.
-     * If anyone edits even 1 character of "Developed By Ismail Islam Rony" or "Work ShortCut" in smali/DEX,
-     * the app immediately crashes.
-     */
-    fun verifyRenderedMainBrandingOrCrash(appTitle: String, devCredit: String) {
-        if (isJvmTestEnvironment()) return
-        if (isTampered()) {
-            forceCrashNow(_tamperReason.value ?: "ERR_TAMPER_MAIN")
-        }
-        val liveHash = bytesToHex(sha256("$appTitle\u001F$devCredit".toByteArray(Charsets.UTF_8)))
-        if (liveHash != EXPECTED_MAIN_BRAND_SHA256) {
-            forceCrashNow("ERR_DEV_BRAND_MODIFIED")
-        }
-    }
-
-    /**
-     * Verifies rendered LoginScreen Developer Contact + Telegram handle + URL against cryptographic SHA-256 hash.
-     * If anyone edits even 1 character of "@ismailislamrony1" or Telegram link in smali/DEX,
-     * the app immediately crashes.
-     */
-    fun verifyRenderedLoginBrandingOrCrash(devContact: String, devHandle: String, devUrl: String) {
-        if (isJvmTestEnvironment()) return
-        if (isTampered()) {
-            forceCrashNow(_tamperReason.value ?: "ERR_TAMPER_LOGIN")
-        }
-        val liveHash = bytesToHex(sha256("$devContact\u001F$devHandle\u001F$devUrl".toByteArray(Charsets.UTF_8)))
-        if (liveHash != EXPECTED_LOGIN_BRAND_SHA256) {
-            forceCrashNow("ERR_DEV_CONTACT_MODIFIED")
-        }
-    }
-
-    /**
-     * Live Anti-Sniffer Check called on every network request inside [SecureHttpClient]:
-     * 1. Detects active user-installed MITM CA certificates (HttpCanary / Reqable / Burp / Charles / Fiddler / PCAPdroid / mitmproxy).
-     * 2. Detects active packet-sniffer capture apps running alongside a non-app VPN tunnel or local MITM proxy.
-     * Note: NEVER blocks the app's own SuperProxyVpnService or normal proxy VPNs like AetherProxy.
-     */
-    fun isPacketSnifferActive(): Boolean {
-        if (isJvmTestEnvironment()) return false
-        val ctx = resolveContext() ?: return false
-        return detectSnifferUserCaCert() || detectActiveSnifferVpnOrProxy(ctx)
-    }
-
-    private fun detectSnifferUserCaCert(): Boolean {
-        return try {
-            val ks = KeyStore.getInstance("AndroidCAStore")
-            ks.load(null)
-            val snifferCaMarkers = arrayOf(
-                "httpcanary",
-                "reqable",
-                "portswigger",
-                "burp",
-                "charles proxy",
-                "do_not_trust_fiddlerroot",
-                "fiddler",
-                "mitmproxy",
-                "pcapdroid",
-                "packet capture",
-                "proxyman",
-                "sslcapture",
-                "netcapture"
-            )
-            val aliases = ks.aliases()
-            while (aliases.hasMoreElements()) {
-                val alias = aliases.nextElement() ?: continue
-                if (!alias.startsWith("user:", ignoreCase = true)) continue
-                val cert = ks.getCertificate(alias) as? X509Certificate ?: continue
-                val subject = (cert.subjectDN?.name ?: "").lowercase()
-                val issuer = (cert.issuerDN?.name ?: "").lowercase()
-                val combined = "$subject $issuer"
-                for (marker in snifferCaMarkers) {
-                    if (combined.contains(marker)) {
-                        return true
-                    }
-                }
-            }
-            false
-        } catch (_: Throwable) {
-            false
-        }
-    }
-
-    private fun detectActiveSnifferVpnOrProxy(context: Context): Boolean {
-        try {
-            val snifferPackages = arrayOf(
-                "com.guoshi.httpcanary",
-                "com.guoshi.httpcanary.premium",
-                "com.guoshi.httpcanary.x",
-                "com.reqable.android",
-                "com.emanuelef.remote_capture",
-                "com.emanuelef.remote_capture.debug",
-                "app.greyshirts.sslcapture",
-                "com.minhui.networkcapture",
-                "com.minhui.networkcapture.pro",
-                "jp.co.taosoftware.android.packetcapture",
-                "com.egorovandreyrm.pcapremote",
-                "com.packagesniffer"
-            )
-            val pm = context.packageManager
-            var hasInstalledSniffer = false
-            for (pkg in snifferPackages) {
-                try {
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                        pm.getPackageInfo(pkg, PackageManager.PackageInfoFlags.of(0))
-                    } else {
-                        @Suppress("DEPRECATION")
-                        pm.getPackageInfo(pkg, 0)
-                    }
-                    hasInstalledSniffer = true
-                    break
-                } catch (_: Throwable) {
-                }
-            }
-
-            if (hasInstalledSniffer) {
-                val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
-                val activeNet = cm?.activeNetwork
-                val caps = if (activeNet != null) cm.getNetworkCapabilities(activeNet) else null
-                val vpnTransportActive = caps?.hasTransport(NetworkCapabilities.TRANSPORT_VPN) == true
-                val ourOwnVpnRunning = com.example.service.SuperProxyVpnService.isVpnActive()
-                if (vpnTransportActive && !ourOwnVpnRunning) {
-                    return true
-                }
-            }
-        } catch (_: Throwable) {
-        }
-        return false
     }
 
     internal fun getMasterKey(): ByteArray {
@@ -546,12 +105,7 @@ object AppSecurityShield {
 
     @Synchronized
     private fun verifyIntegrityAndDeriveKey(context: Context?): ByteArray {
-        cachedMasterKey?.let { existing ->
-            if (_tamperReason.value != null && !isJvmTestEnvironment()) {
-                forceCrashNow(_tamperReason.value ?: "ERR_TAMPER_RECHECK")
-            }
-            return existing
-        }
+        cachedMasterKey?.let { return it }
 
         if (isJvmTestEnvironment() || context == null) {
             val seed = "${EXPECTED_CERT_SHA256}:${EXPECTED_PKG}:WS_SHIELD_2026_V9"
@@ -573,7 +127,7 @@ object AppSecurityShield {
             detectedIssue = "ERR_SIGNATURE_KILLER_HOOK"
         }
 
-        // 3. Check for Xposed / LSPosed / Frida / Substrate / DPT / Debugger in memory & ClassLoader
+        // 3. Check for Xposed / LSPosed / Frida / Substrate / Debugger in memory & ClassLoader
         if (detectedIssue == null && detectRuntimeHooksAndMemoryInjection()) {
             detectedIssue = "ERR_RUNTIME_HOOK_DETECTED"
         }
@@ -584,6 +138,7 @@ object AppSecurityShield {
 
         val liveCertHex = when {
             pmCertHex.isNotEmpty() && zipCertHex.isNotEmpty() && pmCertHex != zipCertHex -> {
+                // PackageManager returned a spoofed cert that differs from the actual APK META-INF cert!
                 detectedIssue = "ERR_CERT_SPOOF_DETECTED"
                 zipCertHex
             }
@@ -599,80 +154,22 @@ object AppSecurityShield {
             detectedIssue = "ERR_INVALID_SIGNATURE"
         }
 
-        if (detectedIssue != null) {
-            val poisonedSeed = "${liveCertHex}_POISON_${detectedIssue}:$livePkg:WS_SHIELD_2026_V9"
-            cachedMasterKey = sha256(poisonedSeed.toByteArray(Charsets.UTF_8))
-            _tamperReason.value = detectedIssue
-            forceCrashNow(detectedIssue)
-        }
+        _tamperReason.value = detectedIssue
 
-        // Derive the cryptographic master key directly from the live verified certificate + package
-        val seed = "$liveCertHex:$livePkg:WS_SHIELD_2026_V9"
+        // Derive the cryptographic master key directly from the live certificate + package state.
+        // If any hook/tamper was detected, poison the seed so decrypted API URLs/keys are invalid
+        // even if an attacker patches `isTampered()` in smali.
+        val effectiveCert = if (detectedIssue == null) liveCertHex else "${liveCertHex}_POISON_${detectedIssue}"
+        val seed = "$effectiveCert:$livePkg:WS_SHIELD_2026_V9"
         val key = sha256(seed.toByteArray(Charsets.UTF_8))
         cachedMasterKey = key
-
-        // 5. Cryptographic Seal Check over ALL API URLs, API Keys, Developer Name, Telegram, strings.xml & Manifest label!
-        //    If even ONE character of any API URL, API key, Developer Name, or XML app_name was modified -> CRASH IMMEDIATELY!
-        if (!verifyVaultAndBrandSeal(context)) {
-            val sealError = "ERR_API_OR_DEV_MODIFIED"
-            cachedMasterKey = sha256("${liveCertHex}_POISON_$sealError:$livePkg".toByteArray(Charsets.UTF_8))
-            _tamperReason.value = sealError
-            forceCrashNow(sealError)
-        }
-
-        _tamperReason.value = null
         return key
-    }
-
-    /**
-     * Computes live SHA-256 over every decrypted API URL/token/header, every Developer Name/Contact string,
-     * strings.xml R.string.app_name, and AndroidManifest application label.
-     * Any 1-byte or 1-character change anywhere breaks this seal and immediately kills the app.
-     */
-    private fun verifyVaultAndBrandSeal(context: Context): Boolean {
-        return try {
-            val resAppName = context.getString(com.example.R.string.app_name).trim()
-            val manifestLabel = context.applicationInfo.loadLabel(context.packageManager).toString().trim()
-            val joined = listOf(
-                SecureVault.supabaseBaseUrl,
-                SecureVault.supabaseKey,
-                SecureVault.unixDefaultToken,
-                SecureVault.lamixDefaultToken,
-                SecureVault.hadiDefaultToken,
-                SecureVault.hadiBaseUrl,
-                SecureVault.lamixBaseUrl,
-                SecureVault.unixBaseUrl,
-                SecureVault.zenexDefaultKey,
-                SecureVault.zenexGetNumUrl,
-                SecureVault.zenexOtpUrl,
-                SecureVault.zenexRangesUrl,
-                SecureVault.zenexBroadcastUrl,
-                SecureVault.zenexHeader,
-                SecureVault.mkBaseUrl,
-                SecureVault.mkDefaultKey,
-                SecureVault.mkHeader,
-                SecureVault.slBaseUrl,
-                SecureVault.slDefaultKey,
-                SecureVault.slHeader,
-                SecureVault.adminPass,
-                SecureVault.devCreditText,
-                SecureVault.devContactText,
-                SecureVault.devTelegramHandle,
-                SecureVault.devTelegramUrl,
-                SecureVault.appDisplayTitle,
-                resAppName,
-                manifestLabel
-            ).joinToString("\u001F")
-            val liveSeal = bytesToHex(sha256(joined.toByteArray(Charsets.UTF_8)))
-            liveSeal == EXPECTED_INTEGRITY_SEAL_SHA256
-        } catch (_: Throwable) {
-            false
-        }
     }
 
     @SuppressLint("PrivateApi")
     private fun detectSignatureKillerOrPmsHook(context: Context): Boolean {
         try {
+            // Check Application class name for KillerApplication / MT / NP wrappers
             val appClassName = context.applicationInfo?.className ?: ""
             val actualAppClass = context.applicationContext?.javaClass?.name ?: ""
             val forbiddenAppTokens = listOf(
@@ -683,9 +180,7 @@ object AppSecurityShield {
                 "ModApplication",
                 "HookApplication",
                 "SandHook",
-                "Pine",
-                "DptApplication",
-                "luoye.dpt"
+                "Pine"
             )
             if (forbiddenAppTokens.any {
                     appClassName.contains(it, ignoreCase = true) ||
@@ -695,6 +190,7 @@ object AppSecurityShield {
                 return true
             }
 
+            // Check if ActivityThread.sPackageManager is a Proxy class (classic PMS signature killer)
             val atClass = Class.forName("android.app.ActivityThread")
             val getPmMethod = atClass.getDeclaredMethod("getPackageManager")
             getPmMethod.isAccessible = true
@@ -710,6 +206,7 @@ object AppSecurityShield {
                 return true
             }
 
+            // Probe ClassLoader for known signature killer / hook classes
             val killerClasses = arrayOf(
                 "bin.mt.signature.KillerApplication",
                 "cc.binmt.signature.PmsHookApplication",
@@ -736,6 +233,7 @@ object AppSecurityShield {
                 return true
             }
 
+            // Inspect stack trace for Xposed / LSPosed / ZjHook / Substrate frames
             val stackTrace = Throwable().stackTrace
             for (element in stackTrace) {
                 val cn = element.className
@@ -749,6 +247,7 @@ object AppSecurityShield {
                 }
             }
 
+            // Check /proc/self/status for TracerPid != 0 (ptrace / gdb / ida / frida attach)
             val statusFile = File("/proc/self/status")
             if (statusFile.exists() && statusFile.canRead()) {
                 BufferedReader(FileReader(statusFile)).use { reader ->
@@ -764,6 +263,7 @@ object AppSecurityShield {
                 }
             }
 
+            // Scan /proc/self/maps for injected shared libraries (Frida, Xposed, Riru, Zygisk-LSPosed, MT Killer)
             val mapsFile = File("/proc/self/maps")
             if (mapsFile.exists() && mapsFile.canRead()) {
                 val suspiciousLibs = arrayOf(
@@ -776,10 +276,7 @@ object AppSecurityShield {
                     "libpine.so",
                     "libkillersignature",
                     "libmt_hook",
-                    "bin.mt.signature",
-                    "libdpt",
-                    "libDexHelper",
-                    "liblspd"
+                    "bin.mt.signature"
                 )
                 BufferedReader(FileReader(mapsFile)).use { reader ->
                     var line: String?
@@ -870,8 +367,8 @@ object AppSecurityShield {
 }
 
 /**
- * Cryptographic Vault that decrypts endpoints, headers, API keys, and developer branding
- * on-the-fly using the certificate-bound master key from [AppSecurityShield].
+ * Cryptographic Vault that decrypts endpoints, headers, and API keys on-the-fly using
+ * the certificate-bound master key from [AppSecurityShield].
  */
 object SecureVault {
 
@@ -919,16 +416,6 @@ object SecureVault {
     private val ENC_SL_HEADER = intArrayOf(58, 135, 223, 191, 140, 242, 151, 79, 201)
     // ADMIN_PASS (salt=121)
     private val ENC_ADMIN_PASS = intArrayOf(81, 153, 62, 132, 42, 247, 227, 228, 135, 194, 248)
-    // DEV_CREDIT_TEXT (salt=122)
-    private val ENC_DEV_CREDIT_TEXT = intArrayOf(36, 74, 252, 41, 153, 31, 62, 66, 126, 184, 250, 178, 237, 17, 69, 227, 137, 242, 245, 25, 30, 187, 167, 133, 205, 213, 182, 64, 79, 48)
-    // DEV_CONTACT_TEXT (salt=123)
-    private val ENC_DEV_CONTACT_TEXT = intArrayOf(98, 109, 31, 43, 125, 151, 105, 71, 165, 23, 147, 202, 253, 127, 166, 176, 151, 211, 160, 181, 254, 175, 123, 106, 252, 144, 74, 95, 166, 47, 142, 236, 46, 140, 104, 142)
-    // DEV_TELEGRAM_HANDLE (salt=124)
-    private val ENC_DEV_TELEGRAM_HANDLE = intArrayOf(122, 159, 240, 36, 199, 59, 8, 118, 118, 153, 242, 181, 50, 195, 254, 105, 89)
-    // DEV_TELEGRAM_URL (salt=125)
-    private val ENC_DEV_TELEGRAM_URL = intArrayOf(216, 60, 152, 64, 43, 217, 242, 100, 242, 248, 8, 211, 196, 73, 118, 31, 45, 113, 155, 39, 124, 86, 49, 56, 30, 148, 190, 12, 47)
-    // APP_DISPLAY_TITLE (salt=126)
-    private val ENC_APP_DISPLAY_TITLE = intArrayOf(57, 191, 214, 147, 146, 152, 149, 65, 41, 146, 59, 78, 208)
 
     private fun unlock(cipher: IntArray, saltId: Int): String {
         val master = AppSecurityShield.getMasterKey()
@@ -974,15 +461,9 @@ object SecureVault {
 
     val adminPass: String get() = unlock(ENC_ADMIN_PASS, 121)
 
-    val devCreditText: String get() = unlock(ENC_DEV_CREDIT_TEXT, 122)
-    val devContactText: String get() = unlock(ENC_DEV_CONTACT_TEXT, 123)
-    val devTelegramHandle: String get() = unlock(ENC_DEV_TELEGRAM_HANDLE, 124)
-    val devTelegramUrl: String get() = unlock(ENC_DEV_TELEGRAM_URL, 125)
-    val appDisplayTitle: String get() = unlock(ENC_APP_DISPLAY_TITLE, 126)
-
     /**
      * Encrypts a custom API token before saving to SharedPreferences so shared_prefs XML files
-     * on disk never expose plaintext tokens to rooted users.
+     * on disk never expose plaintext tokens to rooted MT Manager users.
      */
     fun encryptPref(plain: String): String {
         if (plain.isBlank()) return ""
@@ -1028,16 +509,13 @@ object SecureVault {
 }
 
 /**
- * Hardened OkHttpClient factory that enforces Proxy.NO_PROXY, crashes on APK tampering,
- * and blocks requests whenever packet sniffers or risky modding/editing tools are installed.
+ * Hardened OkHttpClient factory that enforces Proxy.NO_PROXY and blocks requests when
+ * packet sniffers (HttpCanary / Reqable / Charles / Burp) or APK tampering are active.
  */
 object SecureHttpClient {
 
     private val securityInterceptor = Interceptor { chain ->
         if (AppSecurityShield.isTampered()) {
-            AppSecurityShield.forceCrashNow("ERR_NET_TAMPER")
-        }
-        if (AppSecurityShield.hasBlockedModTools() || AppSecurityShield.isPacketSnifferActive()) {
             throw IOException("SEC_SHIELD_BLOCK")
         }
         try {

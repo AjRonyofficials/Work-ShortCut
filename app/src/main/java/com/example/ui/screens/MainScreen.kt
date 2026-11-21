@@ -220,15 +220,9 @@ fun MainScreen(
                                 )
                             }
                             Spacer(modifier = Modifier.width(7.dp))
-                            val verifiedAppTitle = remember {
-                                val title = com.example.util.SecureVault.appDisplayTitle
-                                val credit = com.example.util.SecureVault.devCreditText
-                                com.example.util.AppSecurityShield.verifyRenderedMainBrandingOrCrash(title, credit)
-                                title
-                            }
                             Column {
                                 Text(
-                                    text = verifiedAppTitle,
+                                    text = "Work ShortCut",
                                     fontWeight = FontWeight.ExtraBold,
                                     fontSize = 14.5.sp,
                                     color = Color.White,
@@ -657,14 +651,8 @@ fun MainScreen(
                         )
                     }
 
-                    val verifiedDevCredit = remember {
-                        val title = com.example.util.SecureVault.appDisplayTitle
-                        val credit = com.example.util.SecureVault.devCreditText
-                        com.example.util.AppSecurityShield.verifyRenderedMainBrandingOrCrash(title, credit)
-                        credit
-                    }
                     Text(
-                        text = verifiedDevCredit,
+                        text = "Developed By Ismail Islam Rony",
                         fontSize = 7.sp,
                         color = Color.White,
                         fontWeight = FontWeight.SemiBold,

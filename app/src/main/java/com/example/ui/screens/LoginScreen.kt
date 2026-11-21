@@ -340,19 +340,7 @@ fun LoginScreen(
 
                 Spacer(modifier = Modifier.height(16.dp))
 
-                // To get ID Pass or Forget Password Contact Developer (Cryptographically Sealed)
-                val devContactLabel = remember { com.example.util.SecureVault.devContactText }
-                val devTelegramHandle = remember { com.example.util.SecureVault.devTelegramHandle }
-                val devTelegramUrl = remember { com.example.util.SecureVault.devTelegramUrl }
-                remember(devContactLabel, devTelegramHandle, devTelegramUrl) {
-                    com.example.util.AppSecurityShield.verifyRenderedLoginBrandingOrCrash(
-                        devContact = devContactLabel,
-                        devHandle = devTelegramHandle,
-                        devUrl = devTelegramUrl
-                    )
-                    true
-                }
-
+                // To get ID Pass or Forget Password Contact Developer (@ismailislamrony1)
                 Surface(
                     color = Color(0xFF0088CC).copy(alpha = 0.18f),
                     shape = RoundedCornerShape(14.dp),
@@ -360,26 +348,21 @@ fun LoginScreen(
                     modifier = Modifier
                         .fillMaxWidth()
                         .clickable {
-                            com.example.util.AppSecurityShield.verifyRenderedLoginBrandingOrCrash(
-                                devContact = devContactLabel,
-                                devHandle = devTelegramHandle,
-                                devUrl = devTelegramUrl
-                            )
                             try {
                                 val intent = android.content.Intent(
                                     android.content.Intent.ACTION_VIEW,
-                                    android.net.Uri.parse(devTelegramUrl)
+                                    android.net.Uri.parse("https://t.me/ismailislamrony1")
                                 )
                                 context.startActivity(intent)
                             } catch (e: Exception) {
                                 com.example.util.ClipboardHelper.copyToClipboard(
                                     context,
-                                    devTelegramHandle,
+                                    "@ismailislamrony1",
                                     "Developer Telegram"
                                 )
                                 Toast.makeText(
                                     context,
-                                    "টেলিগ্রাম ইউজারনেম কপি করা হয়েছে: $devTelegramHandle",
+                                    "টেলিগ্রাম ইউজারনেম কপি করা হয়েছে: @ismailislamrony1",
                                     Toast.LENGTH_LONG
                                 ).show()
                             }
@@ -413,7 +396,7 @@ fun LoginScreen(
                                 fontWeight = FontWeight.Bold
                             )
                             Text(
-                                text = devContactLabel,
+                                text = "Contact Developer: @ismailislamrony1",
                                 color = Color.White,
                                 fontSize = 12.sp,
                                 fontWeight = FontWeight.ExtraBold

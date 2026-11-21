@@ -315,8 +315,6 @@ class SuperProxyVpnService : VpnService() {
         @Volatile
         private var activeInstance: SuperProxyVpnService? = null
 
-        fun isVpnActive(): Boolean = activeInstance != null
-
         fun protectSocket(socket: Socket?): Boolean {
             if (socket == null) return false
             return try {
