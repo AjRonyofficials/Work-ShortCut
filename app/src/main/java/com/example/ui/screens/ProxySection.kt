@@ -2,9 +2,12 @@ package com.example.ui.screens
 
 import android.app.Activity
 import android.content.Context
+import android.content.Intent
 import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.net.VpnService
+import android.provider.Settings
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -596,6 +599,130 @@ fun ProxySection(
                                             color = neonGreen
                                         )
                                     }
+                                }
+
+                                // Active Zero-Leak Protection Status Pill (Apps + Websites)
+                                Surface(
+                                    shape = RoundedCornerShape(8.dp),
+                                    color = Color(0xFF0E2538),
+                                    border = BorderStroke(1.dp, cyanAccent.copy(alpha = 0.28f)),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Text(
+                                        text = if (proxy.allowedApps.isEmpty()) {
+                                            "🛡️ Apps + Websites Protected • Zero-Leak MapDNS • Google DoH / IPv6 / WebRTC Blocked"
+                                        } else {
+                                            "🛡️ ${proxy.allowedApps.size} Selected Apps Protected • Zero-Leak MapDNS • DoH / IPv6 / WebRTC Blocked"
+                                        },
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = cyanAccent,
+                                        modifier = Modifier.padding(horizontal = 9.dp, vertical = 6.dp)
+                                    )
+                                }
+
+                                // Quick 1-Tap Fresh IP Rotate & Live Website DNS/IP Leak Verification
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    OutlinedButton(
+                                        onClick = { OverlayStateManager.refreshRotatingIp(context) },
+                                        shape = RoundedCornerShape(9.dp),
+                                        border = BorderStroke(1.dp, cyanAccent.copy(alpha = 0.55f)),
+                                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .height(38.dp)
+                                            .testTag("btn_rotate_fresh_ip")
+                                    ) {
+                                        Icon(Icons.Default.RestartAlt, contentDescription = "Rotate Fresh IP", tint = cyanAccent, modifier = Modifier.size(15.dp))
+                                        Spacer(modifier = Modifier.width(5.dp))
+                                        Text("Fresh IP", fontSize = 11.5.sp, fontWeight = FontWeight.Bold, color = cyanAccent, maxLines = 1)
+                                    }
+                                    OutlinedButton(
+                                        onClick = {
+                                            try {
+                                                val browserIntent = Intent(Intent.ACTION_VIEW, Uri.parse("https://ipleak.net")).apply {
+                                                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                                }
+                                                context.startActivity(browserIntent)
+                                            } catch (_: Exception) {
+                                                Toast.makeText(context, "Could not open browser", Toast.LENGTH_SHORT).show()
+                                            }
+                                        },
+                                        shape = RoundedCornerShape(9.dp),
+                                        border = BorderStroke(1.dp, neonGreen.copy(alpha = 0.55f)),
+                                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .height(38.dp)
+                                            .testTag("btn_check_dns_leak")
+                                    ) {
+                                        Icon(Icons.Default.Dns, contentDescription = "Check DNS Leak", tint = neonGreen, modifier = Modifier.size(15.dp))
+                                        Spacer(modifier = Modifier.width(5.dp))
+                                        Text("Check IP & DNS", fontSize = 11.5.sp, fontWeight = FontWeight.Bold, color = neonGreen, maxLines = 1)
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // Strict Android Private DNS Warning (e.g., dns.google configured in Phone Settings)
+                    val privateDnsInfo = remember(proxy.isConnected) {
+                        try {
+                            val mode = Settings.Global.getString(context.contentResolver, "private_dns_mode") ?: ""
+                            val host = Settings.Global.getString(context.contentResolver, "private_dns_specifier") ?: ""
+                            if (mode.equals("hostname", ignoreCase = true) && host.isNotBlank()) host else null
+                        } catch (_: Exception) {
+                            null
+                        }
+                    }
+                    if (!privateDnsInfo.isNullOrBlank()) {
+                        Spacer(modifier = Modifier.height(10.dp))
+                        Surface(
+                            shape = RoundedCornerShape(11.dp),
+                            color = Color(0xFF2B1B06),
+                            border = BorderStroke(1.dp, Color(0xFFFFB300)),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 11.dp, vertical = 9.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = "⚠️ Phone Private DNS Active: $privateDnsInfo",
+                                        fontSize = 11.5.sp,
+                                        fontWeight = FontWeight.ExtraBold,
+                                        color = Color(0xFFFFD54F)
+                                    )
+                                    Text(
+                                        text = "Google LLC DNS লিক বন্ধ রাখতে Settings → Private DNS = Off করুন",
+                                        fontSize = 10.5.sp,
+                                        color = Color(0xFFFFECB3)
+                                    )
+                                }
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Button(
+                                    onClick = {
+                                        try {
+                                            context.startActivity(Intent(Settings.ACTION_WIRELESS_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                                        } catch (_: Exception) {
+                                            try {
+                                                context.startActivity(Intent(Settings.ACTION_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                                            } catch (_: Exception) {}
+                                        }
+                                    },
+                                    shape = RoundedCornerShape(8.dp),
+                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFFB300)),
+                                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                                    modifier = Modifier
+                                        .height(34.dp)
+                                        .testTag("btn_open_private_dns_settings")
+                                ) {
+                                    Text("DNS Off", fontSize = 11.sp, fontWeight = FontWeight.ExtraBold, color = Color(0xFF1A1000))
                                 }
                             }
                         }
@@ -1567,8 +1694,8 @@ fun ProxySection(
                             Spacer(modifier = Modifier.height(3.dp))
                             val allowedCount = proxy.allowedApps.size
                             Text(
-                                text = if (allowedCount == 0) "🛡️ All apps routed through proxy (Default)"
-                                       else "⚡ $allowedCount apps exclusively routed through proxy",
+                                text = if (allowedCount == 0) "🛡️ Full Phone Mode: All Apps + Chrome/Websites routed"
+                                       else "⚡ Custom Mode: $allowedCount apps only (Other apps/browsers direct)",
                                 fontSize = 11.5.sp,
                                 fontWeight = FontWeight.Medium,
                                 color = if (allowedCount > 0) neonGreen else Color(0xFF94A3B8)

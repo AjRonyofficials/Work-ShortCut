@@ -1637,6 +1637,17 @@ object OverlayStateManager {
                 Toast.makeText(ctx, "প্রক্সি চালু করতে ভিপিএন পারমিশন এলাউ (OK) করুন", Toast.LENGTH_LONG).show()
                 return
             }
+            try {
+                val dnsMode = android.provider.Settings.Global.getString(ctx.contentResolver, "private_dns_mode") ?: ""
+                val dnsHost = android.provider.Settings.Global.getString(ctx.contentResolver, "private_dns_specifier") ?: ""
+                if (dnsMode.equals("hostname", ignoreCase = true) && dnsHost.isNotBlank()) {
+                    Toast.makeText(
+                        ctx,
+                        "⚠️ ফোনের Private DNS ($dnsHost) চালু আছে! জিরো-লিক DNS এর জন্য Settings > Private DNS = Off করুন",
+                        Toast.LENGTH_LONG
+                    ).show()
+                }
+            } catch (_: Exception) {}
         }
 
         val initialProtocol = if (proxy.protocol.isBlank()) "SOCKS5" else proxy.protocol

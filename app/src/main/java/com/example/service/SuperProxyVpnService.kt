@@ -97,10 +97,10 @@ class SuperProxyVpnService : VpnService() {
             val builder = Builder()
                 .setSession("SuperProxy: $profileName")
                 .setMtu(1400) // Optimal MTU for zero packet fragmentation on 4G/5G SIM & Wi-Fi
-                .addAddress("198.18.0.1", 32) // Virtual IPv4 TUN interface
-                .addRoute("0.0.0.0", 0)       // Capture 100% of IPv4 traffic into tun0
-                .addRoute("240.0.0.0", 4)     // Explicit route for MapDNS Fake-IP pool
-                .addDnsServer("198.18.0.2")   // STRICT MapDNS ONLY! ZERO Google/Cloudflare/ISP DNS leak!
+                .addAddress("198.18.0.1", 30) // Virtual IPv4 TUN on same /30 subnet as MapDNS (198.18.0.2)
+                .addRoute("0.0.0.0", 0)       // Capture 100% of IPv4 traffic (Apps + Websites) into tun0
+                .addRoute("198.19.0.0", 16)   // Explicit route for RFC-2544 unicast MapDNS Fake-IP pool (Chrome/Cronet safe!)
+                .addDnsServer("198.18.0.2")   // STRICT MapDNS ONLY! ZERO Google LLC / Cloudflare / ISP DNS leak!
 
             // 2. Capture 100% of IPv6 traffic into tun0 so real 4G/5G SIM / Wi-Fi IPv6 NEVER leaks to Facebook!
             var ipv6Captured = false
@@ -187,8 +187,8 @@ class SuperProxyVpnService : VpnService() {
             sb.append("mapdns:\n")
             sb.append("  address: 198.18.0.2\n")
             sb.append("  port: 53\n")
-            sb.append("  network: 240.0.0.0\n")
-            sb.append("  netmask: 240.0.0.0\n")
+            sb.append("  network: 198.19.0.0\n")
+            sb.append("  netmask: 255.255.0.0\n")
             sb.append("  cache-size: 20000\n")
             sb.append("\n")
             sb.append("misc:\n")

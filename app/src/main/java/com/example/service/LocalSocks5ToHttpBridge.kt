@@ -42,8 +42,8 @@ object LocalSocks5ToHttpBridge {
     @Volatile private var user: String = ""
     @Volatile private var pass: String = ""
 
-    // Public DNS / DoH / Private-DNS endpoints that bypass MapDNS remote proxy resolution
-    private val BLOCKED_DNS_BYPASS_HOSTS = setOf(
+    // Known Public DNS / DoH / DoT IPv4 addresses blocked on ALL ports so neither apps nor browsers can bypass MapDNS
+    private val BLOCKED_DNS_BYPASS_IPS = setOf(
         "8.8.8.8",
         "8.8.4.4",
         "1.1.1.1",
@@ -53,6 +53,7 @@ object LocalSocks5ToHttpBridge {
         "1.1.1.3",
         "1.0.0.3",
         "9.9.9.9",
+        "9.9.9.10",
         "9.9.9.11",
         "149.112.112.112",
         "149.112.112.11",
@@ -61,27 +62,40 @@ object LocalSocks5ToHttpBridge {
         "94.140.14.14",
         "94.140.15.15",
         "76.76.2.0",
+        "76.76.10.0",
         "45.90.28.0",
         "45.90.30.0",
+        "185.228.168.9",
+        "185.228.169.9",
+        "223.5.5.5",
+        "223.6.6.6"
+    )
+
+    // Dedicated DoH / DoT / Private-DNS domain suffixes (never blocks normal google.com/youtube.com/facebook.com!)
+    private val BLOCKED_DNS_DOMAIN_SUFFIXES = listOf(
         "dns.google",
         "dns.google.com",
+        "dns.google.arpa",
         "8888.google",
+        "doh.google",
+        "doh.google.com",
         "cloudflare-dns.com",
-        "mozilla.cloudflare-dns.com",
         "one.one.one.one",
-        "dns.quad9.net",
-        "dns9.quad9.net",
+        "quad9.net",
         "doh.opendns.com",
-        "doh.cleanbrowsing.org",
+        "dns.opendns.com",
+        "dns.umbrella.com",
+        "cleanbrowsing.org",
         "doh.dns.sb",
-        "dns.alidns.com",
+        "alidns.com",
         "doh.pub",
         "dns.adguard.com",
-        "dns.adguard-dns.com",
-        "dns.nextdns.io",
-        "doh.mullvad.net",
-        "dns.mullvad.net",
-        "freedns.controld.com"
+        "adguard-dns.com",
+        "nextdns.io",
+        "mullvad.net",
+        "controld.com",
+        "doh.tiar.app",
+        "dns.switch.ch"
     )
 
     private val BLOCKED_WEBRTC_STUN_PORTS = setOf(
@@ -134,22 +148,42 @@ object LocalSocks5ToHttpBridge {
         }
     }
 
+    private fun isGooglePublicDnsIpRange(ip: String): Boolean {
+        // Google Public DNS additional CIDR ranges: 8.34.208.0/20 and 8.35.192.0/20
+        val parts = ip.split(".")
+        if (parts.size != 4) return false
+        val a = parts[0].toIntOrNull() ?: return false
+        val b = parts[1].toIntOrNull() ?: return false
+        val c = parts[2].toIntOrNull() ?: return false
+        if (a != 8) return false
+        return (b == 34 && c in 208..223) || (b == 35 && c in 192..207)
+    }
+
     private fun shouldBlockForAntiLeak(atyp: Int, targetHost: String, targetPort: Int): Boolean {
         // 1. Block Android Private DNS (DoT port 853) & direct raw TCP DNS (port 53)
         //    so Android/Chrome/Facebook immediately use MapDNS (198.18.0.2) remote resolution
         if (targetPort == 853 || targetPort == 53) return true
 
-        // 2. Block WebRTC STUN/TURN ports to prevent real IP leakage
+        // 2. Block WebRTC STUN/TURN ports to prevent real IP leakage in browsers & apps
         if (targetPort in BLOCKED_WEBRTC_STUN_PORTS) return true
 
-        // 3. Block raw IPv6 literals so apps never stall or leak IPv6 and cleanly stay on proxy IPv4
+        // 3. Block raw IPv6 literals so apps & websites never stall or leak IPv6 and cleanly stay on proxy IPv4
         if (atyp == 4) return true
 
-        // 4. Block Chrome/Android DoH bypasses (e.g. dns.google:443, 8.8.8.8:443, 1.1.1.1:443)
-        //    so DNS always comes from the remote proxy's ISP instead of Google/Cloudflare Anycast
-        val hostLower = targetHost.trim().lowercase()
-        if (hostLower in BLOCKED_DNS_BYPASS_HOSTS && (targetPort == 443 || targetPort == 80 || targetPort == 853 || targetPort == 53)) {
+        val hostLower = targetHost.trim().trimEnd('.').lowercase()
+
+        // 4. Block Google LLC & public DNS IPv4 endpoints on ALL ports (kills Chrome Secure DNS / App hardcoded DNS)
+        if (hostLower in BLOCKED_DNS_BYPASS_IPS || isGooglePublicDnsIpRange(hostLower)) {
             return true
+        }
+
+        // 5. Block Chrome/Browser/Android DoH & DoT domains + subdomains (dns.google, *.dns.google, *.cloudflare-dns.com, etc.)
+        if (targetPort == 443 || targetPort == 80 || targetPort == 853 || targetPort == 53) {
+            for (suffix in BLOCKED_DNS_DOMAIN_SUFFIXES) {
+                if (hostLower == suffix || hostLower.endsWith(".$suffix")) {
+                    return true
+                }
+            }
         }
 
         return false
