@@ -48,10 +48,21 @@ object LocalSocks5ToHttpBridge {
         "8.8.4.4",
         "1.1.1.1",
         "1.0.0.1",
+        "1.1.1.2",
+        "1.0.0.2",
+        "1.1.1.3",
+        "1.0.0.3",
         "9.9.9.9",
+        "9.9.9.11",
         "149.112.112.112",
+        "149.112.112.11",
         "208.67.222.222",
         "208.67.220.220",
+        "94.140.14.14",
+        "94.140.15.15",
+        "76.76.2.0",
+        "45.90.28.0",
+        "45.90.30.0",
         "dns.google",
         "dns.google.com",
         "8888.google",
@@ -59,13 +70,24 @@ object LocalSocks5ToHttpBridge {
         "mozilla.cloudflare-dns.com",
         "one.one.one.one",
         "dns.quad9.net",
+        "dns9.quad9.net",
         "doh.opendns.com",
+        "doh.cleanbrowsing.org",
+        "doh.dns.sb",
+        "dns.alidns.com",
+        "doh.pub",
         "dns.adguard.com",
         "dns.adguard-dns.com",
-        "dns.nextdns.io"
+        "dns.nextdns.io",
+        "doh.mullvad.net",
+        "dns.mullvad.net",
+        "freedns.controld.com"
     )
 
-    private val BLOCKED_WEBRTC_STUN_PORTS = setOf(3478, 5349, 19302)
+    private val BLOCKED_WEBRTC_STUN_PORTS = setOf(
+        3478, 3479, 5349, 5350,
+        19302, 19303, 19304, 19305, 19306, 19307, 19308, 19309
+    )
 
     fun start(
         httpHost: String,
@@ -218,33 +240,57 @@ object LocalSocks5ToHttpBridge {
                 return
             }
 
-            // 3. Connect to pinned upstream proxy (Protected from VPN tunnel)
-            upstream = Socket()
-            upstream.tcpNoDelay = true
-            upstream.keepAlive = true
-            upstream.sendBufferSize = 65536
-            upstream.receiveBufferSize = 65536
-            upstream.soTimeout = 15000
+            // 3. Connect to pinned upstream proxy with 1 automatic fast retry for transient residential proxy resets
+            var connectedUpstream: Socket? = null
+            var handshakeOk = false
+            for (attempt in 1..2) {
+                var candidate: Socket? = null
+                try {
+                    candidate = Socket()
+                    candidate.tcpNoDelay = true
+                    candidate.keepAlive = true
+                    candidate.sendBufferSize = 65536
+                    candidate.receiveBufferSize = 65536
+                    candidate.soTimeout = 15000
 
-            SuperProxyVpnService.protectSocket(upstream)
-            activeSockets.add(upstream)
-            upstream.connect(InetSocketAddress(upstreamHost, upstreamPort), 10000)
+                    SuperProxyVpnService.protectSocket(candidate)
+                    activeSockets.add(candidate)
+                    candidate.connect(InetSocketAddress(upstreamHost, upstreamPort), 9000)
 
-            val upIn = upstream.getInputStream()
-            val upOut = upstream.getOutputStream()
+                    val upIn = candidate.getInputStream()
+                    val upOut = candidate.getOutputStream()
 
-            // 4. Perform Upstream Handshake (HTTP CONNECT or SOCKS5 RFC 1928/1929 with Remote Domain Resolution!)
-            val handshakeOk = if (upstreamIsHttp) {
-                performHttpUpstreamHandshake(upIn, upOut, targetHost, targetPort)
-            } else {
-                performSocks5UpstreamHandshake(upIn, upOut, atyp, rawIpv4Bytes, rawDomainBytes, targetHost, targetPort)
+                    val ok = if (upstreamIsHttp) {
+                        performHttpUpstreamHandshake(upIn, upOut, targetHost, targetPort)
+                    } else {
+                        performSocks5UpstreamHandshake(upIn, upOut, atyp, rawIpv4Bytes, rawDomainBytes, targetHost, targetPort)
+                    }
+
+                    if (ok) {
+                        connectedUpstream = candidate
+                        handshakeOk = true
+                        break
+                    } else {
+                        activeSockets.remove(candidate)
+                        try { candidate.close() } catch (_: Exception) {}
+                    }
+                } catch (_: Exception) {
+                    candidate?.let {
+                        activeSockets.remove(it)
+                        try { it.close() } catch (_: Exception) {}
+                    }
+                }
+                if (attempt == 1 && isRunning.get()) {
+                    try { kotlinx.coroutines.delay(140L) } catch (_: Exception) {}
+                }
             }
 
-            if (!handshakeOk) {
+            upstream = connectedUpstream
+            if (!handshakeOk || upstream == null) {
                 clientOut.write(byteArrayOf(5, 5, 0, 1, 0, 0, 0, 0, 0, 0)) // Connection refused
                 clientOut.flush()
                 client.close()
-                upstream.close()
+                try { upstream?.close() } catch (_: Exception) {}
                 return
             }
 

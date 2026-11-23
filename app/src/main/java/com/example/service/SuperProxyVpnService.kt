@@ -60,13 +60,15 @@ class SuperProxyVpnService : VpnService() {
         val profileName = intent?.getStringExtra(EXTRA_PROFILE_NAME) ?: "Proxy"
         val server = intent?.getStringExtra(EXTRA_SERVER) ?: "127.0.0.1"
         val pinnedGatewayIp = intent?.getStringExtra(EXTRA_PINNED_GATEWAY_IP) ?: ""
+        val lockedDisplayIp = intent?.getStringExtra(EXTRA_LOCKED_IP) ?: ""
         val port = intent?.getIntExtra(EXTRA_PORT, 1080) ?: 1080
         val protocol = intent?.getStringExtra(EXTRA_PROTOCOL) ?: "SOCKS5"
         val user = intent?.getStringExtra(EXTRA_USER) ?: ""
         val pass = intent?.getStringExtra(EXTRA_PASS) ?: ""
         val allowedApps = intent?.getStringArrayListExtra(EXTRA_ALLOWED_APPS) ?: arrayListOf<String>()
 
-        startForegroundNotification(profileName, server, port)
+        val displayTarget = lockedDisplayIp.ifBlank { "$server:$port" }
+        startForegroundNotification(profileName, displayTarget, port)
         startVpn(profileName, server, pinnedGatewayIp, port, protocol, user, pass, allowedApps)
 
         return START_STICKY
@@ -254,7 +256,7 @@ class SuperProxyVpnService : VpnService() {
 
         val notification: Notification = NotificationCompat.Builder(this, channelId)
             .setContentTitle("Super Proxy Shield: $profileName")
-            .setContentText("Zero-Leak DNS & IPv6 Shield Active • $server:$port")
+            .setContentText("Zero-Leak DNS & IPv6 Shield • $server")
             .setSmallIcon(android.R.drawable.ic_dialog_info)
             .setContentIntent(pendingIntent)
             .addAction(android.R.drawable.ic_menu_close_clear_cancel, "Disconnect", disconnectPending)
@@ -308,6 +310,7 @@ class SuperProxyVpnService : VpnService() {
         const val EXTRA_PROFILE_NAME = "profile_name"
         const val EXTRA_SERVER = "server"
         const val EXTRA_PINNED_GATEWAY_IP = "pinned_gateway_ip"
+        const val EXTRA_LOCKED_IP = "locked_ip"
         const val EXTRA_PORT = "port"
         const val EXTRA_PROTOCOL = "protocol"
         const val EXTRA_USER = "user"
@@ -355,7 +358,8 @@ class SuperProxyVpnService : VpnService() {
             user: String = "",
             pass: String = "",
             allowedApps: List<String> = emptyList(),
-            pinnedGatewayIp: String = ""
+            pinnedGatewayIp: String = "",
+            lockedIp: String = ""
         ) {
             try {
                 val intent = Intent(context, SuperProxyVpnService::class.java).apply {
@@ -363,6 +367,7 @@ class SuperProxyVpnService : VpnService() {
                     putExtra(EXTRA_PROFILE_NAME, profileName)
                     putExtra(EXTRA_SERVER, server)
                     putExtra(EXTRA_PINNED_GATEWAY_IP, pinnedGatewayIp)
+                    putExtra(EXTRA_LOCKED_IP, lockedIp)
                     putExtra(EXTRA_PORT, port)
                     putExtra(EXTRA_PROTOCOL, protocol)
                     putExtra(EXTRA_USER, user)

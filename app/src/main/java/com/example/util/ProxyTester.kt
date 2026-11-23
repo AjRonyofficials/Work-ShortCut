@@ -49,6 +49,8 @@ object ProxyTester {
     private val IPV6_REGEX = Pattern.compile("(?i)\\b(?:[a-f0-9]{1,4}:){7}[a-f0-9]{1,4}\\b|\\b(?:[a-f0-9]{1,4}:){1,7}:\\b|\\b:(?::[a-f0-9]{1,4}){1,7}\\b")
 
     private val gatewayDnsCache = ConcurrentHashMap<String, String>()
+    private val gatewayPoolCache = ConcurrentHashMap<String, List<String>>()
+    private val gatewayRoundRobinCursor = ConcurrentHashMap<String, java.util.concurrent.atomic.AtomicInteger>()
 
     // Lightweight, ultra-fast global IP check endpoints (plain-text HTTP first for 0-RTT speed)
     private val IP_CHECK_ENDPOINTS = listOf(
@@ -60,7 +62,7 @@ object ProxyTester {
         "https://ifconfig.me/ip"
     )
 
-    private fun isValidRealIpv4(ip: String?): Boolean {
+    fun isValidRealIpv4(ip: String?): Boolean {
         if (ip.isNullOrBlank()) return false
         if (!ip.matches(Regex("^\\d{1,3}(\\.\\d{1,3}){3}$"))) return false
         if (ip.startsWith("240.") || ip.startsWith("198.18.") || ip == "0.0.0.0") return false
@@ -68,34 +70,34 @@ object ProxyTester {
     }
 
     /**
-     * Resolves a proxy gateway hostname safely off the main thread so SuperProxyVpnService.startVpn()
-     * never throws NetworkOnMainThreadException (which caused the 10s delay in #132).
+     * Resolves ALL IPv4 A-records of a proxy gateway hostname so multi-IP proxy clusters (2-100+ nodes)
+     * can rotate to a fresh gateway node on each new connection and then pin that node for the session.
      */
-    fun resolveHostFastBlocking(host: String, timeoutMs: Long = 1500L): String {
+    fun resolveAllHostIpv4Blocking(host: String, timeoutMs: Long = 1500L): List<String> {
         val clean = host.trim()
-        if (clean.isEmpty()) return clean
-        if (isValidRealIpv4(clean)) return clean
+        if (clean.isEmpty()) return emptyList()
+        if (isValidRealIpv4(clean)) return listOf(clean)
 
-        gatewayDnsCache[clean]?.let { cached ->
-            if (isValidRealIpv4(cached)) return cached
-        }
-
-        var resolved: String? = null
+        val found = java.util.concurrent.CopyOnWriteArrayList<String>()
         val latch = CountDownLatch(1)
         Thread {
             try {
                 val all = InetAddress.getAllByName(clean)
-                val ipv4 = all.firstOrNull { it is Inet4Address && isValidRealIpv4(it.hostAddress) }?.hostAddress
-                    ?: all.firstOrNull { isValidRealIpv4(it.hostAddress) }?.hostAddress
-                if (!ipv4.isNullOrBlank()) {
-                    gatewayDnsCache[clean] = ipv4
-                    resolved = ipv4
+                val v4List = all
+                    .mapNotNull { it.hostAddress }
+                    .filter { isValidRealIpv4(it) }
+                    .distinct()
+                if (v4List.isNotEmpty()) {
+                    found.addAll(v4List)
+                    gatewayPoolCache[clean] = v4List
+                    gatewayDnsCache[clean] = v4List.first()
                 } else {
                     val udpIp = queryProtectedDnsIpv4(clean, "8.8.8.8")
                         ?: queryProtectedDnsIpv4(clean, "1.1.1.1")
                     if (isValidRealIpv4(udpIp)) {
-                        gatewayDnsCache[clean] = udpIp!!
-                        resolved = udpIp
+                        found.add(udpIp!!)
+                        gatewayPoolCache[clean] = listOf(udpIp)
+                        gatewayDnsCache[clean] = udpIp
                     }
                 }
             } catch (_: Exception) {
@@ -108,7 +110,43 @@ object ProxyTester {
             latch.await(timeoutMs, TimeUnit.MILLISECONDS)
         } catch (_: Exception) {}
 
-        return resolved ?: gatewayDnsCache[clean] ?: clean
+        return when {
+            found.isNotEmpty() -> found.toList()
+            !gatewayPoolCache[clean].isNullOrEmpty() -> gatewayPoolCache[clean]!!
+            gatewayDnsCache[clean] != null -> listOf(gatewayDnsCache[clean]!!)
+            else -> listOf(clean)
+        }
+    }
+
+    /**
+     * Picks the next distinct gateway IPv4 from the host's DNS pool in round-robin order
+     * (giving fresh proxy nodes on every new Connect/Rotate) and returns (selectedIp, poolSize).
+     */
+    fun pickNextGatewayIp(host: String, timeoutMs: Long = 1500L): Pair<String, Int> {
+        val clean = host.trim()
+        val pool = resolveAllHostIpv4Blocking(clean, timeoutMs)
+        if (pool.isEmpty()) return clean to 0
+        if (pool.size == 1) return pool[0] to 1
+        val cursor = gatewayRoundRobinCursor.computeIfAbsent(clean) { java.util.concurrent.atomic.AtomicInteger(0) }
+        val idx = Math.floorMod(cursor.getAndIncrement(), pool.size)
+        return pool[idx] to pool.size
+    }
+
+    /**
+     * Resolves a proxy gateway hostname safely off the main thread so SuperProxyVpnService.startVpn()
+     * never throws NetworkOnMainThreadException.
+     */
+    fun resolveHostFastBlocking(host: String, timeoutMs: Long = 1500L): String {
+        val clean = host.trim()
+        if (clean.isEmpty()) return clean
+        if (isValidRealIpv4(clean)) return clean
+
+        gatewayDnsCache[clean]?.let { cached ->
+            if (isValidRealIpv4(cached)) return cached
+        }
+
+        val all = resolveAllHostIpv4Blocking(clean, timeoutMs)
+        return all.firstOrNull() ?: clean
     }
 
     private fun queryProtectedDnsIpv4(domain: String, dnsServer: String): String? {

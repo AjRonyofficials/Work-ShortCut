@@ -176,29 +176,30 @@ object ProxyFormatHelper {
     )
 
     private val SESSION_ALPHANUM = "abcdefghijklmnopqrstuvwxyz0123456789"
+    private val SESSION_DIGITS = "0123456789"
     private val EXISTING_SESSION_REGEX = Regex(
-        """((?:;|__|-|_)(?:sessid|session|sid)([.\-]))([A-Za-z0-9]+)""",
+        """((?:;|__|-|_)(?:sessid|session|sid|rand|s)([.\-_]))([A-Za-z0-9]+)""",
         RegexOption.IGNORE_CASE
     )
 
-    fun generateSessionId(length: Int = 8): String {
+    fun generateSessionId(length: Int = 8, digitsOnly: Boolean = false): String {
         val rng = java.security.SecureRandom()
-        return buildString(length) {
-            repeat(length) {
-                append(SESSION_ALPHANUM[rng.nextInt(SESSION_ALPHANUM.length)])
+        val alphabet = if (digitsOnly) SESSION_DIGITS else SESSION_ALPHANUM
+        val safeLen = length.coerceIn(6, 16)
+        return buildString(safeLen) {
+            repeat(safeLen) {
+                append(alphabet[rng.nextInt(alphabet.length)])
             }
         }
     }
 
     /**
-     * Locks known rotating residential proxy formats (DataImpulse, IPRoyal, Smartproxy/Decodo,
-     * Oxylabs, BrightData) onto a single sticky IP session at connection time so the IP shown on
-     * Connect stays pinned for Facebook / Chrome / OTP without rotating on every TCP request.
-     *
-     * - If credentials ALREADY contain a sticky session tag and [forceNewSessionId] is false:
-     *   preserves the exact existing session ID untouched (ZERO rotation on connect!).
-     * - If [forceNewSessionId] is true (user tapped Rotate IP): rotates ONLY the session ID token.
-     * - For unknown/static providers: returns original credentials unmodified so auth never breaks.
+     * Generates or rotates a sticky session ID for residential/rotating proxy gateways so:
+     * 1. On EVERY new Connect ([forceNewSessionId] = true): requests a FRESH unique IP from the
+     *    provider's 2-100+ IP pool instead of repeating the previous IP.
+     * 2. Once connected: locks that exact session ID onto the VPN tunnel so Facebook / Chrome / OTP
+     *    stay on that ONE single IP for the entire session without mid-session rotation.
+     * 3. For unknown/static single-IP providers: leaves credentials untouched so auth never breaks.
      */
     fun applyStickySession(
         host: String,
@@ -218,16 +219,19 @@ object ProxyFormatHelper {
         // 1. Check if username or password ALREADY has a sticky session parameter
         val userMatch = EXISTING_SESSION_REGEX.find(rawUser)
         if (userMatch != null) {
+            val oldToken = userMatch.groupValues[3]
             if (!forceNewSessionId) {
                 return StickySessionResult(
                     username = rawUser,
                     password = rawPass,
                     appliedStickyTag = false,
                     hasStickySession = true,
-                    sessionId = userMatch.groupValues[3]
+                    sessionId = oldToken
                 )
             }
-            val newId = generateSessionId(8)
+            val digitsOnly = oldToken.all { it.isDigit() }
+            var newId = generateSessionId(oldToken.length.coerceIn(6, 12), digitsOnly)
+            if (newId == oldToken) newId = generateSessionId(oldToken.length.coerceIn(6, 12), digitsOnly)
             val updatedUser = rawUser.replaceRange(
                 userMatch.groups[3]!!.range,
                 newId
@@ -243,16 +247,19 @@ object ProxyFormatHelper {
 
         val passMatch = EXISTING_SESSION_REGEX.find(rawPass)
         if (passMatch != null) {
+            val oldToken = passMatch.groupValues[3]
             if (!forceNewSessionId) {
                 return StickySessionResult(
                     username = rawUser,
                     password = rawPass,
                     appliedStickyTag = false,
                     hasStickySession = true,
-                    sessionId = passMatch.groupValues[3]
+                    sessionId = oldToken
                 )
             }
-            val newId = generateSessionId(8)
+            val digitsOnly = oldToken.all { it.isDigit() }
+            var newId = generateSessionId(oldToken.length.coerceIn(6, 12), digitsOnly)
+            if (newId == oldToken) newId = generateSessionId(oldToken.length.coerceIn(6, 12), digitsOnly)
             val updatedPass = rawPass.replaceRange(
                 passMatch.groups[3]!!.range,
                 newId
@@ -268,8 +275,8 @@ object ProxyFormatHelper {
 
         val newId = generateSessionId(8)
 
-        // 2. DataImpulse format (gw.dataimpulse.com or username containing __cr.xx / __)
-        // Official format: user__cr.us;sessid.<8chars> (or user__sessid.<8chars>)
+        // 2. DataImpulse format (gw.dataimpulse.com or username containing __cr.xx)
+        // Official format: user__cr.us;sessid.<8chars>
         if (cleanHost.contains("dataimpulse") || rawUser.contains("__cr.", ignoreCase = true)) {
             val stickyUser = if (rawUser.contains("__")) {
                 "$rawUser;sessid.$newId"
@@ -367,6 +374,46 @@ object ProxyFormatHelper {
                     sessionId = newId
                 )
             }
+        }
+
+        // 7. LunaProxy / PIA / 922 / ABCProxy / TabProxy / CherryProxy / PYProxy / ProxySeller
+        // Standard format: user-region-us-sessid-<8chars>-sessTime-30 (or -zone-...-region-...)
+        if (cleanHost.contains("lunaproxy") ||
+            cleanHost.contains("922proxy") ||
+            cleanHost.contains("abcproxy") ||
+            cleanHost.contains("piaproxy") ||
+            cleanHost.contains("tabproxy") ||
+            cleanHost.contains("cherryproxy") ||
+            cleanHost.contains("pyproxy") ||
+            (rawUser.contains("-region-", ignoreCase = true) || rawUser.contains("-zone-", ignoreCase = true))
+        ) {
+            if (rawUser.isNotEmpty()) {
+                val stickyUser = if (rawUser.contains("-sesstime-", ignoreCase = true)) {
+                    "$rawUser-sessid-$newId"
+                } else {
+                    "$rawUser-sessid-${newId}-sessTime-30"
+                }
+                return StickySessionResult(
+                    username = stickyUser,
+                    password = rawPass,
+                    appliedStickyTag = true,
+                    hasStickySession = true,
+                    sessionId = newId
+                )
+            }
+        }
+
+        // 8. Webshare rotating endpoint (p.webshare.io / username-rotate -> username-<1..100> if needed, otherwise leave safe)
+        if (cleanHost.contains("webshare") && rawUser.endsWith("-rotate", ignoreCase = true)) {
+            val baseUser = rawUser.dropLast(7)
+            val slot = (java.security.SecureRandom().nextInt(100) + 1)
+            return StickySessionResult(
+                username = "$baseUser-$slot",
+                password = rawPass,
+                appliedStickyTag = true,
+                hasStickySession = true,
+                sessionId = slot.toString()
+            )
         }
 
         // Unknown / static provider: never mutate credentials
