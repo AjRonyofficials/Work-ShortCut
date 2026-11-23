@@ -166,4 +166,216 @@ object ProxyFormatHelper {
             suggestedName = suggestedName
         )
     }
+
+    data class StickySessionResult(
+        val username: String,
+        val password: String,
+        val appliedStickyTag: Boolean,
+        val hasStickySession: Boolean,
+        val sessionId: String? = null
+    )
+
+    private val SESSION_ALPHANUM = "abcdefghijklmnopqrstuvwxyz0123456789"
+    private val EXISTING_SESSION_REGEX = Regex(
+        """((?:;|__|-|_)(?:sessid|session|sid)([.\-]))([A-Za-z0-9]+)""",
+        RegexOption.IGNORE_CASE
+    )
+
+    fun generateSessionId(length: Int = 8): String {
+        val rng = java.security.SecureRandom()
+        return buildString(length) {
+            repeat(length) {
+                append(SESSION_ALPHANUM[rng.nextInt(SESSION_ALPHANUM.length)])
+            }
+        }
+    }
+
+    /**
+     * Locks known rotating residential proxy formats (DataImpulse, IPRoyal, Smartproxy/Decodo,
+     * Oxylabs, BrightData) onto a single sticky IP session at connection time so the IP shown on
+     * Connect stays pinned for Facebook / Chrome / OTP without rotating on every TCP request.
+     *
+     * - If credentials ALREADY contain a sticky session tag and [forceNewSessionId] is false:
+     *   preserves the exact existing session ID untouched (ZERO rotation on connect!).
+     * - If [forceNewSessionId] is true (user tapped Rotate IP): rotates ONLY the session ID token.
+     * - For unknown/static providers: returns original credentials unmodified so auth never breaks.
+     */
+    fun applyStickySession(
+        host: String,
+        port: Int,
+        username: String,
+        password: String,
+        forceNewSessionId: Boolean = false
+    ): StickySessionResult {
+        val cleanHost = host.trim().lowercase()
+        val rawUser = username.trim()
+        val rawPass = password.trim()
+
+        if (rawUser.isEmpty() && rawPass.isEmpty()) {
+            return StickySessionResult(rawUser, rawPass, appliedStickyTag = false, hasStickySession = false)
+        }
+
+        // 1. Check if username or password ALREADY has a sticky session parameter
+        val userMatch = EXISTING_SESSION_REGEX.find(rawUser)
+        if (userMatch != null) {
+            if (!forceNewSessionId) {
+                return StickySessionResult(
+                    username = rawUser,
+                    password = rawPass,
+                    appliedStickyTag = false,
+                    hasStickySession = true,
+                    sessionId = userMatch.groupValues[3]
+                )
+            }
+            val newId = generateSessionId(8)
+            val updatedUser = rawUser.replaceRange(
+                userMatch.groups[3]!!.range,
+                newId
+            )
+            return StickySessionResult(
+                username = updatedUser,
+                password = rawPass,
+                appliedStickyTag = true,
+                hasStickySession = true,
+                sessionId = newId
+            )
+        }
+
+        val passMatch = EXISTING_SESSION_REGEX.find(rawPass)
+        if (passMatch != null) {
+            if (!forceNewSessionId) {
+                return StickySessionResult(
+                    username = rawUser,
+                    password = rawPass,
+                    appliedStickyTag = false,
+                    hasStickySession = true,
+                    sessionId = passMatch.groupValues[3]
+                )
+            }
+            val newId = generateSessionId(8)
+            val updatedPass = rawPass.replaceRange(
+                passMatch.groups[3]!!.range,
+                newId
+            )
+            return StickySessionResult(
+                username = rawUser,
+                password = updatedPass,
+                appliedStickyTag = true,
+                hasStickySession = true,
+                sessionId = newId
+            )
+        }
+
+        val newId = generateSessionId(8)
+
+        // 2. DataImpulse format (gw.dataimpulse.com or username containing __cr.xx / __)
+        // Official format: user__cr.us;sessid.<8chars> (or user__sessid.<8chars>)
+        if (cleanHost.contains("dataimpulse") || rawUser.contains("__cr.", ignoreCase = true)) {
+            val stickyUser = if (rawUser.contains("__")) {
+                "$rawUser;sessid.$newId"
+            } else if (rawUser.isNotEmpty()) {
+                "${rawUser}__sessid.$newId"
+            } else {
+                rawUser
+            }
+            if (stickyUser != rawUser) {
+                return StickySessionResult(
+                    username = stickyUser,
+                    password = rawPass,
+                    appliedStickyTag = true,
+                    hasStickySession = true,
+                    sessionId = newId
+                )
+            }
+        }
+
+        // 3. IPRoyal format (geo.iproyal.com or password with _country- / _city-)
+        // Official format: pass_country-us_session-<8chars>_lifetime-30m
+        if (cleanHost.contains("iproyal") ||
+            rawPass.contains("_country-", ignoreCase = true) ||
+            rawPass.contains("_city-", ignoreCase = true)
+        ) {
+            if (rawPass.isNotEmpty()) {
+                val stickyPass = if (rawPass.contains("_lifetime-", ignoreCase = true)) {
+                    "${rawPass}_session-$newId"
+                } else {
+                    "${rawPass}_session-${newId}_lifetime-30m"
+                }
+                return StickySessionResult(
+                    username = rawUser,
+                    password = stickyPass,
+                    appliedStickyTag = true,
+                    hasStickySession = true,
+                    sessionId = newId
+                )
+            }
+        }
+
+        // 4. Decodo / Smartproxy format (gate.smartproxy.com / gate.decodo.com or user-...-country-...)
+        // Official format: user-xxx-country-us-session-<8chars>-sessionduration-30
+        if (cleanHost.contains("smartproxy") ||
+            cleanHost.contains("decodo") ||
+            (rawUser.startsWith("user-", ignoreCase = true) && rawUser.contains("-country-", ignoreCase = true))
+        ) {
+            if (rawUser.isNotEmpty()) {
+                val stickyUser = if (rawUser.contains("-sessionduration-", ignoreCase = true)) {
+                    "$rawUser-session-$newId"
+                } else {
+                    "$rawUser-session-${newId}-sessionduration-30"
+                }
+                return StickySessionResult(
+                    username = stickyUser,
+                    password = rawPass,
+                    appliedStickyTag = true,
+                    hasStickySession = true,
+                    sessionId = newId
+                )
+            }
+        }
+
+        // 5. Oxylabs format (pr.oxylabs.io or customer-...)
+        // Official format: customer-xxx-cc-us-sessid-<8chars>-sesstime-30
+        if (cleanHost.contains("oxylabs") || rawUser.startsWith("customer-", ignoreCase = true)) {
+            if (rawUser.isNotEmpty()) {
+                val stickyUser = if (rawUser.contains("-sesstime-", ignoreCase = true)) {
+                    "$rawUser-sessid-$newId"
+                } else {
+                    "$rawUser-sessid-${newId}-sesstime-30"
+                }
+                return StickySessionResult(
+                    username = stickyUser,
+                    password = rawPass,
+                    appliedStickyTag = true,
+                    hasStickySession = true,
+                    sessionId = newId
+                )
+            }
+        }
+
+        // 6. BrightData / Luminati format (brd.superproxy.io or brd-customer-...)
+        // Official format: brd-customer-xxx-zone-yyy-session-<8chars>
+        if (cleanHost.contains("superproxy.io") ||
+            cleanHost.contains("luminati") ||
+            rawUser.startsWith("brd-customer-", ignoreCase = true)
+        ) {
+            if (rawUser.isNotEmpty()) {
+                return StickySessionResult(
+                    username = "$rawUser-session-$newId",
+                    password = rawPass,
+                    appliedStickyTag = true,
+                    hasStickySession = true,
+                    sessionId = newId
+                )
+            }
+        }
+
+        // Unknown / static provider: never mutate credentials
+        return StickySessionResult(
+            username = rawUser,
+            password = rawPass,
+            appliedStickyTag = false,
+            hasStickySession = false,
+            sessionId = null
+        )
+    }
 }

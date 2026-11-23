@@ -1228,6 +1228,11 @@ object OverlayStateManager {
      * Note: Proxy section does NOT copy anything to clipboard
      */
     private var proxyDurationJob: Job? = null
+    private var proxyConnectJob: Job? = null
+    @Volatile private var activeTunnelUsername: String = ""
+    @Volatile private var activeTunnelPassword: String = ""
+    @Volatile private var activeTunnelProtocol: String = "SOCKS5"
+    @Volatile private var activePinnedGatewayIp: String = ""
 
     fun setProxyAllowedApps(packages: List<String>, context: Context? = null) {
         _uiState.update {
@@ -1237,16 +1242,19 @@ object OverlayStateManager {
 
         val proxy = _uiState.value.proxyState
         if (proxy.isConnected && context != null) {
-            val effectiveProtocol = if (proxy.protocol.isBlank()) "SOCKS5" else proxy.protocol
+            val effectiveProtocol = activeTunnelProtocol.ifBlank { if (proxy.protocol.isBlank()) "SOCKS5" else proxy.protocol }
+            val effectiveUser = activeTunnelUsername.ifEmpty { proxy.username }
+            val effectivePass = activeTunnelPassword.ifEmpty { proxy.password }
             SuperProxyVpnService.start(
                 context = context,
                 profileName = proxy.profileName,
                 server = proxy.host,
                 port = proxy.port,
                 protocol = effectiveProtocol,
-                user = proxy.username,
-                pass = proxy.password,
-                allowedApps = packages
+                user = effectiveUser,
+                pass = effectivePass,
+                allowedApps = packages,
+                pinnedGatewayIp = activePinnedGatewayIp
             )
         }
     }
@@ -1286,12 +1294,18 @@ object OverlayStateManager {
         val countryOpt = com.example.util.NameGenerator.getCountryOption(effectiveCountry)
 
         _uiState.update {
+            val prev = it.proxyState
+            val sameActiveEndpoint = prev.isConnected &&
+                prev.host == server &&
+                prev.port == port &&
+                prev.username == username &&
+                prev.password == password
             it.copy(
-                proxyState = it.proxyState.copy(
+                proxyState = prev.copy(
                     profileName = profileName,
                     host = server,
                     port = port,
-                    ipAddress = server,
+                    ipAddress = if (sameActiveEndpoint && prev.ipAddress.isNotBlank()) prev.ipAddress else server,
                     protocol = protocol,
                     countryCode = effectiveCountry,
                     countryName = countryOpt.name,
@@ -1553,7 +1567,11 @@ object OverlayStateManager {
     }
 
     fun disconnectProxy(context: Context? = null) {
+        proxyConnectJob?.cancel()
         proxyDurationJob?.cancel()
+        activeTunnelUsername = ""
+        activeTunnelPassword = ""
+        activePinnedGatewayIp = ""
         _uiState.update {
             it.copy(
                 proxyState = it.proxyState.copy(
@@ -1593,34 +1611,20 @@ object OverlayStateManager {
         }
 
         val initialProtocol = if (proxy.protocol.isBlank()) "SOCKS5" else proxy.protocol
-
-        // 1. PHASE 1: Immediate VPN Tunnel Launch (#132 flow, with off-main-thread DNS inside SuperProxyVpnService)
-        context?.let { ctx ->
-            SuperProxyVpnService.start(
-                context = ctx,
-                profileName = proxy.profileName,
-                server = proxy.host,
-                port = proxy.port,
-                protocol = initialProtocol,
-                user = proxy.username,
-                pass = proxy.password,
-                allowedApps = proxy.allowedApps
-            )
-        }
-
-        // Instant Connected State (<0.1s) with country display
         val countryOpt = NameGenerator.getCountryOption(proxy.countryCode)
-        _uiState.update {
-            it.copy(
-                proxyState = it.proxyState.copy(
-                    isConnected = true,
-                    isTesting = false,
-                    connectedDurationSeconds = 0,
-                    ipAddress = proxy.host,
-                    statusText = "Connected to ${proxy.host} (${countryOpt.flag} ${countryOpt.name}) • Tunnel Active"
-                )
-            )
-        }
+
+        // Cancel any previous in-flight connect/probe so rapid taps never cause duplicate rotations
+        proxyConnectJob?.cancel()
+
+        // Lock sticky session for known rotating residential gateways (DataImpulse, IPRoyal, Smartproxy/Decodo, Oxylabs, BrightData)
+        // while preserving any existing user-specified session ID untouched!
+        val sticky = com.example.util.ProxyFormatHelper.applyStickySession(
+            host = proxy.host,
+            port = proxy.port,
+            username = proxy.username,
+            password = proxy.password,
+            forceNewSessionId = false
+        )
 
         // Start live duration timer immediately
         proxyDurationJob?.cancel()
@@ -1637,22 +1641,111 @@ object OverlayStateManager {
             }
         }
 
-        context?.let { ctx ->
-            VibrationHelper.vibrateSuccess(ctx)
-            Toast.makeText(ctx, "✅ Connected: ${proxy.host} (${countryOpt.flag} ${countryOpt.name})", Toast.LENGTH_SHORT).show()
+        _uiState.update {
+            it.copy(
+                proxyState = it.proxyState.copy(
+                    isConnected = true,
+                    isTesting = false,
+                    connectedDurationSeconds = 0,
+                    ipAddress = proxy.host,
+                    statusText = "Connecting to ${proxy.host} (${countryOpt.flag} ${countryOpt.name}) • Locking IP & DNS..."
+                )
+            )
         }
 
-        // 2. PHASE 2: Background Egress IP & Geo-Location Resolution (Never interrupts or restarts the running tunnel!)
-        scope.launch(Dispatchers.IO) {
-            val result = ProxyTester.testProxy(
+        val appCtx = context?.applicationContext ?: context
+
+        proxyConnectJob = scope.launch(Dispatchers.IO) {
+            // 1. Resolve & pin the gateway IPv4 ONCE for the entire session (prevents DNS round-robin rotation)
+            val pinnedGatewayIp = ProxyTester.resolveHostFastBlocking(proxy.host.trim(), 1500L)
+            activePinnedGatewayIp = pinnedGatewayIp
+
+            var finalUser = proxy.username
+            var finalPass = proxy.password
+            var finalProtocol = initialProtocol
+            var probeResult: ProxyTester.PingResult? = null
+
+            if (sticky.appliedStickyTag) {
+                // Verify the sticky-locked credentials ONCE BEFORE starting the tunnel so:
+                // (a) Connect IP and Facebook/Chrome traffic share the EXACT SAME locked sticky IP!
+                // (b) If a custom gateway rejects the sticky suffix, we fall back seamlessly to raw credentials!
+                val stickyProbe = ProxyTester.testProxy(
+                    host = proxy.host,
+                    port = proxy.port,
+                    protocol = initialProtocol,
+                    username = sticky.username,
+                    password = sticky.password,
+                    timeoutMs = 3500,
+                    pingOptimized = false,
+                    singleConnectionMode = true,
+                    allowProtocolFallback = true,
+                    pinnedGatewayIp = pinnedGatewayIp
+                )
+                if (stickyProbe.isSuccess && !stickyProbe.resolvedIp.isNullOrBlank()) {
+                    finalUser = sticky.username
+                    finalPass = sticky.password
+                    finalProtocol = stickyProbe.workingProtocol ?: initialProtocol
+                    probeResult = stickyProbe
+                }
+            }
+
+            if (!_uiState.value.proxyState.isConnected) return@launch
+
+            activeTunnelUsername = finalUser
+            activeTunnelPassword = finalPass
+            activeTunnelProtocol = finalProtocol
+
+            // 2. Launch Fortified Zero-Leak VPN Tunnel (Strict MapDNS Only + IPv6 Trap + Anti-DoT/DoH/WebRTC Bridge)
+            appCtx?.let { ctx ->
+                SuperProxyVpnService.start(
+                    context = ctx,
+                    profileName = proxy.profileName,
+                    server = proxy.host,
+                    port = proxy.port,
+                    protocol = finalProtocol,
+                    user = finalUser,
+                    pass = finalPass,
+                    allowedApps = proxy.allowedApps,
+                    pinnedGatewayIp = pinnedGatewayIp
+                )
+            }
+
+            // 3. If we haven't probed yet (static / already-sticky / fallback credentials), do ONE SINGLE probe ONLY!
+            //    Never run parallel SOCKS5+HTTP racing or a 2nd postTest that would rotate the IP!
+            val result = probeResult ?: ProxyTester.testProxy(
                 host = proxy.host,
                 port = proxy.port,
-                protocol = initialProtocol,
-                username = proxy.username,
-                password = proxy.password,
-                timeoutMs = 2500,
-                pingOptimized = true
+                protocol = finalProtocol,
+                username = finalUser,
+                password = finalPass,
+                timeoutMs = 4500,
+                pingOptimized = false,
+                singleConnectionMode = true,
+                allowProtocolFallback = true,
+                pinnedGatewayIp = pinnedGatewayIp
             )
+
+            // If configured protocol failed and fallback protocol succeeded, align tunnel ONCE to working protocol
+            val detectedProto = result.workingProtocol
+            if (result.isSuccess && !detectedProto.isNullOrBlank() &&
+                !detectedProto.equals(finalProtocol, ignoreCase = true)
+            ) {
+                finalProtocol = detectedProto
+                activeTunnelProtocol = finalProtocol
+                appCtx?.let { ctx ->
+                    SuperProxyVpnService.start(
+                        context = ctx,
+                        profileName = proxy.profileName,
+                        server = proxy.host,
+                        port = proxy.port,
+                        protocol = finalProtocol,
+                        user = finalUser,
+                        pass = finalPass,
+                        allowedApps = proxy.allowedApps,
+                        pinnedGatewayIp = pinnedGatewayIp
+                    )
+                }
+            }
 
             val effectiveIp = if (result.isSuccess && !result.resolvedIp.isNullOrBlank()) result.resolvedIp!! else proxy.host
             val country = if (result.isSuccess && !result.countryCode.isNullOrBlank()) result.countryCode!! else proxy.countryCode
@@ -1661,6 +1754,11 @@ object OverlayStateManager {
             val isp = if (result.isSuccess) (result.isp ?: "") else ""
             val latency = if (result.latencyMs > 0) result.latencyMs else 32L
             val locLabel = if (city.isNotEmpty()) "$city, $country" else country
+            val lockBadge = if (sticky.hasStickySession && finalUser == sticky.username && finalPass == sticky.password) {
+                " 🔒 Sticky"
+            } else {
+                " • Zero-Leak DNS"
+            }
 
             kotlinx.coroutines.withContext(Dispatchers.Main) {
                 if (_uiState.value.proxyState.isConnected) {
@@ -1669,7 +1767,7 @@ object OverlayStateManager {
                             proxyState = it.proxyState.copy(
                                 isConnected = true,
                                 isTesting = false,
-                                protocol = initialProtocol,
+                                protocol = finalProtocol,
                                 ipAddress = effectiveIp,
                                 ipVersion = result.ipVersion,
                                 countryCode = country,
@@ -1677,94 +1775,120 @@ object OverlayStateManager {
                                 city = city,
                                 isp = isp,
                                 pingMs = latency,
-                                statusText = "Connected to $effectiveIp ($locLabel) • ${latency}ms"
+                                statusText = "Connected to $effectiveIp ($locLabel)$lockBadge • ${latency}ms"
                             )
                         )
                     }
-                }
-            }
-
-            // If fast check did not resolve public IP within 2.5s, do a gentle background resolution for UI display only
-            if (!result.isSuccess || result.resolvedIp.isNullOrBlank()) {
-                scope.launch(Dispatchers.IO) {
-                    kotlinx.coroutines.delay(1000)
-                    try {
-                        val postTest = ProxyTester.testProxy(
-                            host = proxy.host,
-                            port = proxy.port,
-                            protocol = initialProtocol,
-                            username = proxy.username,
-                            password = proxy.password,
-                            timeoutMs = 4000,
-                            pingOptimized = false
-                        )
-                        if (postTest.isSuccess && !postTest.resolvedIp.isNullOrBlank()) {
-                            val newIp = postTest.resolvedIp!!
-                            val newCountry = postTest.countryCode ?: country
-                            val newCountryName = postTest.countryName ?: countryName
-                            val newCity = postTest.city ?: ""
-                            val newIsp = postTest.isp ?: ""
-                            val newLatency = if (postTest.latencyMs > 0) postTest.latencyMs else latency
-                            val newLocLabel = if (newCity.isNotEmpty()) "$newCity, $newCountry" else newCountry
-
-                            kotlinx.coroutines.withContext(Dispatchers.Main) {
-                                if (_uiState.value.proxyState.isConnected) {
-                                    _uiState.update {
-                                        it.copy(
-                                            proxyState = it.proxyState.copy(
-                                                protocol = initialProtocol,
-                                                ipAddress = newIp,
-                                                ipVersion = postTest.ipVersion,
-                                                countryCode = newCountry,
-                                                countryName = newCountryName,
-                                                city = newCity,
-                                                isp = newIsp,
-                                                pingMs = newLatency,
-                                                statusText = "Connected to $newIp ($newLocLabel) • ${newLatency}ms"
-                                            )
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                    } catch (_: Exception) {}
+                    context?.let { ctx ->
+                        VibrationHelper.vibrateSuccess(ctx)
+                        Toast.makeText(ctx, "✅ Locked IP: $effectiveIp ($locLabel)", Toast.LENGTH_SHORT).show()
+                    }
                 }
             }
         }
     }
 
     /**
-     * Instantly queries and updates the latest egress IP and country
-     * especially useful for Residential / Rotating proxies.
+     * Explicitly rotates to a fresh IP ONLY when the user taps Rotate IP:
+     * Generates a new sticky session ID (for sticky-capable residential providers), restarts the active
+     * zero-leak VPN tunnel onto the new sticky session, and verifies the new locked egress IP once.
      */
     fun refreshRotatingIp(context: Context? = null) {
         val proxy = _uiState.value.proxyState
         if (!proxy.isConnected) return
 
+        proxyConnectJob?.cancel()
+
         _uiState.update {
             it.copy(
                 proxyState = it.proxyState.copy(
-                    statusText = "Checking IP..."
+                    statusText = "Rotating to fresh sticky IP..."
                 )
             )
         }
 
-        scope.launch(Dispatchers.IO) {
-            val result = ProxyTester.testProxy(
+        val appCtx = context?.applicationContext ?: context
+
+        proxyConnectJob = scope.launch(Dispatchers.IO) {
+            val pinnedGatewayIp = activePinnedGatewayIp.ifBlank {
+                ProxyTester.resolveHostFastBlocking(proxy.host.trim(), 1500L)
+            }
+            activePinnedGatewayIp = pinnedGatewayIp
+
+            val rotatedSticky = com.example.util.ProxyFormatHelper.applyStickySession(
                 host = proxy.host,
                 port = proxy.port,
-                protocol = proxy.protocol,
                 username = proxy.username,
                 password = proxy.password,
-                timeoutMs = 6000,
-                pingOptimized = true
+                forceNewSessionId = true
             )
+
+            val targetProto = activeTunnelProtocol.ifBlank { if (proxy.protocol.isBlank()) "SOCKS5" else proxy.protocol }
+            var nextUser = rotatedSticky.username
+            var nextPass = rotatedSticky.password
+
+            var result = ProxyTester.testProxy(
+                host = proxy.host,
+                port = proxy.port,
+                protocol = targetProto,
+                username = nextUser,
+                password = nextPass,
+                timeoutMs = 5000,
+                pingOptimized = false,
+                singleConnectionMode = true,
+                allowProtocolFallback = true,
+                pinnedGatewayIp = pinnedGatewayIp
+            )
+
+            // Fallback to original credentials if rotated sticky suffix was not supported
+            if (!result.isSuccess && rotatedSticky.appliedStickyTag) {
+                nextUser = proxy.username
+                nextPass = proxy.password
+                result = ProxyTester.testProxy(
+                    host = proxy.host,
+                    port = proxy.port,
+                    protocol = targetProto,
+                    username = nextUser,
+                    password = nextPass,
+                    timeoutMs = 5000,
+                    pingOptimized = false,
+                    singleConnectionMode = true,
+                    allowProtocolFallback = true,
+                    pinnedGatewayIp = pinnedGatewayIp
+                )
+            }
+
+            if (result.isSuccess && _uiState.value.proxyState.isConnected) {
+                val effectiveProto = result.workingProtocol ?: targetProto
+                activeTunnelUsername = nextUser
+                activeTunnelPassword = nextPass
+                activeTunnelProtocol = effectiveProto
+
+                // Rebind VPN tunnel to the new sticky session ID so Facebook & Chrome immediately use the new locked IP
+                if (rotatedSticky.appliedStickyTag) {
+                    appCtx?.let { ctx ->
+                        SuperProxyVpnService.start(
+                            context = ctx,
+                            profileName = proxy.profileName,
+                            server = proxy.host,
+                            port = proxy.port,
+                            protocol = effectiveProto,
+                            user = nextUser,
+                            pass = nextPass,
+                            allowedApps = proxy.allowedApps,
+                            pinnedGatewayIp = pinnedGatewayIp
+                        )
+                    }
+                }
+            }
+
             kotlinx.coroutines.withContext(Dispatchers.Main) {
-                if (result.isSuccess) {
+                if (result.isSuccess && _uiState.value.proxyState.isConnected) {
                     val effectiveIp = result.resolvedIp ?: proxy.host
                     val country = result.countryCode ?: proxy.countryCode
                     val countryName = result.countryName ?: proxy.countryName
                     val city = result.city ?: proxy.city
+                    val isp = result.isp ?: proxy.isp
                     val latency = if (result.latencyMs > 0) result.latencyMs else proxy.pingMs
 
                     _uiState.update {
@@ -1775,15 +1899,16 @@ object OverlayStateManager {
                                 countryCode = country,
                                 countryName = countryName,
                                 city = city,
+                                isp = isp,
                                 pingMs = latency,
-                                statusText = "Rotated: $effectiveIp [${result.ipVersion}] • ${latency}ms"
+                                statusText = "Rotated & Locked: $effectiveIp [${result.ipVersion}] • ${latency}ms"
                             )
                         )
                     }
                     context?.let { ctx ->
                         VibrationHelper.vibrateTactileClick(ctx)
                         val loc = if (city.isNotEmpty()) "$city, $country" else country
-                        Toast.makeText(ctx, "🔄 Rotated IP: $effectiveIp ($loc)", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(ctx, "🔄 New Locked IP: $effectiveIp ($loc)", Toast.LENGTH_SHORT).show()
                     }
                 } else {
                     context?.let { ctx ->

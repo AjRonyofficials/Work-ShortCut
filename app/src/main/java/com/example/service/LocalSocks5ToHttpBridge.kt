@@ -16,10 +16,18 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
- * Local SOCKS5-to-HTTP Bridge (#132 / #193 proven architecture):
- * Accepts local SOCKS5 connections (No-Auth) from hev-socks5-tunnel on 127.0.0.1
- * and bridges them to an upstream HTTP/HTTPS proxy using HTTP CONNECT with
- * Proxy-Authorization: Basic <base64>.
+ * Unified Zero-Leak Local Proxy Bridge (Supports BOTH HTTP and SOCKS5 Upstreams):
+ *
+ * Accepts local SOCKS5 connections (No-Auth) from hev-socks5-tunnel on 127.0.0.1 and:
+ * 1. Kills UDP ASSOCIATE (cmd=3) cleanly -> prevents WebRTC IP leaks and forces instant QUIC -> TCP fallback
+ *    so Facebook / FB Lite / Chrome never stall or leak real IPs over UDP.
+ * 2. Blocks Android Private DNS (DoT port 853), direct raw TCP DNS (port 53), and Chrome built-in DoH
+ *    resolvers (8.8.8.8, 1.1.1.1, dns.google, cloudflare-dns.com) so 100% of DNS queries MUST go through
+ *    MapDNS (198.18.0.2) and resolve remotely at the proxy's own country & ISP (ZERO DNS leak!).
+ * 3. Blocks raw IPv6 literal targets (atyp=4) and WebRTC STUN/TURN TCP ports (3478, 5349, 19302) so
+ *    Facebook / Chrome always stay strictly on the proxy IPv4 identity.
+ * 4. Forwards clean TCP streams using exact remote domain names (ATYP=0x03 for SOCKS5 / CONNECT host:port
+ *    for HTTP) over protected upstream sockets with 5-minute keep-alive for rock-solid Facebook OTP/MQTT.
  */
 object LocalSocks5ToHttpBridge {
 
@@ -28,21 +36,49 @@ object LocalSocks5ToHttpBridge {
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private val activeSockets = Collections.newSetFromMap(ConcurrentHashMap<Socket, Boolean>())
 
-    @Volatile private var httpHost: String = ""
-    @Volatile private var httpPort: Int = 0
+    @Volatile private var upstreamHost: String = ""
+    @Volatile private var upstreamPort: Int = 0
+    @Volatile private var upstreamIsHttp: Boolean = true
     @Volatile private var user: String = ""
     @Volatile private var pass: String = ""
+
+    // Public DNS / DoH / Private-DNS endpoints that bypass MapDNS remote proxy resolution
+    private val BLOCKED_DNS_BYPASS_HOSTS = setOf(
+        "8.8.8.8",
+        "8.8.4.4",
+        "1.1.1.1",
+        "1.0.0.1",
+        "9.9.9.9",
+        "149.112.112.112",
+        "208.67.222.222",
+        "208.67.220.220",
+        "dns.google",
+        "dns.google.com",
+        "8888.google",
+        "cloudflare-dns.com",
+        "mozilla.cloudflare-dns.com",
+        "one.one.one.one",
+        "dns.quad9.net",
+        "doh.opendns.com",
+        "dns.adguard.com",
+        "dns.adguard-dns.com",
+        "dns.nextdns.io"
+    )
+
+    private val BLOCKED_WEBRTC_STUN_PORTS = setOf(3478, 5349, 19302)
 
     fun start(
         httpHost: String,
         httpPort: Int,
         username: String,
-        password: String
+        password: String,
+        isHttpUpstream: Boolean = true
     ): Int {
         stop()
 
-        this.httpHost = httpHost
-        this.httpPort = httpPort
+        this.upstreamHost = httpHost
+        this.upstreamPort = httpPort
+        this.upstreamIsHttp = isHttpUpstream
         this.user = username
         this.pass = password
 
@@ -76,6 +112,27 @@ object LocalSocks5ToHttpBridge {
         }
     }
 
+    private fun shouldBlockForAntiLeak(atyp: Int, targetHost: String, targetPort: Int): Boolean {
+        // 1. Block Android Private DNS (DoT port 853) & direct raw TCP DNS (port 53)
+        //    so Android/Chrome/Facebook immediately use MapDNS (198.18.0.2) remote resolution
+        if (targetPort == 853 || targetPort == 53) return true
+
+        // 2. Block WebRTC STUN/TURN ports to prevent real IP leakage
+        if (targetPort in BLOCKED_WEBRTC_STUN_PORTS) return true
+
+        // 3. Block raw IPv6 literals so apps never stall or leak IPv6 and cleanly stay on proxy IPv4
+        if (atyp == 4) return true
+
+        // 4. Block Chrome/Android DoH bypasses (e.g. dns.google:443, 8.8.8.8:443, 1.1.1.1:443)
+        //    so DNS always comes from the remote proxy's ISP instead of Google/Cloudflare Anycast
+        val hostLower = targetHost.trim().lowercase()
+        if (hostLower in BLOCKED_DNS_BYPASS_HOSTS && (targetPort == 443 || targetPort == 80 || targetPort == 853 || targetPort == 53)) {
+            return true
+        }
+
+        return false
+    }
+
     private suspend fun handleClient(client: Socket) {
         var upstream: Socket? = null
         try {
@@ -83,7 +140,7 @@ object LocalSocks5ToHttpBridge {
             val clientIn = client.getInputStream()
             val clientOut = client.getOutputStream()
 
-            // 1. SOCKS5 Method Negotiation
+            // 1. Local SOCKS5 Method Negotiation (with hev-socks5-tunnel)
             val ver = clientIn.read()
             if (ver != 5) {
                 client.close()
@@ -101,30 +158,35 @@ object LocalSocks5ToHttpBridge {
             clientOut.write(byteArrayOf(5, 0))
             clientOut.flush()
 
-            // 2. SOCKS5 Request
+            // 2. Local SOCKS5 Request
             val reqVer = clientIn.read()
             val cmd = clientIn.read()
             clientIn.read() // RSV
             val atyp = clientIn.read()
 
-            if (reqVer != 5 || cmd != 1) { // 1 = CONNECT
+            if (reqVer != 5 || cmd != 1) { // Only TCP CONNECT (cmd=1); cleanly reject UDP ASSOCIATE (cmd=3)
                 clientOut.write(byteArrayOf(5, 7, 0, 1, 0, 0, 0, 0, 0, 0)) // Command not supported
                 clientOut.flush()
                 client.close()
                 return
             }
 
+            var rawIpv4Bytes: ByteArray? = null
+            var rawDomainBytes: ByteArray? = null
+
             val targetHost = when (atyp) {
                 1 -> { // IPv4
                     val ip = ByteArray(4)
                     readFully(clientIn, ip)
+                    rawIpv4Bytes = ip
                     InetAddress.getByAddress(ip).hostAddress ?: ""
                 }
-                3 -> { // Domain name
+                3 -> { // Domain name (resolved remotely by proxy via MapDNS!)
                     val len = clientIn.read()
                     if (len <= 0) "" else {
                         val domainBytes = ByteArray(len)
                         readFully(clientIn, domainBytes)
+                        rawDomainBytes = domainBytes
                         String(domainBytes, Charsets.US_ASCII)
                     }
                 }
@@ -140,14 +202,6 @@ object LocalSocks5ToHttpBridge {
             val p2 = clientIn.read()
             val targetPort = ((p1 and 0xFF) shl 8) or (p2 and 0xFF)
 
-            // Fast-fail DNS-over-TLS (port 853) so Chrome and browsers instantly fallback to port 53 / HTTPS
-            if (targetPort == 853) {
-                clientOut.write(byteArrayOf(5, 5, 0, 1, 0, 0, 0, 0, 0, 0)) // Connection refused
-                clientOut.flush()
-                client.close()
-                return
-            }
-
             if (targetHost.isEmpty() || targetPort <= 0) {
                 clientOut.write(byteArrayOf(5, 4, 0, 1, 0, 0, 0, 0, 0, 0)) // Host unreachable
                 clientOut.flush()
@@ -155,7 +209,16 @@ object LocalSocks5ToHttpBridge {
                 return
             }
 
-            // 3. Connect to upstream HTTP proxy (Protected from VPN tunnel)
+            // Anti-Leak Firewall (DoT / DoH / Raw DNS / IPv6 / WebRTC STUN)
+            if (shouldBlockForAntiLeak(atyp, targetHost, targetPort)) {
+                val repCode: Byte = if (atyp == 4) 4 else 5 // Host unreachable for IPv6, Refused for DoT/DoH/STUN
+                clientOut.write(byteArrayOf(5, repCode, 0, 1, 0, 0, 0, 0, 0, 0))
+                clientOut.flush()
+                client.close()
+                return
+            }
+
+            // 3. Connect to pinned upstream proxy (Protected from VPN tunnel)
             upstream = Socket()
             upstream.tcpNoDelay = true
             upstream.keepAlive = true
@@ -165,30 +228,19 @@ object LocalSocks5ToHttpBridge {
 
             SuperProxyVpnService.protectSocket(upstream)
             activeSockets.add(upstream)
-            upstream.connect(InetSocketAddress(httpHost, httpPort), 8000)
+            upstream.connect(InetSocketAddress(upstreamHost, upstreamPort), 10000)
 
             val upIn = upstream.getInputStream()
             val upOut = upstream.getOutputStream()
 
-            // 4. Send clean standard HTTP CONNECT request with Proxy-Authorization
-            val authHeader = if (user.isNotEmpty() && pass.isNotEmpty()) {
-                val token = Base64.encodeToString("$user:$pass".toByteArray(), Base64.NO_WRAP)
-                "Proxy-Authorization: Basic $token\r\n"
-            } else ""
+            // 4. Perform Upstream Handshake (HTTP CONNECT or SOCKS5 RFC 1928/1929 with Remote Domain Resolution!)
+            val handshakeOk = if (upstreamIsHttp) {
+                performHttpUpstreamHandshake(upIn, upOut, targetHost, targetPort)
+            } else {
+                performSocks5UpstreamHandshake(upIn, upOut, atyp, rawIpv4Bytes, rawDomainBytes, targetHost, targetPort)
+            }
 
-            val formattedHost = if (targetHost.contains(":") && !targetHost.startsWith("[")) "[$targetHost]" else targetHost
-            val connectMsg = "CONNECT $formattedHost:$targetPort HTTP/1.1\r\n" +
-                    "Host: $formattedHost:$targetPort\r\n" +
-                    authHeader +
-                    "Proxy-Connection: Keep-Alive\r\n" +
-                    "Connection: Keep-Alive\r\n\r\n"
-
-            upOut.write(connectMsg.toByteArray(Charsets.US_ASCII))
-            upOut.flush()
-
-            // 5. Read HTTP CONNECT response up to \r\n\r\n
-            val isSuccess = readHttpConnectResponse(upIn)
-            if (!isSuccess) {
+            if (!handshakeOk) {
                 clientOut.write(byteArrayOf(5, 5, 0, 1, 0, 0, 0, 0, 0, 0)) // Connection refused
                 clientOut.flush()
                 client.close()
@@ -196,17 +248,17 @@ object LocalSocks5ToHttpBridge {
                 return
             }
 
-            // 6. Send SOCKS5 Success response to hev-socks5-tunnel
+            // 5. Send SOCKS5 Success response to hev-socks5-tunnel
             clientOut.write(byteArrayOf(5, 0, 0, 1, 0, 0, 0, 0, 0, 0))
             clientOut.flush()
 
-            // 7. Stable keep-alive with 60s idle timeout
-            client.soTimeout = 60000
-            upstream.soTimeout = 60000
+            // 6. Long-lived keep-alive (5 minutes idle timeout) so Facebook HTTPS / MQTT / OTP sessions never drop
+            client.soTimeout = 300000
+            upstream.soTimeout = 300000
             client.keepAlive = true
             upstream.keepAlive = true
 
-            // 8. Bidirectional non-blocking data piping
+            // 7. Bidirectional non-blocking data piping
             pipeSocketsNonBlocking(client, upstream)
 
         } catch (_: Exception) {
@@ -216,6 +268,123 @@ object LocalSocks5ToHttpBridge {
             try { client.close() } catch (_: Exception) {}
             try { upstream?.close() } catch (_: Exception) {}
         }
+    }
+
+    private fun performHttpUpstreamHandshake(
+        upIn: InputStream,
+        upOut: java.io.OutputStream,
+        targetHost: String,
+        targetPort: Int
+    ): Boolean {
+        val authHeader = if (user.isNotEmpty() || pass.isNotEmpty()) {
+            val token = Base64.encodeToString("$user:$pass".toByteArray(Charsets.UTF_8), Base64.NO_WRAP)
+            "Proxy-Authorization: Basic $token\r\n"
+        } else ""
+
+        val formattedHost = if (targetHost.contains(":") && !targetHost.startsWith("[")) "[$targetHost]" else targetHost
+        val connectMsg = "CONNECT $formattedHost:$targetPort HTTP/1.1\r\n" +
+                "Host: $formattedHost:$targetPort\r\n" +
+                authHeader +
+                "Proxy-Connection: Keep-Alive\r\n" +
+                "Connection: Keep-Alive\r\n\r\n"
+
+        upOut.write(connectMsg.toByteArray(Charsets.US_ASCII))
+        upOut.flush()
+        return readHttpConnectResponse(upIn)
+    }
+
+    private fun performSocks5UpstreamHandshake(
+        upIn: InputStream,
+        upOut: java.io.OutputStream,
+        atyp: Int,
+        rawIpv4Bytes: ByteArray?,
+        rawDomainBytes: ByteArray?,
+        targetHost: String,
+        targetPort: Int
+    ): Boolean {
+        // 1. Method Negotiation (RFC 1928)
+        val hasAuth = user.isNotEmpty() || pass.isNotEmpty()
+        if (hasAuth) {
+            upOut.write(byteArrayOf(0x05, 0x02, 0x00, 0x02))
+        } else {
+            upOut.write(byteArrayOf(0x05, 0x01, 0x00))
+        }
+        upOut.flush()
+
+        val ver = upIn.read()
+        val method = upIn.read()
+        if (ver != 0x05 || method == -1 || method == 0xFF) return false
+
+        // 2. Username/Password Subnegotiation (RFC 1929)
+        if (method == 0x02) {
+            val uBytes = user.toByteArray(Charsets.UTF_8)
+            val pBytes = pass.toByteArray(Charsets.UTF_8)
+            if (uBytes.size > 255 || pBytes.size > 255) return false
+            val authBuf = ByteArray(3 + uBytes.size + pBytes.size)
+            authBuf[0] = 0x01
+            authBuf[1] = uBytes.size.toByte()
+            System.arraycopy(uBytes, 0, authBuf, 2, uBytes.size)
+            authBuf[2 + uBytes.size] = pBytes.size.toByte()
+            System.arraycopy(pBytes, 0, authBuf, 3 + uBytes.size, pBytes.size)
+            upOut.write(authBuf)
+            upOut.flush()
+
+            val authVer = upIn.read()
+            val authStatus = upIn.read()
+            if (authVer == -1 || authStatus != 0x00) return false
+        }
+
+        // 3. CONNECT Request (Preserve exact ATYP=0x03 domain so remote proxy resolves DNS!)
+        val req: ByteArray = if (atyp == 3) {
+            val dBytes = rawDomainBytes ?: targetHost.toByteArray(Charsets.US_ASCII)
+            if (dBytes.isEmpty() || dBytes.size > 255) return false
+            ByteArray(4 + 1 + dBytes.size + 2).also { buf ->
+                buf[0] = 0x05
+                buf[1] = 0x01 // CONNECT
+                buf[2] = 0x00
+                buf[3] = 0x03 // DOMAINNAME -> Remote DNS at Proxy ISP!
+                buf[4] = dBytes.size.toByte()
+                System.arraycopy(dBytes, 0, buf, 5, dBytes.size)
+                buf[5 + dBytes.size] = ((targetPort shr 8) and 0xFF).toByte()
+                buf[6 + dBytes.size] = (targetPort and 0xFF).toByte()
+            }
+        } else {
+            val ip4 = rawIpv4Bytes ?: InetAddress.getByName(targetHost).address
+            if (ip4.size != 4) return false
+            ByteArray(10).also { buf ->
+                buf[0] = 0x05
+                buf[1] = 0x01 // CONNECT
+                buf[2] = 0x00
+                buf[3] = 0x01 // IPv4
+                System.arraycopy(ip4, 0, buf, 4, 4)
+                buf[8] = ((targetPort shr 8) and 0xFF).toByte()
+                buf[9] = (targetPort and 0xFF).toByte()
+            }
+        }
+
+        upOut.write(req)
+        upOut.flush()
+
+        // 4. Read Upstream SOCKS5 Reply
+        val repVer = upIn.read()
+        val repCode = upIn.read()
+        upIn.read() // RSV
+        val repAtyp = upIn.read()
+        if (repVer != 0x05 || repCode != 0x00) return false
+
+        when (repAtyp) {
+            0x01 -> readFully(upIn, ByteArray(4))
+            0x03 -> {
+                val len = upIn.read()
+                if (len > 0) readFully(upIn, ByteArray(len))
+            }
+            0x04 -> readFully(upIn, ByteArray(16))
+            else -> return false
+        }
+        // Consume 2-byte BND.PORT
+        val bp1 = upIn.read()
+        val bp2 = upIn.read()
+        return bp1 != -1 && bp2 != -1
     }
 
     private suspend fun pipeSocketsNonBlocking(s1: Socket, s2: Socket) {
@@ -235,7 +404,6 @@ object LocalSocks5ToHttpBridge {
                 }
             } catch (_: Exception) {
             } finally {
-                // Signal half-close to upstream: client finished sending request
                 try {
                     if (!s2.isClosed && !s2.isOutputShutdown) {
                         s2.shutdownOutput()
@@ -255,7 +423,6 @@ object LocalSocks5ToHttpBridge {
                 }
             } catch (_: Exception) {
             } finally {
-                // Signal half-close to client: upstream finished sending response
                 try {
                     if (!s1.isClosed && !s1.isOutputShutdown) {
                         s1.shutdownOutput()

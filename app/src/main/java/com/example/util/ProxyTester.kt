@@ -195,6 +195,9 @@ object ProxyTester {
         password: String = "",
         timeoutMs: Int = 4500,
         pingOptimized: Boolean = false,
+        singleConnectionMode: Boolean = false,
+        allowProtocolFallback: Boolean = true,
+        pinnedGatewayIp: String? = null,
         onProtocolDetected: ((String, String) -> Unit)? = null
     ): PingResult = withContext(Dispatchers.IO) {
         val effectiveTimeout = if (pingOptimized) 3000 else timeoutMs
@@ -209,8 +212,9 @@ object ProxyTester {
             )
         }
 
-        // Resolve hostname to real IPv4 first (and cache it for SuperProxyVpnService)
-        val connectHost = resolveHostFastBlocking(cleanHost, 1500L)
+        // Use pinned gateway IPv4 if supplied (or resolve ONCE and cache for SuperProxyVpnService)
+        val connectHost = pinnedGatewayIp?.trim()?.takeIf { isValidRealIpv4(it) }
+            ?: resolveHostFastBlocking(cleanHost, 1500L)
 
         // Configure global authenticator for SOCKS5 and HTTP credentials
         if (username.isNotEmpty()) {
@@ -226,50 +230,70 @@ object ProxyTester {
         var detectedProtocol: String? = null
         var handshakeLatency: Long = -1
 
-        // Step 1: Race #132's exact testDirectSocks5 and testDirectHttp IN PARALLEL!
-        // Whichever succeeds first returns immediately without waiting for the other protocol to time out.
-        val probeTimeout = minOf(effectiveTimeout, 3000)
-        coroutineScope {
-            val winnerChannel = Channel<Pair<String, String>?>(capacity = 2)
+        val probeTimeout = minOf(effectiveTimeout, 3500)
 
-            val socksJob = launch(Dispatchers.IO) {
-                val ip = testDirectSocks5(connectHost, port, username, password, probeTimeout)
-                if (!ip.isNullOrBlank()) {
-                    winnerChannel.trySend("SOCKS5" to ip)
-                } else {
-                    winnerChannel.trySend(null)
-                }
+        if (singleConnectionMode) {
+            // SINGLE-CONNECTION STRICT MODE:
+            // Opens ONLY ONE socket on the configured protocol first so rotating proxies NEVER double-rotate on Connect!
+            val primaryProto = if (isHttp) "HTTP" else "SOCKS5"
+            val primaryIp = if (isHttp) {
+                testDirectHttp(connectHost, port, username, password, probeTimeout)
+            } else {
+                testDirectSocks5(connectHost, port, username, password, probeTimeout)
             }
 
-            val httpJob = launch(Dispatchers.IO) {
-                val ip = testDirectHttp(connectHost, port, username, password, probeTimeout)
-                if (!ip.isNullOrBlank()) {
-                    winnerChannel.trySend("HTTP" to ip)
+            if (!primaryIp.isNullOrBlank()) {
+                detectedProtocol = primaryProto
+                resolvedIp = primaryIp
+                handshakeLatency = (System.currentTimeMillis() - startTime).coerceAtLeast(1L)
+            } else if (allowProtocolFallback) {
+                // Only try the alternate protocol if the configured protocol actually failed
+                val fallbackProto = if (isHttp) "SOCKS5" else "HTTP"
+                val fallbackIp = if (isHttp) {
+                    testDirectSocks5(connectHost, port, username, password, probeTimeout)
                 } else {
-                    winnerChannel.trySend(null)
+                    testDirectHttp(connectHost, port, username, password, probeTimeout)
                 }
-            }
-
-            repeat(2) {
-                val res = winnerChannel.receive()
-                if (res != null && resolvedIp == null) {
-                    detectedProtocol = res.first
-                    resolvedIp = res.second
+                if (!fallbackIp.isNullOrBlank()) {
+                    detectedProtocol = fallbackProto
+                    resolvedIp = fallbackIp
                     handshakeLatency = (System.currentTimeMillis() - startTime).coerceAtLeast(1L)
-                    socksJob.cancel()
-                    httpJob.cancel()
-                    return@repeat
                 }
             }
-            winnerChannel.close()
+        } else {
+            // Standalone Test Proxy mode: try configured protocol first, race only if needed
+            val primaryProto = if (isHttp) "HTTP" else "SOCKS5"
+            val primaryIp = if (isHttp) {
+                testDirectHttp(connectHost, port, username, password, minOf(effectiveTimeout, 2800))
+            } else {
+                testDirectSocks5(connectHost, port, username, password, minOf(effectiveTimeout, 2800))
+            }
+
+            if (!primaryIp.isNullOrBlank()) {
+                detectedProtocol = primaryProto
+                resolvedIp = primaryIp
+                handshakeLatency = (System.currentTimeMillis() - startTime).coerceAtLeast(1L)
+            } else {
+                val fallbackProto = if (isHttp) "SOCKS5" else "HTTP"
+                val fallbackIp = if (isHttp) {
+                    testDirectSocks5(connectHost, port, username, password, minOf(effectiveTimeout, 2800))
+                } else {
+                    testDirectHttp(connectHost, port, username, password, minOf(effectiveTimeout, 2800))
+                }
+                if (!fallbackIp.isNullOrBlank()) {
+                    detectedProtocol = fallbackProto
+                    resolvedIp = fallbackIp
+                    handshakeLatency = (System.currentTimeMillis() - startTime).coerceAtLeast(1L)
+                }
+            }
         }
 
-        // Step 2: Fallback via Java HttpURLConnection (#132 fallback) if direct socket did not parse
-        if (resolvedIp.isNullOrBlank()) {
+        // Step 2: Single fallback endpoint via Java HttpURLConnection ONLY when direct sockets failed
+        if (resolvedIp.isNullOrBlank() && !singleConnectionMode) {
             val proxyType = if (isHttp) Proxy.Type.HTTP else Proxy.Type.SOCKS
             val javaProxy = Proxy(proxyType, InetSocketAddress(connectHost, port))
 
-            for (endpoint in IP_CHECK_ENDPOINTS) {
+            for (endpoint in IP_CHECK_ENDPOINTS.take(2)) {
                 try {
                     val url = URL(endpoint)
                     val conn = url.openConnection(javaProxy) as HttpURLConnection
