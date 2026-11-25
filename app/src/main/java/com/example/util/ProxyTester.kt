@@ -65,32 +65,61 @@ object ProxyTester {
     fun isValidRealIpv4(ip: String?): Boolean {
         if (ip.isNullOrBlank()) return false
         if (!ip.matches(Regex("^\\d{1,3}(\\.\\d{1,3}){3}$"))) return false
-        if (ip.startsWith("240.") || ip.startsWith("198.18.") || ip == "0.0.0.0") return false
+        if (ip.startsWith("240.") || ip.startsWith("198.18.") || ip.startsWith("198.19.") ||
+            ip.startsWith("127.") || ip.startsWith("169.254.") || ip == "0.0.0.0"
+        ) return false
+        return true
+    }
+
+    fun isValidRealIp(ip: String?): Boolean {
+        if (ip.isNullOrBlank()) return false
+        if (isValidRealIpv4(ip)) return true
+        val lower = ip.trim().lowercase()
+        if (!lower.contains(":")) return false
+        if (lower == "::1" || lower == "::" || lower.startsWith("fe80:") || lower.startsWith("fc00:") || lower.startsWith("fd")) return false
         return true
     }
 
     /**
-     * Resolves ALL IPv4 A-records of a proxy gateway hostname so multi-IP proxy clusters (2-100+ nodes)
-     * can rotate to a fresh gateway node on each new connection and then pin that node for the session.
+     * Resolves ALL reachable gateway IPs (preferring IPv4 A-records, falling back to carrier NAT64 IPv6
+     * on IPv6-only 4G/5G SIMs) directly over the physical Wi-Fi or Mobile Data network so MapDNS Fake-IPs
+     * never poison gateway resolution.
      */
-    fun resolveAllHostIpv4Blocking(host: String, timeoutMs: Long = 1500L): List<String> {
+    fun resolveAllHostIpv4Blocking(host: String, timeoutMs: Long = 2500L): List<String> {
         val clean = host.trim()
         if (clean.isEmpty()) return emptyList()
-        if (isValidRealIpv4(clean)) return listOf(clean)
+        if (isValidRealIp(clean)) return listOf(clean)
 
         val found = java.util.concurrent.CopyOnWriteArrayList<String>()
         val latch = CountDownLatch(1)
         Thread {
             try {
-                val all = InetAddress.getAllByName(clean)
+                // 1. Prefer live physical network DNS (Mobile Data SIM or Wi-Fi) so VPN MapDNS never interferes!
+                val physAll = SuperProxyVpnService.resolveAllAddressesOnPhysicalNetwork(clean)
+                val all = if (physAll.isNotEmpty()) {
+                    physAll
+                } else {
+                    try { InetAddress.getAllByName(clean).toList() } catch (_: Exception) { emptyList() }
+                }
+
                 val v4List = all
                     .mapNotNull { it.hostAddress }
                     .filter { isValidRealIpv4(it) }
                     .distinct()
+                val v6List = all
+                    .mapNotNull { it.hostAddress }
+                    .filter { !isValidRealIpv4(it) && isValidRealIp(it) }
+                    .distinct()
+
                 if (v4List.isNotEmpty()) {
                     found.addAll(v4List)
                     gatewayPoolCache[clean] = v4List
                     gatewayDnsCache[clean] = v4List.first()
+                } else if (v6List.isNotEmpty()) {
+                    // IPv6-only / NAT64 Mobile Data SIM (e.g. 4G/5G carrier DNS64)
+                    found.addAll(v6List)
+                    gatewayPoolCache[clean] = v6List
+                    gatewayDnsCache[clean] = v6List.first()
                 } else {
                     val udpIp = queryProtectedDnsIpv4(clean, "8.8.8.8")
                         ?: queryProtectedDnsIpv4(clean, "1.1.1.1")
@@ -136,13 +165,13 @@ object ProxyTester {
      * Resolves a proxy gateway hostname safely off the main thread so SuperProxyVpnService.startVpn()
      * never throws NetworkOnMainThreadException.
      */
-    fun resolveHostFastBlocking(host: String, timeoutMs: Long = 1500L): String {
+    fun resolveHostFastBlocking(host: String, timeoutMs: Long = 2500L): String {
         val clean = host.trim()
         if (clean.isEmpty()) return clean
-        if (isValidRealIpv4(clean)) return clean
+        if (isValidRealIp(clean)) return clean
 
         gatewayDnsCache[clean]?.let { cached ->
-            if (isValidRealIpv4(cached)) return cached
+            if (isValidRealIp(cached)) return cached
         }
 
         val all = resolveAllHostIpv4Blocking(clean, timeoutMs)
@@ -250,9 +279,9 @@ object ProxyTester {
             )
         }
 
-        // Use pinned gateway IPv4 if supplied (or resolve ONCE and cache for SuperProxyVpnService)
-        val connectHost = pinnedGatewayIp?.trim()?.takeIf { isValidRealIpv4(it) }
-            ?: resolveHostFastBlocking(cleanHost, 1500L)
+        // Use pinned gateway IP (IPv4 or NAT64 IPv6) if supplied, or resolve ONCE over physical network
+        val connectHost = pinnedGatewayIp?.trim()?.takeIf { isValidRealIp(it) }
+            ?: resolveHostFastBlocking(cleanHost, 2500L)
 
         // Configure global authenticator for SOCKS5 and HTTP credentials
         if (username.isNotEmpty()) {
@@ -268,7 +297,7 @@ object ProxyTester {
         var detectedProtocol: String? = null
         var handshakeLatency: Long = -1
 
-        val probeTimeout = minOf(effectiveTimeout, 3500)
+        val probeTimeout = minOf(effectiveTimeout, 6000)
 
         if (singleConnectionMode) {
             // SINGLE-CONNECTION STRICT MODE:

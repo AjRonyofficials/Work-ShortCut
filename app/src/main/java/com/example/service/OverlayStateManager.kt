@@ -1684,11 +1684,12 @@ object OverlayStateManager {
         }
 
         val appCtx = context?.applicationContext ?: context
+        SuperProxyVpnService.updateAppContext(appCtx)
 
         proxyConnectJob = scope.launch(Dispatchers.IO) {
             val cleanHost = proxy.host.trim()
-            // 1. Cycle across all IPv4 gateway A-records so every new Connect lands on a fresh node
-            var (pinnedGatewayIp, gatewayPoolSize) = ProxyTester.pickNextGatewayIp(cleanHost, 1500L)
+            // 1. Cycle across all gateway records over the active physical network (Mobile Data 4G/5G or Wi-Fi)
+            var (pinnedGatewayIp, gatewayPoolSize) = ProxyTester.pickNextGatewayIp(cleanHost, 2500L)
             // 2. Generate a BRAND-NEW sticky session ID on every Connect so residential pools (2-100+ IPs)
             //    issue a fresh distinct IP and then lock it for the entire active session!
             var sticky = com.example.util.ProxyFormatHelper.applyStickySession(
@@ -1699,7 +1700,7 @@ object OverlayStateManager {
                 forceNewSessionId = true
             )
 
-            val isDomainHost = !ProxyTester.isValidRealIpv4(cleanHost)
+            val isDomainHost = !ProxyTester.isValidRealIp(cleanHost)
             val maxFreshAttempts = when {
                 sticky.hasStickySession || gatewayPoolSize > 1 -> 3
                 isDomainHost -> 2
@@ -1725,7 +1726,7 @@ object OverlayStateManager {
                             )
                         )
                     }
-                    val nextPick = ProxyTester.pickNextGatewayIp(cleanHost, 1200L)
+                    val nextPick = ProxyTester.pickNextGatewayIp(cleanHost, 2000L)
                     pinnedGatewayIp = nextPick.first
                     gatewayPoolSize = maxOf(gatewayPoolSize, nextPick.second)
                     if (sticky.hasStickySession && !stickyRejected) {
@@ -1749,7 +1750,7 @@ object OverlayStateManager {
                     protocol = finalProtocol,
                     username = candidateUser,
                     password = candidatePass,
-                    timeoutMs = if (attempt == 1) 4000 else 3500,
+                    timeoutMs = if (attempt == 1) 6000 else 5000,
                     pingOptimized = false,
                     singleConnectionMode = true,
                     allowProtocolFallback = true,
@@ -1772,7 +1773,7 @@ object OverlayStateManager {
                         protocol = finalProtocol,
                         username = actualUser,
                         password = actualPass,
-                        timeoutMs = 4000,
+                        timeoutMs = 6000,
                         pingOptimized = false,
                         singleConnectionMode = true,
                         allowProtocolFallback = true,
@@ -1894,14 +1895,15 @@ object OverlayStateManager {
         }
 
         val appCtx = context?.applicationContext ?: context
+        SuperProxyVpnService.updateAppContext(appCtx)
 
         proxyConnectJob = scope.launch(Dispatchers.IO) {
             val cleanHost = proxy.host.trim()
             val previousIp = proxy.ipAddress
             val targetProto = activeTunnelProtocol.ifBlank { if (proxy.protocol.isBlank()) "SOCKS5" else proxy.protocol }
-            val isDomainHost = !ProxyTester.isValidRealIpv4(cleanHost)
+            val isDomainHost = !ProxyTester.isValidRealIp(cleanHost)
 
-            var (pinnedGatewayIp, gatewayPoolSize) = ProxyTester.pickNextGatewayIp(cleanHost, 1500L)
+            var (pinnedGatewayIp, gatewayPoolSize) = ProxyTester.pickNextGatewayIp(cleanHost, 2500L)
             var rotatedSticky = com.example.util.ProxyFormatHelper.applyStickySession(
                 host = cleanHost,
                 port = proxy.port,
@@ -1934,7 +1936,7 @@ object OverlayStateManager {
                             )
                         )
                     }
-                    val nextPick = ProxyTester.pickNextGatewayIp(cleanHost, 1200L)
+                    val nextPick = ProxyTester.pickNextGatewayIp(cleanHost, 2000L)
                     pinnedGatewayIp = nextPick.first
                     gatewayPoolSize = maxOf(gatewayPoolSize, nextPick.second)
                     if (rotatedSticky.hasStickySession && !stickyRejected) {
@@ -1958,7 +1960,7 @@ object OverlayStateManager {
                     protocol = nextProto,
                     username = candidateUser,
                     password = candidatePass,
-                    timeoutMs = 4500,
+                    timeoutMs = 6000,
                     pingOptimized = false,
                     singleConnectionMode = true,
                     allowProtocolFallback = true,
@@ -1981,7 +1983,7 @@ object OverlayStateManager {
                         protocol = nextProto,
                         username = actualUser,
                         password = actualPass,
-                        timeoutMs = 4500,
+                        timeoutMs = 6000,
                         pingOptimized = false,
                         singleConnectionMode = true,
                         allowProtocolFallback = true,

@@ -7,6 +7,10 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
+import android.net.ConnectivityManager
+import android.net.Network
+import android.net.NetworkCapabilities
+import android.net.NetworkRequest
 import android.net.VpnService
 import android.os.Build
 import android.os.ParcelFileDescriptor
@@ -21,6 +25,9 @@ import kotlinx.coroutines.launch
 import java.io.File
 import java.io.FileOutputStream
 import java.net.DatagramSocket
+import java.net.Inet4Address
+import java.net.Inet6Address
+import java.net.InetAddress
 import java.net.Socket
 
 /**
@@ -42,14 +49,18 @@ class SuperProxyVpnService : VpnService() {
     private var vpnInterface: ParcelFileDescriptor? = null
     private var isRunning = false
     private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+    private var networkCallback: ConnectivityManager.NetworkCallback? = null
 
     override fun onCreate() {
         super.onCreate()
         activeInstance = this
+        appContextRef = applicationContext
+        refreshActivePhysicalNetwork(applicationContext)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         activeInstance = this
+        appContextRef = applicationContext
         val action = intent?.action
 
         if (action == ACTION_STOP) {
@@ -89,14 +100,18 @@ class SuperProxyVpnService : VpnService() {
         }
 
         try {
-            // 1. Use the exact pinned gateway IPv4 (or resolve ONCE off main thread) so gateway round-robin never rotates IP
+            // 0. Detect and lock onto the active physical network (Mobile Data 4G/5G SIM or Wi-Fi) BEFORE establishing VPN
+            val initialPhysicalNet = refreshActivePhysicalNetwork(applicationContext)
+            registerPhysicalNetworkCallback()
+
+            // 1. Use the exact pinned gateway IPv4/IPv6 (or resolve ONCE on physical network) so gateway round-robin never rotates IP
             val resolvedServerIp = pinnedGatewayIp.trim().ifBlank {
-                ProxyTester.resolveHostFastBlocking(server.trim(), 1500)
+                ProxyTester.resolveHostFastBlocking(server.trim(), 2500)
             }
 
             val builder = Builder()
                 .setSession("SuperProxy: $profileName")
-                .setMtu(1400) // Optimal MTU for zero packet fragmentation on 4G/5G SIM & Wi-Fi
+                .setMtu(1280) // Cellular-safe RFC minimum MTU (prevents 4G/5G LTE + 464XLAT/CLAT packet blackholing!)
                 .addAddress("198.18.0.1", 30) // Virtual IPv4 TUN on same /30 subnet as MapDNS (198.18.0.2)
                 .addRoute("0.0.0.0", 0)       // Capture 100% of IPv4 traffic (Apps + Websites) into tun0
                 .addRoute("198.19.0.0", 16)   // Explicit route for RFC-2544 unicast MapDNS Fake-IP pool (Chrome/Cronet safe!)
@@ -145,10 +160,15 @@ class SuperProxyVpnService : VpnService() {
             val pfd = vpnInterface ?: throw IllegalStateException("TUN descriptor invalid")
             val tunFd = pfd.fd
 
-            // Enable seamless Wi-Fi <-> Cellular roaming without dropping the VPN
+            // Bind VPN underlying network explicitly to the live physical Mobile Data / Wi-Fi network
             try {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP_MR1) {
-                    setUnderlyingNetworks(null)
+                    val activeNet = initialPhysicalNet ?: refreshActivePhysicalNetwork(applicationContext)
+                    if (activeNet != null) {
+                        setUnderlyingNetworks(arrayOf(activeNet))
+                    } else {
+                        setUnderlyingNetworks(null)
+                    }
                 }
             } catch (_: Exception) {}
 
@@ -161,7 +181,8 @@ class SuperProxyVpnService : VpnService() {
                 httpPort = port,
                 username = user,
                 password = pass,
-                isHttpUpstream = isHttp
+                isHttpUpstream = isHttp,
+                originalHost = server.trim()
             )
             if (bridgePort <= 0) {
                 throw IllegalStateException("Failed to bind LocalSocks5ToHttpBridge on 127.0.0.1")
@@ -172,7 +193,7 @@ class SuperProxyVpnService : VpnService() {
             val sb = java.lang.StringBuilder()
             sb.append("tunnel:\n")
             sb.append("  name: tun0\n")
-            sb.append("  mtu: 1400\n")
+            sb.append("  mtu: 1280\n")
             sb.append("  ipv4: 198.18.0.1\n")
             if (ipv6Captured) {
                 sb.append("  ipv6: 'fc00::1'\n")
@@ -194,7 +215,7 @@ class SuperProxyVpnService : VpnService() {
             sb.append("misc:\n")
             sb.append("  task-stack-size: 81920\n")
             sb.append("  tcp-buffer-size: 65536\n")
-            sb.append("  connect-timeout: 10000\n")
+            sb.append("  connect-timeout: 15000\n")
             sb.append("  tcp-read-write-timeout: 300000\n")
             sb.append("  udp-read-write-timeout: 15000\n")
             sb.append("  limit-nofile: 65535\n")
@@ -276,8 +297,74 @@ class SuperProxyVpnService : VpnService() {
         }
     }
 
+    private fun registerPhysicalNetworkCallback() {
+        unregisterPhysicalNetworkCallback()
+        try {
+            val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager ?: return
+            val request = NetworkRequest.Builder()
+                .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+                .addCapability(NetworkCapabilities.NET_CAPABILITY_NOT_VPN)
+                .build()
+            val cb = object : ConnectivityManager.NetworkCallback() {
+                override fun onAvailable(network: Network) {
+                    updateUnderlyingNetwork(network)
+                }
+
+                override fun onCapabilitiesChanged(network: Network, caps: NetworkCapabilities) {
+                    if (caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
+                        caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_VPN)
+                    ) {
+                        updateUnderlyingNetwork(network)
+                    }
+                }
+
+                override fun onLost(network: Network) {
+                    if (activeUnderlyingNetwork == network) {
+                        val fallback = refreshActivePhysicalNetwork(applicationContext, excludeNetwork = network)
+                        applyUnderlyingNetwork(fallback)
+                    }
+                }
+            }
+            networkCallback = cb
+            cm.registerNetworkCallback(request, cb)
+        } catch (_: Exception) {}
+    }
+
+    private fun unregisterPhysicalNetworkCallback() {
+        val cb = networkCallback ?: return
+        networkCallback = null
+        try {
+            val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
+            cm?.unregisterNetworkCallback(cb)
+        } catch (_: Exception) {}
+    }
+
+    private fun updateUnderlyingNetwork(network: Network) {
+        val cm = try {
+            getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
+        } catch (_: Exception) {
+            null
+        }
+        val best = pickPreferredPhysicalNetwork(cm, candidate = network) ?: network
+        activeUnderlyingNetwork = best
+        applyUnderlyingNetwork(best)
+    }
+
+    private fun applyUnderlyingNetwork(network: Network?) {
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP_MR1 && vpnInterface != null) {
+                if (network != null) {
+                    setUnderlyingNetworks(arrayOf(network))
+                } else {
+                    setUnderlyingNetworks(null)
+                }
+            }
+        } catch (_: Exception) {}
+    }
+
     private fun cleanUpTunnelOnly() {
         isRunning = false
+        unregisterPhysicalNetworkCallback()
         LocalSocks5ToHttpBridge.stop()
         try {
             TProxyService.TProxyStopService()
@@ -320,24 +407,191 @@ class SuperProxyVpnService : VpnService() {
         @Volatile
         private var activeInstance: SuperProxyVpnService? = null
 
+        @Volatile
+        private var activeUnderlyingNetwork: Network? = null
+
+        @Volatile
+        private var appContextRef: Context? = null
+
+        fun updateAppContext(context: Context?) {
+            if (context != null) {
+                appContextRef = context.applicationContext
+                if (activeUnderlyingNetwork == null) {
+                    refreshActivePhysicalNetwork(context.applicationContext)
+                }
+            }
+        }
+
         fun isVpnActive(): Boolean = activeInstance?.isRunning == true
+
+        fun getActivePhysicalNetwork(context: Context? = null): Network? {
+            val ctx = context?.applicationContext ?: appContextRef
+            val existing = activeUnderlyingNetwork
+            if (ctx != null) {
+                val refreshed = refreshActivePhysicalNetwork(ctx)
+                if (refreshed != null) return refreshed
+            }
+            return existing
+        }
+
+        private fun pickPreferredPhysicalNetwork(
+            cm: ConnectivityManager?,
+            candidate: Network? = null,
+            excludeNetwork: Network? = null
+        ): Network? {
+            if (cm == null) return candidate
+            val networks = try {
+                cm.allNetworks.toMutableList()
+            } catch (_: Exception) {
+                mutableListOf()
+            }
+            if (candidate != null && !networks.contains(candidate)) {
+                networks.add(candidate)
+            }
+
+            var bestWifi: Network? = null
+            var bestCellular: Network? = null
+            var bestOther: Network? = null
+            var bestFallback: Network? = null
+
+            for (net in networks) {
+                if (net == excludeNetwork) continue
+                val caps = try {
+                    cm.getNetworkCapabilities(net)
+                } catch (_: Exception) {
+                    null
+                } ?: continue
+
+                if (!caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)) continue
+                if (!caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_VPN)) continue
+
+                val validated = caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
+                if (validated) {
+                    when {
+                        caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) -> bestWifi = net
+                        caps.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) -> bestCellular = net
+                        else -> bestOther = net
+                    }
+                } else if (bestFallback == null) {
+                    bestFallback = net
+                }
+            }
+
+            return bestWifi ?: bestCellular ?: bestOther ?: bestFallback
+        }
+
+        fun refreshActivePhysicalNetwork(context: Context?, excludeNetwork: Network? = null): Network? {
+            val ctx = context?.applicationContext ?: appContextRef ?: return activeUnderlyingNetwork
+            val cm = try {
+                ctx.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
+            } catch (_: Exception) {
+                null
+            }
+            val chosen = pickPreferredPhysicalNetwork(cm, excludeNetwork = excludeNetwork)
+            if (chosen != null) {
+                activeUnderlyingNetwork = chosen
+            } else if (excludeNetwork != null && activeUnderlyingNetwork == excludeNetwork) {
+                activeUnderlyingNetwork = null
+            }
+            return activeUnderlyingNetwork
+        }
+
+        /**
+         * Resolves hostnames directly over the active physical Mobile Data (4G/5G SIM) or Wi-Fi network,
+         * completely bypassing MapDNS Fake-IPs and supporting IPv6-only NAT64/464XLAT cellular carriers!
+         */
+        fun resolveAllAddressesOnPhysicalNetwork(host: String): List<InetAddress> {
+            val clean = host.trim()
+            if (clean.isEmpty()) return emptyList()
+            val net = getActivePhysicalNetwork() ?: return emptyList()
+            return try {
+                net.getAllByName(clean).toList()
+            } catch (_: Exception) {
+                emptyList()
+            }
+        }
+
+        /**
+         * Picks the best reachable InetAddress for connecting upstream on Mobile Data (IPv4, Dual-Stack,
+         * or IPv6-only NAT64/464XLAT) and Wi-Fi.
+         */
+        fun resolveBestConnectAddresses(originalHost: String, pinnedIp: String): List<InetAddress> {
+            val results = mutableListOf<InetAddress>()
+            val seen = HashSet<String>()
+
+            fun addAddr(addr: InetAddress?) {
+                val ha = addr?.hostAddress ?: return
+                if (ha.startsWith("198.18.") || ha.startsWith("198.19.") || ha.startsWith("240.") || ha == "fc00::1") return
+                if (seen.add(ha)) results.add(addr)
+            }
+
+            val cleanPinned = pinnedIp.trim()
+            val cleanOrig = originalHost.trim()
+
+            // 1. Live addresses from the physical network (includes carrier NAT64 IPv6 on IPv6-only 4G/5G SIMs!)
+            if (cleanOrig.isNotEmpty()) {
+                val physAddrs = resolveAllAddressesOnPhysicalNetwork(cleanOrig)
+                // Prefer pinned IP first if it's in the live list, then other IPv4s, then NAT64/IPv6
+                physAddrs.firstOrNull { it.hostAddress == cleanPinned }?.let { addAddr(it) }
+                physAddrs.filterIsInstance<Inet4Address>().forEach { addAddr(it) }
+                physAddrs.filterIsInstance<Inet6Address>().forEach { addAddr(it) }
+            }
+
+            // 2. Include pinned IP directly as fallback
+            if (cleanPinned.isNotEmpty()) {
+                try { addAddr(InetAddress.getByName(cleanPinned)) } catch (_: Exception) {}
+                // RFC 6052 Well-Known NAT64 prefix fallback for raw IPv4 proxies on IPv6-only 4G/5G SIMs
+                if (ProxyTester.isValidRealIpv4(cleanPinned)) {
+                    try { addAddr(InetAddress.getByName("64:ff9b::$cleanPinned")) } catch (_: Exception) {}
+                }
+            }
+
+            // 3. Last resort: standard system lookup if physical network returned nothing
+            if (results.isEmpty() && cleanOrig.isNotEmpty()) {
+                try {
+                    InetAddress.getAllByName(cleanOrig).forEach { addAddr(it) }
+                } catch (_: Exception) {}
+            }
+
+            return results
+        }
 
         fun protectSocket(socket: Socket?): Boolean {
             if (socket == null) return false
-            return try {
+            var bound = false
+            try {
+                val net = activeUnderlyingNetwork ?: refreshActivePhysicalNetwork(appContextRef)
+                if (net != null) {
+                    net.bindSocket(socket)
+                    bound = true
+                }
+            } catch (_: Throwable) {}
+
+            val protected = try {
                 activeInstance?.protect(socket) ?: false
             } catch (_: Throwable) {
                 false
             }
+            return protected || bound
         }
 
         fun protectSocket(socket: DatagramSocket?): Boolean {
             if (socket == null) return false
-            return try {
+            var bound = false
+            try {
+                val net = activeUnderlyingNetwork ?: refreshActivePhysicalNetwork(appContextRef)
+                if (net != null) {
+                    net.bindSocket(socket)
+                    bound = true
+                }
+            } catch (_: Throwable) {}
+
+            val protected = try {
                 activeInstance?.protect(socket) ?: false
             } catch (_: Throwable) {
                 false
             }
+            return protected || bound
         }
 
         fun protectSocket(socketFd: Int): Boolean {

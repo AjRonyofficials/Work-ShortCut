@@ -37,6 +37,7 @@ object LocalSocks5ToHttpBridge {
     private val activeSockets = Collections.newSetFromMap(ConcurrentHashMap<Socket, Boolean>())
 
     @Volatile private var upstreamHost: String = ""
+    @Volatile private var upstreamOriginalHost: String = ""
     @Volatile private var upstreamPort: Int = 0
     @Volatile private var upstreamIsHttp: Boolean = true
     @Volatile private var user: String = ""
@@ -108,11 +109,13 @@ object LocalSocks5ToHttpBridge {
         httpPort: Int,
         username: String,
         password: String,
-        isHttpUpstream: Boolean = true
+        isHttpUpstream: Boolean = true,
+        originalHost: String = httpHost
     ): Int {
         stop()
 
         this.upstreamHost = httpHost
+        this.upstreamOriginalHost = originalHost.ifBlank { httpHost }
         this.upstreamPort = httpPort
         this.upstreamIsHttp = isHttpUpstream
         this.user = username
@@ -274,46 +277,66 @@ object LocalSocks5ToHttpBridge {
                 return
             }
 
-            // 3. Connect to pinned upstream proxy with 1 automatic fast retry for transient residential proxy resets
+            // 3. Connect to pinned upstream proxy with Mobile-Data-aware retry:
+            //    Attempt 1: pinned gateway IP over active physical network (Wi-Fi or 4G/5G SIM).
+            //    Attempt 2: re-resolve via physical network (supports IPv6-only NAT64/464XLAT SIMs & Wi-Fi <-> Data handoff!).
             var connectedUpstream: Socket? = null
             var handshakeOk = false
             for (attempt in 1..2) {
-                var candidate: Socket? = null
-                try {
-                    candidate = Socket()
-                    candidate.tcpNoDelay = true
-                    candidate.keepAlive = true
-                    candidate.sendBufferSize = 65536
-                    candidate.receiveBufferSize = 65536
-                    candidate.soTimeout = 15000
-
-                    SuperProxyVpnService.protectSocket(candidate)
-                    activeSockets.add(candidate)
-                    candidate.connect(InetSocketAddress(upstreamHost, upstreamPort), 9000)
-
-                    val upIn = candidate.getInputStream()
-                    val upOut = candidate.getOutputStream()
-
-                    val ok = if (upstreamIsHttp) {
-                        performHttpUpstreamHandshake(upIn, upOut, targetHost, targetPort)
+                val targetAddresses: List<InetSocketAddress> = if (attempt == 1) {
+                    listOf(InetSocketAddress(upstreamHost, upstreamPort))
+                } else {
+                    val liveAddrs = SuperProxyVpnService.resolveBestConnectAddresses(upstreamOriginalHost, upstreamHost)
+                    if (liveAddrs.isNotEmpty()) {
+                        liveAddrs.take(2).map { InetSocketAddress(it, upstreamPort) }
                     } else {
-                        performSocks5UpstreamHandshake(upIn, upOut, atyp, rawIpv4Bytes, rawDomainBytes, targetHost, targetPort)
-                    }
-
-                    if (ok) {
-                        connectedUpstream = candidate
-                        handshakeOk = true
-                        break
-                    } else {
-                        activeSockets.remove(candidate)
-                        try { candidate.close() } catch (_: Exception) {}
-                    }
-                } catch (_: Exception) {
-                    candidate?.let {
-                        activeSockets.remove(it)
-                        try { it.close() } catch (_: Exception) {}
+                        listOf(InetSocketAddress(upstreamHost, upstreamPort))
                     }
                 }
+
+                for (endpoint in targetAddresses) {
+                    var candidate: Socket? = null
+                    try {
+                        candidate = Socket()
+                        candidate.tcpNoDelay = true
+                        candidate.keepAlive = true
+                        candidate.sendBufferSize = 65536
+                        candidate.receiveBufferSize = 65536
+                        candidate.soTimeout = 20000
+
+                        SuperProxyVpnService.protectSocket(candidate)
+                        activeSockets.add(candidate)
+                        candidate.connect(endpoint, 12000)
+
+                        val upIn = candidate.getInputStream()
+                        val upOut = candidate.getOutputStream()
+
+                        val ok = if (upstreamIsHttp) {
+                            performHttpUpstreamHandshake(upIn, upOut, targetHost, targetPort)
+                        } else {
+                            performSocks5UpstreamHandshake(upIn, upOut, atyp, rawIpv4Bytes, rawDomainBytes, targetHost, targetPort)
+                        }
+
+                        if (ok) {
+                            connectedUpstream = candidate
+                            handshakeOk = true
+                            // Remember working address if cellular NAT64/handoff switched endpoint
+                            endpoint.address?.hostAddress?.takeIf { it.isNotBlank() }?.let { workingIp ->
+                                if (attempt > 1) upstreamHost = workingIp
+                            }
+                            break
+                        } else {
+                            activeSockets.remove(candidate)
+                            try { candidate.close() } catch (_: Exception) {}
+                        }
+                    } catch (_: Exception) {
+                        candidate?.let {
+                            activeSockets.remove(it)
+                            try { it.close() } catch (_: Exception) {}
+                        }
+                    }
+                }
+                if (handshakeOk) break
                 if (attempt == 1 && isRunning.get()) {
                     try { kotlinx.coroutines.delay(140L) } catch (_: Exception) {}
                 }
